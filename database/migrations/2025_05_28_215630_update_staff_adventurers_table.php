@@ -22,7 +22,13 @@ return new class extends Migration
                 $table->dropColumn('church_and_club_name');
             }
 
-            $table->string('church_name')->nullable()->after('cell_phone');
+            if (!Schema::hasColumn('staff_adventurers', 'church_name')) {
+                Schema::table('staff_adventurers', function (Blueprint $table) {
+                    $table->string('church_name')->nullable()->after('cell_phone');
+                });
+            }
+
+
             $table->string('club_name')->nullable()->after('church_name');
 
             if (!Schema::hasColumn('staff_adventurers', 'assigned_class')) {
