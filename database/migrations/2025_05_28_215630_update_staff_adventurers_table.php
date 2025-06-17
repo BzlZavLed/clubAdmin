@@ -27,9 +27,11 @@ return new class extends Migration
                     $table->string('church_name')->nullable()->after('cell_phone');
                 });
             }
-
-
-            $table->string('club_name')->nullable()->after('church_name');
+            if (!Schema::hasColumn('staff_adventurers', 'club_name')) {
+                Schema::table('staff_adventurers', function (Blueprint $table) {
+                    $table->string('club_name')->nullable()->after('church_name');
+                });
+            }
 
             if (!Schema::hasColumn('staff_adventurers', 'assigned_class')) {
                 Schema::table('staff_adventurers', function (Blueprint $table) {
