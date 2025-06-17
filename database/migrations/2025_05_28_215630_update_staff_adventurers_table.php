@@ -24,7 +24,14 @@ return new class extends Migration
 
             $table->string('church_name')->nullable()->after('cell_phone');
             $table->string('club_name')->nullable()->after('church_name');
-            $table->string('assigned_class')->nullable()->after('club_name');
+
+            if (!Schema::hasColumn('staff_adventurers', 'assigned_class')) {
+                Schema::table('staff_adventurers', function (Blueprint $table) {
+                    $table->string('assigned_class')->nullable()->after('club_name');
+                });
+            }
+            
+            //$table->string('assigned_class')->nullable()->after('club_name');
 
             // Replace 3 unlawful conduct fields with one JSON column
             if (
