@@ -1,0 +1,143 @@
+<?php
+
+use App\Http\Controllers\StaffAdventurerController;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
+use App\Http\Controllers\ClubController;
+use App\Http\Controllers\MemberAdventurerController;
+use App\Http\Controllers\ParentAuthController;
+use App\Models\Club;
+use App\Http\Controllers\ChurchController;
+use App\Http\Controllers\ParentMemberController;
+use App\Http\Controllers\ExportController;
+// ---------------------------------
+// 🔗 Public Routes
+// ---------------------------------
+Route::get('/', fn() => redirect('/login'));
+
+Route::post('/logout', function () {
+    Auth::logout();
+    request()->session()->invalidate();
+    request()->session()->regenerateToken();
+    return redirect('/');
+})->name('logout');
+
+Route::get('/force-logout', function () {
+    \Auth::logout();
+    request()->session()->invalidate();
+    request()->session()->regenerateToken();
+
+    return redirect('/login');
+});
+
+Route::get('/churches', [ChurchController::class, 'index']);
+Route::post('/churches', [ChurchController::class, 'store']);
+
+Route::get('/church-form', function () {
+    return Inertia::render('Church/ChurchForm');
+})->name('church.form');
+// ---------------------------------
+// 🔐 Guest Routes (Parent Self-Registration)
+// ---------------------------------
+Route::middleware(['guest'])->group(function () {
+    Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
+    Route::post('/register-parent', [ParentAuthController::class, 'register']);
+    Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
+
+});
+
+// ---------------------------------
+// 🟣 Parent-Only Routes (Authenticated)
+// ---------------------------------
+Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
+    Route::get('/parent/apply', function () {
+        return Inertia::render('Parent/Apply', [
+            'auth_user' => auth()->user(),
+            'clubs' => Club::all(),
+        ]);
+    })->name('parent.apply');
+
+    Route::post('/parent/apply', [MemberAdventurerController::class, 'store'])->name('parent.apply.submit');
+    Route::get('/parent/children', [ParentMemberController::class, 'index'])->name('parent-links.index.parent');
+
+});
+
+// ---------------------------------
+// 🔵 Club Director Protected Routes
+// ---------------------------------
+Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function () {
+
+    // 🔷 Frontend Views
+    Route::get('/director/children', [ParentMemberController::class, 'index'])->name('parent-links.index.director');
+
+    Route::get('/club-director/dashboard', fn() => Inertia::render('ClubDirectorDashboard'))->name('club.dashboard');
+
+    Route::get(
+        '/club-director/my-club',
+        fn() =>
+        Inertia::render('ClubDirector/MyClub', ['auth_user' => auth()->user()])
+    )->name('club.my-club');
+
+    Route::get(
+        '/club-director/members',
+        fn() =>
+        Inertia::render('ClubDirector/Members', ['auth_user' => auth()->user()])
+    )->name('club.members');
+
+    Route::get(
+        '/club-director/staff',
+        fn() =>
+        Inertia::render('ClubDirector/Staff', ['auth_user' => auth()->user()])
+    )->name('club.staff');
+
+
+
+
+
+    // 🟢 API Endpoints
+
+    // Clubs
+    Route::get('/clubs/by-ids', [ClubController::class, 'getByIds'])->name('clubs.by-ids');
+    Route::get('/club', [ClubController::class, 'show']);
+    Route::post('/club', [ClubController::class, 'store']);
+    Route::put('/club', [ClubController::class, 'update'])->name('club.update');
+    Route::delete('/club', [ClubController::class, 'destroy'])->name('club.destroy');
+
+    // Members
+    Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
+    Route::get('/clubs/{id}/members', [MemberAdventurerController::class, 'byClub'])->name('clubs.members');
+    Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
+    Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
+    Route::post('/members/export-zip', [MemberAdventurerController::class, 'exportZip'])->name('members.export-zip');
+
+    //Staff
+    Route::get('/clubs/{id}/staff', [StaffAdventurerController::class, 'byClub'])->name('clubs.staff');
+    Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
+    Route::post('/staff/create-user', [StaffAdventurerController::class, 'createUser'])->name('staff.createUser');
+    Route::get('/staff/{id}/export-word', [StaffAdventurerController::class, 'exportWord']);
+    Route::post('/staff/update-user-account', [StaffAdventurerController::class, 'updateStaffUserAccount'])->name('staff.updateUserAccount');
+    Route::post('/staff/update-staff-account', [StaffAdventurerController::class, 'updateStaffAccount'])->name('staff.updateStaffAccount');
+
+
+    //Export ZIP
+    Route::post('/export/{type}/zip', [ExportController::class, 'exportZip']);
+
+    // 📂 Debug route (optional)
+    Route::get('/test-template-access', function () {
+        $path = storage_path('app/templates/template_adventurer_new.docx');
+        return file_exists($path) ? response()->download($path) : 'Template not found.';
+    });
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/club-personal/dashboard', fn() => Inertia::render('ClubPersonalDashboard'))
+        ->name('clubPersonal.dashboard');
+
+    Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord']);
+    Route::get('/clubs/by-church-name', [ClubController::class, 'getByChurchNames'])->name('clubs.by-church-name');
+
+
+});
+
+require __DIR__ . '/auth.php';
