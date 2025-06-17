@@ -46,7 +46,7 @@ return new class extends Migration
                 ]);
             }
 
-            $table->json('unlawful_conduct_records')->nullable()->after('has_unlawful_conduct');
+            $table->json('unlawful_conduct_records')->nullable();
         });
     }
 
