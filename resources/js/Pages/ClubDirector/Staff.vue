@@ -264,7 +264,7 @@ watch(staff, (newVal) => {
                     {{ club.club_name }} ({{ club.club_type }})
                 </option>
             </select><br><br>
-            <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700" @click="openStaffForm(user)"> Create Staff</button>
+            <button v-if="selectedClub && selectedClub.club_type === 'adventurers'" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700" @click="openStaffForm(user)"> Create Staff</button>
 
         </div>
 
