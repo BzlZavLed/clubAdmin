@@ -11,6 +11,8 @@ use App\Models\Club;
 use App\Http\Controllers\ChurchController;
 use App\Http\Controllers\ParentMemberController;
 use App\Http\Controllers\ExportController;
+use App\Http\Controllers\ClubClassController;
+
 // ---------------------------------
 // 🔗 Public Routes
 // ---------------------------------
@@ -103,6 +105,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/club', [ClubController::class, 'store']);
     Route::put('/club', [ClubController::class, 'update'])->name('club.update');
     Route::delete('/club', [ClubController::class, 'destroy'])->name('club.destroy');
+    Route::resource('club-classes', ClubClassController::class);
+
 
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');

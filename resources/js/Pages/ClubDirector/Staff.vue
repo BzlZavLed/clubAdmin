@@ -7,7 +7,6 @@ import { useToast } from 'vue-toastification'
 
 const page = usePage()
 const auth_user = page.props?.auth.user
-
 const selectedClub = ref(null)
 const clubs = ref([]);
 const staff = ref([])
@@ -144,7 +143,7 @@ const handleBulkAction = async (action, type_request = null) => {
     const ids = Array.from(selectedStaffIds.value)
 
     if (action === 'delete') {
-        const confirmed = window.confirm('Are you sure you want to delete the selected staff? This action cannot be undone.');
+        const confirmed = window.confirm('Are you sure you want to deactivate the selected staff? This will also prevent staff for accessing the system.');
 
         if (!confirmed) return;
         try {
@@ -274,8 +273,8 @@ watch(staff, (newVal) => {
                 <button @click="activeStaffTab = 'active'" :class="activeStaffTab === 'active' ? 'font-bold border-b-2 border-blue-600' : 'text-gray-500'">
                     Active Staff
                 </button>
-                <button v-if="staff.some(person => person.status === 'deleted')" @click="activeStaffTab = 'deleted'" :class="activeStaffTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
-                    Deleted Staff
+                <button v-if="staff.some(person => person.status === 'deleted') && auth_user.profile_type === 'club_director'" @click="activeStaffTab = 'deleted'" :class="activeStaffTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
+                    Inactive Staff
                 </button>
             </div>
             <div class="flex items-center justify-between mb-4">
@@ -288,7 +287,7 @@ watch(staff, (newVal) => {
                         <option value="" disabled selected>Bulk Actions</option>
 
                         <option :value="activeStaffTab === 'deleted' ? 'reactivate' : 'delete'">
-                            {{ activeStaffTab === 'deleted' ? 'Reactivate Selected' : 'Delete Selected' }}
+                            {{ activeStaffTab === 'deleted' ? 'Reactivate Selected' : 'Deactivate Selected' }}
                         </option>
 
                         <option value="download">Download Forms</option>
@@ -421,8 +420,8 @@ watch(staff, (newVal) => {
                     <button @click="activeTab = 'active'" :class="activeTab === 'active' ? 'font-bold border-b-2 border-blue-600' : 'text-gray-500'">
                         Active Accounts
                     </button>
-                    <button v-if="sub_roles.some(user => user.status === 'deleted')" @click="activeTab = 'deleted'" :class="activeTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
-                        Deleted Accounts
+                    <button v-if="sub_roles.some(user => user.status === 'deleted') && auth_user.profile_type === 'club_director'" @click="activeTab = 'deleted'" :class="activeTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
+                        Inactive Accounts
                     </button>
                 </div>
 

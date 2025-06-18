@@ -44,4 +44,9 @@ class Club extends Model
         return $this->belongsTo(Church::class);
     }
 
+    public function clubClasses()
+    {
+        return $this->hasMany(ClubClass::class);
+    }
+
 }
