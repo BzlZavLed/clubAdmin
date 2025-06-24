@@ -1,8 +1,99 @@
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useForm } from '@inertiajs/vue3'
+import { defineProps, defineEmits } from 'vue'
+import axios from 'axios'
+import { useToast } from 'vue-toastification'
+import { watch } from 'vue'
+
+const props = defineProps({
+    clubs: Array,
+    user: Object,
+    classToEdit: Object, // ✅ just a plain object (not a ref!)
+
+})
+console.log('Received classToEdit:', props.classToEdit)
+
+console.log('props', props)
+const form = useForm({
+    class_order: '',
+    class_name: '',
+    assigned_staff_id: '',
+    club_id: ''
+})
+watch(() => props.classToEdit, (cls) => {
+    form.reset()
+
+    if (cls) {
+        form.class_order = cls.class_order
+        form.class_name = cls.class_name
+        form.assigned_staff_id = cls.assigned_staff_id
+        form.club_id = cls.club_id
+    }
+}, { immediate: true })
+
+const emit = defineEmits(['close', 'created'])
+
+
+
+const toast = useToast()
+
+const clubList = ref(props.clubs ?? [])
+const staffList = ref([])
+
+const fetchStaff = async (clubId) => {
+    try {
+        const response = await axios.get(`/clubs/${clubId}/staff`)
+        staffList.value = response.data.staff
+        toast.success('Staff loaded')
+    } catch (error) {
+        console.error('Failed to fetch staff:', error)
+    }
+}
+
+const submit = () => {
+    const isEditing = !!props.classToEdit?.id
+
+    const action = isEditing ?
+        form.put(route('club-classes.update', props.classToEdit.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                toast.success('Class updated successfully!')
+                emit('created')
+                emit('close')
+            },
+            onError: (errors) => {
+                toast.error('There were errors updating the class.')
+                console.error(errors)
+            }
+        }) :
+        form.post(route('club-classes.store'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                toast.success('Class created successfully!')
+                emit('created')
+                emit('close')
+            },
+            onError: (errors) => {
+                toast.error('There were errors saving the class.')
+                console.error(errors)
+            }
+        })
+}
+
+onMounted(() => {
+    if (props.user?.club_id) {
+        fetchStaff(props.user.club_id)
+    }
+})
+</script>
+
 <template>
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
     <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-        <h2 class="text-xl font-semibold mb-4">Create New Class</h2>
-
+        <h2 class="text-xl font-semibold mb-4">
+            {{ props.classToEdit ? 'Edit Class' : 'Create New Class' }}
+        </h2>
         <form @submit.prevent="submit">
             <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700">Class Order</label>
@@ -43,40 +134,10 @@
                     Cancel
                 </button>
                 <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                    Create
+                    {{ props.classToEdit ? 'Update' : 'Create' }}
                 </button>
             </div>
         </form>
     </div>
 </div>
 </template>
-
-  
-  
-<script setup>
-import { useForm } from '@inertiajs/vue3'
-import { defineProps, defineEmits } from 'vue'
-
-const props = defineProps({
-    clubs: Array,
-    staff: Array
-})
-
-const emit = defineEmits(['close', 'created'])
-
-const clubList = props.clubs || []
-const staffList = props.staff || []
-
-const form = useForm({
-    class_order: '',
-    class_name: '',
-    assigned_staff_id: '',
-    club_id: ''
-})
-
-const submit = () => {
-    // Placeholder until backend is connected
-    emit('created', form)
-    emit('close')
-}
-</script>

@@ -3,27 +3,31 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { computed, ref, onMounted } from 'vue'
 import { useForm, usePage } from '@inertiajs/vue3'
 import CreateClassModal from '@/Components/CreateClassModal.vue'
+import { useToast } from 'vue-toastification'
 
 const isEditing = ref(false)
 const editingClubId = ref(null)
 const clubs = ref([])
 const showClassModal = ref(false)
-const clubClasses = ref([]) // Placeholder: will fetch from API
+const classToEdit = ref(null)
+
 
 const page = usePage()
 const props = defineProps(['auth_user'])
 const hasClub = ref(false)
 const user = computed(() => page.props?.auth?.user ?? {})
-const flash = computed(() => page.props.flash || {})
+const clubClasses = user.value.clubs[0].club_classes ?? []
+const clubStaff = user.value.clubs[0].staff_adventurers ?? []
+const toast = useToast()
 
-const fetchClubs = () => {
+const fetchClubs = async () => {
     const club_id = user.value?.club_id
     hasClub.value = club_id !== null && club_id !== undefined
+
     if (hasClub.value) {
         clubs.value = user.value?.clubs ?? []
     }
 }
-
 const clubForm = useForm({
     church_id: user.value.church_id,
     club_name: '',
@@ -44,12 +48,7 @@ const submitClub = () => {
     })
 }
 
-const editClub = (club) => {
-    isEditing.value = true
-    editingClubId.value = club.id
-    clubForm.reset()
-    Object.assign(clubForm, { ...club })
-}
+
 
 const updateClub = () => {
     clubForm.put(route('club.update'), {
@@ -63,6 +62,19 @@ const updateClub = () => {
         onError: (errors) => console.error(errors)
     })
 }
+const editCls = (cls) => {
+    
+    classToEdit.value = cls
+    console.log('cls', cls)
+    console.log('Editing class:', classToEdit.value)
+    showClassModal.value = true
+}
+const editClub = (club) => {
+    isEditing.value = true
+    editingClubId.value = club.id
+    clubForm.reset()
+    Object.assign(clubForm, { ...club })
+}
 
 const deleteClub = async (clubId) => {
     if (!confirm('Are you sure you want to delete this club?')) return
@@ -75,6 +87,14 @@ const deleteClub = async (clubId) => {
     }
 }
 
+const getStaffName = (id) => {
+    const staff = clubStaff.find(s => s.id === id)
+    return staff ? staff.name : '—'
+}
+const openNewClassModal = () => {
+  classToEdit.value = null
+  showClassModal.value = true
+}
 onMounted(fetchClubs)
 </script>
 
@@ -115,8 +135,10 @@ onMounted(fetchClubs)
                 <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
                     {{ isEditing ? 'Update Club' : 'Save Club' }}
                 </button>
-                <button v-if="isEditing" type="button" @click="() => { isEditing = false;
-    editingClubId = null }" class="text-sm text-gray-600 hover:underline">
+                <button v-if="isEditing" type="button" @click="() => {
+    isEditing = false;
+    editingClubId = null
+}" class="text-sm text-gray-600 hover:underline">
                     Cancel Edit
                 </button>
             </div>
@@ -158,7 +180,10 @@ onMounted(fetchClubs)
             <div class="p-4">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold">Club Classes</h3>
-                    <button @click="showClassModal = true" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    <button 
+                        @click="openNewClassModal"
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
                         + Add Class
                     </button>
                 </div>
@@ -179,15 +204,29 @@ onMounted(fetchClubs)
                         <tr v-for="cls in clubClasses" :key="cls.id">
                             <td class="px-4 py-2">{{ cls.class_order }}</td>
                             <td class="px-4 py-2">{{ cls.class_name }}</td>
-                            <td class="px-4 py-2">{{ cls.assigned_staff?.name || '—' }}</td>
-                            <td class="px-4 py-2">Edit / Delete</td>
+                            <td class="px-4 py-2">{{ getStaffName(cls.assigned_staff_id) }}</td>
+                            <td class="p-2 space-x-2">
+                                <button @click="editCls(cls)" class="text-blue-600 hover:underline">Edit</button>
+                            </td>                        
                         </tr>
                     </tbody>
                 </table>
             </div>
         </details>
 
-        <CreateClassModal v-if="showClassModal" :clubs="user.clubs" :staff="user.staff" @close="showClassModal = false" @created="() => { /* refresh clubClasses later */ }" />
-    </div>
+        <CreateClassModal
+            v-if="showClassModal"
+            :clubs="user.clubs"
+            :staff="clubStaff"
+            :user="user"
+            :classToEdit="classToEdit.value" 
+            @close="() => {
+                console.log('Closing modal, current classToEdit:', classToEdit.value)
+                showClassModal.value = false
+                classToEdit.value = null
+            }"
+            @created="fetchClubs"
+            />    
+</div>
 </PathfinderLayout>
 </template>

@@ -25,7 +25,10 @@ class ClubClassController extends Controller
 
         $class = ClubClass::create($validated);
 
-        return response()->json($class->load(['club', 'assignedStaff']), 201);
+        // Optional: flash success message
+        session()->flash('success', 'Class created successfully.');
+
+        return back(); // Or redirect to route if needed    
     }
 
     // Get a single class by ID

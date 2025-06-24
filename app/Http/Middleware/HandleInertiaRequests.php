@@ -31,7 +31,7 @@ class HandleInertiaRequests extends Middleware
     {
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => fn() => $request->user()?->load(['clubs', 'church']),
+                'user' => fn() => $request->user()?->load(['clubs.clubClasses', 'church','clubs.staffAdventurers']),
                 'is_in_club' => fn() => session('is_in_club', false),
                 'user_club_ids' => fn() => session('user_club_ids', []),
             ],
