@@ -25,10 +25,9 @@ class ClubClassController extends Controller
 
         $class = ClubClass::create($validated);
 
-        // Optional: flash success message
         session()->flash('success', 'Class created successfully.');
 
-        return back(); // Or redirect to route if needed    
+        return back(); 
     }
 
     // Get a single class by ID
@@ -52,7 +51,9 @@ class ClubClassController extends Controller
 
         $class->update($validated);
 
-        return response()->json($class->load(['club', 'assignedStaff']));
+        session()->flash('success', 'Class updated successfully.');
+
+        return back(); 
     }
 
     // Delete a class

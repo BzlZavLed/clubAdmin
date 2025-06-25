@@ -1,7 +1,7 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { computed, ref, onMounted } from 'vue'
-import { useForm, usePage } from '@inertiajs/vue3'
+import { useForm, usePage, router } from '@inertiajs/vue3'
 import CreateClassModal from '@/Components/CreateClassModal.vue'
 import { useToast } from 'vue-toastification'
 
@@ -10,24 +10,22 @@ const editingClubId = ref(null)
 const clubs = ref([])
 const showClassModal = ref(false)
 const classToEdit = ref(null)
+const hasClub = ref(false)
 
-
+const toast = useToast()
 const page = usePage()
 const props = defineProps(['auth_user'])
-const hasClub = ref(false)
 const user = computed(() => page.props?.auth?.user ?? {})
-const clubClasses = user.value.clubs[0].club_classes ?? []
-const clubStaff = user.value.clubs[0].staff_adventurers ?? []
-const toast = useToast()
-
-const fetchClubs = async () => {
-    const club_id = user.value?.club_id
-    hasClub.value = club_id !== null && club_id !== undefined
-
-    if (hasClub.value) {
-        clubs.value = user.value?.clubs ?? []
-    }
+const clubClasses = computed(() => {
+    return user.value.clubs[0]?.club_classes ?? []
+})
+const clubStaff = computed(() => {
+    return user.value.clubs[0]?.staff_adventurers ?? []
+})
+const refreshPage = () => {
+    router.reload({ only: ['auth'] })
 }
+
 const clubForm = useForm({
     church_id: user.value.church_id,
     club_name: '',
@@ -40,6 +38,18 @@ const clubForm = useForm({
     club_type: '',
 })
 
+const fetchClubs = async () => {
+    console.log('Fetching clubs for user:', user.value)
+    const club_id = user.value?.club_id
+    hasClub.value = club_id !== null && club_id !== undefined
+
+    if (hasClub.value) {
+        clubs.value = user.value?.clubs ?? []
+        console.log('Clubs fetched:', clubs.value)
+    }
+    console.log('hasClub', hasClub.value)
+}
+
 const submitClub = () => {
     clubForm.post('/club', {
         preserveScroll: true,
@@ -47,8 +57,6 @@ const submitClub = () => {
         onError: (errors) => console.error(errors)
     })
 }
-
-
 
 const updateClub = () => {
     clubForm.put(route('club.update'), {
@@ -62,13 +70,7 @@ const updateClub = () => {
         onError: (errors) => console.error(errors)
     })
 }
-const editCls = (cls) => {
-    
-    classToEdit.value = cls
-    console.log('cls', cls)
-    console.log('Editing class:', classToEdit.value)
-    showClassModal.value = true
-}
+
 const editClub = (club) => {
     isEditing.value = true
     editingClubId.value = club.id
@@ -88,12 +90,29 @@ const deleteClub = async (clubId) => {
 }
 
 const getStaffName = (id) => {
-    const staff = clubStaff.find(s => s.id === id)
+    const staff = clubStaff.value.find(s => s.id === id)
     return staff ? staff.name : '—'
 }
+
 const openNewClassModal = () => {
-  classToEdit.value = null
-  showClassModal.value = true
+    classToEdit.value = null
+    showClassModal.value = true
+}
+
+const editCls = (cls) => {
+    classToEdit.value = cls
+    showClassModal.value = true
+}
+
+const deleteCls = async (clubId) => {
+    if (!confirm('Are you sure you want to delete this class?')) return
+    try {
+        await axios.delete('/club', { data: { id: clubId } })
+        alert('Club deleted successfully!')
+        fetchClubs()
+    } catch (error) {
+        console.error('Failed to delete club:', error)
+    }
 }
 onMounted(fetchClubs)
 </script>
@@ -207,6 +226,7 @@ onMounted(fetchClubs)
                             <td class="px-4 py-2">{{ getStaffName(cls.assigned_staff_id) }}</td>
                             <td class="p-2 space-x-2">
                                 <button @click="editCls(cls)" class="text-blue-600 hover:underline">Edit</button>
+                                <button @click="deleteCls(cls)" class="text-red-600 hover:underline">Delete</button>
                             </td>                        
                         </tr>
                     </tbody>
@@ -216,17 +236,13 @@ onMounted(fetchClubs)
 
         <CreateClassModal
             v-if="showClassModal"
+            v-model:visible="showClassModal" 
             :clubs="user.clubs"
             :staff="clubStaff"
             :user="user"
-            :classToEdit="classToEdit.value" 
-            @close="() => {
-                console.log('Closing modal, current classToEdit:', classToEdit.value)
-                showClassModal.value = false
-                classToEdit.value = null
-            }"
-            @created="fetchClubs"
-            />    
+            :classToEdit="classToEdit"
+            @created="refreshPage"
+        />    
 </div>
 </PathfinderLayout>
 </template>

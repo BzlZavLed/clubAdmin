@@ -9,12 +9,12 @@ import { watch } from 'vue'
 const props = defineProps({
     clubs: Array,
     user: Object,
-    classToEdit: Object, // ✅ just a plain object (not a ref!)
+    classToEdit: Object,
+    visible: Boolean
+
 
 })
-console.log('Received classToEdit:', props.classToEdit)
 
-console.log('props', props)
 const form = useForm({
     class_order: '',
     class_name: '',
@@ -32,7 +32,12 @@ watch(() => props.classToEdit, (cls) => {
     }
 }, { immediate: true })
 
-const emit = defineEmits(['close', 'created'])
+
+const emit = defineEmits(['update:visible', 'created'])
+
+const close = () => {
+    emit('update:visible', false)
+}
 
 
 
@@ -60,7 +65,7 @@ const submit = () => {
             onSuccess: () => {
                 toast.success('Class updated successfully!')
                 emit('created')
-                emit('close')
+                emit('update:visible', false)
             },
             onError: (errors) => {
                 toast.error('There were errors updating the class.')
@@ -72,7 +77,7 @@ const submit = () => {
             onSuccess: () => {
                 toast.success('Class created successfully!')
                 emit('created')
-                emit('close')
+                emit('update:visible', false)
             },
             onError: (errors) => {
                 toast.error('There were errors saving the class.')
@@ -130,7 +135,7 @@ onMounted(() => {
             </div>
 
             <div class="flex justify-end space-x-2 mt-6">
-                <button type="button" @click="$emit('close')" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
+                <button type="button" @click="close" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
                     Cancel
                 </button>
                 <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
