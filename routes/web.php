@@ -106,8 +106,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::put('/club', [ClubController::class, 'update'])->name('club.update');
     Route::delete('/club', [ClubController::class, 'destroy'])->name('club.destroy');
     Route::resource('club-classes', ClubClassController::class);
-
-
+    Route::get('/church/{churchId}/clubs', [ClubController::class, 'getClubsByChurchId'])->name('church.clubs');;
+    Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
     Route::get('/clubs/{id}/members', [MemberAdventurerController::class, 'byClub'])->name('clubs.members');

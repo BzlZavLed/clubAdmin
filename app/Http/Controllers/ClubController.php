@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Redirect;
 use App\Models\Church;
+use Illuminate\Support\Facades\DB;
+use App\Models\User;
 class ClubController extends Controller
 {
     use AuthorizesRequests;
@@ -111,5 +113,37 @@ class ClubController extends Controller
     public function getByChurch(Church $church)
     {
         return $church->clubs()->select('id', 'club_name', 'club_type')->orderBy('club_name')->get();
+    }
+
+    public function getClubsByChurchId($churchId)
+    {
+        $clubs = Club::where('church_id', $churchId)
+            ->select('id', 'club_name', 'club_type')
+            ->orderBy('club_name')
+            ->get();
+
+        return response()->json($clubs);
+    }
+
+    public function selectClub(Request $request)
+    {
+        $validated = $request->validate([
+            'club_id' => 'required|exists:clubs,id',
+            'user_id' => 'required|exists:users,id', 
+        ]);
+
+        $user = User::findOrFail($validated['user_id']);
+
+        DB::table('club_user')->updateOrInsert(
+            ['user_id' => $user->id, 'club_id' => $validated['club_id']],
+            ['status' => 'active', 'updated_at' => now()]
+        );
+
+        $user->club_id = $validated['club_id'];
+        $user->save();
+
+        $user->load(['clubs.clubClasses', 'church', 'clubs.staffAdventurers']);
+
+        return response()->json(['message' => 'Club selected successfully.']);
     }
 }
