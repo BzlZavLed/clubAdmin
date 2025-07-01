@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref , h , onMounted} from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import ClubDirectorNav from '@/Components/Nav/ClubDirectorNav.vue'
 import ClubPersonalNav from '@/Components/Nav/ClubPersonalNav.vue'
@@ -10,11 +10,21 @@ const user = usePage().props.auth.user
 const logout = () => {
     router.post(route('logout'))
 }
-
+onMounted(() => {
+    const savedState = localStorage.getItem('sidebar-collapsed')
+    isCollapsed.value = savedState === 'true' // Convert string to boolean
+})
 const getNavComponent = () => {
-    if (user.profile_type === 'club_director') return ClubDirectorNav
-    else if (user.profile_type === 'club_personal') return ClubPersonalNav
+    if (user.profile_type === 'club_director') {
+        return h(ClubDirectorNav, { isCollapsed: isCollapsed.value })
+    } else if (user.profile_type === 'club_personal') {
+        return h(ClubPersonalNav, { isCollapsed: isCollapsed.value })
+    }
     return null
+}
+const toggleSidebar = () => {
+    isCollapsed.value = !isCollapsed.value
+    localStorage.setItem('sidebar-collapsed', isCollapsed.value)
 }
 </script>
 <template>
@@ -27,7 +37,7 @@ const getNavComponent = () => {
         <!-- Logo + Toggle -->
         <div class="flex items-center justify-between px-4 py-4 border-b">
             <img v-if="!isCollapsed" src="/images/logo-bg.png" alt="Pathfinder Club" class="h-10" />
-            <button @click="isCollapsed = !isCollapsed" class="text-gray-500 hover:text-red-600">
+            <button @click="toggleSidebar" class="text-gray-500 hover:text-red-600">
                 <span v-if="isCollapsed">▶</span>
                 <span v-else>◀</span>
             </button>
