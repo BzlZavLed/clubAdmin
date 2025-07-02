@@ -6,6 +6,7 @@ import CreateClassModal from '@/Components/CreateClassModal.vue'
 import { useToast } from 'vue-toastification'
 
 const isEditing = ref(false)
+const addClub = ref(false)
 const editingClubId = ref(null)
 const clubs = ref([])
 const showClassModal = ref(false)
@@ -27,7 +28,7 @@ const clubStaff = computed(() => {
 })
 const refreshPage = () => {
     console.log('Refreshing page...')
-    window.location.reload(); 
+    window.location.reload();
 }
 
 const clubForm = useForm({
@@ -61,7 +62,11 @@ const fetchClubs = async () => {
 const submitClub = () => {
     clubForm.post('/club', {
         preserveScroll: true,
-        onSuccess: () => alert('Club created successfully!'),
+        onSuccess: () => {
+            alert('Club created successfully!')
+            addClub.value = false
+            fetchClubs()
+        },
         onError: (errors) => console.error(errors)
     })
 }
@@ -124,11 +129,9 @@ const deleteCls = async (clubId) => {
 }
 
 const selectClub = async (clubId) => {
-    console.log('Selecting club:', clubId)
-    console.log('User:', user.value.id)
     try {
-        const userId = user.value.id; 
-        await axios.post('/club-user', { club_id: clubId, user_id:  user.value.id });
+        const userId = user.value.id;
+        await axios.post('/club-user', { club_id: clubId, user_id: user.value.id });
         alert('Club selected successfully!');
         await router.reload({ only: ['auth'] });
         console.log('Updated user:', user.value);
@@ -139,6 +142,22 @@ const selectClub = async (clubId) => {
         refreshPage();
     }
 };
+const startCreatingClub = () => {
+    console.log('Starting club creation')
+    addClub.value = true
+    clubForm.reset()
+    Object.assign(clubForm, {
+        church_id: user.value.church_id,
+        club_name: '',
+        church_name: user.value.church_name,
+        director_name: props.auth_user.name,
+        creation_date: '',
+        pastor_name: '',
+        conference_name: '',
+        conference_region: '',
+        club_type: '',
+    })
+}
 onMounted(fetchClubs)
 </script>
 
@@ -146,21 +165,21 @@ onMounted(fetchClubs)
 <PathfinderLayout>
     <template #title>My Club</template>
 
-    <div v-if="(clubId == null && clubs.length == 0) || isEditing" class="space-y-6">
+    <div v-if="(clubId == null && clubs.length == 0) || isEditing || addClub" class="space-y-6">
         <p class="text-gray-700">
             {{ isEditing ? 'Edit your club below:' : 'No club assigned. Please create your club below.' }}
         </p>
 
         <form class="space-y-4" @submit.prevent="isEditing ? updateClub() : submitClub()">
             <div v-for="field in [
-                    { key: 'club_name', label: 'Club Name' },
-                    { key: 'church_name', label: 'Church Name' },
-                    { key: 'director_name', label: 'Director Name', readonly: true },
-                    { key: 'creation_date', label: 'Date of Creation', type: 'date' },
-                    { key: 'pastor_name', label: 'Pastor Name' },
-                    { key: 'conference_name', label: 'Conference Name' },
-                    { key: 'conference_region', label: 'Conference Region' }
-                ]" :key="field.key">
+    { key: 'club_name', label: 'Club Name' },
+    { key: 'church_name', label: 'Church Name' },
+    { key: 'director_name', label: 'Director Name', readonly: true },
+    { key: 'creation_date', label: 'Date of Creation', type: 'date' },
+    { key: 'pastor_name', label: 'Pastor Name' },
+    { key: 'conference_name', label: 'Conference Name' },
+    { key: 'conference_region', label: 'Conference Region' }
+]" :key="field.key">
                 <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
                 <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly" class="w-full mt-1 p-2 border rounded" />
             </div>
@@ -180,9 +199,9 @@ onMounted(fetchClubs)
                     {{ isEditing ? 'Update Club' : 'Save Club' }}
                 </button>
                 <button v-if="isEditing" type="button" @click="() => {
-                        isEditing = false;
-                        editingClubId = null
-                    }" class="text-sm text-gray-600 hover:underline">
+    isEditing = false;
+    editingClubId = null
+}" class="text-sm text-gray-600 hover:underline">
                     Cancel Edit
                 </button>
             </div>
@@ -236,6 +255,11 @@ onMounted(fetchClubs)
                         </tr>
                     </tbody>
                 </table>
+                <div class="mt-4">
+                    <button @click="startCreatingClub" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        + Create Club
+                    </button>
+                </div>
             </div>
         </details>
 
@@ -249,8 +273,8 @@ onMounted(fetchClubs)
                     </button>
                 </div>
 
-                <table class="w-full text-left border-collapse">
-                    <thead>
+                <table class="min-w-full border rounded text-left border-collapse">
+                    <thead class="bg-gray-100">
                         <tr>
                             <th class="border-b px-4 py-2">Order</th>
                             <th class="border-b px-4 py-2">Name</th>

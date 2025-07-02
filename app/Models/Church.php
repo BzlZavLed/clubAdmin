@@ -12,6 +12,8 @@ class Church extends Model
         'ethnicity',
         'phone_number',
         'email',
+        'pastor_name',
+        'pastor_email',
     ];
     public function clubs()
     {

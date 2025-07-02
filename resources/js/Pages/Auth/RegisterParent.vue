@@ -39,6 +39,7 @@ watch(
         if (newChurchId) {
             try {
                 const response = await axios.get(`/churches/${newChurchId}/clubs`)
+                console.log('Fetched clubs:', response.data)
                 clubs.value = response.data
                 if (clubs.value.length === 0) {
                     clubLoadError.value = true
@@ -104,7 +105,7 @@ watch(
                 <select v-model="form.club_id" id="club_id" class="w-full border rounded p-2" required>
                     <option disabled value="">-- Choose a Club --</option>
                     <option v-for="club in clubs" :key="club.id" :value="club.id">
-                        {{ club.name }} ({{ club.club_type }})
+                        {{ club.club_name }} ({{ club.club_type }})
                     </option>
                 </select>
                 <span v-if="form.errors.club_id" class="text-red-500 text-sm">{{ form.errors.club_id }}</span>

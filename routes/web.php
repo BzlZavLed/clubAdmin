@@ -16,6 +16,11 @@ use App\Http\Controllers\ClubClassController;
 // ---------------------------------
 // 🔗 Public Routes
 // ---------------------------------
+
+// http://localhost:8000/church-form  -> register a church
+// http://localhost:8000/force-logout  -> force logout user
+// http://localhost:8000/register -> register a user
+// http://localhost:8000/register-parent -> register a parent
 Route::get('/', fn() => redirect('/login'));
 
 Route::post('/logout', function () {
@@ -108,6 +113,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::resource('club-classes', ClubClassController::class);
     Route::get('/church/{churchId}/clubs', [ClubController::class, 'getClubsByChurchId'])->name('church.clubs');;
     Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
+    // Classes
+    Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId']);
+
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
     Route::get('/clubs/{id}/members', [MemberAdventurerController::class, 'byClub'])->name('clubs.members');

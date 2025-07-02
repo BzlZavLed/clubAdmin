@@ -27,7 +27,7 @@ class ClubClassController extends Controller
 
         session()->flash('success', 'Class created successfully.');
 
-        return back(); 
+        return back();
     }
 
     // Get a single class by ID
@@ -53,7 +53,7 @@ class ClubClassController extends Controller
 
         session()->flash('success', 'Class updated successfully.');
 
-        return back(); 
+        return back();
     }
 
     // Delete a class
@@ -63,5 +63,15 @@ class ClubClassController extends Controller
         $class->delete();
 
         return response()->json(['message' => 'Class deleted']);
+    }
+
+    public function getByClubId($clubId)
+    {
+        $classes = ClubClass::with('assignedStaff')
+            ->where('club_id', $clubId)
+            ->orderBy('class_order')
+            ->get();
+
+        return response()->json($classes);
     }
 }

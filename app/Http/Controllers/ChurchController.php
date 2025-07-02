@@ -24,10 +24,22 @@ class ChurchController extends Controller
             'address' => 'nullable|string',
             'ethnicity' => 'nullable|string',
             'phone_number' => 'nullable|string|max:20',
-            'email' => 'nullable|email|max:255',
+            'email' => 'required|email|max:255',
+            'pastor_name' => 'nullable|string',
+            'pastor_email' => 'nullable|email|max:255',
         ]);
 
-        return Church::create($validated);
+        $church = Church::updateOrCreate(
+            ['email' => $validated['email']],
+            $validated 
+        );
+
+        return response()->json([
+            'message' => $church->wasRecentlyCreated
+                ? 'Church created successfully.'
+                : 'Church updated successfully.',
+            'church' => $church,
+        ]);
     }
 
     /**
