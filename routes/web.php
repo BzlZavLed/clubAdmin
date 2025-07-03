@@ -12,7 +12,7 @@ use App\Http\Controllers\ChurchController;
 use App\Http\Controllers\ParentMemberController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\ClubClassController;
-
+use App\Http\Controllers\LLMQueryController as AIQueryController;
 // ---------------------------------
 // 🔗 Public Routes
 // ---------------------------------
@@ -122,6 +122,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
     Route::post('/members/export-zip', [MemberAdventurerController::class, 'exportZip'])->name('members.export-zip');
+    Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember']);
 
     //Staff
     Route::get('/clubs/{id}/staff', [StaffAdventurerController::class, 'byClub'])->name('clubs.staff');
@@ -130,6 +131,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/staff/{id}/export-word', [StaffAdventurerController::class, 'exportWord']);
     Route::post('/staff/update-user-account', [StaffAdventurerController::class, 'updateStaffUserAccount'])->name('staff.updateUserAccount');
     Route::post('/staff/update-staff-account', [StaffAdventurerController::class, 'updateStaffAccount'])->name('staff.updateStaffAccount');
+
+    //AI
+    Route::post('/nl-query', [AIQueryController::class, 'handle']);
 
 
     //Export ZIP

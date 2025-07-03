@@ -99,9 +99,7 @@ const toggleExpanded = (id) => {
 const formatDate = (isoString) => {
     return new Date(isoString).toLocaleDateString()
 }
-
 const fetchClubs = async () => {
-    console.log(auth_user)
     const clubIds = auth_user.clubs.map(club => club.id)
 
     try {
@@ -134,9 +132,6 @@ const fetchMembers = async (clubId) => {
         showToast('Error fetching members', 'error')
     }
 }
-
-
-
 const toggleSelectAll = () => {
     if (selectAll.value) {
         selectedMemberIds.value = new Set(members.value.map(m => m.id))
@@ -144,7 +139,6 @@ const toggleSelectAll = () => {
         selectedMemberIds.value.clear()
     }
 }
-
 const toggleSelectMember = (id) => {
     if (selectedMemberIds.value.has(id)) {
         selectedMemberIds.value.delete(id)
@@ -152,7 +146,6 @@ const toggleSelectMember = (id) => {
         selectedMemberIds.value.add(id)
     }
 }
-
 const handleBulkAction = async (action,type_request=null) => {
     if (selectedMemberIds.value.size === 0) {
         alert('No members selected.')
@@ -234,24 +227,46 @@ const fetchClubClasses = async (clubId) => {
         console.error('Failed to fetch club classes:', error)
     }
 }
-const getStaffName = (id) => {
-    const staff = selectedClub.value?.staff_adventurers?.find(s => s.id === id)
-    return staff ? staff.name : '—'
-}
-const moveMemberToClass = async (memberId, newClassName) => {
+
+const assignMemberToClass = async (member) => {
+    if (!member.assigned_class) return
+    console.log('Assigning member to class:', member)
+
     try {
-        await axios.post(`/members/${memberId}/move-class`, {
-            new_class_name: newClassName
+        await axios.post('/members/class-member-assignments', {
+        members_adventurer_id: member.id,
+        club_class_id: member.assigned_class,
+        role: 'student',
+        assigned_at: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+        active: true,
         })
+
+        showToast(`Assigned ${member.applicant_name} to class`, 'success')
+
+        // Refresh members list
         await fetchMembers(selectedClub.value.id)
-        showToast('Member moved successfully.', 'success')
+
     } catch (error) {
-        console.error('Failed to move member:', error)
-        showToast('Failed to move member.', 'error')
+        console.error('Assignment failed:', error)
+        showToast(`Failed to assign ${member.applicant_name}`, 'error')
     }
 }
 
+const unassignedMembers = computed(() =>
+    members.value.filter(member => !member.club_classes || member.club_classes.length === 0)
+)
 
+const membersInClass = (classId) => {
+    return members.value.filter(member => {
+        return Array.isArray(member.club_classes) &&
+        member.club_classes.some(
+            c => c.pivot && c.pivot.active && c.pivot.club_class_id === classId
+        )
+    })
+}
+const classOptionsExcluding = (currentClassId) => {
+    return clubClasses.value.filter(c => c.id !== currentClassId)
+}
 onMounted(fetchClubs)
 </script>
 
@@ -388,6 +403,50 @@ onMounted(fetchClubs)
                     No classes found for this club.
                 </div>
                 <div v-else class="space-y-6">
+                    <h2 class="text-lg font-semibold mb-4">Unassigned Members</h2>
+                    <div v-if="unassignedMembers.length === 0" class="text-gray-600">
+                        All members are assigned to a class.
+                    </div>
+                    <div v-else class="border rounded p-4 bg-gray-100">
+                        <table class="w-full border text-sm">
+                        <thead class="bg-gray-200">
+                            <tr>
+                            <th class="p-2">Name</th>
+                            <th class="p-2">Age</th>
+                            <th class="p-2">Assign to Class</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="member in unassignedMembers" :key="member.id">
+                            <td class="p-2">{{ member.applicant_name }}</td>
+                            <td class="p-2">{{ member.age }}</td>
+                            <td class="p-2">
+                                <select
+                                    v-model="member.assigned_class"
+                                    class="border p-2 rounded"
+                                >
+                                <option value="" disabled selected>Select class</option>
+                                <option
+                                    v-for="targetClass in classOptionsExcluding(clubClass.id)"
+                                    :key="targetClass.id"
+                                    :value="targetClass.id"
+                                >
+                                    {{ targetClass.class_name }}
+                                </option>
+                                </select>
+                                &nbsp;&nbsp;
+                                <button
+                                    @click="() => assignMemberToClass(member)"
+                                    :disabled="!member.assigned_class"
+                                    class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                                >
+                                    Assign
+                                </button>
+                            </td>
+                            </tr>
+                        </tbody>
+                        </table>
+                    </div>
                     <div v-for="clubClass in clubClasses" :key="clubClass.id" class="border rounded p-4 bg-gray-50">
                         <h3 class="text-md font-bold">
                             {{ clubClass.class_name }} (Order: {{ clubClass.class_order }})
@@ -395,38 +454,48 @@ onMounted(fetchClubs)
                         <p class="text-sm text-gray-700 mb-2">
                             Assigned Staff: {{ clubClass.assigned_staff.name }}
                         </p>
-                        <table class="w-full border text-sm">
+                        <div v-if="membersInClass(clubClass.id).length === 0" class="text-gray-600">
+                            No members assigned to this class.
+                        </div>
+
+                        <table v-else class="w-full border text-sm">
                             <thead class="bg-gray-100">
-                                <tr>
-                                    <th class="p-2">Name</th>
-                                    <th class="p-2">Age</th>
-                                    <th class="p-2">Move to Class</th>
-                                </tr>
+                            <tr>
+                                <th class="p-2">Name</th>
+                                <th class="p-2">Age</th>
+                                <th class="p-2">Move to Class</th>
+                            </tr>
                             </thead>
                             <tbody>
-                            NEED TO ADD ASSIGNED CLASS TO members_adventurers table
-                                <tr
-                                    v-for="member in members"
-                                    :key="member.id"
+                            <tr
+                                v-for="member in membersInClass(clubClass.id)"
+                                :key="member.id"
+                            >
+                                <td class="p-2">{{ member.applicant_name }}</td>
+                                <td class="p-2">{{ member.age }}</td>
+                                <td class="p-2">
+                                <select
+                                    v-model="member.assigned_class"
+                                    class="border p-1 rounded"
                                 >
-                                    <td class="p-2">{{ member.applicant_name }}</td>
-                                    <td class="p-2">{{ member.age }}</td>
-                                    <td class="p-2">
-                                        <select
-                                            v-model="member.assigned_class"
-                                            @change="e => moveMemberToClass(member.id, e.target.value)"
-                                            class="border p-1 rounded"
-                                        >
-                                            <option
-                                                v-for="targetClass in clubClasses"
-                                                :key="targetClass.id"
-                                                :value="targetClass.class_name"
-                                            >
-                                                {{ targetClass.class_name }}
-                                            </option>
-                                        </select>
-                                    </td>
-                                </tr>
+                                <option
+                                    v-for="targetClass in classOptionsExcluding(clubClass.id)"
+                                    :key="targetClass.id"
+                                    :value="targetClass.id"
+                                >
+                                    {{ targetClass.class_name }}
+                                    </option>
+                                </select>
+                                &nbsp;&nbsp;
+                                <button
+                                    @click="() => assignMemberToClass(member)"
+                                    :disabled="!member.assigned_class"
+                                    class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                                >
+                                    Assign
+                                </button>
+                                </td>
+                            </tr>
                             </tbody>
                         </table>
                     </div>

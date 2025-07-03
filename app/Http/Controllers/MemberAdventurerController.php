@@ -81,6 +81,7 @@ class MemberAdventurerController extends Controller
         if ($club->club_type === 'adventurers') {
             $members = MemberAdventurer::where('club_id', $id)
                 ->where('status', 'active')
+                ->with(['clubClasses'])
                 ->orderBy('created_at', 'desc')
                 ->get();
         } else {
@@ -154,6 +155,34 @@ class MemberAdventurerController extends Controller
         return response()->download($outputPath)->deleteFileAfterSend(true);
     }
 
+    public function assignMember(Request $request)
+    {
+        $request->validate([
+            'members_adventurer_id' => 'required|exists:members_adventurers,id',
+            'club_class_id' => 'required|exists:club_classes,id',
+        ]);
+
+        // Optional: deactivate previous active assignment
+        DB::table('class_member_adventurer')
+            ->where('members_adventurer_id', $request->members_adventurer_id)
+            ->where('active', true)
+            ->update([
+                'active' => false,
+                'finished_at' => now(),
+            ]);
+
+        DB::table('class_member_adventurer')->insert([
+            'members_adventurer_id' => $request->members_adventurer_id,
+            'club_class_id' => $request->club_class_id,
+            'role' => $request->input('role', 'student'),
+            'assigned_at' => $request->input('assigned_at', now()->toDateString()),
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['message' => 'Member assigned successfully']);
+    }
 
     /* private function generateMemberDoc(MemberAdventurer $member, string $outputDir): string
     {

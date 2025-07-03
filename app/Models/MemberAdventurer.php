@@ -47,4 +47,25 @@ class MemberAdventurer extends Model
     {
         return $this->belongsTo(StaffAdventurer::class, 'staff_id');
     }
+    public function clubClasses()
+    {
+        return $this->belongsToMany(
+            ClubClass::class,
+            'class_member_adventurer',      // Pivot table name
+            'members_adventurer_id',        // Foreign key on the pivot table that points to this model
+            'club_class_id'                 // Foreign key on the pivot table that points to the related model
+        )
+            ->withPivot(['role', 'assigned_at', 'finished_at', 'active'])
+            ->withTimestamps();
+    }
+    public function currentClass()
+    {
+        return $this->clubClasses()->wherePivot('active', true)->first();
+    }
+
+    public function classHistory()
+    {
+        return $this->clubClasses()->withPivot('assigned_at', 'finished_at', 'active')->orderBy('pivot_assigned_at', 'desc');
+    }
+
 }

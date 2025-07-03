@@ -19,7 +19,6 @@ const props = defineProps(['auth_user'])
 const user = computed(() => page.props?.auth?.user ?? {})
 const church_name = user.value.church_name || 'Unknown Church'
 const clubId = user.value.club_id || null
-console.log('user', user.value)
 const clubClasses = computed(() => {
     return user.value.clubs[0]?.club_classes ?? []
 })
