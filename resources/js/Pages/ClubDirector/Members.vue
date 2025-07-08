@@ -252,6 +252,22 @@ const assignMemberToClass = async (member) => {
     }
 }
 
+const undoAssignment = async (member) => {
+    try {
+        await axios.post('/members/class-member-assignments/undo', {
+        members_adventurer_id: member.id,
+        })
+
+        showToast(`Undid last assignment for ${member.applicant_name}`, 'success')
+
+        // Refresh member list
+        await fetchMembers(selectedClub.value.id)
+    } catch (error) {
+        console.error('Undo failed:', error)
+        showToast(`Failed to undo assignment for ${member.applicant_name}`, 'error')
+    }
+}
+
 const unassignedMembers = computed(() =>
     members.value.filter(member => !member.club_classes || member.club_classes.length === 0)
 )
@@ -264,8 +280,8 @@ const membersInClass = (classId) => {
         )
     })
 }
-const classOptionsExcluding = (currentClassId) => {
-    return clubClasses.value.filter(c => c.id !== currentClassId)
+const classOptionsExcluding = (currentClassOrder) => {
+    return clubClasses.value.filter(c => c.class_order >= currentClassOrder)
 }
 onMounted(fetchClubs)
 </script>
@@ -452,7 +468,7 @@ onMounted(fetchClubs)
                             {{ clubClass.class_name }} (Order: {{ clubClass.class_order }})
                         </h3>
                         <p class="text-sm text-gray-700 mb-2">
-                            Assigned Staff: {{ clubClass.assigned_staff.name }}
+                            Assigned Staff: {{ clubClass.assigned_staff?.name }}
                         </p>
                         <div v-if="membersInClass(clubClass.id).length === 0" class="text-gray-600">
                             No members assigned to this class.
@@ -471,29 +487,35 @@ onMounted(fetchClubs)
                                 v-for="member in membersInClass(clubClass.id)"
                                 :key="member.id"
                             >
-                                <td class="p-2">{{ member.applicant_name }}</td>
-                                <td class="p-2">{{ member.age }}</td>
-                                <td class="p-2">
-                                <select
-                                    v-model="member.assigned_class"
-                                    class="border p-1 rounded"
-                                >
-                                <option
-                                    v-for="targetClass in classOptionsExcluding(clubClass.id)"
-                                    :key="targetClass.id"
-                                    :value="targetClass.id"
-                                >
-                                    {{ targetClass.class_name }}
-                                    </option>
-                                </select>
-                                &nbsp;&nbsp;
-                                <button
-                                    @click="() => assignMemberToClass(member)"
-                                    :disabled="!member.assigned_class"
-                                    class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                                >
-                                    Assign
-                                </button>
+                                <td class="p-2 text-center">{{ member.applicant_name }}</td>
+                                <td class="p-2 text-center">{{ member.age }}</td>
+                                <td class="p-2 text-center">
+                                    <select
+                                        v-model="member.assigned_class"
+                                        class="border p-1 rounded"
+                                    >
+                                    <option
+                                        v-for="targetClass in classOptionsExcluding(clubClass.class_order)"
+                                        :key="targetClass.id"
+                                        :value="targetClass.id"
+                                    >
+                                        {{ targetClass.class_name }}
+                                        </option>
+                                    </select>
+                                    &nbsp;&nbsp;
+                                    <button
+                                        @click="() => assignMemberToClass(member)"
+                                        :disabled="!member.assigned_class"
+                                        class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                                    >
+                                        Assign
+                                    </button>
+                                    <button
+                                        @click="() => undoAssignment(member)"
+                                        class="ml-2 px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+                                        >
+                                        Undo last
+                                    </button>
                                 </td>
                             </tr>
                             </tbody>

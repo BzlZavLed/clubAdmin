@@ -184,6 +184,55 @@ class MemberAdventurerController extends Controller
         return response()->json(['message' => 'Member assigned successfully']);
     }
 
+    public function undoLastAssignment(Request $request)
+    {
+        $request->validate([
+            'members_adventurer_id' => 'required|exists:members_adventurers,id',
+        ]);
+
+        $memberId = $request->members_adventurer_id;
+
+        // Get the last active assignment (not undone)
+        $lastAssignment = DB::table('class_member_adventurer')
+            ->where('members_adventurer_id', $memberId)
+            ->whereNull('undone_at')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if (!$lastAssignment) {
+            return response()->json(['message' => 'No assignment found to undo'], 404);
+        }
+
+        // Mark it as undone
+        DB::table('class_member_adventurer')
+            ->where('id', $lastAssignment->id)
+            ->update([
+                'active' => false,
+                'finished_at' => now(),
+                'undone_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        // Restore the previous assignment (if any, also not undone)
+        $previousAssignment = DB::table('class_member_adventurer')
+            ->where('members_adventurer_id', $memberId)
+            ->whereNull('undone_at')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if ($previousAssignment) {
+            DB::table('class_member_adventurer')
+                ->where('id', $previousAssignment->id)
+                ->update([
+                    'active' => true,
+                    'finished_at' => null,
+                    'updated_at' => now(),
+                ]);
+        }
+
+        return response()->json(['message' => 'Undo successful']);
+    }
+
     /* private function generateMemberDoc(MemberAdventurer $member, string $outputDir): string
     {
         $templatePath = storage_path('app/templates/template_adventurer_new.docx');

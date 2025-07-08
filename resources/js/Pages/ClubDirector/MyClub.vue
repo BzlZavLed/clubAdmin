@@ -20,7 +20,8 @@ const user = computed(() => page.props?.auth?.user ?? {})
 const church_name = user.value.church_name || 'Unknown Church'
 const clubId = user.value.club_id || null
 const clubClasses = computed(() => {
-    return user.value.clubs[0]?.club_classes ?? []
+    const classes = user.value.clubs[0]?.club_classes ?? []
+    return [...classes].sort((a, b) => a.class_order - b.class_order)
 })
 const clubStaff = computed(() => {
     return user.value.clubs[0]?.staff_adventurers ?? []
@@ -166,7 +167,7 @@ onMounted(fetchClubs)
 
     <div v-if="(clubId == null && clubs.length == 0) || isEditing || addClub" class="space-y-6">
         <p class="text-gray-700">
-            {{ isEditing ? 'Edit your club below:' : 'No club assigned. Please create your club below.' }}
+            {{ isEditing ? 'Edit your club below:' : 'Create your club below.' }}
         </p>
 
         <form class="space-y-4" @submit.prevent="isEditing ? updateClub() : submitClub()">
@@ -197,10 +198,11 @@ onMounted(fetchClubs)
                 <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
                     {{ isEditing ? 'Update Club' : 'Save Club' }}
                 </button>
-                <button v-if="isEditing" type="button" @click="() => {
-    isEditing = false;
-    editingClubId = null
-}" class="text-sm text-gray-600 hover:underline">
+                <button v-if="isEditing || addClub" type="button" @click="() => {
+                        isEditing = false;
+                        addClub = false;
+                        editingClubId = null
+                    }" class="text-sm text-gray-600 hover:underline">
                     Cancel Edit
                 </button>
             </div>

@@ -123,6 +123,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
     Route::post('/members/export-zip', [MemberAdventurerController::class, 'exportZip'])->name('members.export-zip');
     Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember']);
+    Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment']);
+
 
     //Staff
     Route::get('/clubs/{id}/staff', [StaffAdventurerController::class, 'byClub'])->name('clubs.staff');
