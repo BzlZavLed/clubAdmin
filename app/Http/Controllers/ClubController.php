@@ -69,7 +69,10 @@ class ClubController extends Controller
 
         $club->update($validated);
 
-        // Inertia expects a redirect with optional flash messages
+        if ($request->wantsJson()) {
+            return response()->json(['message' => 'Club updated successfully.']);
+        }
+        
         return redirect()->back()->with('success', 'Club updated successfully.');
     }
 
@@ -118,9 +121,8 @@ class ClubController extends Controller
     public function getClubsByChurchId($churchId)
     {
         $clubs = Club::where('church_id', $churchId)
-            ->select('id', 'club_name', 'club_type')
-            ->orderBy('club_name')
-            ->get();
+        ->orderBy('club_name')
+        ->get();
 
         return response()->json($clubs);
     }

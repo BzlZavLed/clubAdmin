@@ -13,14 +13,11 @@ use App\Http\Controllers\ParentMemberController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\ClubClassController;
 use App\Http\Controllers\LLMQueryController as AIQueryController;
+
 // ---------------------------------
 // 🔗 Public Routes
 // ---------------------------------
 
-// http://localhost:8000/church-form  -> register a church
-// http://localhost:8000/force-logout  -> force logout user
-// http://localhost:8000/register -> register a user
-// http://localhost:8000/register-parent -> register a parent
 Route::get('/', fn() => redirect('/login'));
 
 Route::post('/logout', function () {
@@ -31,19 +28,17 @@ Route::post('/logout', function () {
 })->name('logout');
 
 Route::get('/force-logout', function () {
-    \Auth::logout();
+    Auth::logout();
     request()->session()->invalidate();
     request()->session()->regenerateToken();
-
     return redirect('/login');
 });
 
 Route::get('/churches', [ChurchController::class, 'index']);
 Route::post('/churches', [ChurchController::class, 'store']);
 
-Route::get('/church-form', function () {
-    return Inertia::render('Church/ChurchForm');
-})->name('church.form');
+Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('church.form');
+
 // ---------------------------------
 // 🔐 Guest Routes (Parent Self-Registration)
 // ---------------------------------
@@ -51,23 +46,19 @@ Route::middleware(['guest'])->group(function () {
     Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
     Route::post('/register-parent', [ParentAuthController::class, 'register']);
     Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
-
 });
 
 // ---------------------------------
 // 🟣 Parent-Only Routes (Authenticated)
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
-    Route::get('/parent/apply', function () {
-        return Inertia::render('Parent/Apply', [
-            'auth_user' => auth()->user(),
-            'clubs' => Club::all(),
-        ]);
-    })->name('parent.apply');
+    Route::get('/parent/apply', fn() => Inertia::render('Parent/Apply', [
+        'auth_user' => auth()->user(),
+        'clubs' => Club::all(),
+    ]))->name('parent.apply');
 
     Route::post('/parent/apply', [MemberAdventurerController::class, 'store'])->name('parent.apply.submit');
     Route::get('/parent/children', [ParentMemberController::class, 'index'])->name('parent-links.index.parent');
-
 });
 
 // ---------------------------------
@@ -98,23 +89,28 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         Inertia::render('ClubDirector/Staff', ['auth_user' => auth()->user()])
     )->name('club.staff');
 
-
-
-
-
     // 🟢 API Endpoints
 
     // Clubs
     Route::get('/clubs/by-ids', [ClubController::class, 'getByIds'])->name('clubs.by-ids');
     Route::get('/club', [ClubController::class, 'show']);
-    Route::post('/club', [ClubController::class, 'store']);
+    Route::post('/club', [ClubController::class, 'store'])->name('club.store');
     Route::put('/club', [ClubController::class, 'update'])->name('club.update');
     Route::delete('/club', [ClubController::class, 'destroy'])->name('club.destroy');
-    Route::resource('club-classes', ClubClassController::class);
-    Route::get('/church/{churchId}/clubs', [ClubController::class, 'getClubsByChurchId'])->name('church.clubs');;
+
+    Route::resource('club-classes', ClubClassController::class)->names([
+        'index' => 'club-classes.index',
+        'store' => 'club-classes.store',
+        'create' => 'club-classes.create',
+        'show' => 'club-classes.show',
+        'edit' => 'club-classes.edit',
+        'update' => 'club-classes.update',
+        'destroy' => 'club-classes.destroy',
+    ]);
+
+    Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId'])->name('clubs.classes');
+    Route::get('/church/{churchId}/clubs', [ClubController::class, 'getClubsByChurchId'])->name('church.clubs');
     Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
-    // Classes
-    Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId']);
 
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
@@ -122,40 +118,43 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
     Route::post('/members/export-zip', [MemberAdventurerController::class, 'exportZip'])->name('members.export-zip');
-    Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember']);
-    Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment']);
+    Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember'])->name('members.assign');
+    Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment'])->name('members.assignment.undo');
 
-
-    //Staff
+    // Staff
     Route::get('/clubs/{id}/staff', [StaffAdventurerController::class, 'byClub'])->name('clubs.staff');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::post('/staff/create-user', [StaffAdventurerController::class, 'createUser'])->name('staff.createUser');
-    Route::get('/staff/{id}/export-word', [StaffAdventurerController::class, 'exportWord']);
+    Route::get('/staff/{id}/export-word', [StaffAdventurerController::class, 'exportWord'])->name('staff.export-word');
     Route::post('/staff/update-user-account', [StaffAdventurerController::class, 'updateStaffUserAccount'])->name('staff.updateUserAccount');
     Route::post('/staff/update-staff-account', [StaffAdventurerController::class, 'updateStaffAccount'])->name('staff.updateStaffAccount');
 
-    //AI
+    // AI
     Route::post('/nl-query', [AIQueryController::class, 'handle']);
 
+    // Export ZIP
+    Route::post('/export/{type}/zip', [ExportController::class, 'exportZip'])->name('export.zip');
 
-    //Export ZIP
-    Route::post('/export/{type}/zip', [ExportController::class, 'exportZip']);
-
-    // 📂 Debug route (optional)
+    // Debug route
     Route::get('/test-template-access', function () {
         $path = storage_path('app/templates/template_adventurer_new.docx');
         return file_exists($path) ? response()->download($path) : 'Template not found.';
     });
 });
 
+// ---------------------------------
+// 🔓 Authenticated (non-role-specific)
+// ---------------------------------
 Route::middleware(['auth'])->group(function () {
-    Route::get('/club-personal/dashboard', fn() => Inertia::render('ClubPersonalDashboard'))
-        ->name('clubPersonal.dashboard');
+    Route::get(
+        '/club-personal/dashboard',
+        fn() =>
+        Inertia::render('ClubPersonalDashboard')
+    )->name('clubPersonal.dashboard');
 
-    Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord']);
+    Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
+
     Route::get('/clubs/by-church-name', [ClubController::class, 'getByChurchNames'])->name('clubs.by-church-name');
-
-
 });
 
 require __DIR__ . '/auth.php';
