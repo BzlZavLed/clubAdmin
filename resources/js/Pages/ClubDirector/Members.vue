@@ -421,7 +421,7 @@ onMounted(fetchClubs)
                 <div v-else class="space-y-6">
                     <h2 class="text-lg font-semibold mb-4">Unassigned Members</h2>
                     <div v-if="unassignedMembers.length === 0" class="text-gray-600">
-                        All members are assigned to a class.
+                        No members to assign
                     </div>
                     <div v-else class="border rounded p-4 bg-gray-100">
                         <table class="w-full border text-sm">
