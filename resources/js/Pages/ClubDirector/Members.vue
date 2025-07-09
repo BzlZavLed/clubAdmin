@@ -98,6 +98,7 @@ const fetchMembers = async (clubId) => {
 const fetchClasses = async (clubId) => {
     try {
         clubClasses.value = await fetchClubClasses(clubId)
+        console.log('Club classes fetched:', clubClasses.value)
     } catch (error) {
         console.error('Failed to fetch club classes:', error)
     }
@@ -403,13 +404,13 @@ onMounted(fetchClubs)
                                     <td class="p-2">
                                         <select v-model="member.assigned_class" class="border p-2 rounded">
                                             <option value="" disabled selected>Select class</option>
-                                            <option v-for="targetClass in classOptionsExcluding(clubClass.id)"
+                                            <option v-for="targetClass in clubClasses"
                                                 :key="targetClass.id" :value="targetClass.id">
-                                                {{ targetClass.class_name }}
+                                                {{ targetClass.class_name }} - {{ targetClass.class_order }}
                                             </option>
                                         </select>
                                         &nbsp;&nbsp;
-                                        <button @click="() => assignMemberToClass(member)"
+                                        <button @click="() => assignToClass(member)"
                                             :disabled="!member.assigned_class"
                                             class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
                                             Assign
@@ -450,7 +451,7 @@ onMounted(fetchClubs)
                                             </option>
                                         </select>
                                         &nbsp;&nbsp;
-                                        <button @click="() => assignMemberToClass(member)"
+                                        <button @click="() => assignToClass(member)"
                                             :disabled="!member.assigned_class"
                                             class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
                                             Assign
