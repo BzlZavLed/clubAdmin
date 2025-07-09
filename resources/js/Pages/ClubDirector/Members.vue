@@ -467,15 +467,6 @@ onMounted(fetchClubs)
                 </div>
             </div>
 
-            <!-- TOAST -->
-            <transition name="fade">
-                <div v-if="toast.show" :class="[
-                    'fixed top-6 right-6 z-50 px-4 py-2 rounded shadow text-white',
-                    toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
-                ]">
-                    {{ toast.message }}
-                </div>
-            </transition>
 
             <!-- MODALS -->
             <MemberRegistrationModal :show="showRegistrationForm" :clubs="clubs" :selectedClub="selectedClub"
