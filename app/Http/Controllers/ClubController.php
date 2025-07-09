@@ -72,7 +72,7 @@ class ClubController extends Controller
         if ($request->wantsJson()) {
             return response()->json(['message' => 'Club updated successfully.']);
         }
-        
+
         return redirect()->back()->with('success', 'Club updated successfully.');
     }
 
@@ -83,7 +83,6 @@ class ClubController extends Controller
 
         $club = Club::findOrFail($clubId);
 
-        // Confirm the user belongs to this club
         if (!$club->users()->where('user_id', auth()->id())->exists()) {
             abort(403);
         }
@@ -120,9 +119,10 @@ class ClubController extends Controller
 
     public function getClubsByChurchId($churchId)
     {
-        $clubs = Club::where('church_id', $churchId)
-        ->orderBy('club_name')
-        ->get();
+        $clubs = Club::with('clubClasses')
+            ->where('church_id', $churchId)
+            ->orderBy('club_name')
+            ->get();
 
         return response()->json($clubs);
     }
@@ -131,7 +131,7 @@ class ClubController extends Controller
     {
         $validated = $request->validate([
             'club_id' => 'required|exists:clubs,id',
-            'user_id' => 'required|exists:users,id', 
+            'user_id' => 'required|exists:users,id',
         ]);
 
         $user = User::findOrFail($validated['user_id']);

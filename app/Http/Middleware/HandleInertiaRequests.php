@@ -31,7 +31,23 @@ class HandleInertiaRequests extends Middleware
     {
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => fn() => $request->user()?->load(['clubs.clubClasses', 'church','clubs.staffAdventurers']),
+                'user' => fn() => $request->user()
+                    ? [
+                        'id' => $request->user()->id,
+                        'name' => $request->user()->name,
+                        'profile_type' => $request->user()->profile_type,
+                        'church_id' => $request->user()->church_id,
+                        'church_name' => $request->user()->church_name,
+                        'club_id' => $request->user()->club_id,
+                        // Optionally, minimal club info if really needed
+                        'clubs' => $request->user()->clubs->map(fn($club) => [
+                            'id' => $club->id,
+                            'club_name' => $club->club_name,
+                            'club_type' => $club->club_type,
+                            'church_name' => $club->church_name,
+                        ]),
+                    ]
+                    : null,
                 'is_in_club' => fn() => session('is_in_club', false),
                 'user_club_ids' => fn() => session('user_club_ids', []),
             ],

@@ -12,25 +12,14 @@ import {
     deleteClubById,
     selectUserClub,
     createClub,
-    updateClub as updateClubApi
+    updateClub as updateClubApi,
+    deleteClassById
 } from '@/Services/api'
 
 // 🧠 Auth state
 const { user } = useAuth()
 
 const { showToast } = useGeneral()
-// 🧠 Derived data
-const church_name = user.value.church_name || 'Unknown Church'
-const clubId = user.value.club_id || null
-
-const clubClasses = computed(() => {
-    const firstClub = clubs.value[0] ?? {}
-    return [...(firstClub.club_classes || [])].sort((a, b) => a.class_order - b.class_order)
-})
-
-const clubStaff = computed(() => {
-    return clubs.value[0]?.staff_adventurers ?? []
-})
 
 // 🧠 UI & state
 const isEditing = ref(false)
@@ -40,6 +29,16 @@ const clubs = ref([])
 const showClassModal = ref(false)
 const classToEdit = ref(null)
 const hasClub = ref(false)
+
+// 🧠 Derived data
+const church_name = user.value.church_name || 'Unknown Church'
+const clubId = user.value.club_id || null
+
+const clubStaff = computed(() => {
+    return clubs.value[0]?.staff_adventurers ?? []
+})
+
+
 
 // 🧠 Club form
 const clubForm = useForm({
@@ -54,6 +53,14 @@ const clubForm = useForm({
     club_type: ''
 })
 
+const selectedClubId = ref('')
+
+const filteredClubs = computed(() => {
+    return selectedClubId.value
+        ? clubs.value.filter(club => club.id === selectedClubId.value)
+        : clubs.value
+})
+
 // 🧠 Load clubs on mount
 const fetchClubs = async () => {
     try {
@@ -65,7 +72,7 @@ const fetchClubs = async () => {
         showToast('Clubs fetched successfully!')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error loading clubs')
+        showToast('Error loading clubs', 'error')
     }
 }
 
@@ -78,7 +85,7 @@ const submitClub = async () => {
         fetchClubs()
     } catch (error) {
         console.error(error)
-        showToast('Failed to create club')
+        showToast('Failed to create club', 'error')
     }
 }
 
@@ -112,19 +119,19 @@ const deleteClub = async (clubId) => {
         fetchClubs()
     } catch (error) {
         console.error('Failed to delete club:', error)
-        showToast('Error deleting club')
+        showToast('Error deleting club', 'error')
     }
 }
 
-const deleteCls = async (clubId) => {
+const deleteCls = async (classID) => {
     if (!confirm('Are you sure you want to delete this class?')) return
     try {
-        await deleteClubById(clubId) // Optional: separate class delete endpoint
+        await deleteClassById(classID)
         showToast('Class deleted successfully!')
         fetchClubs()
     } catch (error) {
         console.error('Failed to delete class:', error)
-        toast.error('Error deleting class')
+        showToast('Error deleting class', 'error')
     }
 }
 
@@ -132,7 +139,7 @@ const deleteCls = async (clubId) => {
 const selectClub = async (clubId) => {
     try {
         await selectUserClub(clubId, user.value.id)
-        toast.success('Club selected successfully!')
+        showToast('Club selected successfully!')
         await router.reload({ only: ['auth'] })
         refreshPage()
     } catch (error) {
@@ -295,10 +302,17 @@ onMounted(fetchClubs)
                             + Add Class
                         </button>
                     </div>
+                    <select v-model="selectedClubId" class="border rounded mb-6">
+                        <option value="">All Clubs</option>
+                        <option v-for="club in clubs" :key="club.id" :value="club.id">
+                            {{ club.club_name }}
+                        </option>
+                    </select>
 
                     <table class="min-w-full border rounded text-left border-collapse">
                         <thead class="bg-gray-100">
                             <tr>
+                                <th class="border-b px-4 py-2">Club</th>
                                 <th class="border-b px-4 py-2">Order</th>
                                 <th class="border-b px-4 py-2">Name</th>
                                 <th class="border-b px-4 py-2">Assigned Staff</th>
@@ -306,18 +320,22 @@ onMounted(fetchClubs)
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-if="clubClasses.length === 0">
-                                <td colspan="4" class="text-center py-4 text-gray-500">No classes yet.</td>
-                            </tr>
-                            <tr v-for="cls in clubClasses" :key="cls.id">
-                                <td class="px-4 py-2">{{ cls.class_order }}</td>
-                                <td class="px-4 py-2">{{ cls.class_name }}</td>
-                                <td class="px-4 py-2">{{ getStaffName(cls.assigned_staff_id) }}</td>
-                                <td class="p-2 space-x-2">
-                                    <button @click="editCls(cls)" class="text-blue-600 hover:underline">Edit</button>
-                                    <button @click="deleteCls(cls)" class="text-red-600 hover:underline">Delete</button>
-                                </td>
-                            </tr>
+                            <template v-for="club in filteredClubs" :key="club.id">
+                                <template v-for="cls in club.club_classes.slice().sort((a, b) => a.class_order - b.class_order)" :key="cls.id">
+                                    <tr>
+                                        <td class="px-4 py-2">{{ club.club_name }}</td>
+                                        <td class="px-4 py-2">{{ cls.class_order }}</td>
+                                        <td class="px-4 py-2">{{ cls.class_name }}</td>
+                                        <td class="px-4 py-2">{{ getStaffName(cls.assigned_staff_id) }}</td>
+                                        <td class="p-2 space-x-2">
+                                            <button @click="editCls(cls)"
+                                                class="text-blue-600 hover:underline">Edit</button>
+                                            <button @click="deleteCls(cls)"
+                                                class="text-red-600 hover:underline">Delete</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </template>
                         </tbody>
                     </table>
                 </div>
