@@ -98,7 +98,6 @@ const fetchMembers = async (clubId) => {
 const fetchClasses = async (clubId) => {
     try {
         clubClasses.value = await fetchClubClasses(clubId)
-        console.log('Club classes fetched:', clubClasses.value)
     } catch (error) {
         console.error('Failed to fetch club classes:', error)
     }
@@ -114,6 +113,8 @@ const onClubChange = async () => {
 
         await fetchMembers(selectedClub.value.id)
         await fetchClasses(selectedClub.value.id)
+
+
     }
 }
 
@@ -226,20 +227,23 @@ const toggleRegistrationForm = async () => {
 
 // Computed filters
 const unassignedMembers = computed(() =>
-    members.value.filter(member => !member.club_classes || member.club_classes.length === 0)
+    members.value.filter(member =>
+        !member.class_assignments ||
+        member.class_assignments.length === 0 ||
+        member.class_assignments.every(assignment => assignment.active === false)
+    )
 )
-
 const membersInClass = (classId) => {
     return members.value.filter(member =>
-        Array.isArray(member.club_classes) &&
-        member.club_classes.some(
-            c => c.pivot && c.pivot.active && c.pivot.club_class_id === classId
+        Array.isArray(member.class_assignments) &&
+        member.class_assignments.some(
+            a => a.active && a.club_class_id === classId
         )
     )
 }
 
 const classOptionsExcluding = (currentClassOrder) => {
-    return clubClasses.value.filter(c => c.class_order >= currentClassOrder)
+    return clubClasses.value.filter(c => c.class_order > currentClassOrder)
 }
 
 onMounted(fetchClubs)
@@ -399,9 +403,9 @@ onMounted(fetchClubs)
                             </thead>
                             <tbody>
                                 <tr v-for="member in unassignedMembers" :key="member.id">
-                                    <td class="p-2">{{ member.applicant_name }}</td>
-                                    <td class="p-2">{{ member.age }}</td>
-                                    <td class="p-2">
+                                    <td class="p-2 text-center">{{ member.applicant_name }}</td>
+                                    <td class="p-2 text-center">{{ member.age }}</td>
+                                    <td class="p-2 text-center">
                                         <select v-model="member.assigned_class" class="border p-2 rounded">
                                             <option value="" disabled selected>Select class</option>
                                             <option v-for="targetClass in clubClasses"

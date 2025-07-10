@@ -12,17 +12,19 @@ import {
     createStaffUser,
     updateStaffStatus,
     updateUserStatus,
-    downloadStaffZip
+    downloadStaffZip,
+    fetchClubClasses
 } from '@/Services/api'
 
 // ✅ Auth & general utilities
 const { user } = useAuth()
-const { toast } = useGeneral()
+const { toast, showToast } = useGeneral()
 
 // ✅ State
 const selectedClub = ref(null)
 const clubs = ref([])
 const staff = ref([])
+const clubClasses = ref([])
 const sub_roles = ref([])
 const createStaffModalVisible = ref(false)
 const selectedUserForStaff = ref(null)
@@ -65,24 +67,45 @@ watch(staff, (newVal) => {
 // ✅ Fetch club(s)
 const fetchClubs = async () => {
     try {
-        const response = await fetchClubsByIds([user.value.club_id])
-        clubs.value = response
+        //clubs.value = await fetchClubsByIds(user.value.clubs.map(club => club.id))
+        clubs.value = await fetchClubsByIds([user.value.club_id])
+        showToast('Clubs loaded')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        toast.error('Error loading clubs')
+        showToast('Error loading clubs','error')
     }
 }
 
+/* const fetchClubs = async () => {
+    try {
+        clubs.value = await fetchClubsByIds(user.value.clubs.map(club => club.id))
+    } catch (error) {
+        console.error('Failed to fetch clubs:', error)
+        showToast('Error loading clubs', 'error')
+    }
+} */
+
+// Fetch club classes
+const fetchClasses = async (clubId) => {
+    try {
+        clubClasses.value = await fetchClubClasses(clubId)
+        console.log('Club classes fetched:', clubClasses.value)
+    } catch (error) {
+        console.error('Failed to fetch club classes:', error)
+    }
+}
 // ✅ Fetch staff list
 const fetchStaff = async (clubId) => {
     try {
         const data = await fetchStaffByClubId(clubId)
         staff.value = data.staff
+        console.log('Staff fetched:', staff.value)
         sub_roles.value = data.sub_role_users
-        toast.success('Staff loaded')
+        fetchClasses(clubId)
+        showToast('Staff loaded')
     } catch (error) {
         console.error('Failed to fetch staff:', error)
-        toast.error('Error loading staff')
+        showToast('Error loading staff', 'error')
     }
 }
 
@@ -196,6 +219,9 @@ const toggleSelectAll = () => {
         : selectedStaffIds.value.clear()
 }
 
+const toggleExpanded = (id) => {
+    expandedRows.value.has(id) ? expandedRows.value.delete(id) : expandedRows.value.add(id)
+}
 onMounted(fetchClubs)
 </script>
 
@@ -278,7 +304,7 @@ onMounted(fetchClubs)
                                 <td class="p-2">{{ person.name }}</td>
                                 <td class="p-2">{{ person.dob.slice(0, 10) }}</td>
                                 <td class="p-2">{{ person.address }}</td>
-                                <td class="p-2">{{ person.assigned_class }}</td>
+                                <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td>
                                 <td class="p-2">{{ person.cell_phone }}</td>
                                 <td class="p-2">{{ person.email }}</td>
                                 <td class="p-2">{{ person.status }}</td>
@@ -457,7 +483,7 @@ onMounted(fetchClubs)
                 </div>
             </div>
         </div>
-        <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
+        <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub" :club-classes="clubClasses"
             @close="createStaffModalVisible = false" @submitted="fetchStaff(selectedClub.id)" />
     </PathfinderLayout>
 </template>

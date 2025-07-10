@@ -9,10 +9,16 @@ use Illuminate\Http\Request;
 use App\Services\DocumentExportService;
 use DB;
 use Auth;
+use App\Models\ClubClass;
 class StaffAdventurerController extends Controller
 {
     public function store(Request $request)
     {
+        $request->merge([
+            'sterling_volunteer_completed' => strtolower($request->input('sterling_volunteer_completed')),
+            'has_health_limitation' => strtolower($request->input('has_health_limitation')),
+            'unlawful_sexual_conduct' => strtolower($request->input('unlawful_sexual_conduct')),
+        ]);
         $validated = $request->validate([
             'date_of_record' => 'required|date',
             'name' => 'required|string|max:255',
@@ -26,7 +32,7 @@ class StaffAdventurerController extends Controller
             'email' => 'nullable|email|max:255',
             'club_name' => 'required|string|max:255',
             'club_id' => 'required|exists:clubs,id',
-            'assigned_class' => 'nullable|string|max:100',
+            'assigned_class' => 'nullable|exists:club_classes,id',
 
             // Health limitation section
             'has_health_limitation' => 'required|in:yes,no',
@@ -67,6 +73,11 @@ class StaffAdventurerController extends Controller
 
         $staff = StaffAdventurer::create($validated);
 
+        if (!empty($validated['assigned_class'])) {
+            ClubClass::where('id', $validated['assigned_class'])
+                ->update(['assigned_staff_id' => $staff->id]);
+        }
+
         return redirect()->back()->with([
             'success' => 'Staff member registered.',
             'new_staff' => $staff->only(['id', 'name', 'email', 'club_id']),
@@ -77,7 +88,9 @@ class StaffAdventurerController extends Controller
     public function update(Request $request, $id)
     {
         $staff = StaffAdventurer::findOrFail($id);
-
+        $request->merge([
+            'sterling_volunteer_completed' => strtolower($request->input('sterling_volunteer_completed'))
+        ]);
         $validated = $request->validate([
             'date_of_record' => 'required|date',
             'name' => 'required|string|max:255',
@@ -128,7 +141,10 @@ class StaffAdventurerController extends Controller
         ]);
 
         $staff->update($validated);
-
+        if (!empty($validated['assigned_class'])) {
+            ClubClass::where('id', $validated['assigned_class'])
+                ->update(['assigned_staff_id' => $staff->id]);
+        }
         return response()->json(['message' => 'Staff member updated.', 'staff' => $staff]);
     }
 
@@ -166,7 +182,9 @@ class StaffAdventurerController extends Controller
         }
 
         // Fetch staff for the club
-        $staff = $staffModel::where('club_id', $clubId)->get();
+        $staff = $staffModel::with('assignedClasses')
+            ->where('club_id', $clubId)
+            ->get();
 
         $staff = $staff->map(function ($staffMember) use ($club) {
             $exists = User::where('email', $staffMember->email)->exists();

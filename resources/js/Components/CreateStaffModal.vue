@@ -9,6 +9,10 @@ const props = defineProps({
     clubName: String,
     churchName: String,
     club: Object,
+    clubClasses: {
+        type: Array,
+        default: () => []
+    }
 });
 const emit = defineEmits(["close", "submitted"]);
 const today = new Date().toISOString().split('T')[0]
@@ -118,7 +122,17 @@ const onSubmit = () => {
                     <label>Email</label><input v-model="form.email" type="email" class="w-full p-2 border rounded" />
                 </div>
                 <div>
-                    <label>Assigned Class</label><input v-model="form.assigned_class" type="text" class="w-full p-2 border rounded" />
+                    <label>Assigned Class</label>
+                    <select v-model="form.assigned_class" class="w-full p-2 border rounded">
+                        <option value="">-- Select Class --</option>
+                        <option
+                        v-for="cls in clubClasses"
+                        :key="cls.id"
+                        :value="cls.id"
+                        >
+                        {{ cls.class_name }}
+                        </option>
+                    </select>
                 </div>
                 <div>
                     <label>Church name</label><input v-model="form.church_name" type="church_name" class="w-full p-2 border rounded" />

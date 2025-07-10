@@ -81,7 +81,7 @@ class MemberAdventurerController extends Controller
         if ($club->club_type === 'adventurers') {
             $members = MemberAdventurer::where('club_id', $id)
                 ->where('status', 'active')
-                ->with(['clubClasses'])
+                ->with(['classAssignments.clubClass'])
                 ->orderBy('created_at', 'desc')
                 ->get();
         } else {

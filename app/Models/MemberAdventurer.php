@@ -67,5 +67,9 @@ class MemberAdventurer extends Model
     {
         return $this->clubClasses()->withPivot('assigned_at', 'finished_at', 'active')->orderBy('pivot_assigned_at', 'desc');
     }
+    public function classAssignments()
+    {
+        return $this->hasMany(ClassMemberAdventurer::class, 'members_adventurer_id');
+    }
 
 }
