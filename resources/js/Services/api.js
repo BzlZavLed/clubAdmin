@@ -159,3 +159,10 @@ export const updateUserStatus = async (userId, status_code) => {
         status_code,
     });
 };
+
+export const updateStaffAssignedClass = async (staffId, classId) => {
+    return await axios.put(route('staff.update-class'), {
+    staff_id: staffId,
+    class_id: classId,
+    })
+}

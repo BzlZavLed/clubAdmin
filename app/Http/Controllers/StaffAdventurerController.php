@@ -376,7 +376,27 @@ class StaffAdventurerController extends Controller
             'success' => true
         ]);
     }
-
+    public function updateAssignedClass(Request $request)
+    {
+        $request->validate([
+            'staff_id' => 'required|exists:staff_adventurers,id',
+            'class_id' => 'required|exists:club_classes,id',
+        ]);
+    
+        $staff = StaffAdventurer::findOrFail($request->staff_id);
+        $staff->assigned_class = $request->class_id;
+        $staff->save();
+    
+        // Optionally update the club_class.assigned_staff_id (1:1 assignment)
+        ClubClass::where('assigned_staff_id', $staff->id)
+            ->where('id', '!=', $request->class_id)
+            ->update(['assigned_staff_id' => null]);
+    
+        ClubClass::where('id', $request->class_id)
+            ->update(['assigned_staff_id' => $staff->id]);
+    
+        return response()->json(['message' => 'Assigned class updated']);
+    }
     /* private function generateStaffDoc(StaffAdventurer $staff, string $outputDir): string
     {
         $templatePath = storage_path('app/templates/template_staff_new.docx');

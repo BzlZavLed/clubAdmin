@@ -1,8 +1,15 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch,watchEffect } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import CreateStaffModal from '@/Components/CreateStaffModal.vue'
-
+import { 
+    PlusIcon,
+    MinusIcon,
+    UserPlusIcon,
+    DocumentArrowDownIcon,
+    TrashIcon,
+    ArrowPathIcon 
+} from '@heroicons/vue/24/solid'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 
@@ -13,7 +20,8 @@ import {
     updateStaffStatus,
     updateUserStatus,
     downloadStaffZip,
-    fetchClubClasses
+    fetchClubClasses,
+    updateStaffAssignedClass
 } from '@/Services/api'
 
 // ✅ Auth & general utilities
@@ -222,6 +230,40 @@ const toggleSelectAll = () => {
 const toggleExpanded = (id) => {
     expandedRows.value.has(id) ? expandedRows.value.delete(id) : expandedRows.value.add(id)
 }
+
+const assignedClassChanges = ref({}) // { [staffId]: selectedClassId }
+const isUpdatingClass = ref({}) // optional: track per-row loading state
+
+const saveAssignedClass = async (staff) => {
+    const newClassId = assignedClassChanges.value[staff.id]
+    if (!newClassId || newClassId === staff.assigned_classes?.[0]?.id) return
+
+    try {
+        isUpdatingClass.value[staff.id] = true
+        await updateStaffAssignedClass(staff.id, newClassId)
+        showToast('Class updated!')
+        console.log(`Updated class for staff ${staff.name} to class ID ${newClassId}`)
+        console.log(staff.club_id)
+        await fetchStaff(staff.club_id)
+    } catch (err) {
+        console.error('Failed to update class', err)
+        showToast('Error updating class', 'error')
+    } finally {
+        isUpdatingClass.value[staff.id] = false
+    }
+}
+watchEffect(() => {
+    staff.value.forEach(person => {
+        // Convert to int if it's numeric, otherwise try matching by name
+        const assignedId = parseInt(person.assigned_classes[0].id)
+        if (!isNaN(assignedId)) {
+        assignedClassChanges.value[person.id] = assignedId
+        } else if (typeof person.assigned_class === 'string') {
+        const match = clubClasses.value.find(cls => cls.class_name === person.assigned_class)
+        if (match) assignedClassChanges.value[person.id] = match.id
+        }
+    })
+})
 onMounted(fetchClubs)
 </script>
 
@@ -280,58 +322,86 @@ onMounted(fetchClubs)
                     <span class="text-sm text-gray-600">{{ selectedStaffIds.size }} selected</span>
                 </div>
 
-                <table class="w-full text-sm border rounded overflow-hidden">
+                <table class="w-full border rounded overflow-hidden text-sm">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
                             <th class="p-2 text-left">Name</th>
                             <th class="p-2 text-left">DOB</th>
                             <th class="p-2 text-left">Address</th>
-                            <th class="p-2 text-left">Class</th>
+                            <!-- <th class="p-2 text-left">Class</th> -->
                             <th class="p-2 text-left">Cell</th>
                             <th class="p-2 text-left">Email</th>
                             <th class="p-2 text-left">Status</th>
                             <th class="p-2 text-left">Actions</th>
+                            <th class="p-2 text-left">Assigned Class</th>
+
                         </tr>
                     </thead>
                     <tbody>
                         <template v-for="person in filteredStaff" :key="person.id">
                             <tr class="border-t">
-                                <td class="p-2">
+                                <td class="p-2 text-xs">
                                     <input type="checkbox" :value="person.id" :checked="selectedStaffIds.has(person.id)"
                                         @change="() => toggleSelectStaff(person.id)" />
                                 </td>
-                                <td class="p-2">{{ person.name }}</td>
-                                <td class="p-2">{{ person.dob.slice(0, 10) }}</td>
-                                <td class="p-2">{{ person.address }}</td>
-                                <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td>
-                                <td class="p-2">{{ person.cell_phone }}</td>
-                                <td class="p-2">{{ person.email }}</td>
-                                <td class="p-2">{{ person.status }}</td>
-                                <td class="p-2">
-                                    <button class="text-green-600 hover:underline" @click="toggleExpanded(person.id)">
-                                        {{ expandedRows.has(person.id) ? 'Hide' : 'Details' }}
-                                    </button>&nbsp;&nbsp;
-                                    <button class="text-orange-600 hover:underline" @click="createUser(person)"
-                                        v-if="person.create_user">
-                                        Create user
+                                <td class="p-2 text-xs">{{ person.name }}</td>
+                                <td class="p-2 text-xs">{{ person.dob.slice(0, 10) }}</td>
+                                <td class="p-2 text-xs">{{ person.address }}</td>
+                                <!-- <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td> -->
+                                <td class="p-2 text-xs">{{ person.cell_phone }}</td>
+                                <td class="p-2 text-xs">{{ person.email }}</td>
+                                <td class="p-2 text-xs">{{ person.status }}</td>
+                                <td class="p-2 space-x-1 text-xs">
+                                    <!-- Toggle Details -->
+                                    <button @click="toggleExpanded(person.id)" class="text-green-600" title="Toggle details">
+                                        <component
+                                        :is="expandedRows.has(person.id) ? MinusIcon : PlusIcon"
+                                        class="w-4 h-4 inline"
+                                        />
                                     </button>
-                                    &nbsp;&nbsp;
-                                    <button class="text-blue-600 hover:underline"
-                                        @click="downloadWord(person.id)">Download form</button>
-                                    &nbsp;&nbsp;
-                                    <template v-if="person.status === 'active'">
-                                        <button @click="updateStaffAccount(person, 301)"
-                                            class="text-red-600 hover:underline">
-                                            Delete staff
-                                        </button>
-                                    </template>
-                                    <template v-else>
-                                        <button @click="() => updateStaffAccount(person, 423)"
-                                            class="text-gray-600 hover:underline">
-                                            Reactivate
-                                        </button>
-                                    </template>
+
+                                    <!-- Create User -->
+                                    <button v-if="person.create_user" @click="createUser(person)" class="text-orange-600" title="Create user">
+                                        <UserPlusIcon class="w-4 h-4 inline" />
+                                    </button>
+
+                                    <!-- Download Word Form -->
+                                    <button @click="downloadWord(person.id)" class="text-blue-600" title="Download Word form">
+                                        <DocumentArrowDownIcon class="w-4 h-4 inline" />
+                                    </button>
+
+                                    <!-- Delete or Reactivate -->
+                                    <button v-if="person.status === 'active'" @click="updateStaffAccount(person, 301)" class="text-red-600" title="Delete staff">
+                                        <TrashIcon class="w-4 h-4 inline" />
+                                    </button>
+                                    <button v-else @click="() => updateStaffAccount(person, 423)" class="text-gray-600" title="Reactivate staff">
+                                        <ArrowPathIcon class="w-4 h-4 inline" />
+                                    </button>
+                                    </td>
+
+
+                                <td class="p-2">
+                                    <select
+                                        v-model="assignedClassChanges[person.id]"
+                                        class="border p-1 rounded text-xs">
+                                            <option disabled value="">Select class</option>
+                                            <option
+                                                v-for="cls in clubClasses"
+                                                :key="cls.id"
+                                                :value="cls.id"
+                                            >
+                                                {{ cls.class_name }}
+                                            </option>
+                                    </select>
+
+                                    <button
+                                        @click="() => saveAssignedClass(person)"
+                                        :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
+                                        class="ml-2 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                                    >
+                                        {{ isUpdatingClass[person.id] ? 'Saving...' : 'Save' }}
+                                    </button>
                                 </td>
                             </tr>
 
@@ -450,12 +520,12 @@ onMounted(fetchClubs)
                         </thead>
                         <tbody>
                             <tr v-for="user in filteredUsers" :key="user.id" class="border-t">
-                                <td class="p-2">{{ user.name }}</td>
-                                <td class="p-2">{{ user.email }}</td>
-                                <td class="p-2 capitalize">{{ user.sub_role }}</td>
-                                <td class="p-2">{{ user.church_name }}</td>
-                                <td class="p-2">{{ user.status }}</td>
-                                <td class="p-2">
+                                <td class="p-2 text-xs">{{ user.name }}</td>
+                                <td class="p-2 text-xs">{{ user.email }}</td>
+                                <td class="p-2 capitalize text-xs">{{ user.sub_role }}</td>
+                                <td class="p-2 text-xs">{{ user.church_name }}</td>
+                                <td class="p-2 text-xs">{{ user.status }}</td>
+                                <td class="p-2 text-xs">
                                     <template v-if="user.status === 'active'">
                                         <button @click="updateStaffUserAccount(user, 301)"
                                             class="text-red-600 hover:underline">
