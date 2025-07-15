@@ -7,7 +7,9 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\Request;
 use App\Services\DocumentExportService;
-use DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+
 use Auth;
 use App\Models\ClubClass;
 class StaffAdventurerController extends Controller
@@ -32,8 +34,14 @@ class StaffAdventurerController extends Controller
             'email' => 'nullable|email|max:255',
             'club_name' => 'required|string|max:255',
             'club_id' => 'required|exists:clubs,id',
-            'assigned_class' => 'nullable|exists:club_classes,id',
-
+            'assigned_class' => [
+                        'nullable',
+                        'integer',
+                        Rule::exists('club_classes', 'id')
+                            ->where(function ($query) use ($request) {
+                                $query->where('club_id', $request->input('club_id'));
+                            }),
+                    ],
             // Health limitation section
             'has_health_limitation' => 'required|in:yes,no',
             'health_limitation_description' => 'nullable|string',
@@ -86,67 +94,125 @@ class StaffAdventurerController extends Controller
     }
 
     public function update(Request $request, $id)
-    {
-        $staff = StaffAdventurer::findOrFail($id);
-        $request->merge([
-            'sterling_volunteer_completed' => strtolower($request->input('sterling_volunteer_completed'))
-        ]);
-        $validated = $request->validate([
-            'date_of_record' => 'required|date',
-            'name' => 'required|string|max:255',
-            'dob' => 'required|date',
-            'address' => 'required|string|max:255',
-            'city' => 'required|string|max:100',
-            'state' => 'required|string|max:50',
-            'zip' => 'required|string|max:20',
-            'cell_phone' => 'nullable|string|max:20',
-            'church_name' => 'required|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'club_name' => 'required|string|max:255',
-            'assigned_class' => 'nullable|string|max:100',
+{
+    $staff = StaffAdventurer::findOrFail($id);
 
-            // Health limitation section
-            'has_health_limitation' => 'required|in:yes,no',
-            'health_limitation_description' => 'nullable|string',
+    // Preserve original email before updates
+    $originalEmail = $staff->email;
 
-            // Experience section (array of 3 objects)
-            'experiences' => 'nullable|array',
-            'experiences.*.position' => 'nullable|string|max:255',
-            'experiences.*.organization' => 'nullable|string|max:255',
-            'experiences.*.date' => 'nullable|string|max:100',
+    // Normalize inputs
+    $request->merge([
+        'sterling_volunteer_completed' => strtolower($request->input('sterling_volunteer_completed')),
+        'has_health_limitation' => strtolower($request->input('has_health_limitation')),
+        'unlawful_sexual_conduct' => strtolower($request->input('unlawful_sexual_conduct')),
+    ]);
 
-            // Award instruction abilities
-            'award_instruction_abilities' => 'nullable|array',
-            'award_instruction_abilities.*.name' => 'nullable|string|max:255',
-            'award_instruction_abilities.*.level' => 'nullable|in:T,A,I',
+    $validated = $request->validate([
+        'date_of_record' => 'required|date',
+        'name' => 'required|string|max:255',
+        'dob' => 'required|date',
+        'address' => 'required|string|max:255',
+        'city' => 'required|string|max:100',
+        'state' => 'required|string|max:50',
+        'zip' => 'required|string|max:20',
+        'cell_phone' => 'nullable|string|max:20',
+        'church_name' => 'required|string|max:255',
+        'email' => 'nullable|email|max:255',
+        'club_name' => 'required|string|max:255',
+        'assigned_class' => [
+            'nullable',
+            'integer',
+            Rule::exists('club_classes', 'id')->where(fn($q) => $q->where('club_id', $staff->club_id)),
+        ],
 
-            // Unlawful conduct
-            'unlawful_sexual_conduct' => 'required|in:yes,no',
-            'unlawful_sexual_conduct_records' => 'nullable|array',
-            'unlawful_sexual_conduct_records.*.date_place' => 'nullable|string|max:255',
-            'unlawful_sexual_conduct_records.*.type' => 'nullable|string|max:255',
-            'unlawful_sexual_conduct_records.*.reference' => 'nullable|string|max:255',
+        // Health limitation section
+        'has_health_limitation' => 'required|in:yes,no',
+        'health_limitation_description' => 'nullable|string',
 
-            // Background check
-            'sterling_volunteer_completed' => 'required|in:yes,no',
+        // Experience
+        'experiences' => 'nullable|array',
+        'experiences.*.position' => 'nullable|string|max:255',
+        'experiences.*.organization' => 'nullable|string|max:255',
+        'experiences.*.date' => 'nullable|string|max:100',
 
-            // References
-            'reference_pastor' => 'nullable|string|max:255',
-            'reference_elder' => 'nullable|string|max:255',
-            'reference_other' => 'nullable|string|max:255',
+        // Award instruction abilities
+        'award_instruction_abilities' => 'nullable|array',
+        'award_instruction_abilities.*.name' => 'nullable|string|max:255',
+        'award_instruction_abilities.*.level' => 'nullable|in:T,A,I',
 
-            // Signature
-            'applicant_signature' => 'required|string|max:255',
-            'application_signed_date' => 'required|date',
-        ]);
+        // Unlawful conduct
+        'unlawful_sexual_conduct' => 'required|in:yes,no',
+        'unlawful_sexual_conduct_records' => 'nullable|array',
+        'unlawful_sexual_conduct_records.*.date_place' => 'nullable|string|max:255',
+        'unlawful_sexual_conduct_records.*.type' => 'nullable|string|max:255',
+        'unlawful_sexual_conduct_records.*.reference' => 'nullable|string|max:255',
 
+        // Background check
+        'sterling_volunteer_completed' => 'required|in:yes,no',
+
+        // References
+        'reference_pastor' => 'nullable|string|max:255',
+        'reference_elder' => 'nullable|string|max:255',
+        'reference_other' => 'nullable|string|max:255',
+
+        // Signature
+        'applicant_signature' => 'required|string|max:255',
+        'application_signed_date' => 'required|date',
+    ]);
+
+    // Begin transaction
+    DB::beginTransaction();
+
+    try {
+        // Check for email conflict (excluding current staff/user)
+        $newEmail = $validated['email'];
+
+        $emailExistsInStaff = StaffAdventurer::where('email', $newEmail)
+            ->where('id', '!=', $staff->id)
+            ->exists();
+
+        $emailExistsInUsers = User::where('email', $newEmail)
+            ->where('email', '!=', $originalEmail)
+            ->exists();
+
+        if ($emailExistsInStaff || $emailExistsInUsers) {
+            throw new \Exception("The email address already exists in the system.");
+        }
+
+        // Update staff
         $staff->update($validated);
+
+        // Update class assignment if applicable
         if (!empty($validated['assigned_class'])) {
             ClubClass::where('id', $validated['assigned_class'])
                 ->update(['assigned_staff_id' => $staff->id]);
         }
-        return response()->json(['message' => 'Staff member updated.', 'staff' => $staff]);
+
+        // Update user if one exists for the original email
+        $user = User::where('email', $originalEmail)->first();
+        if ($user) {
+            $user->update([
+                'name' => $validated['name'],
+                'church_name' => $validated['church_name'],
+                'email' => $newEmail,
+            ]);
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'message' => 'Staff member updated.',
+            'staff' => $staff,
+            'user' => $user ?? null,
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'message' => 'Update failed.',
+            'error' => $e->getMessage(),
+        ], 422);
     }
+}
 
     public function destroy($id)
     {

@@ -8,7 +8,8 @@ import {
     UserPlusIcon,
     DocumentArrowDownIcon,
     TrashIcon,
-    ArrowPathIcon 
+    ArrowPathIcon,
+    PencilIcon 
 } from '@heroicons/vue/24/solid'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -35,6 +36,7 @@ const staff = ref([])
 const clubClasses = ref([])
 const sub_roles = ref([])
 const createStaffModalVisible = ref(false)
+const staffToEdit = ref(null)
 const selectedUserForStaff = ref(null)
 const expandedRows = ref(new Set())
 const selectAll = ref(false)
@@ -84,20 +86,17 @@ const fetchClubs = async () => {
     }
 }
 
-/* const fetchClubs = async () => {
-    try {
-        clubs.value = await fetchClubsByIds(user.value.clubs.map(club => club.id))
-    } catch (error) {
-        console.error('Failed to fetch clubs:', error)
-        showToast('Error loading clubs', 'error')
-    }
-} */
+
+const openEditStaffModal = (staff) => {
+    selectedUserForStaff.value = null
+    staffToEdit.value = staff
+    createStaffModalVisible.value = true
+}
 
 // Fetch club classes
 const fetchClasses = async (clubId) => {
     try {
         clubClasses.value = await fetchClubClasses(clubId)
-        console.log('Club classes fetched:', clubClasses.value)
     } catch (error) {
         console.error('Failed to fetch club classes:', error)
     }
@@ -107,7 +106,6 @@ const fetchStaff = async (clubId) => {
     try {
         const data = await fetchStaffByClubId(clubId)
         staff.value = data.staff
-        console.log('Staff fetched:', staff.value)
         sub_roles.value = data.sub_role_users
         fetchClasses(clubId)
         showToast('Staff loaded')
@@ -264,6 +262,10 @@ watchEffect(() => {
         }
     })
 })
+const closeModal = () => {
+    createStaffModalVisible.value = false
+    staffToEdit.value = null
+}
 onMounted(fetchClubs)
 </script>
 
@@ -331,7 +333,7 @@ onMounted(fetchClubs)
                             <th class="p-2 text-left">Address</th>
                             <!-- <th class="p-2 text-left">Class</th> -->
                             <th class="p-2 text-left">Cell</th>
-                            <th class="p-2 text-left">Email</th>
+                            <th class="p-2 text-left w-16">Email</th>
                             <th class="p-2 text-left">Status</th>
                             <th class="p-2 text-left">Actions</th>
                             <th class="p-2 text-left">Assigned Class</th>
@@ -350,7 +352,11 @@ onMounted(fetchClubs)
                                 <td class="p-2 text-xs">{{ person.address }}</td>
                                 <!-- <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td> -->
                                 <td class="p-2 text-xs">{{ person.cell_phone }}</td>
-                                <td class="p-2 text-xs">{{ person.email }}</td>
+                                <td class="p-2 text-xs w-16 truncate">
+                                    <a :href="`mailto:${person.email}`" class="text-blue-600 hover:underline block">
+                                        {{ person.email }}
+                                    </a>
+                                </td>
                                 <td class="p-2 text-xs">{{ person.status }}</td>
                                 <td class="p-2 space-x-1 text-xs">
                                     <!-- Toggle Details -->
@@ -378,7 +384,10 @@ onMounted(fetchClubs)
                                     <button v-else @click="() => updateStaffAccount(person, 423)" class="text-gray-600" title="Reactivate staff">
                                         <ArrowPathIcon class="w-4 h-4 inline" />
                                     </button>
-                                    </td>
+                                    <button class="text-indigo-600 hover:underline" @click="openEditStaffModal(person)">
+                                        <PencilIcon class="w-4 h-4 inline" />
+                                    </button>
+                                </td>
 
 
                                 <td class="p-2">
@@ -406,7 +415,7 @@ onMounted(fetchClubs)
                             </tr>
 
                             <tr v-if="expandedRows.has(person.id)" class="bg-gray-50 border-t">
-                                <td colspan="7" class="p-4 text-gray-700">
+                                <td colspan="10" class="p-4 text-gray-700">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div><strong>City/State/ZIP:</strong> {{ person.city }}, {{ person.state }} {{
                                             person.zip }}</div>
@@ -529,7 +538,7 @@ onMounted(fetchClubs)
                                     <template v-if="user.status === 'active'">
                                         <button @click="updateStaffUserAccount(user, 301)"
                                             class="text-red-600 hover:underline">
-                                            Delete Account
+                                            <TrashIcon class="w-4 h-4 inline" />
                                         </button>
                                         &nbsp;&nbsp;
                                         <button v-if="createStaffMap[user.id]" class="text-green-600 hover:underline"
@@ -553,7 +562,15 @@ onMounted(fetchClubs)
                 </div>
             </div>
         </div>
-        <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub" :club-classes="clubClasses"
-            @close="createStaffModalVisible = false" @submitted="fetchStaff(selectedClub.id)" />
+        <CreateStaffModal
+            :show="createStaffModalVisible"
+            :user="selectedUserForStaff"
+            :club="selectedClub"
+            :club-classes="clubClasses"
+            :editing-staff="staffToEdit"
+            @close="closeModal"
+            @submitted="fetchStaff(selectedClub.id)"
+        />
+
     </PathfinderLayout>
 </template>

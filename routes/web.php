@@ -13,12 +13,14 @@ use App\Http\Controllers\ParentMemberController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\ClubClassController;
 use App\Http\Controllers\LLMQueryController as AIQueryController;
+use App\Http\Controllers\Auth\RegisteredUserController;
 
 // ---------------------------------
 // 🔗 Public Routes
 // ---------------------------------
 
 Route::get('/', fn() => redirect('/login'));
+Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
 
 Route::post('/logout', function () {
     Auth::logout();
@@ -129,6 +131,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/staff/update-user-account', [StaffAdventurerController::class, 'updateStaffUserAccount'])->name('staff.updateUserAccount');
     Route::post('/staff/update-staff-account', [StaffAdventurerController::class, 'updateStaffAccount'])->name('staff.updateStaffAccount');
     Route::put('/staff/update-class', [StaffAdventurerController::class, 'updateAssignedClass'])->name('staff.update-class');
+    Route::put('/staff/{id}', [StaffAdventurerController::class, 'update'])->name('staff.update');
 
     // AI
     Route::post('/nl-query', [AIQueryController::class, 'handle']);

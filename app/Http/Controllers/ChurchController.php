@@ -27,6 +27,7 @@ class ChurchController extends Controller
             'email' => 'required|email|max:255',
             'pastor_name' => 'nullable|string',
             'pastor_email' => 'nullable|email|max:255',
+            'conference' => 'nullable|string',
         ]);
 
         $church = Church::updateOrCreate(

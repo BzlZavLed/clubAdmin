@@ -18,8 +18,10 @@ import {
 
 // 🧠 Auth state
 const { user } = useAuth()
+console.log('User', user.value)
 
 const { showToast } = useGeneral()
+const today = new Date().toISOString().split("T")[0]
 
 // 🧠 UI & state
 const isEditing = ref(false)
@@ -46,9 +48,9 @@ const clubForm = useForm({
     club_name: '',
     church_name: user.value.church_name,
     director_name: user.value.name,
-    creation_date: '',
-    pastor_name: '',
-    conference_name: '',
+    creation_date: today,
+    pastor_name: user.value.pastor_name,
+    conference_name: user.value.conference_name || '',
     conference_region: '',
     club_type: ''
 })
@@ -68,7 +70,6 @@ const fetchClubs = async () => {
         const data = await fetchClubsByChurchId(user.value.church_id)
         clubs.value = [...data]
         hasClub.value = data.length > 0
-        console.log('Clubs fetched:', clubs.value)
         showToast('Clubs fetched successfully!')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
@@ -174,9 +175,9 @@ const startCreatingClub = () => {
         club_name: '',
         church_name: user.value.church_name,
         director_name: user.value.name,
-        creation_date: '',
-        pastor_name: '',
-        conference_name: '',
+        creation_date: today,
+        pastor_name: user.value.pastor_name,
+        conference_name: user.value.conference_name || '',
         conference_region: '',
         club_type: ''
     })
@@ -198,11 +199,11 @@ onMounted(fetchClubs)
             <form class="space-y-4" @submit.prevent="isEditing ? updateClub() : submitClub()">
                 <div v-for="field in [
                     { key: 'club_name', label: 'Club Name' },
-                    { key: 'church_name', label: 'Church Name' },
+                    { key: 'church_name', label: 'Church Name' , readonly: true },
                     { key: 'director_name', label: 'Director Name', readonly: true },
                     { key: 'creation_date', label: 'Date of Creation', type: 'date' },
-                    { key: 'pastor_name', label: 'Pastor Name' },
-                    { key: 'conference_name', label: 'Conference Name' },
+                    { key: 'pastor_name', label: 'Pastor Name', readonly: true },
+                    { key: 'conference_name', label: 'Conference Name', readonly: true },
                     { key: 'conference_region', label: 'Conference Region' }
                 ]" :key="field.key">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>

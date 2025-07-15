@@ -20,6 +20,18 @@ export function useGeneral() {
         }
     };
 
+    const showError = (err, fallbackMessage = 'Something went wrong') => {
+        let errorMessage = fallbackMessage
+
+        if (err?.response?.data?.message) {
+            errorMessage = err.response.data.error || err.response.data.message;
+        } else if (err?.message) {
+            errorMessage = err.message
+        }
+
+        toast.error(errorMessage)
+    }
+
     const isLoading = ref(false);
 
     const startLoading = () => {
@@ -36,5 +48,6 @@ export function useGeneral() {
         isLoading,
         startLoading,
         stopLoading,
+        showError
     };
 }

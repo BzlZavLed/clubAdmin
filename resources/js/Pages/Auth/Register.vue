@@ -9,6 +9,7 @@ import { defineProps,computed, watch } from "vue";
 
 const props = defineProps({
     churches: Array,
+    subRoles: Array,
 });
 
 const form = useForm({
@@ -84,11 +85,11 @@ watch(
 
         <div v-if="form.profile_type === 'club_personal'">
             <label for="sub_role" class="block text-sm font-medium text-gray-700">Sub Role</label>
-            <select v-model="form.sub_role" id="sub_role" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
+            <select v-model="form.sub_role" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
                 <option value="">Select Sub Role</option>
-                <option value="treasurer">Treasurer</option>
-                <option value="secretary">Secretary</option>
-                <option value="adviser">Staff</option>
+                <option v-for="role in subRoles" :key="role.id" :value="role.key">
+                    {{ role.label }}
+                </option>
             </select>
             <InputError class="mt-2" :message="form.errors.sub_role" />
         </div>
@@ -105,8 +106,12 @@ watch(
         </div>
 
         <div class="flex items-center justify-between pt-2">
+            <Link :href="route('church.form')" class="text-sm text-yellow-600 hover:underline" v-if="churches.length == 0">
+                Create new church
+            </Link>
+
             <Link :href="route('login')" class="text-sm text-yellow-600 hover:underline">
-            Already registered?
+                Already registered?
             </Link>
 
             <PrimaryButton class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md" :class="{ 'opacity-25': form.processing }" :disabled="form.processing">

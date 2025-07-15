@@ -39,6 +39,9 @@ class HandleInertiaRequests extends Middleware
                         'church_id' => $request->user()->church_id,
                         'church_name' => $request->user()->church_name,
                         'club_id' => $request->user()->club_id,
+                        'pastor_name' => optional($request->user()->church)->pastor_name,
+                        'conference_name' => optional($request->user()->church)->conference,
+
                         // Optionally, minimal club info if really needed
                         'clubs' => $request->user()->clubs->map(fn($club) => [
                             'id' => $club->id,

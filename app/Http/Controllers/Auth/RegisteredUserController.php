@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\SubRole;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
@@ -19,9 +20,12 @@ class RegisteredUserController extends Controller
     public function create(): Response
     {
         $churches = Church::select('id', 'church_name')->orderBy('church_name')->get();
+        $subRoles = SubRole::all();
+
 
         return Inertia::render('Auth/Register', [
             'churches' => $churches,
+            'subRoles' => $subRoles,
         ]);
     }
 

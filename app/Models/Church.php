@@ -14,6 +14,7 @@ class Church extends Model
         'email',
         'pastor_name',
         'pastor_email',
+        'conference',
     ];
     public function clubs()
     {

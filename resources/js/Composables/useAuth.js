@@ -4,7 +4,6 @@ import { usePage } from "@inertiajs/vue3";
 
 export function useAuth() {
     const page = usePage();
-
     const user = computed(() => page.props?.auth?.user ?? {});
     const church = computed(() => page.props?.auth?.church_name ?? "");
     const isInClub = computed(() => page.props?.auth?.is_in_club ?? false);

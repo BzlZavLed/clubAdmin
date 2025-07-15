@@ -4,7 +4,14 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import MemberRegistrationModal from '@/Components/MemberRegistrationModal.vue'
 import DeleteMemberModal from '@/Components/DeleteMemberModal.vue'
-
+import { 
+    PlusIcon,
+    MinusIcon,
+    UserPlusIcon,
+    DocumentArrowDownIcon,
+    TrashIcon,
+    ArrowPathIcon 
+} from '@heroicons/vue/24/solid'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import { formatDate } from '@/Helpers/general'
@@ -340,13 +347,22 @@ onMounted(fetchClubs)
                                 <td class="p-2">{{ member.parent_cell }}</td>
                                 <td class="p-2">
                                     <button class="text-green-600 hover:underline" @click="toggleExpanded(member.id)">
-                                        {{ expandedRows.has(member.id) ? 'Hide' : 'Details' }}
+                                        <component
+                                        :is="expandedRows.has(member.id) ? MinusIcon : PlusIcon"
+                                        class="w-4 h-4 inline"
+                                        />
                                     </button> &nbsp;&nbsp;
                                     <button class="text-red-600 hover:underline"
-                                        @click="deleteMember(member)">Delete</button>
+                                        @click="deleteMember(member)">
+                                        <TrashIcon class="w-4 h-4 inline" />
+                                    </button>
                                     &nbsp;&nbsp;
                                     <button class="text-blue-600 hover:underline"
-                                        @click="downloadWord(member.id)">Download form</button>
+                                        @click="downloadWord(member.id)">  
+                                        <DocumentArrowDownIcon class="w-4 h-4 inline" />
+                                    </button>
+
+                                    
                                 </td>
                             </tr>
 

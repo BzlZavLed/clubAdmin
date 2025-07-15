@@ -166,3 +166,12 @@ export const updateStaffAssignedClass = async (staffId, classId) => {
     class_id: classId,
     })
 }
+export const submitStaffForm = async (formData, editingStaffId = null) => {
+    const url = editingStaffId
+        ? route('staff.update', editingStaffId)
+        : route('staff.store')
+    console.log('Submitting staff form to:', url);
+    const method = editingStaffId ? 'put' : 'post'
+
+    return await axios[method](url, formData)
+}
