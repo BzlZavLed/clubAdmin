@@ -167,6 +167,7 @@ export const updateStaffAssignedClass = async (staffId, classId) => {
     })
 }
 export const submitStaffForm = async (formData, editingStaffId = null) => {
+    console.log('Submitting method:', editingStaffId);
     const url = editingStaffId
         ? route('staff.update', editingStaffId)
         : route('staff.store')
