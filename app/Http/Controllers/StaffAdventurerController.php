@@ -17,9 +17,9 @@ class StaffAdventurerController extends Controller
     public function store(Request $request)
     {
         $request->merge([
-            'sterling_volunteer_completed' => strtolower($request->input('sterling_volunteer_completed')),
-            'has_health_limitation' => strtolower($request->input('has_health_limitation')),
-            'unlawful_sexual_conduct' => strtolower($request->input('unlawful_sexual_conduct')),
+            'has_health_limitation' => $request->input('has_health_limitation') === 'yes' ? 1 : 0,
+            'unlawful_sexual_conduct' => $request->input('unlawful_sexual_conduct') === 'yes' ? 1 : 0,
+            'sterling_volunteer_completed' => $request->input('sterling_volunteer_completed') === 'yes' ? 1 : 0,
         ]);
         $validated = $request->validate([
             'date_of_record' => 'required|date',
@@ -102,9 +102,9 @@ class StaffAdventurerController extends Controller
 
     // Normalize inputs
     $request->merge([
-        'sterling_volunteer_completed' => strtolower($request->input('sterling_volunteer_completed')),
-        'has_health_limitation' => strtolower($request->input('has_health_limitation')),
-        'unlawful_sexual_conduct' => strtolower($request->input('unlawful_sexual_conduct')),
+        'has_health_limitation' => $request->input('has_health_limitation') === 'yes' ? 1 : 0,
+        'unlawful_sexual_conduct' => $request->input('unlawful_sexual_conduct') === 'yes' ? 1 : 0,
+        'sterling_volunteer_completed' => $request->input('sterling_volunteer_completed') === 'yes' ? 1 : 0,
     ]);
 
     $validated = $request->validate([
