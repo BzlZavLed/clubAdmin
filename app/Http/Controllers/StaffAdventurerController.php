@@ -85,10 +85,9 @@ class StaffAdventurerController extends Controller
             // Ensure the email doesn't exist already
             if (!empty($email)) {
                 $emailExistsInStaff = StaffAdventurer::where('email', $email)->exists();
-                $emailExistsInUsers = User::where('email', $email)->exists();
 
-                if ($emailExistsInStaff || $emailExistsInUsers) {
-                    throw new \Exception("The email address already exists in the system.");
+                if ($emailExistsInStaff) {
+                    throw new \Exception("The email is already registered as a staff profile.");
                 }
             }
 
@@ -104,17 +103,21 @@ class StaffAdventurerController extends Controller
 
             // Create user (if email is present)
             $user = null;
-            if (!empty($email)) {
-                $user = User::create([
-                    'name' => $validated['name'],
-                    'email' => $email,
-                    'church_name' => $validated['church_name'],
-                    'church_id' => $request->input('church_id') ?? null,
-                    'club_id' => $validated['club_id'],
-                    'profile_type' => 'club_personal',
-                    'sub_role' => 'staff',
-                    'password' => bcrypt('password'), // Set default password (should be changed later)
-                ]);
+            if ($request->boolean('create_user_account')) {
+                if (!empty($email)) {
+                    $user = User::firstOrCreate(
+                        ['email' => $email],
+                        [
+                            'name' => $validated['name'],
+                            'church_name' => $validated['church_name'],
+                            'church_id' => $request->input('church_id') ?? null,
+                            'club_id' => $validated['club_id'],
+                            'profile_type' => 'club_personal',
+                            'sub_role' => 'staff',
+                            'password' => bcrypt('password'), // Placeholder password
+                        ]
+                    );
+                }
             }
 
             DB::commit();
@@ -301,8 +304,7 @@ class StaffAdventurerController extends Controller
             return $staffMember;
         });
 
-        $subRoleUsers = User::whereNotNull('sub_role')
-            ->where('club_id', $clubId)
+        $subRoleUsers = User::where('club_id', $clubId)
             ->get()
             ->map(function ($u) use ($staffModel, $clubId) {
                 $existsByName = $staffModel::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
@@ -504,6 +506,19 @@ class StaffAdventurerController extends Controller
             ->update(['assigned_staff_id' => $staff->id]);
 
         return response()->json(['message' => 'Assigned class updated']);
+    }
+
+    public function updatePassword(Request $request, $id)
+    {
+        $request->validate([
+            'password' => 'required|string|min:8'
+        ]);
+
+        $user = User::findOrFail($id);
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        return response()->json(['message' => 'Password updated successfully']);
     }
     /* private function generateStaffDoc(StaffAdventurer $staff, string $outputDir): string
     {

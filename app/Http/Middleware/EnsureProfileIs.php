@@ -11,6 +11,10 @@ class EnsureProfileIs
     public function handle(Request $request, Closure $next, string $role): Response
     {
         if ($request->user()?->profile_type !== $role) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Access denied.'], 403);
+            }
+
             return redirect('/dashboard')->with('error', 'Access denied.');
         }
 

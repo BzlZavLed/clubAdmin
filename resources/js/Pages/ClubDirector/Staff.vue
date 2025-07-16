@@ -105,6 +105,7 @@ const fetchClasses = async (clubId) => {
 const fetchStaff = async (clubId) => {
     try {
         const data = await fetchStaffByClubId(clubId)
+        console.log('Fetched staff data:', data)
         staff.value = data.staff
         sub_roles.value = data.sub_role_users
         fetchClasses(clubId)
@@ -128,11 +129,11 @@ const updateStaffAccount = async (staff, status_code) => {
 
     try {
         await updateStaffStatus(staff.id, status_code)
-        toast.success(`Staff ${action}d`)
+        showToast(`Staff ${action}d`)
         fetchStaff(staff.club_id)
     } catch (error) {
         console.error('Failed to update staff status:', error)
-        toast.error(`Failed to ${action} staff`)
+        showToast(`Failed to ${action} staff`,'error')
     }
 }
 
@@ -142,11 +143,11 @@ const updateStaffUserAccount = async (user, status_code) => {
 
     try {
         await updateUserStatus(user.id, status_code)
-        toast.success(`User ${action}d`)
+        showToast(`User ${action}d`)
         fetchStaff(user.club_id)
     } catch (error) {
         console.error('Failed to update user status:', error)
-        toast.error(`Failed to ${action} user`)
+        showToast(`Failed to ${action} user`,'error')
     }
 }
 
@@ -159,19 +160,19 @@ const createUser = async (person) => {
             church_id: person.church_id,
             club_id: person.club_id
         })
-        toast.success('User created successfully')
+        showToast('User created successfully')
         person.create_user = false
         fetchStaff(person.club_id)
     } catch (err) {
         console.error('Create user error:', err)
-        toast.error('Failed to create user')
+        showToast('Failed to create user','error')
     }
 }
 
 // ✅ Bulk actions
 const handleBulkAction = async (action) => {
     if (selectedStaffIds.value.size === 0) {
-        toast.error('No staff selected.')
+        showToast('No staff selected.')
         return
     }
 
@@ -253,7 +254,7 @@ const saveAssignedClass = async (staff) => {
 watchEffect(() => {
     staff.value.forEach(person => {
         // Convert to int if it's numeric, otherwise try matching by name
-        const assignedId = parseInt(person.assigned_classes[0].id)
+        const assignedId = parseInt(person.assigned_classes[0]?.id)
         if (!isNaN(assignedId)) {
         assignedClassChanges.value[person.id] = assignedId
         } else if (typeof person.assigned_class === 'string') {
@@ -297,7 +298,7 @@ onMounted(fetchClubs)
                         Active Staff
                     </button>
                     <button
-                        v-if="staff.some(person => person.status === 'deleted') && auth_user.profile_type === 'club_director'"
+                        v-if="staff.some(person => person.status === 'deleted') && user.profile_type === 'club_director'"
                         @click="activeStaffTab = 'deleted'"
                         :class="activeStaffTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
                         Inactive Staff
@@ -509,7 +510,7 @@ onMounted(fetchClubs)
                             Active Accounts
                         </button>
                         <button
-                            v-if="sub_roles.some(user => user.status === 'deleted') && auth_user.profile_type === 'club_director'"
+                            v-if="sub_roles.some(user => user.status === 'deleted') && user.profile_type === 'club_director'"
                             @click="activeTab = 'deleted'"
                             :class="activeTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
                             Inactive Accounts

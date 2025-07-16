@@ -14,6 +14,7 @@ use App\Http\Controllers\ExportController;
 use App\Http\Controllers\ClubClassController;
 use App\Http\Controllers\LLMQueryController as AIQueryController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\ProfileController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -133,6 +134,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::put('/staff/update-class', [StaffAdventurerController::class, 'updateAssignedClass'])->name('staff.update-class');
     Route::put('/staff/{id}', [StaffAdventurerController::class, 'update'])->name('staff.update');
 
+   
     // AI
     Route::post('/nl-query', [AIQueryController::class, 'handle']);
 
@@ -150,6 +152,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 // 🔓 Authenticated (non-role-specific)
 // ---------------------------------
 Route::middleware(['auth'])->group(function () {
+    //Update password
+    Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');
+
     Route::get(
         '/club-personal/dashboard',
         fn() =>

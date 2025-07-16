@@ -51,7 +51,9 @@ const form = useForm({
     reference_elder: "",
     reference_other: "",
     applicant_signature: "",
-    application_signed_date: ""
+    application_signed_date: "",
+    create_user_account: false,
+
 })
 
 watch(() => props.editingStaff, (staff) => {
@@ -81,6 +83,7 @@ watch(() => props.editingStaff, (staff) => {
             unlawful_sexual_conduct: staff.unlawful_sexual_conduct,
             unlawful_sexual_conduct_records: staff.unlawful_sexual_conduct_records || [{ date_place: "", type: "", reference: "" }],
             sterling_volunteer_completed: staff.sterling_volunteer_completed === true ? 'yes' : 'no',
+            create_user_account: false,
         })
     }
 }, { immediate: true })
@@ -358,6 +361,12 @@ const onSubmit = async () => {
                     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
                         Submit
                     </button>
+                </div>
+                <div class="col-span-2">
+                    <label class="inline-flex items-center mt-2">
+                        <input type="checkbox" v-model="form.create_user_account" class="mr-2" />
+                        Also create user account for this staff member
+                    </label>
                 </div>
                 <br>
                 <label>
