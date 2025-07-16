@@ -177,7 +177,7 @@ const onSubmit = async () => {
                             class="w-full p-2 border rounded" />
                     </div>
                     <div>
-                        <label>Club name</label><input v-model="form.club_name" type="club_name" 
+                        <label>Club name</label><input v-model="form.club_name" type="club_name" readonly
                             class="w-full p-2 border rounded" />
                     </div>
                 </div>

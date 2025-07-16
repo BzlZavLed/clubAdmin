@@ -77,19 +77,60 @@ class StaffAdventurerController extends Controller
             'application_signed_date' => 'required|date',
         ]);
 
-        $validated['status'] = 'active';
+        DB::beginTransaction();
 
-        $staff = StaffAdventurer::create($validated);
+        try {
+            $email = $validated['email'];
 
-        if (!empty($validated['assigned_class'])) {
-            ClubClass::where('id', $validated['assigned_class'])
-                ->update(['assigned_staff_id' => $staff->id]);
+            // Ensure the email doesn't exist already
+            if (!empty($email)) {
+                $emailExistsInStaff = StaffAdventurer::where('email', $email)->exists();
+                $emailExistsInUsers = User::where('email', $email)->exists();
+
+                if ($emailExistsInStaff || $emailExistsInUsers) {
+                    throw new \Exception("The email address already exists in the system.");
+                }
+            }
+
+            // Create staff
+            $validated['status'] = 'active';
+            $staff = StaffAdventurer::create($validated);
+
+            // Update assigned_class
+            if (!empty($validated['assigned_class'])) {
+                ClubClass::where('id', $validated['assigned_class'])
+                    ->update(['assigned_staff_id' => $staff->id]);
+            }
+
+            // Create user (if email is present)
+            $user = null;
+            if (!empty($email)) {
+                $user = User::create([
+                    'name' => $validated['name'],
+                    'email' => $email,
+                    'church_name' => $validated['church_name'],
+                    'church_id' => $request->input('church_id') ?? null,
+                    'club_id' => $validated['club_id'],
+                    'profile_type' => 'club_personal',
+                    'sub_role' => 'staff',
+                    'password' => bcrypt('password'), // Set default password (should be changed later)
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Staff member registered.',
+                'staff' => $staff->only(['id', 'name', 'email', 'club_id']),
+                'user' => $user,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Staff creation failed.',
+                'error' => $e->getMessage(),
+            ], 422);
         }
-
-        return redirect()->back()->with([
-            'success' => 'Staff member registered.',
-            'new_staff' => $staff->only(['id', 'name', 'email', 'club_id']),
-        ]);
 
     }
 
