@@ -9,11 +9,23 @@ use Illuminate\Http\Request;
 use App\Services\DocumentExportService;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
 use Auth;
 use App\Models\ClubClass;
+use App\Models\SubRole; // Import the SubRole model
 class StaffAdventurerController extends Controller
 {
+    public function staffView() //TEST VIEW LOADER
+    {
+        $subRoles = SubRole::all();
+        $authUser = Auth::user();
+
+        return Inertia::render('ClubDirector/Staff', [
+            'auth_user' => $authUser,
+            'sub_roles' => $subRoles,
+        ]);
+    }
     public function store(Request $request)
     {
         $request->merge([
@@ -267,7 +279,7 @@ class StaffAdventurerController extends Controller
         return response()->json(['message' => 'Staff member deleted.']);
     }
 
-    public function byClub($clubId)
+    public function byClub($clubId,$churchId = null)
     {
         $user = Auth::user();
         $authorizedClubIds = $user->clubs()->pluck('clubs.id')->toArray();
@@ -304,21 +316,26 @@ class StaffAdventurerController extends Controller
             return $staffMember;
         });
 
-        $subRoleUsers = User::where('club_id', $clubId)
-            ->get()
-            ->map(function ($u) use ($staffModel, $clubId) {
-                $existsByName = $staffModel::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
-                    ->where('club_id', $clubId)
-                    ->exists();
-
-                $existsByEmail = $staffModel::where('email', $u->email)
-                    ->where('club_id', $clubId)
-                    ->exists();
-
-                $u->create_staff = !($existsByName || $existsByEmail);
-
-                return $u;
-            });
+        $subRoleUsers = User::when($churchId, function ($query) use ($churchId) {
+            return $query->where('church_id', $churchId);
+        }, function ($query) use ($clubId) {
+            return $query->where('club_id', $clubId);
+        })
+        ->get()
+        ->map(function ($u) use ($staffModel, $clubId) {
+            $existsByName = $staffModel::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
+                ->where('club_id', $clubId)
+                ->exists();
+    
+            $existsByEmail = $staffModel::where('email', $u->email)
+                ->where('club_id', $clubId)
+                ->exists();
+    
+            $u->create_staff = !($existsByName || $existsByEmail);
+    
+            return $u;
+        });
+    
 
         return response()->json([
             'staff' => $staff,

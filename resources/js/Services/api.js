@@ -137,8 +137,8 @@ export const updateClub = async (payload) => {
     return await axios.put(route("club.update"), payload);
 };
 
-export const fetchStaffByClubId = async (clubId) => {
-    const response = await axios.get(route("clubs.staff", clubId));
+export const fetchStaffByClubId = async (clubId, churchId = null) => {
+    const response = await axios.get(route("clubs.staff", { clubId, churchId }));
     return response.data;
 };
 
@@ -167,11 +167,9 @@ export const updateStaffAssignedClass = async (staffId, classId) => {
     })
 }
 export const submitStaffForm = async (formData, editingStaffId = null) => {
-    console.log('Submitting method:', editingStaffId);
     const url = editingStaffId
         ? route('staff.update', editingStaffId)
         : route('staff.store')
-    console.log('Submitting staff form to:', url);
     const method = editingStaffId ? 'put' : 'post'
 
     return await axios[method](url, formData)

@@ -15,6 +15,7 @@ use App\Http\Controllers\ClubClassController;
 use App\Http\Controllers\LLMQueryController as AIQueryController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\ProfileController;
+use App\Models\SubRole;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -86,11 +87,12 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         Inertia::render('ClubDirector/Members', ['auth_user' => auth()->user()])
     )->name('club.members');
 
-    Route::get(
-        '/club-director/staff',
-        fn() =>
-        Inertia::render('ClubDirector/Staff', ['auth_user' => auth()->user()])
-    )->name('club.staff');
+    Route::get('/club-director/staff', function () {
+        return Inertia::render('ClubDirector/Staff', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('club.staff');
 
     // 🟢 API Endpoints
 
@@ -125,7 +127,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment'])->name('members.assignment.undo');
 
     // Staff
-    Route::get('/clubs/{id}/staff', [StaffAdventurerController::class, 'byClub'])->name('clubs.staff');
+    Route::get('/clubs/{clubId}/staff/{churchId?}', [StaffAdventurerController::class, 'byClub'])->name('clubs.staff');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::post('/staff/create-user', [StaffAdventurerController::class, 'createUser'])->name('staff.createUser');
     Route::get('/staff/{id}/export-word', [StaffAdventurerController::class, 'exportWord'])->name('staff.export-word');
@@ -154,6 +156,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 Route::middleware(['auth'])->group(function () {
     //Update password
     Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');
+    Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
 
     Route::get(
         '/club-personal/dashboard',

@@ -18,7 +18,6 @@ import {
 
 // 🧠 Auth state
 const { user } = useAuth()
-console.log('User', user.value)
 
 const { showToast } = useGeneral()
 const today = new Date().toISOString().split("T")[0]

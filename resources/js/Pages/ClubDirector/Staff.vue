@@ -1,19 +1,19 @@
 <script setup>
-import { ref, computed, onMounted, watch,watchEffect } from 'vue'
+import { ref, computed, onMounted, watch, watchEffect } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import CreateStaffModal from '@/Components/CreateStaffModal.vue'
-import { 
+import {
     PlusIcon,
     MinusIcon,
     UserPlusIcon,
     DocumentArrowDownIcon,
     TrashIcon,
     ArrowPathIcon,
-    PencilIcon 
+    PencilIcon,
 } from '@heroicons/vue/24/solid'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
-
+import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import {
     fetchClubsByIds,
     fetchStaffByClubId,
@@ -24,11 +24,18 @@ import {
     fetchClubClasses,
     updateStaffAssignedClass
 } from '@/Services/api'
+import { usePage } from '@inertiajs/vue3';
+
+const page = usePage();
+const subRoles = page.props.sub_roles;
+
 
 // ✅ Auth & general utilities
 const { user } = useAuth()
+const churchId = computed(() => user.value?.church_id || null)
+const userId = computed(() => user.value?.id || null)
 const { toast, showToast } = useGeneral()
-
+const showPasswordModal = ref(false)
 // ✅ State
 const selectedClub = ref(null)
 const clubs = ref([])
@@ -62,6 +69,13 @@ const filteredStaff = computed(() =>
     staff.value.filter(person => person.status === activeStaffTab.value)
 )
 
+
+const openEditStaffModal = (staff) => {
+    selectedUserForStaff.value = null
+    staffToEdit.value = staff
+    createStaffModalVisible.value = true
+}
+
 watch(sub_roles, (newVal) => {
     if (!newVal.some(user => user.status === 'deleted')) {
         activeTab.value = 'active'
@@ -77,20 +91,12 @@ watch(staff, (newVal) => {
 // ✅ Fetch club(s)
 const fetchClubs = async () => {
     try {
-        //clubs.value = await fetchClubsByIds(user.value.clubs.map(club => club.id))
         clubs.value = await fetchClubsByIds([user.value.club_id])
         showToast('Clubs loaded')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error loading clubs','error')
+        showToast('Error loading clubs', 'error')
     }
-}
-
-
-const openEditStaffModal = (staff) => {
-    selectedUserForStaff.value = null
-    staffToEdit.value = staff
-    createStaffModalVisible.value = true
 }
 
 // Fetch club classes
@@ -102,10 +108,9 @@ const fetchClasses = async (clubId) => {
     }
 }
 // ✅ Fetch staff list
-const fetchStaff = async (clubId) => {
+const fetchStaff = async (clubId, churchId = null) => {
     try {
-        const data = await fetchStaffByClubId(clubId)
-        console.log('Fetched staff data:', data)
+        const data = await fetchStaffByClubId(clubId, churchId)
         staff.value = data.staff
         sub_roles.value = data.sub_role_users
         fetchClasses(clubId)
@@ -133,7 +138,7 @@ const updateStaffAccount = async (staff, status_code) => {
         fetchStaff(staff.club_id)
     } catch (error) {
         console.error('Failed to update staff status:', error)
-        showToast(`Failed to ${action} staff`,'error')
+        showToast(`Failed to ${action} staff`, 'error')
     }
 }
 
@@ -147,7 +152,7 @@ const updateStaffUserAccount = async (user, status_code) => {
         fetchStaff(user.club_id)
     } catch (error) {
         console.error('Failed to update user status:', error)
-        showToast(`Failed to ${action} user`,'error')
+        showToast(`Failed to ${action} user`, 'error')
     }
 }
 
@@ -162,10 +167,10 @@ const createUser = async (person) => {
         })
         showToast('User created successfully')
         person.create_user = false
-        fetchStaff(person.club_id)
+        fetchStaff(person.club_id,churchId.value)
     } catch (err) {
         console.error('Create user error:', err)
-        showToast('Failed to create user','error')
+        showToast('Failed to create user', 'error')
     }
 }
 
@@ -189,7 +194,7 @@ const handleBulkAction = async (action) => {
         for (const id of ids) {
             await updateStaffStatus(id, statusCode)
         }
-        toast.success(`Staff ${isReactivate ? 'reactivated' : 'deactivated'}`)
+        showToast(`Staff ${isReactivate ? 'reactivated' : 'deactivated'}`)
         await fetchStaff(selectedClub.value.id)
         selectedStaffIds.value.clear()
         selectAll.value = false
@@ -204,14 +209,6 @@ const downloadWord = (staffId) => {
     window.open(`/staff/${staffId}/export-word`, '_blank')
 }
 
-const downloadSelectedZip = async () => {
-    try {
-        await downloadStaffZip(Array.from(selectedStaffIds.value))
-    } catch (error) {
-        console.error('Download failed:', error)
-        toast.error('Failed to download ZIP')
-    }
-}
 
 // ✅ Selection helpers
 const toggleSelectStaff = (id) => {
@@ -230,8 +227,8 @@ const toggleExpanded = (id) => {
     expandedRows.value.has(id) ? expandedRows.value.delete(id) : expandedRows.value.add(id)
 }
 
-const assignedClassChanges = ref({}) // { [staffId]: selectedClassId }
-const isUpdatingClass = ref({}) // optional: track per-row loading state
+const assignedClassChanges = ref({})
+const isUpdatingClass = ref({})
 
 const saveAssignedClass = async (staff) => {
     const newClassId = assignedClassChanges.value[staff.id]
@@ -241,8 +238,6 @@ const saveAssignedClass = async (staff) => {
         isUpdatingClass.value[staff.id] = true
         await updateStaffAssignedClass(staff.id, newClassId)
         showToast('Class updated!')
-        console.log(`Updated class for staff ${staff.name} to class ID ${newClassId}`)
-        console.log(staff.club_id)
         await fetchStaff(staff.club_id)
     } catch (err) {
         console.error('Failed to update class', err)
@@ -253,13 +248,12 @@ const saveAssignedClass = async (staff) => {
 }
 watchEffect(() => {
     staff.value.forEach(person => {
-        // Convert to int if it's numeric, otherwise try matching by name
         const assignedId = parseInt(person.assigned_classes[0]?.id)
         if (!isNaN(assignedId)) {
-        assignedClassChanges.value[person.id] = assignedId
+            assignedClassChanges.value[person.id] = assignedId
         } else if (typeof person.assigned_class === 'string') {
-        const match = clubClasses.value.find(cls => cls.class_name === person.assigned_class)
-        if (match) assignedClassChanges.value[person.id] = match.id
+            const match = clubClasses.value.find(cls => cls.class_name === person.assigned_class)
+            if (match) assignedClassChanges.value[person.id] = match.id
         }
     })
 })
@@ -267,6 +261,7 @@ const closeModal = () => {
     createStaffModalVisible.value = false
     staffToEdit.value = null
 }
+
 onMounted(fetchClubs)
 </script>
 
@@ -277,7 +272,8 @@ onMounted(fetchClubs)
             <h1 class="text-xl font-bold mb-4">Staff</h1>
             <div class="max-w-xl mb-6">
                 <label class="block mb-1 font-medium text-gray-700">Select a club</label>
-                <select v-model="selectedClub" @change="() => { if (selectedClub) { fetchStaff(selectedClub.id) } }"
+                <select v-model="selectedClub"
+                    @change="() => { if (selectedClub) { fetchStaff(selectedClub.id, churchId) } }"
                     class="w-full p-2 border rounded">
                     <option disabled value="">-- Choose a club --</option>
                     <option v-for="club in clubs" :key="club.id" :value="club">
@@ -361,28 +357,31 @@ onMounted(fetchClubs)
                                 <td class="p-2 text-xs">{{ person.status }}</td>
                                 <td class="p-2 space-x-1 text-xs">
                                     <!-- Toggle Details -->
-                                    <button @click="toggleExpanded(person.id)" class="text-green-600" title="Toggle details">
-                                        <component
-                                        :is="expandedRows.has(person.id) ? MinusIcon : PlusIcon"
-                                        class="w-4 h-4 inline"
-                                        />
+                                    <button @click="toggleExpanded(person.id)" class="text-green-600"
+                                        title="Toggle details">
+                                        <component :is="expandedRows.has(person.id) ? MinusIcon : PlusIcon"
+                                            class="w-4 h-4 inline" />
                                     </button>
 
                                     <!-- Create User -->
-                                    <button v-if="person.create_user" @click="createUser(person)" class="text-orange-600" title="Create user">
+                                    <button v-if="person.create_user" @click="createUser(person)"
+                                        class="text-orange-600" title="Create user">
                                         <UserPlusIcon class="w-4 h-4 inline" />
                                     </button>
 
                                     <!-- Download Word Form -->
-                                    <button @click="downloadWord(person.id)" class="text-blue-600" title="Download Word form">
+                                    <button @click="downloadWord(person.id)" class="text-blue-600"
+                                        title="Download Word form">
                                         <DocumentArrowDownIcon class="w-4 h-4 inline" />
                                     </button>
 
                                     <!-- Delete or Reactivate -->
-                                    <button v-if="person.status === 'active'" @click="updateStaffAccount(person, 301)" class="text-red-600" title="Delete staff">
+                                    <button v-if="person.status === 'active'" @click="updateStaffAccount(person, 301)"
+                                        class="text-red-600" title="Delete staff">
                                         <TrashIcon class="w-4 h-4 inline" />
                                     </button>
-                                    <button v-else @click="() => updateStaffAccount(person, 423)" class="text-gray-600" title="Reactivate staff">
+                                    <button v-else @click="() => updateStaffAccount(person, 423)" class="text-gray-600"
+                                        title="Reactivate staff">
                                         <ArrowPathIcon class="w-4 h-4 inline" />
                                     </button>
                                     <button class="text-indigo-600 hover:underline" @click="openEditStaffModal(person)">
@@ -392,24 +391,17 @@ onMounted(fetchClubs)
 
 
                                 <td class="p-2">
-                                    <select
-                                        v-model="assignedClassChanges[person.id]"
+                                    <select v-model="assignedClassChanges[person.id]"
                                         class="border p-1 rounded text-xs">
-                                            <option disabled value="">Select class</option>
-                                            <option
-                                                v-for="cls in clubClasses"
-                                                :key="cls.id"
-                                                :value="cls.id"
-                                            >
-                                                {{ cls.class_name }}
-                                            </option>
+                                        <option disabled value="">Select class</option>
+                                        <option v-for="cls in clubClasses" :key="cls.id" :value="cls.id">
+                                            {{ cls.class_name }}
+                                        </option>
                                     </select>
 
-                                    <button
-                                        @click="() => saveAssignedClass(person)"
+                                    <button @click="() => saveAssignedClass(person)"
                                         :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
-                                        class="ml-2 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                                    >
+                                        class="ml-2 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
                                         {{ isUpdatingClass[person.id] ? 'Saving...' : 'Save' }}
                                     </button>
                                 </td>
@@ -467,7 +459,7 @@ onMounted(fetchClubs)
                                                     :key="idx">
                                                     {{ record.type || 'N/A' }} — {{ record.date_place || 'Unknown Date/Place' }}<br />
                                                     <span class="text-gray-600">Reference: {{ record.reference || 'N/A'
-                                                    }}</span>
+                                                        }}</span>
                                                 </li>
                                             </ul>
                                         </div>
@@ -522,6 +514,7 @@ onMounted(fetchClubs)
                             <tr>
                                 <th class="p-2 text-left">Name</th>
                                 <th class="p-2 text-left">Email</th>
+                                <th class="p-2 text-left">Role</th>
                                 <th class="p-2 text-left">Sub Role</th>
                                 <th class="p-2 text-left">Church</th>
                                 <th class="p-2 text-left">Status</th>
@@ -532,20 +525,41 @@ onMounted(fetchClubs)
                             <tr v-for="user in filteredUsers" :key="user.id" class="border-t">
                                 <td class="p-2 text-xs">{{ user.name }}</td>
                                 <td class="p-2 text-xs">{{ user.email }}</td>
-                                <td class="p-2 capitalize text-xs">{{ user.sub_role }}</td>
+                                <td class="p-2 text-xs">{{ user.profile_type }}</td>
+
+
+                                <td class="p-2 capitalize text-xs">
+                                    <select id="sub_role" class="border p-1 rounded text-xs" v-model="user.sub_role">
+                                        <option value="">-- Select Sub Role --</option>
+                                        <option v-for="role in subRoles" :key="role.id" :value="role.key">
+                                            {{ role.label }}
+                                        </option>
+                                    </select>
+                                </td>
+
+
+                                <!-- <td class="p-2 capitalize text-xs">{{ user.sub_role }}</td> -->
                                 <td class="p-2 text-xs">{{ user.church_name }}</td>
                                 <td class="p-2 text-xs">{{ user.status }}</td>
                                 <td class="p-2 text-xs">
                                     <template v-if="user.status === 'active'">
-                                        <button @click="updateStaffUserAccount(user, 301)"
-                                            class="text-red-600 hover:underline">
-                                            <TrashIcon class="w-4 h-4 inline" />
-                                        </button>
-                                        &nbsp;&nbsp;
-                                        <button v-if="createStaffMap[user.id]" class="text-green-600 hover:underline"
-                                            @click="openStaffForm(user)">
-                                            Create Staff
-                                        </button>
+                                        <div class="flex items-center space-x-2">
+                                            <button @click="showPasswordModal = true"
+                                                class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                                                Change Password
+                                            </button>
+
+                                            <button @click="updateStaffUserAccount(user, 301)"
+                                                class="text-red-600 hover:underline" title="Delete record">
+                                                <TrashIcon class="w-4 h-4 inline" />
+                                            </button>
+
+                                            <button v-if="createStaffMap[user.id]"
+                                                class="text-green-600 hover:underline" @click="openStaffForm(user)"
+                                                title="Click to add user as staff">
+                                                <UserPlusIcon class="w-5 h-5 text-green-600" />
+                                            </button>
+                                        </div>
                                     </template>
                                     <template v-else-if="user.status !== 'active'">
                                         <button @click="updateStaffUserAccount(user, 423)"
@@ -563,15 +577,12 @@ onMounted(fetchClubs)
                 </div>
             </div>
         </div>
-        <CreateStaffModal
-            :show="createStaffModalVisible"
-            :user="selectedUserForStaff"
-            :club="selectedClub"
-            :club-classes="clubClasses"
-            :editing-staff="staffToEdit"
-            @close="closeModal"
-            @submitted="fetchStaff(selectedClub.id)"
-        />
+        <UpdatePasswordModal v-if="userId" :show="showPasswordModal" :user-id="userId"
+            @close="showPasswordModal = false" @updated="showToast('Password updated successfully')" />
+
+        <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
+            :club-classes="clubClasses" :editing-staff="staffToEdit" @close="closeModal"
+            @submitted="fetchStaff(selectedClub.id)" />
 
     </PathfinderLayout>
 </template>
