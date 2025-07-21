@@ -24,7 +24,7 @@ return new class extends Migration
         
             $table->timestamps();
         
-            $table->unique(['members_adventurer_id', 'club_class_id'], 'member_class_unique');
+            $table->unique(['members_adventurer_id', 'club_class_id', 'active'], 'member_class_active_unique');
         });
     }
 
