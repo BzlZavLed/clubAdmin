@@ -10,10 +10,14 @@ use App\Services\DocumentExportService;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Log;
+use App\Models\ClassMemberAdventurer; // Import the ClassMemberAdventurer model
+use App\Models\MemberAdventurer; // Import the MemberAdventurer model
 
 use Auth;
 use App\Models\ClubClass;
 use App\Models\SubRole; // Import the SubRole model
+
 class StaffAdventurerController extends Controller
 {
     public function staffView() //TEST VIEW LOADER
@@ -107,30 +111,49 @@ class StaffAdventurerController extends Controller
             $validated['status'] = 'active';
             $staff = StaffAdventurer::create($validated);
 
-            // Update assigned_class
+            // Update assigned_class if provided
             if (!empty($validated['assigned_class'])) {
                 ClubClass::where('id', $validated['assigned_class'])
                     ->update(['assigned_staff_id' => $staff->id]);
             }
 
-            // Create user (if email is present)
             $user = null;
-            if ($request->boolean('create_user_account')) {
-                if (!empty($email)) {
-                    $user = User::firstOrCreate(
-                        ['email' => $email],
+
+            // Create user if requested and email is provided
+            if ($request->boolean('create_user_account') && !empty($validated['email'])) {
+                $user = User::firstOrCreate(
+                    ['email' => $validated['email']],
+                    [
+                        'name' => $validated['name'],
+                        'church_name' => $validated['church_name'],
+                        'church_id' => $request->input('church_id'),
+                        'club_id' => $validated['club_id'],
+                        'profile_type' => 'club_personal',
+                        'sub_role' => 'staff',
+                        'password' => bcrypt('password'), // Consider sending a reset email later
+                    ]
+                );
+            }
+
+            // Link user to club if assigned_class exists and staff has an email
+            if (!empty($validated['assigned_class']) && !empty($staff->email)) {
+                $linkedUser = $user ?? User::where('email', $staff->email)->first();
+
+                if ($linkedUser) {
+                    DB::table('club_user')->updateOrInsert(
                         [
-                            'name' => $validated['name'],
-                            'church_name' => $validated['church_name'],
-                            'church_id' => $request->input('church_id') ?? null,
-                            'club_id' => $validated['club_id'],
-                            'profile_type' => 'club_personal',
-                            'sub_role' => 'staff',
-                            'password' => bcrypt('password'), // Placeholder password
+                            'user_id' => $linkedUser->id,
+                            'club_id' => $staff->club_id,
+                        ],
+                        [
+                            'status' => 'active',
+                            'updated_at' => now(),
+                            'created_at' => now(), // Optional; won't affect existing record
                         ]
                     );
                 }
             }
+
 
             DB::commit();
 
@@ -217,53 +240,60 @@ class StaffAdventurerController extends Controller
             'application_signed_date' => 'required|date',
         ]);
 
-        // Begin transaction
-        DB::beginTransaction();
-
         try {
-            // Check for email conflict (excluding current staff/user)
-            $newEmail = $validated['email'];
+            Log::info('Starting update for staff.', ['staff_id' => $staff->id]);
 
-            $emailExistsInStaff = StaffAdventurer::where('email', $newEmail)
-                ->where('id', '!=', $staff->id)
-                ->exists();
-
-            $emailExistsInUsers = User::where('email', $newEmail)
-                ->where('email', '!=', $originalEmail)
-                ->exists();
-
-            if ($emailExistsInStaff || $emailExistsInUsers) {
-                throw new \Exception("The email address already exists in the system.");
-            }
-
-            // Update staff
             $staff->update($validated);
+            Log::info('Staff updated.', ['staff_id' => $staff->id]);
 
-            // Update class assignment if applicable
             if (!empty($validated['assigned_class'])) {
                 ClubClass::where('id', $validated['assigned_class'])
                     ->update(['assigned_staff_id' => $staff->id]);
+                Log::info('Assigned class updated.', ['class_id' => $validated['assigned_class']]);
             }
 
-            // Update user if one exists for the original email
             $user = User::where('email', $originalEmail)->first();
+
             if ($user) {
                 $user->update([
                     'name' => $validated['name'],
                     'church_name' => $validated['church_name'],
-                    'email' => $newEmail,
+                    'email' => $validated['email']
                 ]);
+                Log::info('User updated.', ['user_id' => $user->id]);
+
+                // Insert or update pivot manually
+                $pivotResult = DB::table('club_user')->updateOrInsert(
+                    [
+                        'user_id' => $user->id,
+                        'club_id' => $staff->club_id,
+                    ],
+                    [
+                        'status' => 'active',
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+                Log::info('club_user pivot updated/inserted.', [
+                    'user_id' => $user->id,
+                    'club_id' => $staff->club_id,
+                    'result' => $pivotResult
+                ]);
+            } else {
+                Log::warning('User not found by original email.', ['email' => $originalEmail]);
             }
 
-            DB::commit();
-
             return response()->json([
-                'message' => 'Staff member updated.',
+                'message' => 'Staff member updated (no transaction).',
                 'staff' => $staff,
                 'user' => $user ?? null,
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            Log::error('Update failed outside transaction.', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
                 'message' => 'Update failed.',
                 'error' => $e->getMessage(),
@@ -279,7 +309,7 @@ class StaffAdventurerController extends Controller
         return response()->json(['message' => 'Staff member deleted.']);
     }
 
-    public function byClub($clubId,$churchId = null)
+    public function byClub($clubId, $churchId = null)
     {
         $user = Auth::user();
         $authorizedClubIds = $user->clubs()->pluck('clubs.id')->toArray();
@@ -321,21 +351,21 @@ class StaffAdventurerController extends Controller
         }, function ($query) use ($clubId) {
             return $query->where('club_id', $clubId);
         })
-        ->get()
-        ->map(function ($u) use ($staffModel, $clubId) {
-            $existsByName = $staffModel::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
-                ->where('club_id', $clubId)
-                ->exists();
-    
-            $existsByEmail = $staffModel::where('email', $u->email)
-                ->where('club_id', $clubId)
-                ->exists();
-    
-            $u->create_staff = !($existsByName || $existsByEmail);
-    
-            return $u;
-        });
-    
+            ->get()
+            ->map(function ($u) use ($staffModel, $clubId) {
+                $existsByName = $staffModel::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
+                    ->where('club_id', $clubId)
+                    ->exists();
+
+                $existsByEmail = $staffModel::where('email', $u->email)
+                    ->where('club_id', $clubId)
+                    ->exists();
+
+                $u->create_staff = !($existsByName || $existsByEmail);
+
+                return $u;
+            });
+
 
         return response()->json([
             'staff' => $staff,
@@ -536,6 +566,46 @@ class StaffAdventurerController extends Controller
         $user->save();
 
         return response()->json(['message' => 'Password updated successfully']);
+    }
+
+    public function getAssignedMembersByStaff($staffId)
+    {
+        // Step 1: Get the class assigned to the staff
+        $assignedClass = ClubClass::where('assigned_staff_id', $staffId)->first();
+
+        if (!$assignedClass) {
+            return response()->json([
+                'message' => 'No class assigned to this staff member.',
+                'members' => [],
+            ], 404);
+        }
+
+        // Step 2: Get student member links for this class
+        $studentLinks = ClassMemberAdventurer::where('club_class_id', $assignedClass->id)
+            ->where('role', 'student')
+            ->get();
+
+        $memberIds = $studentLinks->pluck('members_adventurer_id');
+
+        // Step 3: Get members based on those IDs
+        $members = MemberAdventurer::whereIn('id', $memberIds)->get();
+
+        // Step 4: Update each member with missing staff_id
+        foreach ($members as $member) {
+            if (is_null($member->staff_id)) {
+                $member->staff_id = $staffId;
+                $member->save();
+            }
+        }
+
+        return response()->json([
+            'message' => 'Members assigned to this staff fetched successfully.',
+            'class' => [
+                'id' => $assignedClass->id,
+                'name' => $assignedClass->class_name,
+            ],
+            'members' => $members,
+        ]);
     }
     /* private function generateStaffDoc(StaffAdventurer $staff, string $outputDir): string
     {

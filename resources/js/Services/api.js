@@ -174,3 +174,8 @@ export const submitStaffForm = async (formData, editingStaffId = null) => {
 
     return await axios[method](url, formData)
 }
+
+export const fetchAssignedMembersByStaff = async (staffId) => {
+    const response = await axios.get(`/staff/${staffId}/assigned-members`)
+    return response.data
+}

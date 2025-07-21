@@ -157,12 +157,21 @@ Route::middleware(['auth'])->group(function () {
     //Update password
     Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
+    Route::get('/staff/{staffId}/assigned-members', [StaffAdventurerController::class, 'getAssignedMembersByStaff']);
 
     Route::get(
         '/club-personal/dashboard',
         fn() =>
-        Inertia::render('ClubPersonalDashboard')
+        Inertia::render('ClubPersonal/ClubPersonalDashboard')
     )->name('clubPersonal.dashboard');
+    Route::get(
+        '/club-personal/assistance-report',
+        fn() =>
+        Inertia::render('ClubPersonal/AssistanceReport', [
+            'auth_user' => auth()->user(),
+            'clubs' => Club::all(),
+        ])
+    )->name('club.assistance_report');
 
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 
