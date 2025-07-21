@@ -88,6 +88,7 @@ const fetchClubs = async () => {
 const fetchMembers = async (clubId) => {
     try {
         const data = await fetchMembersByClub(clubId)
+        console.log('Fetched members:', data)
         if (Array.isArray(data) && data.length > 0) {
             members.value = data
             showToast('Members loaded', 'success')
