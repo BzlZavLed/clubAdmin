@@ -88,7 +88,6 @@ const fetchClubs = async () => {
 const fetchMembers = async (clubId) => {
     try {
         const data = await fetchMembersByClub(clubId)
-        console.log('Fetched members:', data)
         if (Array.isArray(data) && data.length > 0) {
             members.value = data
             showToast('Members loaded', 'success')
@@ -195,7 +194,6 @@ const assignToClass = async (member) => {
 const undoAssignment = async (member) => {
     try {
         var resp = await undoClassAssignment(member.id)
-        console.log('Undo response:', resp)
         showToast(`Undid last assignment for ${member.applicant_name}`, 'success')
         await fetchMembers(selectedClub.value.id)
     } catch (error) {
