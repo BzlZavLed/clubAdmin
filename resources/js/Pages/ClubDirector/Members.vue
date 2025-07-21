@@ -193,7 +193,8 @@ const assignToClass = async (member) => {
 
 const undoAssignment = async (member) => {
     try {
-        await undoClassAssignment(member.id)
+        var resp = await undoClassAssignment(member.id)
+        console.log('Undo response:', resp)
         showToast(`Undid last assignment for ${member.applicant_name}`, 'success')
         await fetchMembers(selectedClub.value.id)
     } catch (error) {
