@@ -239,7 +239,7 @@ const unassignedMembers = computed(() =>
     members.value.filter(member =>
         !member.class_assignments ||
         member.class_assignments.length === 0 ||
-        member.class_assignments.every(assignment => assignment.active === false)
+        member.class_assignments.every(assignment => assignment.active === false || assignment.active === 0)
     )
 )
 const membersInClass = (classId) => {
