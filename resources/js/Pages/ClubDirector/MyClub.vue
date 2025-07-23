@@ -39,7 +39,10 @@ const clubStaff = computed(() => {
     return clubs.value[0]?.staff_adventurers ?? []
 })
 
-
+if (!user.value.pastor_name) {
+    showToast('Create church first', 'error')
+    return
+}
 
 // 🧠 Club form
 const clubForm = useForm({
@@ -48,8 +51,8 @@ const clubForm = useForm({
     church_name: user.value.church_name,
     director_name: user.value.name,
     creation_date: today,
-    pastor_name: user.value.pastor_name,
-    conference_name: user.value.conference_name || '',
+    pastor_name: user.value.pastor_name || 'No church created',
+    conference_name: user.value.conference_name || 'No church created',
     conference_region: '',
     club_type: ''
 })
@@ -66,7 +69,6 @@ const filteredClubs = computed(() => {
 const fetchClubs = async () => {
     try {
         const data = await fetchClubsByChurchId(user.value.church_id)
-        console.log('Fetched clubs:', data)
         clubs.value = [...data]
         hasClub.value = data.length > 0
         showToast('Clubs fetched successfully!')
