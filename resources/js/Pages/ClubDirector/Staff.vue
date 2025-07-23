@@ -231,7 +231,6 @@ const toggleExpanded = (id) => {
 }
 
 const changePassword = (user) => {
-    console.log('Changing password for user:', user)
     showPasswordModal.value = true
     changePasswordUserId.value = user.id
 }

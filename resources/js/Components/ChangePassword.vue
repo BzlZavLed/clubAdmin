@@ -14,7 +14,6 @@ const emit = defineEmits(['close', 'updated'])
 const newPassword = ref('')
 
 const updatePassword = async () => {
-    console.log(props)
     try {
         const resp = await axios.put(`/users/${props.userId}/password`, {
             password: newPassword.value
