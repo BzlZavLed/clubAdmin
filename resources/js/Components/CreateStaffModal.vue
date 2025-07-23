@@ -25,9 +25,8 @@ const emit = defineEmits(["close", "submitted"])
 const today = new Date().toISOString().split("T")[0]
 const page = usePage()
 const auth_user = page.props?.auth.user
-
 const form = useForm({
-    club_id: auth_user.club_id,
+    club_id: "",
     date_of_record: today,
     name: "",
     dob: "",
@@ -40,7 +39,7 @@ const form = useForm({
     assigned_class: "",
     church_name: "",
     church_id: auth_user.church_id,
-    club_name: "",
+    club_name: "" || page.props.user?.club_name,
     club_id: "",
     has_health_limitation: "",
     health_limitation_description: "",
@@ -62,7 +61,7 @@ watch(() => props.editingStaff, (staff) => {
     if (staff) {
         Object.assign(form, {
             ...form,
-            name: staff.name,
+            name: "",
             email: staff.email,
             dob: staff.dob?.slice(0, 10) || '',
             address: staff.address,
@@ -71,7 +70,7 @@ watch(() => props.editingStaff, (staff) => {
             zip: staff.zip,
             cell_phone: staff.cell_phone,
             church_name: staff.church_name,
-            club_name: staff.club_name,
+            club_name: staff.club_name || page.props.user?.club_name || "",
             church_id: auth_user.church_id,
             club_id: "",
             assigned_class: staff.assigned_classes?.[0]?.id || "",
@@ -103,7 +102,7 @@ watch(() => props.user, (newUser) => {
 
 watch(() => props.club, (newClub) => {
     if (newClub && !props.editingStaff) {
-        form.club_name = newClub.club_name || ""
+        form.club_name = newClub.club_name || page.props.user?.club_name || ""
         form.club_id = newClub.id || ""
         form.church_name = newClub.church_name || ""
         form.church_id = newClub.church_id || ""

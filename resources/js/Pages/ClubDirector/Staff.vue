@@ -34,6 +34,7 @@ const subRoles = page.props.sub_roles;
 const { user } = useAuth()
 const churchId = computed(() => user.value?.church_id || null)
 const userId = computed(() => user.value?.id || null)
+const club_name = computed(() => user.value?.clubs[0]?.club_name || '')
 const { toast, showToast } = useGeneral()
 const showPasswordModal = ref(false)
 // ✅ State
@@ -124,6 +125,8 @@ const fetchStaff = async (clubId, churchId = null) => {
 // ✅ Modals
 const openStaffForm = (user) => {
     selectedUserForStaff.value = user
+    selectedUserForStaff.value.club_name = club_name.value
+    console.log('Selected user for staff:', selectedUserForStaff.value)
     createStaffModalVisible.value = true
 }
 
