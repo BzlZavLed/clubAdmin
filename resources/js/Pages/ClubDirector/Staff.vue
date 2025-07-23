@@ -126,7 +126,6 @@ const fetchStaff = async (clubId, churchId = null) => {
 const openStaffForm = (user) => {
     selectedUserForStaff.value = user
     selectedUserForStaff.value.club_name = club_name.value
-    console.log('Selected user for staff:', selectedUserForStaff.value)
     createStaffModalVisible.value = true
 }
 
