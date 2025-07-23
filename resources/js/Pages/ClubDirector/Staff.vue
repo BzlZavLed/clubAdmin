@@ -34,6 +34,7 @@ const subRoles = page.props.sub_roles;
 const { user } = useAuth()
 const churchId = computed(() => user.value?.church_id || null)
 const userId = computed(() => user.value?.id || null)
+const changePasswordUserId = ref(null)
 const club_name = computed(() => user.value?.clubs[0]?.club_name || '')
 const { toast, showToast } = useGeneral()
 const showPasswordModal = ref(false)
@@ -229,6 +230,11 @@ const toggleExpanded = (id) => {
     expandedRows.value.has(id) ? expandedRows.value.delete(id) : expandedRows.value.add(id)
 }
 
+const changePassword = (user) => {
+    console.log('Changing password for user:', user)
+    showPasswordModal.value = true
+    changePasswordUserId.value = user.id
+}
 const assignedClassChanges = ref({})
 const isUpdatingClass = ref({})
 
@@ -546,8 +552,7 @@ onMounted(fetchClubs)
                                 <td class="p-2 text-xs">
                                     <template v-if="user.status === 'active'">
                                         <div class="flex items-center space-x-2">
-                                            <button @click="showPasswordModal = true"
-                                                class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                                            <button @click="changePassword(user)"class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
                                                 Change Password
                                             </button>
 
@@ -579,8 +584,13 @@ onMounted(fetchClubs)
                 </div>
             </div>
         </div>
-        <UpdatePasswordModal v-if="userId" :show="showPasswordModal" :user-id="userId"
-            @close="showPasswordModal = false" @updated="showToast('Password updated successfully')" />
+        <UpdatePasswordModal
+            v-if="showPasswordModal && changePasswordUserId"
+            :show="showPasswordModal"
+            :user-id="changePasswordUserId"
+            @close="showPasswordModal = false"
+            @updated="showToast('Password updated successfully')"
+        />
 
         <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
             :club-classes="clubClasses" :editing-staff="staffToEdit" @close="closeModal"
