@@ -1,11 +1,11 @@
 <script setup>
 import PathfinderLayout from "@/Layouts/PathfinderLayout.vue";
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { usePage } from "@inertiajs/vue3";
 import CreateStaffModal from "@/Components/CreateStaffModal.vue";
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import { useGeneral } from "@/Composables/useGeneral";
-import { fetchClubsByChurch, fetchStaffRecord } from "@/Services/api";
+import { fetchClubsByChurch, fetchStaffRecord ,fetchClubClasses } from "@/Services/api";
 
 const page = usePage();
 const { showToast } = useGeneral();
@@ -17,11 +17,22 @@ const hasStaffRecord = ref(false);
 const staffRecord = ref(null);
 const user = ref(null);
 const userId = computed(() => user.value?.id || null)
+const clubClasses = ref([])
 
 const clubs = ref([]);
 const showPasswordModal = ref(false);
-
+const fetchClasses = async (clubId) => {
+    try {
+        clubClasses.value = await fetchClubClasses(clubId.id)
+    } catch (error) {
+        console.error('Failed to fetch club classes:', error)
+    }
+}
 const openStaffForm = (usr) => {
+    if (!selectedClub.value) {
+        showToast("Please select a club first", "error");
+        return;
+    }
     selectedUserForStaff.value = usr;
     createStaffModalVisible.value = true;
 };
@@ -35,8 +46,7 @@ const fetchClubs = async () => {
         console.error("Failed to fetch clubs:", error);
     }
 };
-
-onMounted(async () => {
+const fetchStaffRecordMethod = async () => {
     try {
         const data = await fetchStaffRecord();
         hasStaffRecord.value = data.hasStaffRecord;
@@ -46,8 +56,15 @@ onMounted(async () => {
     } catch (error) {
         console.error("Failed to fetch staff record:", error);
     }
+};
+onMounted(async () => {
+    fetchStaffRecordMethod();
 });
-
+watch(createStaffModalVisible, (visible) => {
+    if (!visible) {
+        fetchStaffRecordMethod();
+    }
+})
 </script>
 
 <template>
@@ -59,7 +76,7 @@ onMounted(async () => {
 
             <div v-if="!hasStaffRecord">
                 <label class="block mb-1 font-medium text-gray-700">Select a club</label>
-                <select v-model="selectedClub" class="w-full p-2 border rounded">
+                <select v-model="selectedClub" class="w-full p-2 border rounded" @change="fetchClasses(selectedClub)">
                     <option disabled value="">-- Choose a club --</option>
                     <option v-for="club in clubs" :key="club.id" :value="club">
                         {{ club.club_name }} ({{ club.club_type }})
@@ -106,6 +123,7 @@ onMounted(async () => {
             :show="createStaffModalVisible"
             :user="selectedUserForStaff"
             :club="selectedClub"
+            :club-classes="clubClasses"
             @close="createStaffModalVisible = false"
             @submitted="showToast('Staff profile created')"
         />

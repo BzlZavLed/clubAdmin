@@ -19,7 +19,8 @@ const form = useForm({
     class_order: '',
     class_name: '',
     assigned_staff_id: '',
-    club_id: ''
+    club_id: '',
+    user_id: '' // This will be set based on the selected staff's email
 })
 watch(() => props.classToEdit, (cls) => {
     form.reset()
@@ -45,17 +46,42 @@ const toast = useToast()
 
 const clubList = ref(props.clubs ?? [])
 const staffList = ref([])
-
+const usersClub = ref([])
 const fetchStaff = async (clubId) => {
     try {
         const response = await axios.get(`/clubs/${clubId}/staff`)
+        console.log('Staff response:', response.data)
         staffList.value = response.data.staff
+        usersClub.value = response.data.sub_role_users
         toast.success('Staff loaded')
     } catch (error) {
         console.error('Failed to fetch staff:', error)
     }
 }
+watch(
+    () => form.assigned_staff_id,
+    (newStaffId) => {
+        if (!newStaffId) return
 
+        // 1. Find staff by ID
+        const selectedStaff = staffList.value.find(staff => staff.id === newStaffId)
+        if (!selectedStaff) return
+
+        const selectedEmail = selectedStaff.email
+
+        // 2. Find matching user in usersClub by email
+        const matchedUser = usersClub.value.find(user => user.email === selectedEmail)
+
+        if (matchedUser) {
+        console.log("Matching user ID:", matchedUser.id)
+        // You can assign this to a variable, form field, etc.
+        form.user_id = matchedUser.id
+        } else {
+        console.warn("No user found in usersClub with that email.")
+        }
+    },
+    { immediate: false }
+)
 const submit = () => {
     const isEditing = !!props.classToEdit?.id
 

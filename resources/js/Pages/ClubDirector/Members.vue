@@ -250,8 +250,12 @@ const membersInClass = (classId) => {
 }
 
 const classOptionsExcluding = (currentClassOrder) => {
-    return clubClasses.value.filter(c => c.class_order > currentClassOrder)
-}
+    const filtered = clubClasses.value.filter(c => c.class_order > currentClassOrder);
+    if (filtered.length === 0) {
+        return [{ id: '', class_name: 'No class available' }];
+    }
+    return filtered;
+};
 
 onMounted(fetchClubs)
 </script>

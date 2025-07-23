@@ -47,6 +47,7 @@ class StaffAdventurerController extends Controller
             'zip' => 'required|string|max:20',
             'cell_phone' => 'nullable|string|max:20',
             'church_name' => 'required|string|max:255',
+            'church_id' => 'required',
             'email' => 'nullable|email|max:255',
             'club_name' => 'required|string|max:255',
             'club_id' => 'required|exists:clubs,id',
@@ -151,6 +152,8 @@ class StaffAdventurerController extends Controller
                             'created_at' => now(), // Optional; won't affect existing record
                         ]
                     );
+                    $linkedUser->club_id = $validated['club_id'];
+                    $linkedUser->save();
                 }
             }
 

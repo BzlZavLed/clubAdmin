@@ -119,7 +119,7 @@ class ClubController extends Controller
 
     public function getClubsByChurchId($churchId)
     {
-        $clubs = Club::with('clubClasses')
+        $clubs = Club::with('clubClasses', 'staffAdventurers')
             ->where('church_id', $churchId)
             ->orderBy('club_name')
             ->get();

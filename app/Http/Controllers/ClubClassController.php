@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\ClubClass;
+use Illuminate\Support\Facades\DB;
 
 class ClubClassController extends Controller
 {
@@ -21,9 +22,22 @@ class ClubClassController extends Controller
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
             'assigned_staff_id' => 'nullable|exists:staff_adventurers,id',
+            'user_id' => 'required|exists:users,id', // Ensure the user exists
         ]);
 
         $class = ClubClass::create($validated);
+
+        DB::table('club_user')->updateOrInsert(
+            [
+                'user_id' => $validated['user_id'],
+                'club_id' => $validated['club_id'],
+            ],
+            [
+                'status' => 'active',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
 
         session()->flash('success', 'Class created successfully.');
 
@@ -47,9 +61,23 @@ class ClubClassController extends Controller
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
             'assigned_staff_id' => 'nullable|exists:staff_adventurers,id',
+            'user_id' => 'required|exists:users,id', // Ensure the user exists
+
         ]);
 
         $class->update($validated);
+
+        DB::table('club_user')->updateOrInsert(
+            [
+                'user_id' => $validated['user_id'],
+                'club_id' => $validated['club_id'],
+            ],
+            [
+                'status' => 'active',
+                'updated_at' => now(),
+                'created_at' => now(), 
+            ]
+        );
 
         session()->flash('success', 'Class updated successfully.');
 

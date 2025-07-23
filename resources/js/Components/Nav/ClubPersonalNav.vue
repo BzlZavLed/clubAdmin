@@ -1,7 +1,10 @@
 <script setup>
-import { ref } from 'vue'
+import { ref,watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
+import { useGeneral } from '@/Composables/useGeneral'
 
+const { showToast } = useGeneral()
+const page = usePage()
 const routeName = usePage().component
 const showDropdown = ref(false)
 
@@ -13,6 +16,16 @@ const clubSubItems = [
     { name: 'Assistance Report', href: '/club-personal/assistance-report', route: 'club.assistance_report' },
     // You can add more later here
 ]
+
+watch(
+    () => page.props.toast,
+    (toast) => {
+        if (toast?.message) {
+            showToast(toast.message, toast.type || 'info')
+        }
+    },
+    { immediate: true }
+)
 </script>
 
 <template>

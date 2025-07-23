@@ -1,10 +1,10 @@
 <script setup>
-import { ref, watch } from "vue"
+import { onMounted, ref, watch } from "vue"
 import { useForm, usePage } from "@inertiajs/vue3"
-import { submitStaffForm } from '@/Services/api'
+import { submitStaffForm, fetchClubsByChurch } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
-
-const { showError } = useGeneral()
+const { showError, showToast } = useGeneral()
+const clubs = ref([]);
 
 const props = defineProps({
     show: Boolean,
@@ -39,7 +39,9 @@ const form = useForm({
     email: "",
     assigned_class: "",
     church_name: "",
+    church_id: auth_user.church_id,
     club_name: "",
+    club_id: "",
     has_health_limitation: "",
     health_limitation_description: "",
     experiences: [{ position: "", organization: "", date: "" }],
@@ -57,7 +59,7 @@ const form = useForm({
 })
 
 watch(() => props.editingStaff, (staff) => {
-    if (staff) {    
+    if (staff) {
         Object.assign(form, {
             ...form,
             name: staff.name,
@@ -70,6 +72,8 @@ watch(() => props.editingStaff, (staff) => {
             cell_phone: staff.cell_phone,
             church_name: staff.church_name,
             club_name: staff.club_name,
+            church_id: auth_user.church_id,
+            club_id: "",
             assigned_class: staff.assigned_classes?.[0]?.id || "",
             reference_pastor: staff.reference_pastor,
             reference_elder: staff.reference_elder,
@@ -100,7 +104,9 @@ watch(() => props.user, (newUser) => {
 watch(() => props.club, (newClub) => {
     if (newClub && !props.editingStaff) {
         form.club_name = newClub.club_name || ""
+        form.club_id = newClub.id || ""
         form.church_name = newClub.church_name || ""
+        form.church_id = newClub.church_id || ""
     }
 }, { immediate: true })
 
@@ -114,8 +120,7 @@ const removeAbility = (index) => form.award_instruction_abilities.splice(index, 
 
 const onSubmit = async () => {
     try {
-        var resp = await submitStaffForm(form.data(), props.editingStaff?.id)
-        console.log('Form submitted successfully', resp)
+        await submitStaffForm(form.data(), props.editingStaff?.id)
         emit('submitted')
         emit('close')
         form.reset()
@@ -123,7 +128,7 @@ const onSubmit = async () => {
         console.error('Form submission failed', err)
         showError(err)
     }
-}
+}  
 </script>
 
 <template>
@@ -183,6 +188,8 @@ const onSubmit = async () => {
                         <label>Club name</label><input v-model="form.club_name" type="club_name" readonly
                             class="w-full p-2 border rounded" />
                     </div>
+
+
                 </div>
                 <h3><b>Section 2 Health history</b></h3>
                 <div class="mb-4">
@@ -325,8 +332,12 @@ const onSubmit = async () => {
                 <h3><b>Section 6 Sterling Volunteers</b></h3>
 
                 <div>
-                    <label>Sterling Volunteers Background Check Completed?</label><input
-                        v-model="form.sterling_volunteer_completed" type="text" class="w-full p-2 border rounded" />
+                    <label class="block mb-1">Sterling Volunteers Background Check Completed?</label>
+                    <select v-model="form.sterling_volunteer_completed" class="w-full p-2 border rounded">
+                        <option disabled value="">-- Select an option --</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
                 </div>
                 <h3><b>Section 7 References</b></h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">

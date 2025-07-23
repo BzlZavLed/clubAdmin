@@ -18,8 +18,7 @@ const { showToast } = useGeneral();
 const clubs = ref([]);
 const { user, userClubIds } = useAuth()
 const userId = computed(() => user.value?.id || null)
-
-console.log(user.value);
+const staff = computed(() => page.props.staff || null)
 
 const today = new Date()
 
@@ -82,9 +81,6 @@ const loadAssignedMembers = async (staffId) => {
         const data = await fetchAssignedMembersByStaff(staffId)
         assignedMembers.value = data.members
         assignedClass.value = data.class
-        console.log('Loaded members:', assignedMembers.value)
-        console.log('Loaded class:', assignedClass.value)
-
     } catch (err) {
         console.error('Failed to load assigned members', err)
         showError(err)
@@ -94,7 +90,7 @@ const loadAssignedMembers = async (staffId) => {
 onMounted(() => {
     fetchClubs();
     if (userId.value) {
-        loadAssignedMembers(userId.value)
+        loadAssignedMembers(staff.value.id)
     }
 });
 
@@ -113,10 +109,6 @@ onMounted(() => {
                 <div>
                     <label class="font-semibold">Consejero:</label>
                     <input v-model="form.counselor" type="text" class="w-full border rounded p-1" />
-                </div>
-                <div>
-                    <label class="font-semibold">Capitán:</label>
-                    <input v-model="form.captain" type="text" class="w-full border rounded p-1" />
                 </div>
                 <div class="flex gap-2">
                     <div class="flex-1">

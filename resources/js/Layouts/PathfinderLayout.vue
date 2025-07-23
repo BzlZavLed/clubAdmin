@@ -12,7 +12,7 @@ const logout = () => {
 }
 onMounted(() => {
     const savedState = localStorage.getItem('sidebar-collapsed')
-    isCollapsed.value = savedState === 'true' // Convert string to boolean
+    isCollapsed.value = savedState === 'true' 
 })
 const getNavComponent = () => {
     if (user.profile_type === 'club_director') {

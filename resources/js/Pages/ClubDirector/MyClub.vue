@@ -65,8 +65,8 @@ const filteredClubs = computed(() => {
 // 🧠 Load clubs on mount
 const fetchClubs = async () => {
     try {
-        // Always get from backend regardless of user.clubs
         const data = await fetchClubsByChurchId(user.value.church_id)
+        console.log('Fetched clubs:', data)
         clubs.value = [...data]
         hasClub.value = data.length > 0
         showToast('Clubs fetched successfully!')

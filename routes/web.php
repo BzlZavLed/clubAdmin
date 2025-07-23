@@ -14,6 +14,7 @@ use App\Http\Controllers\ExportController;
 use App\Http\Controllers\ClubClassController;
 use App\Http\Controllers\LLMQueryController as AIQueryController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\AssistanceReportController;
 use App\Http\Controllers\ProfileController;
 use App\Models\SubRole;
 
@@ -113,7 +114,6 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         'destroy' => 'club-classes.destroy',
     ]);
 
-    Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId'])->name('clubs.classes');
     Route::get('/church/{churchId}/clubs', [ClubController::class, 'getClubsByChurchId'])->name('church.clubs');
     Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
 
@@ -136,7 +136,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::put('/staff/update-class', [StaffAdventurerController::class, 'updateAssignedClass'])->name('staff.update-class');
     Route::put('/staff/{id}', [StaffAdventurerController::class, 'update'])->name('staff.update');
 
-   
+
     // AI
     Route::post('/nl-query', [AIQueryController::class, 'handle']);
 
@@ -158,20 +158,23 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::get('/staff/{staffId}/assigned-members', [StaffAdventurerController::class, 'getAssignedMembersByStaff']);
+    Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId'])->name('clubs.classes');
 
-    Route::get(
-        '/club-personal/dashboard',
-        fn() =>
-        Inertia::render('ClubPersonal/ClubPersonalDashboard')
-    )->name('clubPersonal.dashboard');
-    Route::get(
-        '/club-personal/assistance-report',
-        fn() =>
-        Inertia::render('ClubPersonal/AssistanceReport', [
-            'auth_user' => auth()->user(),
-            'clubs' => Club::all(),
-        ])
-    )->name('club.assistance_report');
+    // Route::get(
+    //     '/club-personal/dashboard',
+    //     fn() =>
+    //     Inertia::render('ClubPersonal/ClubPersonalDashboard')
+    // )->name('clubPersonal.dashboard');
+
+    Route::get('/club-personal/dashboard', function () {
+        return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
+            'auth_user' => Auth::user()
+        ]);
+    })->name('clubPersonal.dashboard');
+
+
+    Route::get('/club-personal/assistance-report', [AssistanceReportController::class, 'index'])
+        ->name('club.assistance_report');
 
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 
