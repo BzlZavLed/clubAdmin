@@ -50,8 +50,12 @@ const usersClub = ref([])
 const fetchStaff = async (clubId) => {
     try {
         const response = await axios.get(`/clubs/${clubId}/staff`)
-        console.log('Staff response:', response.data)
         staffList.value = response.data.staff
+        if(staffList.value.length === 0) {
+            toast.error('Create staff first, none found')
+            emit('update:visible', false)
+            return
+        }
         usersClub.value = response.data.sub_role_users
         toast.success('Staff loaded')
     } catch (error) {

@@ -342,8 +342,14 @@ onMounted(fetchClubs)
                 </div>
             </details>
 
-            <CreateClassModal v-if="showClassModal" v-model:visible="showClassModal" :clubs="user.clubs"
-                :staff="clubStaff" :user="user" :classToEdit="classToEdit" @created="refreshPage" />
+            <CreateClassModal 
+                v-if="showClassModal" 
+                v-model:visible="showClassModal" 
+                :clubs="user.clubs"
+                :staff="clubStaff" 
+                :user="user" 
+                :classToEdit="classToEdit" 
+                @created="refreshPage" />
         </div>
     </PathfinderLayout>
 </template>
