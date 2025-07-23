@@ -41,7 +41,6 @@ const clubStaff = computed(() => {
 
 if (!user.value.pastor_name) {
     showToast('Create church first', 'error')
-    return
 }
 
 // 🧠 Club form
