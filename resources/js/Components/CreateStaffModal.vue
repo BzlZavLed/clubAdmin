@@ -40,7 +40,6 @@ const form = useForm({
     church_name: "",
     church_id: auth_user.church_id,
     club_name: "" || page.props.user?.club_name,
-    club_id: "",
     has_health_limitation: "",
     health_limitation_description: "",
     experiences: [{ position: "", organization: "", date: "" }],
@@ -72,7 +71,7 @@ watch(() => props.editingStaff, (staff) => {
             church_name: staff.church_name,
             club_name: staff.club_name || page.props.user?.club_name || "",
             church_id: auth_user.church_id,
-            club_id: "",
+            club_id: page.props.user?.club_id || "",
             assigned_class: staff.assigned_classes?.[0]?.id || "",
             reference_pastor: staff.reference_pastor,
             reference_elder: staff.reference_elder,
@@ -103,7 +102,7 @@ watch(() => props.user, (newUser) => {
 watch(() => props.club, (newClub) => {
     if (newClub && !props.editingStaff) {
         form.club_name = newClub.club_name || page.props.user?.club_name || ""
-        form.club_id = newClub.id || ""
+        form.club_id = newClub.id || page.props.user?.club_id || ""
         form.church_name = newClub.church_name || ""
         form.church_id = newClub.church_id || ""
     }
