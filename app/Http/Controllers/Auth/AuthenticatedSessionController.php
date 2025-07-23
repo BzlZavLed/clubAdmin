@@ -44,7 +44,8 @@ class AuthenticatedSessionController extends Controller
             'is_in_club' => count($clubIds) > 0,
             'user_club_ids' => $clubIds,
             'church_name' => $user->church_name,
-            'user' => $user
+            'user' => $user,
+            'email' => $request->input('email'),
         ]);
         return redirect($this->redirectToBasedOnProfile(Auth::user()));
     }
