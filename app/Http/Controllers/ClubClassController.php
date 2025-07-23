@@ -22,7 +22,7 @@ class ClubClassController extends Controller
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
             'assigned_staff_id' => 'nullable|exists:staff_adventurers,id',
-            'user_id' => 'required|exists:users,id', // Ensure the user exists
+            'user_id' => 'nullable', // Ensure the user exists
         ]);
 
         $class = ClubClass::create($validated);
@@ -61,7 +61,7 @@ class ClubClassController extends Controller
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
             'assigned_staff_id' => 'nullable|exists:staff_adventurers,id',
-            'user_id' => 'required|exists:users,id', // Ensure the user exists
+            'user_id' => 'nullable', // Ensure the user exists
 
         ]);
 

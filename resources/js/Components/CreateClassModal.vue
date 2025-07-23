@@ -20,7 +20,7 @@ const form = useForm({
     class_name: '',
     assigned_staff_id: '',
     club_id: '',
-    user_id: '' // This will be set based on the selected staff's email
+    user_id: ''
 })
 watch(() => props.classToEdit, (cls) => {
     form.reset()
@@ -63,18 +63,15 @@ watch(
     (newStaffId) => {
         if (!newStaffId) return
 
-        // 1. Find staff by ID
         const selectedStaff = staffList.value.find(staff => staff.id === newStaffId)
         if (!selectedStaff) return
 
         const selectedEmail = selectedStaff.email
 
-        // 2. Find matching user in usersClub by email
         const matchedUser = usersClub.value.find(user => user.email === selectedEmail)
 
         if (matchedUser) {
         console.log("Matching user ID:", matchedUser.id)
-        // You can assign this to a variable, form field, etc.
         form.user_id = matchedUser.id
         } else {
         console.warn("No user found in usersClub with that email.")
