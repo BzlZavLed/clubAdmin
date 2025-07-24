@@ -117,7 +117,7 @@ watch(createStaffModalVisible, (visible) => {
                                 <th class="p-2 border">Staff</th>
                                 <th class="p-2 border">Church</th>
                                 <th class="p-2 border">District</th>
-                                <th class="p-2 border">Created At</th>
+                                <th class="p-2 border">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -129,7 +129,7 @@ watch(createStaffModalVisible, (visible) => {
                                 <td class="p-2 border">{{ report.staff_name }}</td>
                                 <td class="p-2 border">{{ report.church }}</td>
                                 <td class="p-2 border">{{ report.district }}</td>
-                                <td class="p-2 border">{{ report.created_at.slice(0, 10) }}</td>
+                                <td class="p-2 border">PDF</td>
                             </tr>
                         </tbody>
                     </table>
