@@ -193,4 +193,18 @@ class RepAssistanceAdvController extends Controller
 
         return response()->json(['exists' => false]);
     }
+
+    public function getByStaff($staffId)
+    {
+        try {
+            $reports = RepAssistanceAdv::where('staff_id', $staffId)
+                ->withCount('merits') // Optional: counts related merit rows
+                ->orderByDesc('date')
+                ->get();
+
+            return response()->json(['reports' => $reports], 200);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to fetch reports', 'error' => $e->getMessage()], 500);
+        }
+    }
 }

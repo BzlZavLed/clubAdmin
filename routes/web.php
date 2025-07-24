@@ -168,6 +168,7 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/{id}', [RepAssistanceAdvController::class, 'update']);
         Route::delete('/{id}', [RepAssistanceAdvController::class, 'destroy']);
         Route::get('/check-today/{staffId}', [RepAssistanceAdvController::class, 'checkTodayReport']);
+        Route::get('/staff/{staffId}', [RepAssistanceAdvController::class, 'getByStaff']);
 
     });
 

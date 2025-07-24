@@ -48,4 +48,5 @@ class AssistanceReportController extends Controller
             'staff' => $staff
         ]);
     }
+    
 }
