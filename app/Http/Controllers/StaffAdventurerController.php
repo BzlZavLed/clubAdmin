@@ -586,6 +586,7 @@ class StaffAdventurerController extends Controller
         // Step 2: Get student member links for this class
         $studentLinks = ClassMemberAdventurer::where('club_class_id', $assignedClass->id)
             ->where('role', 'student')
+            ->where('active', true)
             ->get();
 
         $memberIds = $studentLinks->pluck('members_adventurer_id');

@@ -16,6 +16,7 @@ use App\Http\Controllers\LLMQueryController as AIQueryController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AssistanceReportController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
 
 // ---------------------------------
@@ -160,11 +161,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/staff/{staffId}/assigned-members', [StaffAdventurerController::class, 'getAssignedMembersByStaff']);
     Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId'])->name('clubs.classes');
 
-    // Route::get(
-    //     '/club-personal/dashboard',
-    //     fn() =>
-    //     Inertia::render('ClubPersonal/ClubPersonalDashboard')
-    // )->name('clubPersonal.dashboard');
+    Route::prefix('assistance-reports')->group(function () {
+        Route::get('/', [RepAssistanceAdvController::class, 'index']);
+        Route::post('/', [RepAssistanceAdvController::class, 'store']);
+        Route::get('/{id}', [RepAssistanceAdvController::class, 'show']);
+        Route::put('/{id}', [RepAssistanceAdvController::class, 'update']);
+        Route::delete('/{id}', [RepAssistanceAdvController::class, 'destroy']);
+        Route::get('/check-today/{staffId}', [RepAssistanceAdvController::class, 'checkTodayReport']);
+
+    });
 
     Route::get('/club-personal/dashboard', function () {
         return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
