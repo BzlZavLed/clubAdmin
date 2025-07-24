@@ -37,6 +37,7 @@ const form = reactive({
 const total = (scores) => scores.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
 
 const saveReport = async () => {
+    console.log("saving report")
     const meritsArray = assignedMembers.value.map((member, i) => {
         const scores = attendanceData.value[i].scores;
 
@@ -83,6 +84,7 @@ const saveReport = async () => {
 };
 
 const updateReport = async () => {
+    console.log("updating report")
     const meritsArray = assignedMembers.value.map((member, i) => {
         const scores = attendanceData.value[i].scores;
         return {
