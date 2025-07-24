@@ -21,13 +21,25 @@ return new class extends Migration
             $table->renameColumn('counselor', 'staff_name');
         });
 
-        Schema::table('rep_assistance_adv_merits', function (Blueprint $table) {
-            // Rename applicant_name to mem_adv_name
-            $table->renameColumn('applicant_name', 'mem_adv_name');
+        if (Schema::hasColumn('rep_assistance_adv_merits', 'applicant_name')) {
+            Schema::table('rep_assistance_adv_merits', function (Blueprint $table) {
+                $table->renameColumn('applicant_name', 'mem_adv_name');
+            });
+        }
 
-            // Add applicant_id renamed to mem_adv_id
-            $table->unsignedBigInteger('mem_adv_id')->nullable()->after('mem_adv_name');
-        });
+        // Add mem_adv_name if it doesn't exist
+        if (!Schema::hasColumn('rep_assistance_adv_merits', 'mem_adv_name')) {
+            Schema::table('rep_assistance_adv_merits', function (Blueprint $table) {
+                $table->string('mem_adv_name')->nullable();
+            });
+        }
+
+        // Add mem_adv_id if it doesn't exist
+        if (!Schema::hasColumn('rep_assistance_adv_merits', 'mem_adv_id')) {
+            Schema::table('rep_assistance_adv_merits', function (Blueprint $table) {
+                $table->unsignedBigInteger('mem_adv_id')->nullable()->after('mem_adv_name');
+            });
+        }
     }
 
     public function down(): void
