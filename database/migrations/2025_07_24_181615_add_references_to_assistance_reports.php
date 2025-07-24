@@ -25,9 +25,13 @@ return new class extends Migration
                 $table->unsignedBigInteger('church_id')->nullable()->after('staff_id');
             }
 
-            // Rename counselor to staff_name
-            $table->renameColumn('counselor', 'staff_name');
         });
+
+        if (Schema::hasColumn('rep_assistance_adv_merits', 'counselor')) {
+            Schema::table('rep_assistance_adv_merits', function (Blueprint $table) {
+                $table->renameColumn('counselor', 'staff_name');
+            });
+        }
 
         if (Schema::hasColumn('rep_assistance_adv_merits', 'applicant_name')) {
             Schema::table('rep_assistance_adv_merits', function (Blueprint $table) {
