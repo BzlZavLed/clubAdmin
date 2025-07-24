@@ -5,7 +5,7 @@ import { usePage } from "@inertiajs/vue3";
 import CreateStaffModal from "@/Components/CreateStaffModal.vue";
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import { useGeneral } from "@/Composables/useGeneral";
-import { fetchClubsByChurch, fetchStaffRecord ,fetchClubClasses } from "@/Services/api";
+import { fetchClubsByChurch, fetchStaffRecord, fetchClubClasses } from "@/Services/api";
 
 const page = usePage();
 const { showToast } = useGeneral();
@@ -14,7 +14,7 @@ const createStaffModalVisible = ref(false);
 const selectedUserForStaff = ref(null);
 const selectedClub = ref(null);
 const hasStaffRecord = ref(false);
-const staffRecord = ref(null);
+const staff = ref(null);
 const user = ref(null);
 const userId = computed(() => user.value?.id || null)
 const clubClasses = ref([])
@@ -50,7 +50,8 @@ const fetchStaffRecordMethod = async () => {
     try {
         const data = await fetchStaffRecord();
         hasStaffRecord.value = data.hasStaffRecord;
-        staffRecord.value = data.staffRecord;
+        staff.value = data.staffRecord;
+        console.log("Staff Record:", staff.value);
         user.value = data.user;
         fetchClubs();
     } catch (error) {
@@ -86,46 +87,159 @@ watch(createStaffModalVisible, (visible) => {
                     Create myself as Staff
                 </button>
             </div>
+            <div class="flex flex-col md:flex-row gap-6">
+                <div v-if="user" class="w-full md:w-1/2 bg-white shadow rounded p-4 text-sm">
+                    <h2 class="text-xl font-bold mb-4">User Profile</h2>
+                    <dl class="space-y-2 text-sm">
+                        <div>
+                            <dt class="font-semibold">ID</dt>
+                            <dd>{{ user.id }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Name</dt>
+                            <dd>{{ user.name }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Email</dt>
+                            <dd>{{ user.email }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Email Verified</dt>
+                            <dd>{{ user.email_verified_at ?? "Not verified" }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Created At</dt>
+                            <dd>{{ user.created_at?.slice(0, 10) }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Updated At</dt>
+                            <dd>{{ user.updated_at?.slice(0, 10) }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Profile Type</dt>
+                            <dd>{{ user.profile_type }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Sub Role</dt>
+                            <dd>{{ user.sub_role }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Church Name</dt>
+                            <dd>{{ user.church_name }}</dd>
+                        </div>
 
-            <div v-if="user" class="max-w-md bg-white shadow rounded p-6">
-                <h2 class="text-xl font-bold mb-4">User Profile</h2>
-                <dl class="space-y-2 text-sm">
-                    <div><dt class="font-semibold">ID</dt><dd>{{ user.id }}</dd></div>
-                    <div><dt class="font-semibold">Name</dt><dd>{{ user.name }}</dd></div>
-                    <div><dt class="font-semibold">Email</dt><dd>{{ user.email }}</dd></div>
-                    <div><dt class="font-semibold">Email Verified</dt><dd>{{ user.email_verified_at ?? "Not verified" }}</dd></div>
-                    <div><dt class="font-semibold">Created At</dt><dd>{{ user.created_at?.slice(0, 10) }}</dd></div>
-                    <div><dt class="font-semibold">Updated At</dt><dd>{{ user.updated_at?.slice(0, 10) }}</dd></div>
-                    <div><dt class="font-semibold">Profile Type</dt><dd>{{ user.profile_type }}</dd></div>
-                    <div><dt class="font-semibold">Sub Role</dt><dd>{{ user.sub_role }}</dd></div>
-                    <div><dt class="font-semibold">Church Name</dt><dd>{{ user.church_name }}</dd></div>
+                        <div class="mt-4">
+                            <button @click="showPasswordModal = true"
+                                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">
+                                Change Password
+                            </button>
+                        </div>
+                    </dl>
+                </div>
 
-                    <div class="mt-4">
-                        <button @click="showPasswordModal = true"
-                            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">
-                            Change Password
-                        </button>
-                    </div>
-                </dl>
+                <div v-if="staff" class="w-full md:w-1/2 bg-white shadow rounded p-4 text-sm">
+                    <h2 class="text-xl font-bold mb-4">Staff Profile</h2>
+                    <dl class="space-y-2">
+                        <div>
+                            <dt class="font-semibold">ID</dt>
+                            <dd>{{ staff.id }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Name</dt>
+                            <dd>{{ staff.name }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Date of Birth</dt>
+                            <dd>{{ staff.dob?.slice(0, 10) }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Email</dt>
+                            <dd>{{ staff.email }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Cell Phone</dt>
+                            <dd>{{ staff.cell_phone }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Address</dt>
+                            <dd>{{ staff.address }}, {{ staff.city }}, {{ staff.state }} {{ staff.zip }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Church</dt>
+                            <dd>{{ staff.church_name }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Club</dt>
+                            <dd>{{ staff.club_name }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Assigned Class</dt>
+                            <dd>{{ staff.assigned_class }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Health Limitation</dt>
+                            <dd>{{ staff.has_health_limitation ? 'Yes' : 'No' }}</dd>
+                        </div>
+                        <div v-if="staff.has_health_limitation && staff.health_limitation_description">
+                            <dt class="font-semibold">Limitation Description</dt>
+                            <dd>{{ staff.health_limitation_description }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Sterling Volunteer Completed</dt>
+                            <dd>{{ staff.sterling_volunteer_completed ? 'Yes' : 'No' }}</dd>
+                        </div>
+
+                        <div>
+                            <dt class="font-semibold">Application Signed Date</dt>
+                            <dd>{{ staff.application_signed_date?.slice(0, 10) }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Applicant Signature</dt>
+                            <dd>{{ staff.applicant_signature }}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold">Status</dt>
+                            <dd>{{ staff.status }}</dd>
+                        </div>
+
+                        <div class="mt-4">
+                            <h3 class="font-semibold">References</h3>
+                            <ul class="list-disc pl-5">
+                                <li>Pastor: {{ staff.reference_pastor }}</li>
+                                <li>Elder: {{ staff.reference_elder }}</li>
+                                <li>Other: {{ staff.reference_other }}</li>
+                            </ul>
+                        </div>
+
+                        <div v-if="staff.experiences?.length" class="mt-4">
+                            <h3 class="font-semibold">Experiences</h3>
+                            <ul class="list-disc pl-5">
+                                <li v-for="(exp, i) in staff.experiences" :key="i">
+                                    {{ exp.position }} at {{ exp.organization }} ({{ exp.date }})
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="staff.award_instruction_abilities?.length" class="mt-4">
+                            <h3 class="font-semibold">Award Instruction Abilities</h3>
+                            <ul class="list-disc pl-5">
+                                <li v-for="(ability, i) in staff.award_instruction_abilities" :key="i">
+                                    {{ ability.name }} - Level {{ ability.level }}
+                                </li>
+                            </ul>
+                        </div>
+                    </dl>
+                </div>
             </div>
+
         </div>
 
         <!-- Modals -->
-        <UpdatePasswordModal
-            v-if="userId"
-            :show="showPasswordModal"
-            :user-id="userId"
-            @close="showPasswordModal = false"
-            @updated="showToast('Password updated successfully')"
-        />
+        <UpdatePasswordModal v-if="userId" :show="showPasswordModal" :user-id="userId"
+            @close="showPasswordModal = false" @updated="showToast('Password updated successfully')" />
 
-        <CreateStaffModal
-            :show="createStaffModalVisible"
-            :user="selectedUserForStaff"
-            :club="selectedClub"
-            :club-classes="clubClasses"
-            @close="createStaffModalVisible = false"
-            @submitted="showToast('Staff profile created')"
-        />
+        <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
+            :club-classes="clubClasses" @close="createStaffModalVisible = false"
+            @submitted="showToast('Staff profile created')" />
     </PathfinderLayout>
 </template>
