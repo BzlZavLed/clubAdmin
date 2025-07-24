@@ -13,9 +13,17 @@ return new class extends Migration
     {
         Schema::table('rep_assistance_adv', function (Blueprint $table) {
             // Add reference columns
-            $table->unsignedBigInteger('class_id')->nullable()->after('district');
-            $table->unsignedBigInteger('staff_id')->nullable()->after('class_id');
-            $table->unsignedBigInteger('church_id')->nullable()->after('staff_id');
+            if (!Schema::hasColumn('rep_assistance_adv', 'class_id')) {
+                $table->unsignedBigInteger('class_id')->nullable()->after('district');
+            }
+        
+            if (!Schema::hasColumn('rep_assistance_adv', 'staff_id')) {
+                $table->unsignedBigInteger('staff_id')->nullable()->after('class_id');
+            }
+        
+            if (!Schema::hasColumn('rep_assistance_adv', 'church_id')) {
+                $table->unsignedBigInteger('church_id')->nullable()->after('staff_id');
+            }
 
             // Rename counselor to staff_name
             $table->renameColumn('counselor', 'staff_name');
