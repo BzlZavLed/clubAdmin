@@ -77,6 +77,7 @@ const saveReport = async () => {
         submittedMerits.value = reportResponse.data.merits
         showToast('Report saved successfully!', 'success');
         showForm.value = false
+        isEditing.value = true; 
     } catch (error) {
         console.error('Error saving report:', error);
         showToast('Failed to save report', 'error');
