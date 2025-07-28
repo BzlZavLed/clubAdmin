@@ -4,12 +4,14 @@ import { ref, onMounted, computed, watch } from "vue";
 import { usePage } from "@inertiajs/vue3";
 import CreateStaffModal from "@/Components/CreateStaffModal.vue";
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
+import AssistanceReportPdf from "@/Components/Reports/AssistanceReport.vue";
 import { useGeneral } from "@/Composables/useGeneral";
 import { fetchClubsByChurch, fetchStaffRecord, fetchClubClasses } from "@/Services/api";
+import { ArrowTurnLeftUpIcon } from "@heroicons/vue/24/solid";
 
 const page = usePage();
 const { showToast } = useGeneral();
-
+const formatDate = (date) => new Date(date).toLocaleDateString()
 const createStaffModalVisible = ref(false);
 const selectedUserForStaff = ref(null);
 const selectedClub = ref(null);
@@ -18,6 +20,10 @@ const staff = ref(null);
 const user = ref(null);
 const userId = computed(() => user.value?.id || null)
 const clubClasses = ref([])
+
+const inlineShow = ref(false)
+const pdfShow = ref(false)
+
 
 const clubs = ref([]);
 const showPasswordModal = ref(false);
@@ -67,7 +73,7 @@ const loadStaffReports = async (staffId) => {
     try {
         const response = await axios.get(`/assistance-reports/staff/${staffId}`);
         reports.value = response.data.reports;
-        console.log("Staff Reports:", reports.value);
+        console.log("Loaded reports:", reports.value);
     } catch (error) {
         console.error("Failed to load staff reports", error);
         showToast('Error loading reports', 'error');
@@ -82,6 +88,49 @@ watch(createStaffModalVisible, (visible) => {
         fetchStaffRecordMethod();
     }
 })
+
+
+const pdfReport = ref(null);
+const expandedReports = ref(new Set())
+
+async function toggleExpand(id, date) {
+    inlineShow.value = true
+    pdfShow.value = false
+    if (expandedReports.value.has(id)) {
+        expandedReports.value.delete(id);
+        return;
+    }
+
+    try {
+        pdfReport.value = await fetchReportByIdAndDate(id, date);
+        expandedReports.value.add(id);
+    } catch {
+        alert('Failed to load report for expansion');
+    }
+}
+
+
+async function generatePDF(id, date) {
+    inlineShow.value = false
+    pdfShow.value = true
+    try {
+        pdfReport.value = await fetchReportByIdAndDate(id, date);
+
+    } catch (err) {
+        alert('PDF generation failed')
+    }
+}
+
+async function fetchReportByIdAndDate(id, date) {
+    try {
+        const { data } = await axios.get(`/pdf-assistance-reports/${id}/${date}/pdf`);
+        return data;
+    } catch (error) {
+        console.error('Failed to fetch report:', error);
+        throw error;
+    }
+}
+
 </script>
 
 <template>
@@ -107,32 +156,88 @@ watch(createStaffModalVisible, (visible) => {
                 <div class="w-full bg-white shadow rounded p-4 text-sm">
                     <h2 class="text-xl font-bold mb-4">Assistance Reports - History</h2>
 
-                    <table class="min-w-full table-auto border border-gray-200 text-sm">
-                        <thead class="bg-gray-100 text-left">
-                            <tr>
-                                <th class="p-2 border">Month</th>
-                                <th class="p-2 border">Year</th>
-                                <th class="p-2 border">Date</th>
-                                <th class="p-2 border">Class</th>
-                                <th class="p-2 border">Staff</th>
-                                <th class="p-2 border">Church</th>
-                                <th class="p-2 border">District</th>
-                                <th class="p-2 border">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="report in reports" :key="report.id" class="hover:bg-gray-50">
-                                <td class="p-2 border">{{ report.month }}</td>
-                                <td class="p-2 border">{{ report.year }}</td>
-                                <td class="p-2 border">{{ report.date }}</td>
-                                <td class="p-2 border">{{ report.class_name }}</td>
-                                <td class="p-2 border">{{ report.staff_name }}</td>
-                                <td class="p-2 border">{{ report.church }}</td>
-                                <td class="p-2 border">{{ report.district }}</td>
-                                <td class="p-2 border">PDF</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="min-w-full table-auto border border-gray-200 text-sm">
+                            <thead class="bg-gray-100 text-left">
+                                <tr>
+                                    <th class="p-2 border">Month</th>
+                                    <th class="p-2 border">Year</th>
+                                    <th class="p-2 border">Date</th>
+                                    <th class="p-2 border">Class</th>
+                                    <th class="p-2 border">Staff</th>
+                                    <th class="p-2 border">Church</th>
+                                    <th class="p-2 border">District</th>
+                                    <th class="p-2 border">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template v-for="report in reports" :key="report.id">
+                                    <!-- Main Row -->
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="p-2 border">{{ report.month }}</td>
+                                        <td class="p-2 border">{{ report.year }}</td>
+                                        <td class="p-2 border">{{ formatDate(report.date) }}</td>
+                                        <td class="p-2 border">{{ report.class_name }}</td>
+                                        <td class="p-2 border">{{ report.staff_name }}</td>
+                                        <td class="p-2 border">{{ report.church }}</td>
+                                        <td class="p-2 border">{{ report.district }}</td>
+                                        <td class="p-2 border whitespace-nowrap">
+                                            <div class="flex gap-2">
+                                                <button @click="generatePDF(report.id, report.date)"
+                                                    class="text-blue-600 hover:underline">PDF</button>
+                                                <button @click="toggleExpand(report.id, report.date)"
+                                                    class="text-green-600 hover:underline">
+                                                    <span v-if="expandedReports.has(report.id)">Collapse</span>
+                                                    <span v-else>Expand</span>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Child Row -->
+                                    <tr v-if="expandedReports.has(report.id)">
+                                        <td colspan="8" class="border bg-gray-50">
+                                            <div class="p-4">
+                                                <AssistanceReportPdf v-if="inlineShow && !pdfShow && pdfReport"
+                                                    :report="pdfReport" ref="pdfComponent" @pdf-done="pdfReport = null"
+                                                    :disableAutoDownload="inlineShow" />
+
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- MOBILE ACCORDION -->
+                    <div class="md:hidden space-y-4">
+                        <div v-for="report in reports" :key="report.id" class="border rounded shadow bg-white">
+                            <button @click="toggleExpand(report.id, report.date)"
+                                class="w-full text-left px-4 py-3 bg-gray-100 flex justify-between items-center">
+                                <span>{{ report.class_name }} - {{ report.month }} {{ report.year }}</span>
+                                <svg :class="{ 'rotate-180': expandedReports.has(report.id) }"
+                                    class="w-4 h-4 transform transition-transform" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+
+                            <div v-show="expandedReports.has(report.id)" class="px-4 py-2 space-y-1">
+                                <p><strong>Date:</strong> {{ formatDate(report.date) }}</p>
+                                <p><strong>Staff:</strong> {{ report.staff_name }}</p>
+                                <p><strong>Church:</strong> {{ report.church }}</p>
+                                <p><strong>District:</strong> {{ report.district }}</p>
+                                <div class="flex gap-3">
+                                    <button @click="generatePDF(report.id, report.date)"
+                                        class="text-blue-600 hover:underline">PDF</button>
+
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex flex-col md:flex-row gap-4">
@@ -293,5 +398,9 @@ watch(createStaffModalVisible, (visible) => {
         <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
             :club-classes="clubClasses" @close="createStaffModalVisible = false"
             @submitted="showToast('Staff profile created')" />
+
+        <AssistanceReportPdf v-if="!inlineShow && pdfShow && pdfReport" :report="pdfReport" ref="pdfComponent"
+            @pdf-done="pdfReport = null" :disableAutoDownload="inlineShow" />
+
     </PathfinderLayout>
 </template>

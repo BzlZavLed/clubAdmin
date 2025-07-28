@@ -18,6 +18,7 @@ use App\Http\Controllers\AssistanceReportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
+use App\Http\Controllers\ReportController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -160,6 +161,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::get('/staff/{staffId}/assigned-members', [StaffAdventurerController::class, 'getAssignedMembersByStaff']);
     Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId'])->name('clubs.classes');
+
+    //Reports
+    Route::get('/pdf-assistance-reports/{id}/{date}/pdf', [ReportController::class, 'generateAssistancePDF'])->name('asistance-report.pdf');
+
 
     Route::prefix('assistance-reports')->group(function () {
         Route::get('/', [RepAssistanceAdvController::class, 'index']);

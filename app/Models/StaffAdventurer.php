@@ -71,4 +71,8 @@ class StaffAdventurer extends Model
     {
         return $this->hasMany(ClubClass::class, 'assigned_staff_id');
     }
+    public function reportsAssistance()
+    {
+        return $this->hasMany(RepAssistanceAdv::class, 'staff_id');
+    }
 }

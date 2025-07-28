@@ -48,5 +48,9 @@ class Club extends Model
     {
         return $this->hasMany(ClubClass::class);
     }
+    public function reportsAssistance()
+    {
+        return $this->hasMany(RepAssistanceAdv::class, 'club_id');
+    }
 
 }

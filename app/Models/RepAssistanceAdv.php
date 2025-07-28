@@ -26,6 +26,14 @@ class RepAssistanceAdv extends Model
 
     public function merits()
     {
-        return $this->hasOne(RepAssistanceAdvMerit::class, 'report_id');
+        return $this->hasMany(RepAssistanceAdvMerit::class, 'report_id');
+    }
+    public function staff()
+    {
+        return $this->belongsTo(StaffAdventurer::class, 'staff_id');
+    }
+    public function club()
+    {
+        return $this->belongsTo(Club::class, 'club_id');
     }
 }
