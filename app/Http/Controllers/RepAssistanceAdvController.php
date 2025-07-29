@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\RepAssistanceAdv;
 use App\Models\RepAssistanceAdvMerit;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class RepAssistanceAdvController extends Controller
 {
@@ -32,6 +33,7 @@ class RepAssistanceAdvController extends Controller
             'merits.*.uniforme' => 'boolean',
             'merits.*.conductor' => 'boolean',
             'merits.*.cuota' => 'boolean',
+            'merits.*.cuota_amount' => 'integer',
             'merits.*.total' => 'required|integer',
         ]);
 
@@ -62,6 +64,7 @@ class RepAssistanceAdvController extends Controller
                     'uniforme' => $entry['uniforme'] ?? false,
                     'conductor' => $entry['conductor'] ?? false,
                     'cuota' => $entry['cuota'] ?? false,
+                    'cuota_amount' => $entry['cuota_amount'] ?? false,
                     'total' => $entry['total'] ?? false
                 ]);
             }
@@ -116,6 +119,7 @@ class RepAssistanceAdvController extends Controller
             'merits.*.uniforme' => 'boolean',
             'merits.*.conductor' => 'boolean',
             'merits.*.cuota' => 'boolean',
+            'merits.*.cuota_amount' => 'integer',
             'merits.*.total' => 'required|integer',
         ]);
 
@@ -151,6 +155,7 @@ class RepAssistanceAdvController extends Controller
                     'uniforme' => $entry['uniforme'] ?? false,
                     'conductor' => $entry['conductor'] ?? false,
                     'cuota' => $entry['cuota'] ?? false,
+                    'cuota_amount' => $entry['cuota_amount'] ?? false,
                     'total' => $entry['total'] ?? 0
                 ]);
             }
@@ -194,17 +199,73 @@ class RepAssistanceAdvController extends Controller
         return response()->json(['exists' => false]);
     }
 
-    public function getByStaff($staffId)
+    public function getBy(string $field, int $value)
     {
         try {
-            $reports = RepAssistanceAdv::where('staff_id', $staffId)
-                ->withCount('merits') // Optional: counts related merit rows
+            // Validate that only allowed fields can be queried
+            if (!in_array($field, ['staff_id', 'club_id'])) {
+                return response()->json(['message' => 'Invalid query field'], 400);
+            }
+
+            $reports = RepAssistanceAdv::where($field, $value)
+                ->withCount('merits')
                 ->orderByDesc('date')
                 ->get();
 
             return response()->json(['reports' => $reports], 200);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to fetch reports', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Failed to fetch reports',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
+
+    public function getByDate(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date',
+        ]);
+
+        try {
+            $date = Carbon::parse($request->date)->toDateString();
+
+            $reports = RepAssistanceAdv::whereDate('date', $date)
+                ->withCount('merits')
+                ->orderByDesc('date')
+                ->get();
+
+            return response()->json(['reports' => $reports], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to fetch reports by date',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getByDateRange(Request $request)
+    {
+        $request->validate([
+            'start' => 'required|date',
+            'end' => 'required|date|after_or_equal:start',
+        ]);
+
+        try {
+            $start = Carbon::parse($request->start)->startOfDay();
+            $end = Carbon::parse($request->end)->endOfDay();
+
+            $reports = RepAssistanceAdv::whereBetween('date', [$start, $end])
+                ->withCount('merits')
+                ->orderByDesc('date')
+                ->get();
+
+            return response()->json(['reports' => $reports], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to fetch reports by range',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 }

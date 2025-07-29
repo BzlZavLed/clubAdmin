@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\StaffAdventurer;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -27,8 +28,12 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
-    public function share(Request $request): array
+    public function share(Request $request)
     {
+        $staff = StaffAdventurer::with('assignedClasses')
+            ->where('email', $request->user()?->email)
+            ->first();
+
         return array_merge(parent::share($request), [
             'auth' => [
                 'user' => fn() => $request->user()
@@ -41,8 +46,7 @@ class HandleInertiaRequests extends Middleware
                         'club_id' => $request->user()->club_id,
                         'pastor_name' => optional($request->user()->church)->pastor_name,
                         'conference_name' => optional($request->user()->church)->conference,
-
-                        // Optionally, minimal club info if really needed
+                        'assigned_classes' => $staff?->assignedClasses->map(fn($class) => $class->class_name)->values() ?? [],
                         'clubs' => $request->user()->clubs->map(fn($club) => [
                             'id' => $club->id,
                             'club_name' => $club->club_name,

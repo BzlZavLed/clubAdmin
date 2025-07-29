@@ -1,7 +1,13 @@
 <script setup>
 import PathfinderLayout from "@/Layouts/PathfinderLayout.vue";
 import { computed, reactive, ref, onMounted, watch } from 'vue';
-import { fetchAssignedMembersByStaff } from '@/Services/api';
+import {
+    createAssistanceReport,
+    updateAssistanceReport,
+    getAssistanceReport,
+    checkAssistanceReportToday,
+    fetchAssignedMembersByStaff
+} from '@/Services/api';
 import { useAuth } from '@/Composables/useAuth';
 import { usePage } from '@inertiajs/vue3';
 import { useGeneral } from '@/Composables/useGeneral'
@@ -37,10 +43,8 @@ const form = reactive({
 const total = (scores) => scores.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
 
 const saveReport = async () => {
-    console.log("saving report")
     const meritsArray = assignedMembers.value.map((member, i) => {
         const scores = attendanceData.value[i].scores;
-
         return {
             mem_adv_name: member.applicant_name,
             mem_adv_id: member.id,
@@ -49,7 +53,9 @@ const saveReport = async () => {
             uniforme: scores[2] === 1,
             conductor: scores[3] === 1,
             cuota: scores[4] === 1,
-            total: scores.filter(score => score === 1).length
+            total: scores.filter(score => score === 1).length,
+            cuota_amount: attendanceData.value[i].cuota_amount || 0, // ADD THIS
+
         };
     });
 
@@ -63,29 +69,27 @@ const saveReport = async () => {
         staff_id: staff.value.id,
         church: form.church,
         church_id: user.value?.church_id,
-        club_id: user.value?.club_id, 
+        club_id: user.value?.club_id,
         district: form.district,
         merits: meritsArray
     };
-
+    console.log('Payload to save report:', payload);
 
     try {
-        const response = await axios.post('/assistance-reports', payload);
-        const reportId = response.data.id
-        const reportResponse = await axios.get(`/assistance-reports/${reportId}`)
-        submittedReport.value = reportResponse.data.report
-        submittedMerits.value = reportResponse.data.merits
+        const res = await createAssistanceReport(payload);
+        const reportData = await getAssistanceReport(res.id);
+        submittedReport.value = reportData.report;
+        submittedMerits.value = reportData.merits;
         showToast('Report saved successfully!', 'success');
-        showForm.value = false
-        isEditing.value = true; 
+        showForm.value = false;
+        isEditing.value = true;
     } catch (error) {
         console.error('Error saving report:', error);
         showToast('Failed to save report', 'error');
-    }
+    } 
 };
 
 const updateReport = async () => {
-    console.log("updating report")
     const meritsArray = assignedMembers.value.map((member, i) => {
         const scores = attendanceData.value[i].scores;
         return {
@@ -96,7 +100,9 @@ const updateReport = async () => {
             uniforme: scores[2] === 1,
             conductor: scores[3] === 1,
             cuota: scores[4] === 1,
-            total: scores.filter(score => score === 1).length
+            total: scores.filter(score => score === 1).length,
+            cuota_amount: attendanceData.value[i].cuota_amount || 0, // ADD THIS
+
         };
     });
 
@@ -117,10 +123,10 @@ const updateReport = async () => {
 
     try {
         const reportId = submittedReport.value.id;
-        await axios.put(`/assistance-reports/${reportId}`, payload);
-        const reportResponse = await axios.get(`/assistance-reports/${reportId}`);
-        submittedReport.value = reportResponse.data.report;
-        submittedMerits.value = reportResponse.data.merits;
+        await updateAssistanceReport(reportId, payload);
+        const reportData = await getAssistanceReport(reportId);
+        submittedReport.value = reportData.report;
+        submittedMerits.value = reportData.merits;
         showToast('Report updated successfully!', 'success');
         showForm.value = false;
     } catch (error) {
@@ -133,7 +139,8 @@ watch(assignedMembers, (members) => {
     attendanceData.value = members.map(m => ({
         member_id: m.id,
         scores: Array(6).fill(null),
-        lastThree: Array(3).fill(null)
+        lastThree: Array(3).fill(null),
+        cuota_amount: 0
     }));
 });
 
@@ -149,24 +156,24 @@ const loadAssignedMembers = async (staffId) => {
 };
 const checkIfReportExistsToday = async (staffId) => {
     try {
-        const today = new Date().toISOString().split('T')[0]; 
-        const response = await axios.get(`/assistance-reports/check-today/${staffId}?date=${today}`);
-        if (response.data.exists) {
+        const today = new Date().toISOString().split('T')[0];
+        const res = await checkAssistanceReportToday(staffId, today);
+        if (res.exists) {
             showForm.value = false;
-            submittedReport.value = response.data.report;
-            submittedMerits.value = response.data.merits;
-            isEditing.value = true; 
+            submittedReport.value = res.report;
+            submittedMerits.value = res.merits;
+            isEditing.value = true;
             showToast('Un reporte para hoy ya existe.', 'info');
         } else {
             showForm.value = true;
             isEditing.value = false;
-
         }
     } catch (error) {
         console.error('Error checking report existence:', error);
         showToast('Error verificando reporte del día.', 'error');
     }
-}
+};
+
 const handleEditReport = () => {
     preloadReport(submittedReport.value, submittedMerits.value);
     showForm.value = true;
@@ -181,12 +188,17 @@ const preloadReport = (report, reportMerits) => {
     form.district = report.district;
 
     attendanceData.value = reportMerits.map(entry => {
-    return {
-        member_id: entry.mem_adv_id,
-        scores: meritsLabels.map(label => entry[label.toLowerCase()] ? 1 : 0),
+        return {
+            member_id: entry.mem_adv_id,
+            scores: meritsLabels.map(label => entry[label.toLowerCase()] ? 1 : 0),
         };
     });
 };
+const totalCuotaAmount = computed(() => {
+    return submittedMerits.value.reduce((sum, m) => {
+        return sum + (parseFloat(m.cuota_amount) || 0);
+    }, 0);
+});
 onMounted(async () => {
     if (userId.value && staff.value?.id) {
         await loadAssignedMembers(staff.value.id);
@@ -249,14 +261,24 @@ onMounted(async () => {
 
                     <div class="p-4 space-y-2 text-xs">
                         <div class="grid grid-cols-2 gap-2">
-                            <div v-for="(label, index) in meritsLabels.slice(1)" :key="index + 1"
-                                class="flex items-center gap-2 mb-2">
-                                <input type="checkbox" :id="`merit-${i}-${index + 1}`"
-                                    v-model="attendanceData[i].scores[index + 1]" :true-value="1" :false-value="0"
-                                    class="form-checkbox" />
-                                <label :for="`merit-${i}-${index + 1}`" class="text-sm">{{ label }}</label>
-                            </div>
+                            <div v-for="(label, index) in meritsLabels.slice(1)" :key="index + 1" class="mb-2">
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" :id="`merit-${i}-${index + 1}`"
+                                        v-model="attendanceData[i].scores[index + 1]" :true-value="1" :false-value="0"
+                                        class="form-checkbox" />
+                                    <label :for="`merit-${i}-${index + 1}`" class="text-sm capitalize">{{ label
+                                        }}</label>
+                                </div>
 
+                                <!-- Show input only if 'cuota' is checked -->
+                                <div v-if="label === 'cuota' && attendanceData[i].scores[index + 1] === 1"
+                                    class="pl-6 mt-1">
+                                    <label for="">Amount</label> &nbsp;
+                                    <input type="number" min="0" step="0.01"
+                                        v-model.number="attendanceData[i].cuota_amount"
+                                        class="border rounded px-2 py-1 w-32 text-sm" placeholder="Amount paid" />
+                                </div>
+                            </div>
                             <div class="col-span-2 font-semibold text-right flex justify-between items-center">
                                 <span>Subtotal: {{ total(attendanceData[i].scores) }}</span>
                             </div>
@@ -266,10 +288,8 @@ onMounted(async () => {
                 </details>
             </div>
             <div class="mt-6 text-right">
-                <button
-                    @click="isEditing ? updateReport() : saveReport()"
-                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                >
+                <button @click="isEditing ? updateReport() : saveReport()"
+                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
                     {{ isEditing ? 'Update Report' : 'Save Full Report' }}
                 </button>
             </div>
@@ -288,7 +308,8 @@ onMounted(async () => {
             </div>
 
             <details class="mt-4 border rounded">
-                <summary class="cursor-pointer bg-gray-100 px-4 py-2 font-semibold">Ver Detalles - Report ID {{ submittedReport.id }}</summary>
+                <summary class="cursor-pointer bg-gray-100 px-4 py-2 font-semibold">Ver Detalles - Report ID {{
+                    submittedReport.id }}</summary>
                 <table class="w-full mt-2 text-xs border border-gray-300">
                     <thead class="bg-gray-200">
                         <tr>
@@ -299,6 +320,7 @@ onMounted(async () => {
                             <th class="border p-1">Uniforme</th>
                             <th class="border p-1">Conductor</th>
                             <th class="border p-1">Cuota</th>
+                            <th class="border p-1">Monto</th>
                             <th class="border p-1">Total</th>
                         </tr>
                     </thead>
@@ -311,17 +333,24 @@ onMounted(async () => {
                             <td class="border p-1">{{ m.uniforme ? '✓' : '' }}</td>
                             <td class="border p-1">{{ m.conductor ? '✓' : '' }}</td>
                             <td class="border p-1">{{ m.cuota ? '✓' : '' }}</td>
+                            <td class="border p-1">{{ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(m.cuota_amount) }}</td>
                             <td class="border p-1">{{ m.total }}</td>
                         </tr>
                     </tbody>
+                    <tfoot class="bg-gray-100 font-semibold">
+                        <tr>
+                            <td class="border p-1 text-right" colspan="7">Total Cuota</td>
+                            <td class="border p-1">
+                                {{ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalCuotaAmount) }}
+                            </td>
+                            <td class="border p-1"></td>
+                        </tr>
+                    </tfoot>
                 </table>
             </details>
 
             <div class="mt-4 text-right">
-                <button
-                    class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    @click="handleEditReport"
-                >
+                <button class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" @click="handleEditReport">
                     Editar Reporte
                 </button>
             </div>

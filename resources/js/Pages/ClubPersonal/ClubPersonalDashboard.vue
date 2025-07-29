@@ -6,7 +6,7 @@ import CreateStaffModal from "@/Components/CreateStaffModal.vue";
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import AssistanceReportPdf from "@/Components/Reports/AssistanceReport.vue";
 import { useGeneral } from "@/Composables/useGeneral";
-import { fetchClubsByChurch, fetchStaffRecord, fetchClubClasses } from "@/Services/api";
+import { fetchClubsByChurch, fetchStaffRecord, fetchClubClasses, fetchReportsByStaffId, fetchReportByIdAndDate } from "@/Services/api";
 import { ArrowTurnLeftUpIcon } from "@heroicons/vue/24/solid";
 
 const page = usePage();
@@ -20,13 +20,12 @@ const staff = ref(null);
 const user = ref(null);
 const userId = computed(() => user.value?.id || null)
 const clubClasses = ref([])
-
 const inlineShow = ref(false)
 const pdfShow = ref(false)
-
-
+const reports = ref([])
 const clubs = ref([]);
 const showPasswordModal = ref(false);
+
 const fetchClasses = async (clubId) => {
     try {
         clubClasses.value = await fetchClubClasses(clubId.id)
@@ -67,13 +66,11 @@ const fetchStaffRecordMethod = async () => {
     }
 };
 
-const reports = ref([])
+
 
 const loadStaffReports = async (staffId) => {
     try {
-        const response = await axios.get(`/assistance-reports/staff/${staffId}`);
-        reports.value = response.data.reports;
-        console.log("Loaded reports:", reports.value);
+        reports.value = await fetchReportsByStaffId(staffId);
     } catch (error) {
         console.error("Failed to load staff reports", error);
         showToast('Error loading reports', 'error');
@@ -102,7 +99,7 @@ async function toggleExpand(id, date) {
     }
 
     try {
-        pdfReport.value = await fetchReportByIdAndDate(id, date);
+        pdfReport.value = await fetchReportByIdAndDateWrapper(id, date);
         expandedReports.value.add(id);
     } catch {
         alert('Failed to load report for expansion');
@@ -114,17 +111,15 @@ async function generatePDF(id, date) {
     inlineShow.value = false
     pdfShow.value = true
     try {
-        pdfReport.value = await fetchReportByIdAndDate(id, date);
-
+        pdfReport.value = await fetchReportByIdAndDateWrapper(id, date);
     } catch (err) {
         alert('PDF generation failed')
     }
 }
 
-async function fetchReportByIdAndDate(id, date) {
+async function fetchReportByIdAndDateWrapper(id, date) {
     try {
-        const { data } = await axios.get(`/pdf-assistance-reports/${id}/${date}/pdf`);
-        return data;
+        return await fetchReportByIdAndDate(id, date);
     } catch (error) {
         console.error('Failed to fetch report:', error);
         throw error;
@@ -138,7 +133,7 @@ async function fetchReportByIdAndDate(id, date) {
         <template #title>Club Staff Dashboard</template>
 
         <div class="space-y-4 text-gray-800">
-            <p class="text-lg">Welcome to the Pathfinder Club Admin Panel.</p>
+            <p class="text-lg">Welcome {{ page.props.auth_user.name }} | Class : {{ page.props.auth.user.assigned_classes[0] }}</p>
 
             <div v-if="!hasStaffRecord">
                 <label class="block mb-1 font-medium text-gray-700">Select a club</label>
@@ -163,10 +158,7 @@ async function fetchReportByIdAndDate(id, date) {
                                     <th class="p-2 border">Month</th>
                                     <th class="p-2 border">Year</th>
                                     <th class="p-2 border">Date</th>
-                                    <th class="p-2 border">Class</th>
-                                    <th class="p-2 border">Staff</th>
-                                    <th class="p-2 border">Church</th>
-                                    <th class="p-2 border">District</th>
+
                                     <th class="p-2 border">Actions</th>
                                 </tr>
                             </thead>
@@ -177,10 +169,7 @@ async function fetchReportByIdAndDate(id, date) {
                                         <td class="p-2 border">{{ report.month }}</td>
                                         <td class="p-2 border">{{ report.year }}</td>
                                         <td class="p-2 border">{{ formatDate(report.date) }}</td>
-                                        <td class="p-2 border">{{ report.class_name }}</td>
-                                        <td class="p-2 border">{{ report.staff_name }}</td>
-                                        <td class="p-2 border">{{ report.church }}</td>
-                                        <td class="p-2 border">{{ report.district }}</td>
+
                                         <td class="p-2 border whitespace-nowrap">
                                             <div class="flex gap-2">
                                                 <button @click="generatePDF(report.id, report.date)"

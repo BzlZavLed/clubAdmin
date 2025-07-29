@@ -97,6 +97,13 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ]);
     })->name('club.staff');
 
+    Route::get('/club-director/reports/assistance', function () {
+        return Inertia::render('ClubDirector/Reports/Assistance', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('club.reports.assistance');
+
     // 🟢 API Endpoints
 
     // Clubs
@@ -150,6 +157,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         $path = storage_path('app/templates/template_adventurer_new.docx');
         return file_exists($path) ? response()->download($path) : 'Template not found.';
     });
+
+    //Reports
+    Route::post('/assistance-reports/filter', [ReportController::class, 'assistanceReportsDirector'])->name('assistance-reports.director');
+
 });
 
 // ---------------------------------
@@ -173,7 +184,9 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/{id}', [RepAssistanceAdvController::class, 'update']);
         Route::delete('/{id}', [RepAssistanceAdvController::class, 'destroy']);
         Route::get('/check-today/{staffId}', [RepAssistanceAdvController::class, 'checkTodayReport']);
-        Route::get('/staff/{staffId}', [RepAssistanceAdvController::class, 'getByStaff']);
+        Route::get('/by/{field}/{value}', [RepAssistanceAdvController::class, 'getBy']);
+        Route::get('/by-date', [AssistanceReportController::class, 'getByDate']);
+        Route::get('/by-range', [AssistanceReportController::class, 'getByDateRange']);
 
     });
 

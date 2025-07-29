@@ -179,3 +179,39 @@ export const fetchAssignedMembersByStaff = async (staffId) => {
     const response = await axios.get(`/staff/${staffId}/assigned-members`)
     return response.data
 }
+
+// Fetch reports by staff ID
+export const fetchReportsByStaffId = async (staffId) => {
+    const response = await axios.get(`/assistance-reports/by/staff_id/${staffId}`);
+    return response.data.reports;
+};
+
+// Fetch PDF report by ID and Date
+export const fetchReportByIdAndDate = async (id, date) => {
+    const { data } = await axios.get(`/pdf-assistance-reports/${id}/${date}/pdf`);
+    return data;
+};
+
+export async function createAssistanceReport(payload) {
+    const response = await axios.post('/assistance-reports', payload);
+    return response.data;
+}
+
+export async function updateAssistanceReport(reportId, payload) {
+    const response = await axios.put(`/assistance-reports/${reportId}`, payload);
+    return response.data;
+}
+
+export async function getAssistanceReport(reportId) {
+    const response = await axios.get(`/assistance-reports/${reportId}`);
+    return response.data;
+}
+
+export async function checkAssistanceReportToday(staffId, date) {
+    const response = await axios.get(`/assistance-reports/check-today/${staffId}?date=${date}`);
+    return response.data;
+}
+
+export const filterAssistanceReports = (payload) => {
+    return axios.post('/assistance-reports/filter', payload);
+};

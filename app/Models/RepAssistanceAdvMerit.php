@@ -20,6 +20,7 @@ class RepAssistanceAdvMerit extends Model
         'cuota',
         'report_id',
         'total',
+        'cuota_amount', // Added for cuota amount
     ];
 
     public function report()

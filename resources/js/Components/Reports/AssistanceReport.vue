@@ -61,6 +61,7 @@ onMounted(async () => {
                     <th>Uniforme</th>
                     <th>Conductor</th>
                     <th>Cuota</th>
+                    <th>Monto</th>
                     <th>Total</th>
                 </tr>
             </thead>
@@ -72,6 +73,7 @@ onMounted(async () => {
                     <td>{{ check(merit.uniforme) }}</td>
                     <td>{{ check(merit.conductor) }}</td>
                     <td>{{ check(merit.cuota) }}</td>
+                    <td>{{ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(merit.cuota_amount) }}</td>
                     <td>{{ merit.total }}</td>
                 </tr>
             </tbody>
