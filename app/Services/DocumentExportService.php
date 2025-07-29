@@ -88,7 +88,7 @@ class DocumentExportService
         }
 
         $formattedBlock = implode("\n", $lines);
-        $processor->setValue('experiencies_block', $formattedBlock);
+        $processor->setValue('experiences_block', $formattedBlock);
 
         // Awards/Instruction Abilities
 
