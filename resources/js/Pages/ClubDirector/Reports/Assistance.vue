@@ -155,12 +155,15 @@ onMounted(() => {
 
 <template>
     <PathfinderLayout>
+        <div class="bg-yellow-100 text-yellow-800 text-sm px-4 py-2 text-center font-medium shadow-md lg:hidden">
+                For best experience, view this report on a desktop or in landscape mode.
+            </div>
         <div class="px-4 sm:px-6 lg:px-8 py-6">
             <!-- Heading -->
             <h1 class="text-lg sm:text-xl font-semibold text-gray-800 mb-6 text-center sm:text-left">
                 Assistance Report
             </h1>
-
+            
             <!-- Form Container -->
             <div class="grid gap-6 sm:grid-cols-2 md:grid-cols-3">
                 <!-- Select Club -->
@@ -245,8 +248,8 @@ onMounted(() => {
                     </label>
                 </div>
             </div>
-            <div v-if="mergeReports">
-                <table class="w-full border text-sm">
+            <div v-if="mergeReports" class="overflow-x-auto">
+                <table class="w-full min-w-max border text-sm">
                     <thead>
                         <tr class="bg-gray-100">
                             <th class="border p-1">Date</th>
@@ -293,7 +296,8 @@ onMounted(() => {
                         <summary class="cursor-pointer p-2 bg-gray-100 font-medium">
                             Report: {{ report.date }} — {{ report.class_name }} ({{ report.month }} {{ report.year }})
                         </summary>
-                        <table class="w-full text-sm border mt-2">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm border mt-2">
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th class="border p-1">Member</th>
@@ -321,6 +325,8 @@ onMounted(() => {
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
+                        
                     </details>
                 </div>
             </div>
