@@ -215,3 +215,23 @@ export async function checkAssistanceReportToday(staffId, date) {
 export const filterAssistanceReports = (payload) => {
     return axios.post('/assistance-reports/filter', payload);
 };
+//FINANCIALS
+// List by club
+export const listPaymentConceptsByClub = (clubId) =>
+    axios.get(route('clubs.payment-concepts.index', clubId))
+
+// Create (payload must include scopes[], type, pay_to, status, etc.)
+export const createPaymentConcept = (clubId, payload) =>
+    axios.post(route('clubs.payment-concepts.store', clubId), payload)
+
+// Show one
+export const showPaymentConcept = (clubId, id) =>
+    axios.get(route('clubs.payment-concepts.show', { club: clubId, paymentConcept: id }))
+
+// Update
+export const updatePaymentConcept = (clubId, id, payload) =>
+    axios.put(route('clubs.payment-concepts.update', { club: clubId, paymentConcept: id }), payload)
+
+// Delete
+export const deletePaymentConcept = (clubId, id) =>
+    axios.delete(route('clubs.payment-concepts.destroy', { club: clubId, paymentConcept: id }))

@@ -85,6 +85,12 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     )->name('club.my-club');
 
     Route::get(
+        '/club-director/my-club-finances',
+        fn() =>
+        Inertia::render('ClubDirector/MyClubFinances', ['auth_user' => auth()->user()])
+    )->name('club.my-club-finances');
+
+    Route::get(
         '/club-director/members',
         fn() =>
         Inertia::render('ClubDirector/Members', ['auth_user' => auth()->user()])
@@ -167,6 +173,14 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 // 🔓 Authenticated (non-role-specific)
 // ---------------------------------
 Route::middleware(['auth'])->group(function () {
+    //Finances
+    Route::prefix('clubs/{club}')->name('clubs.')->group(function () {
+        Route::get('payment-concepts',                [ClubController::class, 'paymentConceptsIndex'])->name('payment-concepts.index');
+        Route::post('payment-concepts',               [ClubController::class, 'paymentConceptsStore'])->name('payment-concepts.store');
+        Route::get('payment-concepts/{paymentConcept}',   [ClubController::class, 'paymentConceptsShow'])->name('payment-concepts.show');
+        Route::put('payment-concepts/{paymentConcept}',   [ClubController::class, 'paymentConceptsUpdate'])->name('payment-concepts.update');
+        Route::delete('payment-concepts/{paymentConcept}',[ClubController::class, 'paymentConceptsDestroy'])->name('payment-concepts.destroy');
+    });
     //Update password
     Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');

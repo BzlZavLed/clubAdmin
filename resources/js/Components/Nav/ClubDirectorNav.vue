@@ -7,7 +7,8 @@ import {
     BriefcaseIcon,
     ChartBarIcon,
     CogIcon,
-    DocumentTextIcon
+    DocumentTextIcon,
+    CurrencyDollarIcon
 } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 
@@ -16,7 +17,25 @@ const openDropdown = ref(null)
 
 const menuItems = [
     { name: 'Dashboard', href: '/club-director/dashboard', route: 'dashboard', icon: HomeIcon },
-    { name: 'My Club', href: '/club-director/my-club', route: 'club.my-club', icon: UsersIcon },
+    {
+        name: 'My Club',
+        icon: UsersIcon,
+        children: [
+            {
+                name: 'Admin',
+                href: '/club-director/my-club',
+                route: 'club.my-club',
+                icon: DocumentTextIcon
+            },
+            {
+                name: 'Finances',
+                href: '/club-director/my-club-finances',
+                route: 'club.my-club-finances',
+                icon: CurrencyDollarIcon
+            }
+            
+        ]
+    },
     { name: 'Members', href: '/club-director/members', route: 'club.members', icon: UserGroupIcon },
     { name: 'Staff', href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
     {

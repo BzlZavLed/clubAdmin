@@ -19,10 +19,13 @@ class PaymentConcept extends Model
         'created_by',
         'status',
         'club_id',
+        'amount'
     ];
 
     protected $casts = [
         'payment_expected_by' => 'date',
+        'amount' => 'decimal:2', // returns string "123.45" in JSON; OK for currency
+
     ];
 
     // Relationships
