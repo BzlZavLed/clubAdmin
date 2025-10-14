@@ -132,13 +132,15 @@ export const createClub = async (payload) => {
 };
 
 export const updateClub = async (payload) => {
-    console.log(route('club.update')); 
+    console.log(route("club.update"));
 
     return await axios.put(route("club.update"), payload);
 };
 
 export const fetchStaffByClubId = async (clubId, churchId = null) => {
-    const response = await axios.get(route("clubs.staff", { clubId, churchId }));
+    const response = await axios.get(
+        route("clubs.staff", { clubId, churchId })
+    );
     return response.data;
 };
 
@@ -161,44 +163,51 @@ export const updateUserStatus = async (userId, status_code) => {
 };
 
 export const updateStaffAssignedClass = async (staffId, classId) => {
-    return await axios.put(route('staff.update-class'), {
-    staff_id: staffId,
-    class_id: classId,
-    })
-}
+    return await axios.put(route("staff.update-class"), {
+        staff_id: staffId,
+        class_id: classId,
+    });
+};
 export const submitStaffForm = async (formData, editingStaffId = null) => {
     const url = editingStaffId
-        ? route('staff.update', editingStaffId)
-        : route('staff.store')
-    const method = editingStaffId ? 'put' : 'post'
+        ? route("staff.update", editingStaffId)
+        : route("staff.store");
+    const method = editingStaffId ? "put" : "post";
 
-    return await axios[method](url, formData)
-}
+    return await axios[method](url, formData);
+};
 
 export const fetchAssignedMembersByStaff = async (staffId) => {
-    const response = await axios.get(`/staff/${staffId}/assigned-members`)
-    return response.data
-}
+    const response = await axios.get(`/staff/${staffId}/assigned-members`);
+    return response.data;
+};
 
 // Fetch reports by staff ID
 export const fetchReportsByStaffId = async (staffId) => {
-    const response = await axios.get(`/assistance-reports/by/staff_id/${staffId}`);
+    const response = await axios.get(
+        `/assistance-reports/by/staff_id/${staffId}`
+    );
     return response.data.reports;
 };
 
 // Fetch PDF report by ID and Date
 export const fetchReportByIdAndDate = async (id, date) => {
-    const { data } = await axios.get(`/pdf-assistance-reports/${id}/${date}/pdf`);
+    const { data } = await axios.get(
+        `/pdf-assistance-reports/${id}/${date}/pdf`
+    );
     return data;
 };
 
 export async function createAssistanceReport(payload) {
-    const response = await axios.post('/assistance-reports', payload);
+    const response = await axios.post("/assistance-reports", payload);
     return response.data;
 }
 
 export async function updateAssistanceReport(reportId, payload) {
-    const response = await axios.put(`/assistance-reports/${reportId}`, payload);
+    const response = await axios.put(
+        `/assistance-reports/${reportId}`,
+        payload
+    );
     return response.data;
 }
 
@@ -208,30 +217,61 @@ export async function getAssistanceReport(reportId) {
 }
 
 export async function checkAssistanceReportToday(staffId, date) {
-    const response = await axios.get(`/assistance-reports/check-today/${staffId}?date=${date}`);
+    const response = await axios.get(
+        `/assistance-reports/check-today/${staffId}?date=${date}`
+    );
     return response.data;
 }
 
 export const filterAssistanceReports = (payload) => {
-    return axios.post('/assistance-reports/filter', payload);
+    return axios.post("/assistance-reports/filter", payload);
 };
 //FINANCIALS
 // List by club
 export const listPaymentConceptsByClub = (clubId) =>
-    axios.get(route('clubs.payment-concepts.index', clubId))
+    axios.get(route("clubs.payment-concepts.index", clubId));
 
 // Create (payload must include scopes[], type, pay_to, status, etc.)
 export const createPaymentConcept = (clubId, payload) =>
-    axios.post(route('clubs.payment-concepts.store', clubId), payload)
+    axios.post(route("clubs.payment-concepts.store", clubId), payload);
 
 // Show one
 export const showPaymentConcept = (clubId, id) =>
-    axios.get(route('clubs.payment-concepts.show', { club: clubId, paymentConcept: id }))
+    axios.get(
+        route("clubs.payment-concepts.show", {
+            club: clubId,
+            paymentConcept: id,
+        })
+    );
 
 // Update
 export const updatePaymentConcept = (clubId, id, payload) =>
-    axios.put(route('clubs.payment-concepts.update', { club: clubId, paymentConcept: id }), payload)
+    axios.put(
+        route("clubs.payment-concepts.update", {
+            club: clubId,
+            paymentConcept: id,
+        }),
+        payload
+    );
 
 // Delete
 export const deletePaymentConcept = (clubId, id) =>
-    axios.delete(route('clubs.payment-concepts.destroy', { club: clubId, paymentConcept: id }))
+    axios.delete(
+        route("clubs.payment-concepts.destroy", {
+            club: clubId,
+            paymentConcept: id,
+        })
+    );
+
+//PAYMENTS
+export const createClubPayment = async (payload) => {
+    const fd = new FormData();
+    Object.entries(payload).forEach(([k, v]) => {
+        if (v === undefined || v === null) return;
+        fd.append(k, v);
+    });
+
+    return await axios.post(route("club.payments.store"), fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+    });
+};

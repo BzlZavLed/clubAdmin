@@ -10,7 +10,9 @@ import {
     ChartBarIcon,
     CogIcon,
     ChevronDownIcon,
-    ChevronRightIcon
+    ChevronRightIcon,
+    BanknotesIcon,
+
 } from '@heroicons/vue/24/outline'
 
 const { showToast } = useGeneral()
@@ -23,6 +25,7 @@ const menuItems = [
 
 const clubSubItems = [
     { name: 'Assistance Report', href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
+    { name: 'Payments', href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
 ]
 
 const props = defineProps({

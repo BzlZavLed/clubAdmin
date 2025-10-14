@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class PaymentConceptScope extends Model
 {
     use SoftDeletes;
-
+    
     protected $fillable = [
         'payment_concept_id',
         'scope_type',

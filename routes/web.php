@@ -15,7 +15,7 @@ use App\Http\Controllers\ClubClassController;
 use App\Http\Controllers\LLMQueryController as AIQueryController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AssistanceReportController;
-use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ClubPaymentController;
 use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
 use App\Http\Controllers\ReportController;
@@ -213,6 +213,10 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/club-personal/assistance-report', [AssistanceReportController::class, 'index'])
         ->name('club.assistance_report');
+
+    Route::get('/club-personal/payments', [ClubPaymentController::class, 'index'])
+        ->name('club.payments.index');
+    Route::post('/club-personal/payments', [ClubPaymentController::class, 'store'])->name('club.payments.store');
 
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 

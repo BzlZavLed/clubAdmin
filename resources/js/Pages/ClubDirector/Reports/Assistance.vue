@@ -243,7 +243,7 @@ const reportKindLabel = computed(() => {
         case 'range': return 'Assistance Report by Date Range';
         case 'class': return 'Assistance Report by Class';
         case 'member': return 'Assistance Report by Member';
-        default: return 'Assistance Report';
+        default: return '';
     }
 });
 

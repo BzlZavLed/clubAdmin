@@ -38,10 +38,7 @@ onMounted(async () => {
 })
 </script><template>
     <div ref="pdfArea" class="pdf-container">
-        <!-- Watermark Club Name 
-        <div class="watermark">{{ report.club?.club_name }}</div>-->
-
-        <!-- Header -->
+        
         <div class="header">
             <h1>Assistance Report</h1>
             <p class="club-name"><strong>Club:</strong> {{ report.club?.club_name }}</p>

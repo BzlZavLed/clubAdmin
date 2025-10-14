@@ -4,6 +4,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import { computed, ref, watch, onMounted } from 'vue'
+import { PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 import {
     fetchMembersByClub,
@@ -87,13 +88,9 @@ const conceptClubName = computed(() => {
 //ISO Date formatter
 const formatISODate = (val) => {
     if (!val) return '—'
-    // Works for '2025-10-16' and '2025-10-16T00:00:00.000000Z'
-    const str = String(val)
-    const ymd = str.slice(0, 10) // 'YYYY-MM-DD'
-    const [y, m, d] = ymd.split('-').map(Number)
-    // Use UTC to avoid timezone shifting the day
-    const dt = new Date(Date.UTC(y, m - 1, d))
-    return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' })
+    const [y, m, d] = String(val).slice(0, 10).split('-').map(Number)
+    const dt = new Date(y, m - 1, d) // local date (no UTC)
+    return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }).format(dt)
 }
 
 // scope builder actions
@@ -121,12 +118,34 @@ function onScopeTypeChange(scope) {
     }
 }
 
+function scopeOf(pc) {
+    return pc?.scopes?.[0] ?? null
+}
+
+function scopeLabel(sc) {
+    console.log('Generating label for scope:', sc);
+    if (!sc) return 'No scope'
+    switch (sc.scope_type) {
+        case 'club_wide':
+            return `Club wide (${sc.club?.club_name ?? sc.club_id})`
+        case 'staff_wide':
+            return `Staff wide (${sc.club?.club_name ?? sc.club_id})`
+        case 'class':
+            return `Class: ${sc.class?.class_name ?? sc.class_id}`
+        case 'member':
+            return `Member: ${sc.member?.applicant_name ?? sc.member_id}`
+        case 'staff':
+            return `Staff: ${sc.staff?.name ?? sc.staff_id}`
+        default:
+            return 'Unknown scope'
+    }
+}
+
 //API CALLS CREATE PAYMENT CONCEPTS
 async function loadPaymentConcepts() {
     paymentConcepts.value = []
     if (!conceptClubId.value) return
     const { data } = await listPaymentConceptsByClub(conceptClubId.value)
-    // Controller returns { data: [...] }
     paymentConcepts.value = Array.isArray(data?.data) ? data.data : []
 }
 
@@ -257,7 +276,6 @@ const fetchStaff = async (clubId) => {
             return
         }
         showToast('Staff loaded','success');
-        console.log(staffList.value);
     } catch (error) {
         console.error('Failed to fetch staff:', error)
     }
@@ -584,27 +602,30 @@ onMounted(async () => {
                                     <td class="p-2 capitalize">{{ pc.pay_to }}</td>
                                     <td class="p-2 capitalize">{{ pc.status }}</td>
                                     <td class="p-2">
-                                        <ul class="list-disc list-inside space-y-0.5">
-                                            <li v-for="sc in pc.scopes ?? []" :key="sc.id">
-                                                <template v-if="sc.scope_type === 'club_wide'">Club wide ({{
-                                                    sc.club?.club_name ?? sc.club_id }})</template>
-                                                <template v-else-if="sc.scope_type === 'staff_wide'">Staff wide ({{
-                                                    sc.club?.club_name ?? sc.club_id }})</template>
-                                                <template v-else-if="sc.scope_type === 'class'">Class: {{
-                                                    sc.class?.class_name ?? sc.class_id }}</template>
-                                                <template v-else-if="sc.scope_type === 'member'">Member: {{
-                                                    sc.member?.applicant_name ?? sc.member_id }}</template>
-                                                <template v-else-if="sc.scope_type === 'staff'">Staff: {{
-                                                    sc.staff?.name ?? sc.staff_id }}</template>
-                                            </li>
-                                        </ul>
+                                        <span v-if="scopeOf(pc)">{{ scopeLabel(scopeOf(pc)) }}</span>
+                                        <span v-else class="text-gray-500 italic">No scope</span>
                                     </td>
-                                    <td class="p-2 space-x-2">
-                                        <button class="text-blue-600 hover:underline" @click.prevent="editConcept(pc)">
-                                            Edit
+                                    <td>
+                                        <button
+                                            type="button"
+                                            class="p-1 rounded hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                            @click.prevent="editConcept(pc)"
+                                            aria-label="Edit"
+                                            title="Edit"
+                                        >
+                                            <PencilSquareIcon class="h-5 w-5 text-blue-600" />
+                                            <span class="sr-only">Edit</span>
                                         </button>
-                                        <button class="text-red-600 hover:underline" @click="deleteConcept(pc.id)">
-                                            Delete
+
+                                        <button
+                                            type="button"
+                                            class="p-1 rounded hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+                                            @click="deleteConcept(pc.id)"
+                                            aria-label="Delete"
+                                            title="Delete"
+                                        >
+                                            <TrashIcon class="h-5 w-5 text-red-600" />
+                                            <span class="sr-only">Delete</span>
                                         </button>
                                     </td>
                                 </tr>

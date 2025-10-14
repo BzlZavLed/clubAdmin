@@ -162,7 +162,7 @@ class ClubController extends Controller
     public function paymentConceptsIndex(Request $request, Club $club)
     {
         $request->validate([
-            'status' => ['nullable', Rule::in(['active','inactive'])],
+            'status' => ['nullable', Rule::in(['active'])],
         ]);
 
         $query = PaymentConcept::query()
@@ -311,9 +311,14 @@ class ClubController extends Controller
     public function paymentConceptsDestroy(Club $club, PaymentConcept $paymentConcept)
     {
         $this->assertBelongsToClub($paymentConcept, $club);
-        $paymentConcept->delete();
 
-        return response()->json(['message' => 'Deleted']);
+        DB::transaction(function () use ($paymentConcept) {
+            $paymentConcept->update(['status' => 'inactive']);
+            $paymentConcept->scopes()->update(['deleted_on' => now()]);
+
+        });
+
+        return response()->json(['message' => 'Deleted (soft)']);
     }
 
     /* ---------- Helpers ---------- */
