@@ -8,7 +8,8 @@ import {
     ChartBarIcon,
     CogIcon,
     DocumentTextIcon,
-    CurrencyDollarIcon
+    CurrencyDollarIcon,
+    BanknotesIcon
 } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 
@@ -47,6 +48,12 @@ const menuItems = [
                 href: '/club-director/reports/assistance',
                 route: 'club.reports.assistance',
                 icon: DocumentTextIcon
+            },
+            {
+                name: 'Finances Reports',
+                href: '/club-director/reports/finances',
+                route: 'club.reports.finances',
+                icon: BanknotesIcon
             }
             // Add more report types here as needed
         ]

@@ -110,6 +110,13 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ]);
     })->name('club.reports.assistance');
 
+    Route::get('/club-director/reports/finances', function () {
+        return Inertia::render('ClubDirector/Reports/Finances', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('club.reports.finances');
+
     // 🟢 API Endpoints
 
     // Clubs
@@ -166,6 +173,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     //Reports
     Route::post('/assistance-reports/filter', [ReportController::class, 'assistanceReportsDirector'])->name('assistance-reports.director');
+    Route::get('/financial-report/bootstrap', [ReportController::class, 'financialReportPreload'])->name('financial.preload');
+    Route::get('/financial-report/report', [ReportController::class, 'financialReport'])->name('financial.report');
 
 });
 

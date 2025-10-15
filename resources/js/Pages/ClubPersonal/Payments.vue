@@ -129,7 +129,31 @@ const submit = async () => {
 
 //SEARCHING AND FILTERING PREVIOUS PAYMENTS
 const searchTerm = ref('')
+const pageSize   = ref(10)           // items per page (tweak as you like)
+const page       = ref(1)
 
+// Build a filtered list (payer OR concept)
+const filteredPayments = computed(() => {
+    const q = (searchTerm.value || '').toLowerCase().trim()
+    if (!q) return props.payments || []
+    return (props.payments || []).filter(p => {
+        const name = (p.member?.applicant_name ?? p.staff?.name ?? '').toLowerCase()
+        const concept = (p.concept?.concept ?? '').toLowerCase()
+        return name.includes(q) || concept.includes(q)
+    })
+})
+
+// Reset to page 1 when search changes
+watch(searchTerm, () => { page.value = 1 })
+
+const totalPages = computed(() =>
+    Math.max(1, Math.ceil(filteredPayments.value.length / pageSize.value))
+)
+const startIdx = computed(() => (page.value - 1) * pageSize.value)
+const endIdx = computed(() => Math.min(startIdx.value + pageSize.value, filteredPayments.value.length))
+const pagedPayments = computed(() => filteredPayments.value.slice(startIdx.value, endIdx.value))
+
+const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
 </script>
 <template>
@@ -310,16 +334,27 @@ const searchTerm = ref('')
                         </div>
                     </div>
 
-                    <div v-if="!payments?.length" class="mt-2 text-sm text-gray-500">No payments yet.</div>
+                    <!-- Top meta -->
+                    <div v-if="(props.payments || []).length"
+                        class="mt-2 flex items-center justify-between text-xs text-gray-600">
+                        <div>Showing {{ filteredPayments.length ? startIdx + 1 : 0 }}–{{ endIdx }} of {{
+                            filteredPayments.length }}</div>
+                        <div class="flex items-center gap-2">
+                            <label class="hidden sm:block">Per page</label>
+                            <select v-model.number="pageSize"
+                                class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
+                                <option :value="5">5</option>
+                                <option :value="10">10</option>
+                                <option :value="20">20</option>
+                                <option :value="50">50</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">No payments yet.</div>
 
                     <ul v-else class="mt-2 divide-y divide-gray-200 rounded-2xl border border-gray-200">
-                        <li v-for="p in (payments || []).filter(p => {
-                            const q = (searchTerm || '').toLowerCase().trim()
-                            if (!q) return true
-                            const name = (p.member?.applicant_name ?? p.staff?.name ?? '').toLowerCase()
-                            const concept = (p.concept?.concept ?? '').toLowerCase()
-                            return name.includes(q) || concept.includes(q)
-                        })" :key="p.id" class="p-3 sm:p-4">
+                        <li v-for="p in pagedPayments" :key="p.id" class="p-3 sm:p-4">
                             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                 <!-- Left: payer, concept, meta -->
                                 <div class="flex-1">
@@ -359,7 +394,7 @@ const searchTerm = ref('')
                                             p.zelle_phone }}</span>
                                     </div>
 
-                                    <!-- Check image (thumbnail + link) -->
+                                    <!-- Check image -->
                                     <div v-if="p.payment_type === 'check' && p.check_image_path" class="mt-2">
                                         <a :href="`/storage/${p.check_image_path}`" target="_blank" rel="noopener"
                                             class="inline-block" title="Open check image">
@@ -381,6 +416,25 @@ const searchTerm = ref('')
                             </div>
                         </li>
                     </ul>
+
+                    <!-- Pagination controls -->
+                    <div v-if="filteredPayments.length > pageSize" class="mt-3 flex items-center justify-between">
+                        <button
+                            class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            :disabled="page <= 1" @click="go(page - 1)">
+                            Prev
+                        </button>
+
+                        <div class="text-xs text-gray-600">
+                            Page {{ page }} of {{ totalPages }}
+                        </div>
+
+                        <button
+                            class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            :disabled="page >= totalPages" @click="go(page + 1)">
+                            Next
+                        </button>
+                    </div>
                 </section>
             </main>
         </div>

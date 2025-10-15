@@ -275,3 +275,9 @@ export const createClubPayment = async (payload) => {
         headers: { "Content-Type": "multipart/form-data" },
     });
 };
+
+// Director Financial Report — bootstrap data
+export const fetchFinancialReportBootstrap = async () => {
+    const { data } = await axios.get(route('financial.preload'))
+    return data
+}
