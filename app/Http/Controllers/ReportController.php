@@ -16,6 +16,7 @@ use App\Models\PayToOption;
 use App\Models\Payment;
 use Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Collection;
 class ReportController extends Controller
 {
     public function generateAssistancePDF($id, $date)
@@ -222,7 +223,7 @@ class ReportController extends Controller
         $clubId = $user->club_id;
         $club = Club::findOrFail($clubId);
 
-        // Base validation + shared date rules
+        // Base validation (shared)
         $validated = $request->validate([
             'mode' => ['required', Rule::in(['concept', 'scope', 'date', 'member'])],
             'concept_id' => ['nullable', 'integer', 'exists:payment_concepts,id'],
@@ -230,19 +231,26 @@ class ReportController extends Controller
             'scope_id' => ['nullable', 'integer'],
             'member_id' => ['nullable', 'integer'],
             'staff_id' => ['nullable', 'integer'],
-            'date' => ['nullable', 'date'],                 // single date
+            'date' => ['nullable', 'date'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'paginate' => ['sometimes', 'boolean'],   // optional: to enable pagination
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
         ]);
 
         $mode = $validated['mode'];
+        $paginate = (bool) ($validated['paginate'] ?? false);
+        $perPage = (int) ($validated['per_page'] ?? 100);
+
 
         switch ($mode) {
-            case 'concept':
-                // Require a concept that belongs to this club & is active
+
+            case 'concept': {
+                // Ensure concept belongs to this club (and optionally active)
                 $concept = PaymentConcept::query()
                     ->where('id', $validated['concept_id'] ?? 0)
                     ->where('club_id', $club->id)
+                    // ->where('status', 'active')  // uncomment if you enforce active here
                     ->firstOrFail();
 
                 $q = Payment::query()
@@ -253,7 +261,8 @@ class ReportController extends Controller
                         'staff:id,name',
                         'concept:id,concept,amount',
                         'receivedBy:id,name',
-                    ]);
+                    ])
+                    ->orderBy('payment_date')->orderBy('id');
 
                 if (!empty($validated['date_from']) || !empty($validated['date_to'])) {
                     $from = $validated['date_from'] ?? '1900-01-01';
@@ -263,212 +272,208 @@ class ReportController extends Controller
                     $q->whereDate('payment_date', $validated['date']);
                 }
 
-                // Chronological
-                $q->orderBy('payment_date')->orderBy('id');
-
-                // If you expect many rows, paginate (uncomment):
-                $results = $q->paginate(100);
-
-                $rows = $q->get();
-
-                // Basic totals
-                $totalPaid = (float) $rows->sum('amount_paid');
-
-                // Group by "charge" (unique payer × concept)
-                $groups = $rows->groupBy(function ($p) {
-                    $payerKey = $p->member_adventurer_id
-                        ? ('m:' . $p->member_adventurer_id)
-                        : ('s:' . $p->staff_adventurer_id);
-                    return $payerKey . '|c:' . $p->payment_concept_id;
-                });
-
-                $chargeSummaries = $groups->map(function ($paymentsForCharge) {
-                    $expected = (float) $paymentsForCharge->max('expected_amount');
-                    $paid = (float) $paymentsForCharge->sum('amount_paid');
-                    $remaining = max($expected - $paid, 0.0);
-
-                    return [
-                        'expected' => $expected,
-                        'paid' => $paid,
-                        'remaining' => $remaining,
-                    ];
-                });
-
-                $totalExpected = (float) $chargeSummaries->sum('expected');
-                $totalRemaining = (float) $chargeSummaries->sum('remaining');
-                $paymentsCount = $rows->count();
-                $chargesCount = $chargeSummaries->count();
-
-                // --- 🧾 Payment type classification ---
-                $paymentTypeTotals = $rows
-                    ->groupBy('payment_type')
-                    ->mapWithKeys(function ($group, $type) {
-                        return [$type => (float) $group->sum('amount_paid')];
-                    });
-
-                // Ensure all known types exist in summary even if 0
-                $knownTypes = ['cash', 'zelle', 'check'];
-                foreach ($knownTypes as $type) {
-                    if (!isset($paymentTypeTotals[$type])) {
-                        $paymentTypeTotals[$type] = 0.0;
-                    }
+                if ($paginate) {
+                    $page = $q->paginate($perPage);
+                    $rows = collect($page->items());
+                } else {
+                    $rows = $q->get();
+                    $page = null;
                 }
 
-                // --- ✅ Final summary ---
-                $summary = [
-                    'payments_count' => $paymentsCount,
-                    'charges_count' => $chargesCount,
-                    'amount_paid_sum' => $totalPaid,
-                    'expected_sum' => $totalExpected,
-                    'balance_remaining' => $totalRemaining,
-                    'by_payment_type' => $paymentTypeTotals,
-                ];
+                $summary = $this->buildSummaryFromRows($rows);
 
                 return response()->json([
                     'data' => [
                         'mode' => 'concept',
-                        'concept' => ['id' => $concept->id, 'concept' => $concept->concept],
-                        'payments' => $rows,
+                        'concept' => ['id' => $concept->id, 'concept' => $concept->concept, 'amount' => $concept->amount, 'payment_expected_by' => $concept->payment_expected_by],
+                        'payments' => $paginate ? $page : $rows,
                         'summary' => $summary,
                     ]
                 ]);
+            }
 
-            // You’ll implement these next:
             case 'scope': {
-                // Validate scope params
+                // Extra validation for scope mode
                 $request->validate([
                     'scope_type' => ['required', Rule::in(['club_wide', 'class', 'member', 'staff_wide', 'staff'])],
-                    'scope_id' => ['nullable', 'integer'], // required for some types below
-                    'date_from' => ['nullable', 'date'],
-                    'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+                    'scope_id' => ['nullable', 'integer'],
                 ]);
 
-                $scopeType = $request->input('scope_type');
-                $scopeId = $request->input('scope_id');
+                $scopeType = $validated['scope_type'];
+                $scopeId = $validated['scope_id'] ?? null;
+                $from = $validated['date_from'] ?? null;
+                $to = $validated['date_to'] ?? null;
 
-                // For these types, scope_id is required
-                if (in_array($scopeType, ['class', 'member', 'staff']) && empty($scopeId)) {
-                    return response()->json(['message' => 'scope_id is required for the selected scope_type.'], 422);
-                }
+                // Normalize staff_wide → staff + staff_all=true rows
+                $normalizedType = $scopeType === 'staff_wide' ? 'staff' : $scopeType;
 
-                // Build base scope filter
-                $scopeQ = PaymentConceptScope::query()
+                $baseScopeQ = PaymentConceptScope::query()
                     ->whereHas('concept', fn($q) => $q->where('club_id', $club->id)->where('status', 'active'))
-                    ->where('scope_type', $scopeType);
+                    ->where('scope_type', $normalizedType);
 
-                switch ($scopeType) {
+                switch ($normalizedType) {
                     case 'club_wide':
-                        // club_wide: use current club
-                        $scopeQ->where('club_id', $club->id);
+                        $baseScopeQ->where('club_id', $club->id);
                         break;
+
                     case 'class':
-                        $scopeQ->where('class_id', $scopeId);
+                        $scopeId ? $baseScopeQ->where('class_id', $scopeId)
+                            : $baseScopeQ->whereNotNull('class_id');
                         break;
+
                     case 'member':
-                        $scopeQ->where('member_id', $scopeId);
+                        $scopeId ? $baseScopeQ->where('member_id', $scopeId)
+                            : $baseScopeQ->whereNotNull('member_id');
                         break;
-                    case 'staff_wide':
-                        // staff_wide tied to the club (like club_wide but for staff)
-                        $scopeQ->where('club_id', $club->id);
-                        break;
+
                     case 'staff':
-                        $scopeQ->where('staff_id', $scopeId);
+                        if ($scopeId) {
+                            // include staff-wide for this club OR specific staff
+                            $baseScopeQ->where(function ($q) use ($club, $scopeId) {
+                                $q->where(function ($qq) use ($club) {
+                                    $qq->where('staff_all', true)
+                                        ->where('club_id', $club->id);
+                                })
+                                    ->orWhere(function ($qq) use ($scopeId) {
+                                        $qq->where('staff_all', false)
+                                            ->where('staff_id', $scopeId);
+                                    });
+                            });
+                        } else {
+                            // Only staff-wide (club-level) if no staff chosen
+                            $baseScopeQ->where('staff_all', true)->where('club_id', $club->id);
+                        }
                         break;
                 }
 
-                // Get unique concept ids for this scope
-                $conceptIds = $scopeQ->pluck('payment_concept_id')->unique()->values();
+                $scopeRows = $baseScopeQ
+                    ->with([
+                        'concept:id,concept,amount,payment_expected_by,type,club_id',
+                        'club:id,club_name',
+                        'class:id,class_name',
+                        'member:id,applicant_name',
+                        'staff:id,name',
+                    ])
+                    ->orderBy('id')
+                    ->get(['id', 'payment_concept_id', 'scope_type', 'club_id', 'class_id', 'member_id', 'staff_id', 'staff_all']);
 
-                if ($conceptIds->isEmpty()) {
+                if ($scopeRows->isEmpty()) {
                     return response()->json([
                         'data' => [
                             'mode' => 'scope',
                             'scope' => ['type' => $scopeType, 'id' => $scopeId],
-                            'concepts' => [],   // nothing to show
+                            'scopes' => [],
                         ]
                     ]);
                 }
 
-                // Optional date filters
-                $from = $request->input('date_from');
-                $to = $request->input('date_to');
+                // Group by scope identity (e.g., class|<id>, staff_all|<club>, staff|<id>, etc.)
+                $identityKey = function ($s) {
+                    return match ($s->scope_type) {
+                        'club_wide' => "club|{$s->club_id}",
+                        'class' => "class|{$s->class_id}",
+                        'member' => "member|{$s->member_id}",
+                        'staff' => $s->staff_all ? "staff_all|{$s->club_id}" : "staff|{$s->staff_id}",
+                        default => "{$s->scope_type}|{$s->id}",
+                    };
+                };
 
-                // Fetch concepts (for labels, amounts, due dates)
+                $identityLabel = function ($s) {
+                    return match ($s->scope_type) {
+                        'club_wide' => 'Club wide' . ($s->club?->club_name ? " ({$s->club->club_name})" : ''),
+                        'class' => 'Class: ' . ($s->class?->class_name ?? $s->class_id),
+                        'member' => 'Member: ' . ($s->member?->applicant_name ?? $s->member_id),
+                        'staff' => $s->staff_all
+                        ? ('Staff wide' . ($s->club?->club_name ? " ({$s->club->club_name})" : ''))
+                        : ('Staff: ' . ($s->staff?->name ?? $s->staff_id)),
+                        default => ucfirst($s->scope_type),
+                    };
+                };
+
+                $byIdentity = $scopeRows->groupBy(fn($s) => $identityKey($s));
+
+                $allConceptIds = $scopeRows->pluck('payment_concept_id')->unique()->values();
+
                 $concepts = PaymentConcept::query()
-                    ->whereIn('id', $conceptIds)
-                    ->orderBy('concept')
-                    ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id']);
+                    ->whereIn('id', $allConceptIds)
+                    ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id'])
+                    ->keyBy('id');
 
-                // For each concept, pull payments + build per-concept summary
-                $conceptReports = $concepts->map(function ($concept) use ($club, $from, $to) {
-                    $q = Payment::query()
-                        ->where('club_id', $club->id)
-                        ->where('payment_concept_id', $concept->id)
-                        ->with([
-                            'member:id,applicant_name',
-                            'staff:id,name',
-                            'concept:id,concept,amount',
-                            'receivedBy:id,name',
-                        ]);
+                $paymentsQ = Payment::query()
+                    ->where('club_id', $club->id)
+                    ->whereIn('payment_concept_id', $allConceptIds)
+                    ->with([
+                        'member:id,applicant_name',
+                        'staff:id,name',
+                        'receivedBy:id,name',
+                    ])
+                    ->orderBy('payment_date')->orderBy('id');
 
-                    if ($from || $to) {
-                        $q->whereBetween('payment_date', [$from ?? '1900-01-01', $to ?? '2999-12-31']);
-                    }
+                if ($from || $to) {
+                    $paymentsQ->whereBetween('payment_date', [$from ?? '1900-01-01', $to ?? '2999-12-31']);
+                }
 
-                    $q->orderBy('payment_date')->orderBy('id');
-                    $rows = $q->get();
+                $paymentsByConcept = $paymentsQ->get()->groupBy('payment_concept_id');
 
-                    // --- per-concept summary that de-duplicates charges (payer x concept) ---
-                    $totalPaid = (float) $rows->sum('amount_paid');
+                $scopeBlocks = $byIdentity->map(function ($rowsForIdentity) use ($identityKey, $identityLabel, $paymentsByConcept, $concepts) {
 
-                    $groups = $rows->groupBy(function ($p) {
-                        $payerKey = $p->member_adventurer_id
-                            ? ('m:' . $p->member_adventurer_id)
-                            : ('s:' . $p->staff_adventurer_id);
-                        return $payerKey . '|c:' . $p->payment_concept_id;
-                    });
+                    $conceptIds = $rowsForIdentity->pluck('payment_concept_id')->unique()->values();
 
-                    $chargeSummaries = $groups->map(function ($paymentsForCharge) {
-                        $expected = (float) $paymentsForCharge->max('expected_amount');
-                        $paid = (float) $paymentsForCharge->sum('amount_paid');
-                        $remaining = max($expected - $paid, 0.0);
-                        return ['expected' => $expected, 'paid' => $paid, 'remaining' => $remaining];
-                    });
+                    $conceptReports = $conceptIds->map(function ($cid) use ($paymentsByConcept, $concepts, $identityKey) {
+                        $rows = ($paymentsByConcept->get($cid) ?? collect())->values();
 
-                    $totalExpected = (float) $chargeSummaries->sum('expected');
-                    $totalRemaining = (float) $chargeSummaries->sum('remaining');
-                    $paymentsCount = $rows->count();
-                    $chargesCount = $chargeSummaries->count();
+                        return [
+                            'concept' => [
+                                'id' => $cid,
+                                'concept' => $concepts[$cid]->concept ?? '—',
+                                'amount' => $concepts[$cid]->amount ?? null,
+                                'payment_expected_by' => $concepts[$cid]->payment_expected_by ?? null,
+                                'type' => $concepts[$cid]->type ?? null,
+                            ],
+                            'payments' => $rows,
+                            'summary' => $this->buildSummaryFromRows($rows)
+                        ];
+                    })->values();
 
-                    // breakdown by payment type for this concept
-                    $paymentTypeTotals = $rows
-                        ->groupBy('payment_type')
-                        ->mapWithKeys(fn($g, $type) => [$type => (float) $g->sum('amount_paid')]);
+                    // Roll-up summary per scope identity
+                    $scopeSummary = (function ($conceptReports) {
+                        $acc = [
+                            'payments_count' => 0,
+                            'charges_count' => 0,
+                            'amount_paid_sum' => 0.0,
+                            'expected_sum' => 0.0,
+                            'balance_remaining' => 0.0,
+                            'by_payment_type' => ['cash' => 0.0, 'zelle' => 0.0, 'check' => 0.0],
+                        ];
+                        foreach ($conceptReports as $cr) {
+                            $s = $cr['summary'];
+                            $acc['payments_count'] += (int) ($s['payments_count'] ?? 0);
+                            $acc['charges_count'] += (int) ($s['charges_count'] ?? 0);
+                            $acc['amount_paid_sum'] += (float) ($s['amount_paid_sum'] ?? 0);
+                            $acc['expected_sum'] += (float) ($s['expected_sum'] ?? 0);
+                            $acc['balance_remaining'] += (float) ($s['balance_remaining'] ?? 0);
+                            foreach (['cash', 'zelle', 'check'] as $t) {
+                                $acc['by_payment_type'][$t] += (float) ($s['by_payment_type'][$t] ?? 0);
+                            }
+                        }
+                        return $acc;
+                    })($conceptReports->all());
 
-                    foreach (['cash', 'zelle', 'check'] as $type) {
-                        if (!isset($paymentTypeTotals[$type]))
-                            $paymentTypeTotals[$type] = 0.0;
-                    }
-
-                    $summary = [
-                        'payments_count' => $paymentsCount,
-                        'charges_count' => $chargesCount,
-                        'amount_paid_sum' => $totalPaid,
-                        'expected_sum' => $totalExpected,
-                        'balance_remaining' => $totalRemaining,
-                        'by_payment_type' => $paymentTypeTotals,
-                    ];
+                    $first = $rowsForIdentity->first();
 
                     return [
-                        'concept' => [
-                            'id' => $concept->id,
-                            'concept' => $concept->concept,
-                            'amount' => $concept->amount,
-                            'payment_expected_by' => $concept->payment_expected_by,
-                            'type' => $concept->type,
+                        'scope' => [
+                            'identity_key' => $identityKey($first),
+                            'type' => $first->scope_type,
+                            'label' => $identityLabel($first),
+                            'club' => $first->club ? ['id' => $first->club->id, 'club_name' => $first->club->club_name] : null,
+                            'class' => $first->class ? ['id' => $first->class->id, 'class_name' => $first->class->class_name] : null,
+                            'member' => $first->member ? ['id' => $first->member->id, 'applicant_name' => $first->member->applicant_name] : null,
+                            'staff' => $first->staff_all ? null : ($first->staff ? ['id' => $first->staff->id, 'name' => $first->staff->name] : null),
+                            'staff_all' => (bool) $first->staff_all,
                         ],
-                        'payments' => $rows,
-                        'summary' => $summary,
+                        'concepts' => $conceptReports,
+                        'summary' => $scopeSummary,
                     ];
                 })->values();
 
@@ -476,16 +481,50 @@ class ReportController extends Controller
                     'data' => [
                         'mode' => 'scope',
                         'scope' => ['type' => $scopeType, 'id' => $scopeId],
-                        'concepts' => $conceptReports, // array => one element per tab in the UI
+                        'scopes' => $scopeBlocks,
                     ]
                 ]);
             }
-            case 'date':
-            case 'member':
+
             default:
-                return response()->json([
-                    'message' => 'Report mode not implemented yet.'
-                ], 422);
+                return response()->json(['message' => 'Mode not implemented yet'], 400);
         }
     }
+
+    protected function buildSummaryFromRows(Collection $rows): array
+    {
+        $totalPaid = (float) $rows->sum('amount_paid');
+
+        $groups = $rows->groupBy(function ($p) {
+            $payerKey = $p->member_adventurer_id
+                ? ('m:' . $p->member_adventurer_id)
+                : ('s:' . $p->staff_adventurer_id);
+            return $payerKey . '|c:' . $p->payment_concept_id;
+        });
+
+        $chargeSummaries = $groups->map(function ($paymentsForCharge) {
+            $expected = (float) $paymentsForCharge->max('expected_amount');
+            $paid = (float) $paymentsForCharge->sum('amount_paid');
+            $remaining = max($expected - $paid, 0.0);
+            return ['expected' => $expected, 'paid' => $paid, 'remaining' => $remaining];
+        });
+
+        $byType = $rows->groupBy('payment_type')
+            ->mapWithKeys(fn($g, $t) => [$t => (float) $g->sum('amount_paid')])
+            ->all();
+
+        foreach (['cash', 'zelle', 'check'] as $t) {
+            $byType[$t] = (float) ($byType[$t] ?? 0.0);
+        }
+
+        return [
+            'payments_count' => $rows->count(),
+            'charges_count' => $chargeSummaries->count(),
+            'amount_paid_sum' => $totalPaid,
+            'expected_sum' => (float) $chargeSummaries->sum('expected'),
+            'balance_remaining' => (float) $chargeSummaries->sum('remaining'),
+            'by_payment_type' => $byType,
+        ];
+    }
+
 }

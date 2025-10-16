@@ -16,8 +16,16 @@ class PaymentConceptScope extends Model
         'class_id',
         'member_id',
         'staff_id',
-    ];
+        'staff_all',        // <-- NEW
 
+    ];
+    protected $casts = [
+        'club_id'     => 'integer',
+        'class_id'    => 'integer',
+        'member_id'   => 'integer',
+        'staff_id'    => 'integer',
+        'staff_all'   => 'boolean',   // <-- NEW
+    ];
     public function concept()
     {
         return $this->belongsTo(PaymentConcept::class, 'payment_concept_id');
