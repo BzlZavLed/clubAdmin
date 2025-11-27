@@ -281,3 +281,19 @@ export const fetchFinancialReportBootstrap = async () => {
     const { data } = await axios.get(route('financial.preload'))
     return data
 }
+
+// Account balances by pay_to
+export const fetchFinancialAccountBalances = async () => {
+    const { data } = await axios.get(route('financial.accounts'))
+    return data
+}
+
+// Expenses
+export const fetchExpenses = async () => {
+    const { data } = await axios.get(route('club.director.expenses'))
+    return data
+}
+
+export const createExpense = async (payload) => {
+    return await axios.post(route('club.director.expenses.store'), payload)
+}

@@ -14,6 +14,10 @@ use App\Models\ClubClass;
 use App\Models\ScopeType;
 use App\Models\PayToOption;
 use App\Models\Payment;
+use App\Models\Expense;
+use App\Models\Account;
+use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Collection;
@@ -527,4 +531,147 @@ class ReportController extends Controller
         ];
     }
 
+    /**
+     * Account balances by pay_to (entries minus expenses).
+     * Currently expenses are zero unless tracked elsewhere.
+     */
+    public function financialAccountBalances(Request $request)
+    {
+        $user = $request->user();
+        $club = $this->resolveClubFromUser($user);
+
+        $data = $this->buildAccountReportData($club);
+
+        return response()->json(['data' => $data]);
+    }
+
+    public function financialAccountBalancesPdf(Request $request)
+    {
+        $user = $request->user();
+        $club = $this->resolveClubFromUser($user);
+        $data = $this->buildAccountReportData($club);
+
+        $pdf = Pdf::loadView('reports.account_balances', [
+            'club' => $club,
+            'accounts' => $data['accounts'],
+            'payments' => $data['payments'],
+            'expenses' => $data['expenses'],
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download('account-balances.pdf');
+    }
+
+    protected function buildAccountReportData(Club $club): array
+    {
+        // Fetch label map for pay_to (club overrides global)
+        $clubPayTo = PayToOption::active()
+            ->where('club_id', $club->id)
+            ->orderBy('label')
+            ->get(['value', 'label']);
+
+        $globalPayTo = PayToOption::active()
+            ->whereNull('club_id')
+            ->whereNotIn('value', $clubPayTo->pluck('value'))
+            ->orderBy('label')
+            ->get(['value', 'label']);
+
+        $payToLabelMap = $clubPayTo->concat($globalPayTo)
+            ->mapWithKeys(fn($p) => [$p->value => $p->label])
+            ->all();
+
+        // Sum payments by pay_to via the concept
+        $entries = Payment::query()
+            ->where('payments.club_id', $club->id)
+            ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
+            ->selectRaw('payment_concepts.pay_to as account, COALESCE(SUM(payments.amount_paid), 0) as entries')
+            ->groupBy('payment_concepts.pay_to')
+            ->get()
+            ->map(function ($row) use ($payToLabelMap) {
+                $account = $row->account ?? 'unknown';
+                $entries = (float) $row->entries;
+                return [
+                    'account' => $account,
+                    'label' => $payToLabelMap[$account] ?? $account,
+                    'entries' => $entries,
+                    'expenses' => 0.0,
+                    'balance' => $entries,
+                ];
+            })
+            ->values();
+
+        // Sum expenses by pay_to
+        $expensesByAccount = Expense::query()
+            ->where('club_id', $club->id)
+            ->selectRaw('pay_to as account, COALESCE(SUM(amount),0) as expenses')
+            ->groupBy('pay_to')
+            ->pluck('expenses', 'account');
+
+        // Merge expenses into entries collection
+        $entries = $entries->map(function ($acc) use ($expensesByAccount) {
+            $exp = (float) ($expensesByAccount[$acc['account']] ?? 0);
+            $acc['expenses'] = $exp;
+            $acc['balance'] = ($acc['entries'] ?? 0) - $exp;
+            return $acc;
+        });
+
+        // Detailed payment rows for income table
+        $payments = Payment::query()
+            ->where('payments.club_id', $club->id)
+            ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
+            ->with([
+                'member:id,applicant_name',
+                'staff:id,name',
+            ])
+            ->orderByDesc('payment_date')
+            ->orderByDesc('payments.id')
+            ->get([
+                'payments.id',
+                'payments.payment_date',
+                'payments.amount_paid',
+                'payments.payment_type',
+                'payments.member_adventurer_id',
+                'payments.staff_adventurer_id',
+                'payments.payment_concept_id',
+                'payment_concepts.concept as concept_name',
+                'payment_concepts.pay_to as account',
+            ])
+            ->map(function ($p) use ($payToLabelMap) {
+                return [
+                    'id' => $p->id,
+                    'payment_date' => $p->payment_date,
+                    'amount_paid' => (float) $p->amount_paid,
+                    'payment_type' => $p->payment_type,
+                    'account' => $p->account ?? 'unknown',
+                    'account_label' => $payToLabelMap[$p->account] ?? ($p->account ?? 'Unassigned'),
+                    'concept' => $p->concept_name ?? '—',
+                    'member' => $p->member ? ['id' => $p->member->id, 'applicant_name' => $p->member->applicant_name] : null,
+                    'staff' => $p->staff ? ['id' => $p->staff->id, 'name' => $p->staff->name] : null,
+                ];
+            })
+            ->values();
+
+        $expenses = Expense::query()
+            ->where('club_id', $club->id)
+            ->orderByDesc('expense_date')
+            ->orderByDesc('id')
+            ->get(['id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to'])
+            ->map(function ($e) use ($payToLabelMap) {
+                return [
+                    'id' => $e->id,
+                    'pay_to' => $e->pay_to,
+                    'pay_to_label' => $payToLabelMap[$e->pay_to] ?? $e->pay_to,
+                    'amount' => (float) $e->amount,
+                    'expense_date' => $e->expense_date,
+                    'description' => $e->description,
+                    'reimbursed_to' => $e->reimbursed_to,
+                ];
+            })
+            ->values();
+
+        return [
+            'accounts' => $entries,
+            'payments' => $payments,
+            'expenses' => $expenses,
+        ];
+    }
 }

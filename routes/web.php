@@ -16,6 +16,7 @@ use App\Http\Controllers\LLMQueryController as AIQueryController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AssistanceReportController;
 use App\Http\Controllers\ClubPaymentController;
+use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
 use App\Http\Controllers\ReportController;
@@ -96,6 +97,13 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         Inertia::render('ClubDirector/Members', ['auth_user' => auth()->user()])
     )->name('club.members');
 
+    Route::get('/club-director/payments', [ClubPaymentController::class, 'directorIndex'])
+        ->name('club.director.payments');
+    Route::get('/club-director/expenses', [ExpenseController::class, 'index'])
+        ->name('club.director.expenses');
+    Route::post('/club-director/expenses', [ExpenseController::class, 'store'])
+        ->name('club.director.expenses.store');
+
     Route::get('/club-director/staff', function () {
         return Inertia::render('ClubDirector/Staff', [
             'auth_user' => auth()->user(),
@@ -116,6 +124,13 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
             'sub_roles' => SubRole::all(),
         ]);
     })->name('club.reports.finances');
+
+    Route::get('/club-director/reports/accounts', function () {
+        return Inertia::render('ClubDirector/Reports/Accounts', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('club.reports.accounts');
 
     // 🟢 API Endpoints
 
@@ -175,6 +190,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/assistance-reports/filter', [ReportController::class, 'assistanceReportsDirector'])->name('assistance-reports.director');
     Route::get('/financial-report/bootstrap', [ReportController::class, 'financialReportPreload'])->name('financial.preload');
     Route::get('/financial-report/report', [ReportController::class, 'financialReport'])->name('financial.report');
+    Route::get('/financial-report/accounts', [ReportController::class, 'financialAccountBalances'])->name('financial.accounts');
+    Route::get('/financial-report/accounts/pdf', [ReportController::class, 'financialAccountBalancesPdf'])->name('financial.accounts.pdf');
 
 });
 

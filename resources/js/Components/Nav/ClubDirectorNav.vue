@@ -33,6 +33,18 @@ const menuItems = [
                 href: '/club-director/my-club-finances',
                 route: 'club.my-club-finances',
                 icon: CurrencyDollarIcon
+            },
+            {
+                name: 'Payments',
+                href: '/club-director/payments',
+                route: 'club.director.payments',
+                icon: BanknotesIcon
+            },
+            {
+                name: 'Expenses',
+                href: '/club-director/expenses',
+                route: 'club.director.expenses',
+                icon: CurrencyDollarIcon
             }
             
         ]
@@ -54,6 +66,12 @@ const menuItems = [
                 href: '/club-director/reports/finances',
                 route: 'club.reports.finances',
                 icon: BanknotesIcon
+            },
+            {
+                name: 'Account Balances',
+                href: '/club-director/reports/accounts',
+                route: 'club.reports.accounts',
+                icon: CurrencyDollarIcon
             }
             // Add more report types here as needed
         ]

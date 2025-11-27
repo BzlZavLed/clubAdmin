@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Club;
+use App\Models\Account;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
 use App\Models\MemberAdventurer;
@@ -39,8 +40,28 @@ class ClubPaymentController extends Controller
         // --- your existing queries ---
         $members = MemberAdventurer::query()
             ->where('club_id', $club->id)
+            ->with([
+                'clubClasses' => function ($q) {
+                    $q->wherePivot('active', true);
+                },
+            ])
             ->orderBy('applicant_name')
-            ->get(['id', 'applicant_name', 'club_id']);
+            ->get(['id', 'applicant_name', 'club_id'])
+            ->map(function ($m) {
+                $current = $m->clubClasses->first();
+                $classId = $current?->pivot?->club_class_id ?? $current?->id;
+                return [
+                    'id' => $m->id,
+                    'applicant_name' => $m->applicant_name,
+                    'club_id' => $m->club_id,
+                    'class_id' => $classId,
+                    'current_class' => $current ? [
+                        'id' => $classId,
+                        'class_name' => $current->class_name,
+                    ] : null,
+                ];
+            })
+            ->values();
 
         $staff = StaffAdventurer::query()
             ->where('club_id', $club->id)
@@ -125,6 +146,95 @@ class ClubPaymentController extends Controller
         ]);
     }
 
+    /**
+     * GET /club-director/payments
+     * Directors can access all club members/staff and concepts.
+     */
+    public function directorIndex(Request $request)
+    {
+        $user = $request->user();
+        $club = $this->resolveClubFromUser();
+        $this->assertClubAccess($club);
+
+        $members = MemberAdventurer::query()
+            ->where('club_id', $club->id)
+            ->with([
+                'clubClasses' => function ($q) {
+                    $q->wherePivot('active', true);
+                },
+            ])
+            ->orderBy('applicant_name')
+            ->get(['id', 'applicant_name', 'club_id'])
+            ->map(function ($m) {
+                $current = $m->clubClasses->first();
+                $classId = $current?->pivot?->club_class_id ?? $current?->id;
+                return [
+                    'id' => $m->id,
+                    'applicant_name' => $m->applicant_name,
+                    'club_id' => $m->club_id,
+                    'class_id' => $classId,
+                    'current_class' => $current ? [
+                        'id' => $classId,
+                        'class_name' => $current->class_name,
+                    ] : null,
+                ];
+            })
+            ->values();
+
+        $staff = StaffAdventurer::query()
+            ->where('club_id', $club->id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'assigned_class', 'club_id']);
+
+        $concepts = PaymentConcept::query()
+            ->where('club_id', $club->id)
+            ->where('status', 'active')
+            ->with([
+                'scopes' => function ($q) {
+                    $q->whereNull('deleted_at')
+                        ->with(['club:id,club_name', 'class:id,class_name', 'member:id,applicant_name', 'staff:id,name']);
+                },
+            ])
+            ->orderByDesc('created_at')
+            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id']);
+
+        $recent = Payment::query()
+            ->where('club_id', $club->id)
+            ->latest()
+            ->take(50)
+            ->with([
+                'member:id,applicant_name',
+                'staff:id,name',
+                'concept:id,concept,amount',
+                'receivedBy:id,name',
+            ])
+            ->get();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'data' => [
+                    'club' => ['id' => $club->id, 'club_name' => $club->club_name],
+                    'members' => $members,
+                    'staff' => $staff,
+                    'concepts' => $concepts,
+                    'payments' => $recent,
+                    'payment_types' => ['zelle', 'cash', 'check'],
+                ]
+            ]);
+        }
+
+        return Inertia::render('ClubDirector/Payments', [
+            'auth_user' => ['id' => $user->id, 'name' => $user->name],
+            'user' => $user,
+            'club' => ['id' => $club->id, 'club_name' => $club->club_name],
+            'members' => $members,
+            'staff' => $staff,
+            'concepts' => $concepts,
+            'payments' => $recent,
+            'payment_types' => ['zelle', 'cash', 'check'],
+        ]);
+    }
+
 
     /**
      * POST /club-personal/payments
@@ -162,6 +272,7 @@ class ClubPaymentController extends Controller
             ->firstOrFail();
 
         $expected = $concept->amount !== null ? (float) $concept->amount : 0.0;
+        $payTo = $concept->pay_to ?? 'unassigned';
 
         // Sum prior paid for this (concept, payer) pair (exclude soft-deleted)
         $priorPaidQuery = Payment::query()
@@ -199,7 +310,7 @@ class ClubPaymentController extends Controller
         }
 
         $payment = null;
-        DB::transaction(function () use ($club, $concept, $validated, $expected, $amountPaid, $balanceAfter, $zellePhone, $checkImagePath, &$payment) {
+        DB::transaction(function () use ($club, $concept, $validated, $expected, $amountPaid, $balanceAfter, $zellePhone, $checkImagePath, $payTo, &$payment) {
             $payment = Payment::create([
                 'club_id' => $club->id,
                 'payment_concept_id' => $concept->id,
@@ -215,6 +326,13 @@ class ClubPaymentController extends Controller
                 'received_by_user_id' => auth()->id(),
                 'notes' => $validated['notes'] ?? null,
             ]);
+
+            // Update account balance
+            $account = Account::firstOrCreate(
+                ['club_id' => $club->id, 'pay_to' => $payTo],
+                ['label' => $payTo, 'balance' => 0]
+            );
+            $account->increment('balance', $amountPaid);
         });
 
         $payment->load([
@@ -242,4 +360,3 @@ class ClubPaymentController extends Controller
         return Club::where('id', auth()->user()->club_id)->firstOrFail();
     }
 }
-

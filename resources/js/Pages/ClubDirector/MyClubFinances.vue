@@ -94,12 +94,15 @@ const formatISODate = (val) => {
 }
 
 // scope builder actions
-function addScope() {
-    if (!conceptClubId.value) {
-        showToast('Select a club for this concept first', 'error')
-        return
+const defaultScope = () => ({ scope_type: 'club_wide', club_id: conceptClubId.value || null, class_id: null, member_id: null, staff_id: null })
+
+function ensureSingleScope() {
+    const baseScope = defaultScope()
+    if (pcForm.scopes.length === 0) {
+        pcForm.scopes = [baseScope]
+    } else {
+        pcForm.scopes = [{ ...baseScope, ...pcForm.scopes[0] }]
     }
-    pcForm.scopes.push({ scope_type: 'club_wide', club_id: conceptClubId.value })
 }
 
 function removeScope(idx) {
@@ -180,6 +183,7 @@ async function deleteConcept(id) {
     if (keepClub) pcForm.club_id = conceptClubId.value || null
     isEditingConcept.value = false
     editingConceptId.value = null
+    ensureSingleScope()
     }
 
     // map FQCN -> short name used in the UI selector
@@ -211,13 +215,14 @@ async function deleteConcept(id) {
     pcForm.payee_id = pc.payee_id ?? null
 
     // normalize scopes into { scope_type, *_id }
-    pcForm.scopes = (pc.scopes || []).map(s => ({
+    pcForm.scopes = (pc.scopes || []).slice(0, 1).map(s => ({
         scope_type: s.scope_type,
         club_id:   s.club_id   ?? s.club?.id   ?? null,
         class_id:  s.class_id  ?? s.class?.id  ?? null,
         member_id: s.member_id ?? s.member?.id ?? null,
         staff_id:  s.staff_id  ?? s.staff?.id  ?? null,
     }))
+    ensureSingleScope()
 
     isEditingConcept.value = true
     editingConceptId.value = pc.id
@@ -234,7 +239,7 @@ async function deleteConcept(id) {
     }
 
     const payload = typeof pcForm.data === 'function' ? pcForm.data() : JSON.parse(JSON.stringify(pcForm))
-    payload.scopes = (payload.scopes || []).map(s => ({
+    payload.scopes = (payload.scopes || []).slice(0, 1).map(s => ({
         scope_type: s.scope_type,
         club_id:   (s.scope_type === 'club_wide' || s.scope_type === 'staff_wide')
                     ? (s.club_id ?? conceptClubId.value) : (s.club_id ?? null),
@@ -257,7 +262,14 @@ async function deleteConcept(id) {
         await loadPaymentConcepts()
     } catch (e) {
         console.error(e)
-        showToast('Failed to save concept', 'error')
+        const msg = e?.response?.data?.message
+        const errs = e?.response?.data?.errors
+        if (errs && typeof errs === 'object') {
+            Object.entries(errs).forEach(([field, messages]) => {
+                pcForm.setError(field, Array.isArray(messages) ? messages[0] : messages)
+            })
+        }
+        showToast(msg || 'Failed to save concept', 'error')
     }
     }
 
@@ -313,6 +325,7 @@ const fetchClubs = async () => {
 // Fetch members whenever the concept club changes
 watch(conceptClubId, async (id) => {
     pcForm.club_id = id || null
+    ensureSingleScope()
     if (!id) {
         conceptMembers.value = []
         return
@@ -327,6 +340,7 @@ watch(conceptClubId, async (id) => {
 
 watch(conceptClubId, async (id) => {
     pcForm.club_id = id || null
+    ensureSingleScope()
     await loadPaymentConcepts()
 })
 
@@ -356,6 +370,7 @@ onMounted(async () => {
     } else {
         await loadPaymentConcepts()
     }
+    ensureSingleScope()
 })
 
 </script>
@@ -477,73 +492,55 @@ onMounted(async () => {
                         </div>
                     </div>
 
-                    <!-- Scopes -->
+                    <!-- Scope -->
                     <div class="mt-6">
-                        <div class="flex items-center justify-between">
-                            <h4 class="font-semibold">Scopes</h4>
-                            <button type="button" @click="addScope"
-                                class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-                                + Add Scope
-                            </button>
-                        </div>
-
-                        <div v-if="pcForm.scopes.length === 0" class="text-sm text-gray-500 mt-2">
-                            No scopes added yet.
-                        </div>
-
-                        <div v-for="(s, idx) in pcForm.scopes" :key="idx" class="mt-3 border rounded p-3">
+                        <h4 class="font-semibold mb-2">Scope</h4>
+                        <div class="border rounded p-3" v-if="pcForm.scopes.length">
                             <div class="grid md:grid-cols-3 gap-3">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Scope Type</label>
-                                    <select v-model="s.scope_type" @change="onScopeTypeChange(s)"
+                                    <select v-model="pcForm.scopes[0].scope_type" @change="onScopeTypeChange(pcForm.scopes[0])"
                                         class="w-full p-2 border rounded">
                                         <option v-for="o in scopeTypeOptions" :key="o.value" :value="o.value">{{
                                             o.label }}</option>
                                     </select>
                                 </div>
 
-                                <div v-if="s.scope_type === 'club_wide' || s.scope_type === 'staff_wide'">
+                                <div v-if="pcForm.scopes[0].scope_type === 'club_wide' || pcForm.scopes[0].scope_type === 'staff_wide'">
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Club</label>
-                                    <select v-model="s.club_id" class="w-full p-2 border rounded">
+                                    <select v-model="pcForm.scopes[0].club_id" class="w-full p-2 border rounded">
                                         <option :value="null">Select club</option>
                                         <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}
                                         </option>
                                     </select>
                                 </div>
 
-                                <div v-if="s.scope_type === 'class'">
+                                <div v-if="pcForm.scopes[0].scope_type === 'class'">
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Class</label>
-                                    <select v-model="s.class_id" class="w-full p-2 border rounded">
+                                    <select v-model="pcForm.scopes[0].class_id" class="w-full p-2 border rounded">
                                         <option :value="null">Select class</option>
                                         <option v-for="c in conceptClasses" :key="c.id" :value="c.id">{{
                                             c.class_name }}</option>
                                     </select>
                                 </div>
 
-                                <div v-if="s.scope_type === 'member'">
+                                <div v-if="pcForm.scopes[0].scope_type === 'member'">
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Member</label>
-                                    <select v-model="s.member_id" class="w-full p-2 border rounded">
+                                    <select v-model="pcForm.scopes[0].member_id" class="w-full p-2 border rounded">
                                         <option :value="null">Select member</option>
                                         <option v-for="m in conceptMembers" :key="m.id" :value="m.id">{{
                                             m.applicant_name }}</option>
                                     </select>
                                 </div>
 
-                                <div v-if="s.scope_type === 'staff'">
+                                <div v-if="pcForm.scopes[0].scope_type === 'staff'">
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Staff</label>
-                                    <select v-model="s.staff_id" class="w-full p-2 border rounded">
+                                    <select v-model="pcForm.scopes[0].staff_id" class="w-full p-2 border rounded">
                                         <option :value="null">Select staff</option>
                                         <option v-for="st in conceptStaff" :key="st.id" :value="st.id">{{ st.name }}
                                         </option>
                                     </select>
                                 </div>
-                            </div>
-
-                            <div class="mt-3">
-                                <button type="button" @click="removeScope(idx)"
-                                    class="text-sm text-red-600 hover:underline">
-                                    Remove this scope
-                                </button>
                             </div>
                         </div>
                     </div>
