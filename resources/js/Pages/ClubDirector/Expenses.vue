@@ -36,6 +36,7 @@ const loadData = async () => {
     loadError.value = ''
     try {
         const { data } = await fetchExpenses()
+        console.log(data)
         payToOptions.value = data?.pay_to || []
         accounts.value = data?.accounts || []
         expenses.value = Array.isArray(data?.expenses) ? data.expenses : []
