@@ -25,19 +25,20 @@ class PaymentCatalogsSeeder extends Seeder
             ['value' => 'reimbursement_to','label' => 'Reimbursement to…'],
         ];
 
+        $clubId = 3; // live DB club id
+
         foreach ($scopeTypeOptions as $opt) {
             ScopeType::updateOrCreate(
-                ['club_id' => 2, 'value' => $opt['value']],
+                ['club_id' => $clubId, 'value' => $opt['value']],
                 ['label' => $opt['label'], 'status' => 'active']
             );
         }
 
         foreach ($payToOptions as $opt) {
             PayToOption::updateOrCreate(
-                ['club_id' => 2, 'value' => $opt['value']],
+                ['club_id' => $clubId, 'value' => $opt['value']],
                 ['label' => $opt['label'], 'status' => 'active']
             );
         }
     }
 }
-
