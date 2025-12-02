@@ -13,6 +13,8 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
 use App\Models\ClassMemberAdventurer; // Import the ClassMemberAdventurer model
 use App\Models\MemberAdventurer; // Import the MemberAdventurer model
+use App\Models\Staff;
+use App\Models\Club;
 
 use Auth;
 use App\Models\ClubClass;
@@ -111,6 +113,23 @@ class StaffAdventurerController extends Controller
             // Create staff
             $validated['status'] = 'active';
             $staff = StaffAdventurer::create($validated);
+
+            // Determine club type for mirroring
+            $clubType = Club::where('id', $staff->club_id)->value('club_type') ?? 'adventurers';
+
+            // Mirror into new staff table
+            $newStaff = Staff::firstOrCreate(
+                [
+                    'type' => $clubType,
+                    'id_data' => $staff->id,
+                    'club_id' => $staff->club_id,
+                ],
+                [
+                    'assigned_class' => $staff->assigned_class,
+                    'user_id' => null,
+                    'status' => 'active',
+                ]
+            );
 
             // Update assigned_class if provided
             if (!empty($validated['assigned_class'])) {
@@ -327,15 +346,8 @@ class StaffAdventurerController extends Controller
             abort(404, 'Club not found.');
         }
 
-        // Determine which staff model to use
-        $staffModel = match ($club->club_type) {
-            'adventurers' => StaffAdventurer::class,
-            default => null,
-        };
-
-        if (!$staffModel) {
-            return response()->json(['error' => 'Unsupported club type.'], 400);
-        }
+        // Use the same staff model for all club types for now
+        $staffModel = StaffAdventurer::class;
 
         // Fetch staff for the club
         $staff = $staffModel::with('assignedClasses')
@@ -544,8 +556,22 @@ class StaffAdventurerController extends Controller
         ]);
 
         $staff = StaffAdventurer::findOrFail($request->staff_id);
+        $clubType = Club::where('id', $staff->club_id)->value('club_type') ?? 'adventurers';
         $staff->assigned_class = $request->class_id;
         $staff->save();
+        // mirror to new staff table
+        Staff::updateOrCreate(
+            [
+                'type' => $clubType,
+                'id_data' => $staff->id,
+                'club_id' => $staff->club_id,
+            ],
+            [
+                'assigned_class' => $request->class_id,
+                'user_id' => $staff->user_id ?? null,
+                'status' => 'active',
+            ]
+        );
 
         // Optionally update the club_class.assigned_staff_id (1:1 assignment)
         ClubClass::where('assigned_staff_id', $staff->id)

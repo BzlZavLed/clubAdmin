@@ -136,6 +136,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     // Clubs
     Route::get('/clubs/by-ids', [ClubController::class, 'getByIds'])->name('clubs.by-ids');
+    Route::get('/clubs/by-user/{user}', [ClubController::class, 'getByUser'])->name('clubs.by-user');
     Route::get('/club', [ClubController::class, 'show']);
     Route::post('/club', [ClubController::class, 'store'])->name('club.store');
     Route::put('/club', [ClubController::class, 'update'])->name('club.update');

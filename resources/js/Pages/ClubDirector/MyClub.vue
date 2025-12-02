@@ -8,7 +8,7 @@ import { refreshPage } from '@/Helpers/general'
 import { computed, ref, watch, onMounted } from 'vue'
 
 import {
-    fetchClubsByChurchId,
+    fetchClubsByUserId,
     deleteClubById,
     selectUserClub,
     createClub,
@@ -67,9 +67,9 @@ const filteredClubs = computed(() => {
 // 🧠 Load clubs on mount
 const fetchClubs = async () => {
     try {
-        const data = await fetchClubsByChurchId(user.value.church_id)
-        clubs.value = [...data]
-        hasClub.value = data.length > 0
+        const data = await fetchClubsByUserId(user.value.id)
+        clubs.value = Array.isArray(data) ? data : []
+        hasClub.value = clubs.value.length > 0
         showToast('Clubs fetched successfully!')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
@@ -548,7 +548,7 @@ onMounted(fetchClubs);
                     </table>
                 </div>
             </details>
-        <CreateClassModal v-if="showClassModal" v-model:visible="showClassModal" :clubs="user.clubs"
+        <CreateClassModal v-if="showClassModal" v-model:visible="showClassModal" :clubs="clubs"
                 :staff="clubStaff" :user="user" :classToEdit="classToEdit" @created="refreshPage" />
         </div>
     </PathfinderLayout>

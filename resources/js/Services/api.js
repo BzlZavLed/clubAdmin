@@ -35,6 +35,11 @@ export const fetchClubsByIds = async (ids) => {
     return response.data;
 };
 
+export const fetchClubsByUserId = async (userId) => {
+    const response = await axios.get(route("clubs.by-user", userId));
+    return response.data;
+};
+
 export const fetchMembersByClub = async (clubId) => {
     const response = await axios.get(route("clubs.members", clubId));
     return response.data.members;
@@ -277,20 +282,26 @@ export const createClubPayment = async (payload) => {
 };
 
 // Director Financial Report — bootstrap data
-export const fetchFinancialReportBootstrap = async () => {
-    const { data } = await axios.get(route('financial.preload'))
+export const fetchFinancialReportBootstrap = async (clubId = null) => {
+    const { data } = await axios.get(route('financial.preload'), {
+        params: clubId ? { club_id: clubId } : {}
+    })
     return data
 }
 
 // Account balances by pay_to
-export const fetchFinancialAccountBalances = async () => {
-    const { data } = await axios.get(route('financial.accounts'))
+export const fetchFinancialAccountBalances = async (clubId = null) => {
+    const { data } = await axios.get(route('financial.accounts'), {
+        params: clubId ? { club_id: clubId } : {}
+    })
     return data
 }
 
 // Expenses
-export const fetchExpenses = async () => {
-    const { data } = await axios.get(route('club.director.expenses'))
+export const fetchExpenses = async (clubId = null) => {
+    const { data } = await axios.get(route('club.director.expenses'), {
+        params: clubId ? { club_id: clubId } : {}
+    })
     return data
 }
 

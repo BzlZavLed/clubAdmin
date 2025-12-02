@@ -15,7 +15,7 @@ import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import {
-    fetchClubsByIds,
+    fetchClubsByUserId,
     fetchStaffByClubId,
     createStaffUser,
     updateStaffStatus,
@@ -93,7 +93,8 @@ watch(staff, (newVal) => {
 // ✅ Fetch club(s)
 const fetchClubs = async () => {
     try {
-        clubs.value = await fetchClubsByIds([user.value.club_id])
+        const data = await fetchClubsByUserId(user.value.id)
+        clubs.value = Array.isArray(data) ? data : []
         showToast('Clubs loaded')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)

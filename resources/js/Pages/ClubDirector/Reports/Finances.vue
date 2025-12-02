@@ -24,6 +24,8 @@ const reportError = ref('')
 // Server data (preloaded)
 // ─────────────────────────────────────
 const club = ref(null)
+const clubs = ref([])
+const selectedClubId = ref(null)
 const concepts = ref([])     // [{ id, concept, amount, payment_expected_by, scopes: [...] }]
 const scopes = ref([])       // list of payment_concept_scopes (if you need raw)
 const members = ref([])      // [{ id, applicant_name }]
@@ -132,7 +134,7 @@ const buildScopePayload = () => {
     // club_wide / staff_wide carry the club id as scope_id for backend
     let scopeId = selectedScopeId.value ?? null
     if (['club_wide', 'staff_wide'].includes(selectedScopeType.value)) {
-        scopeId = club.value?.id ?? null
+        scopeId = selectedClubId.value ?? club.value?.id ?? null
     }
 
     const params = {
@@ -173,8 +175,10 @@ const fetchReport = async () => {
             params = { mode: 'concept', concept_id: selectedConceptId.value }
             if (dateFrom.value) params.date_from = dateFrom.value
             if (dateTo.value) params.date_to = dateTo.value
+            if (selectedClubId.value) params.club_id = selectedClubId.value
         } else if (mode.value === 'scope') {
             params = buildScopePayload()
+            if (selectedClubId.value) params.club_id = selectedClubId.value
         } else {
             reportError.value = 'Only concept/scope mode implemented in this step.'
             return
@@ -223,6 +227,8 @@ onMounted(async () => {
         const payload = await fetchFinancialReportBootstrap()
         // Backend returns { data: { ... } }
         club.value = payload.data.club
+        clubs.value = payload.data.clubs || []
+        selectedClubId.value = payload.data.club_id || (clubs.value[0]?.id ?? null)
         concepts.value = payload.data.concepts || []
         scopes.value = payload.data.scopes || []
         members.value = payload.data.members || []
@@ -237,6 +243,40 @@ onMounted(async () => {
         loading.value = false
     }
 })
+
+watch(selectedClubId, async (id, old) => {
+    if (id && id !== old) {
+        loading.value = true
+        try {
+            const payload = await fetchFinancialReportBootstrap(id)
+            club.value = payload.data.club
+            clubs.value = payload.data.clubs || clubs.value
+            concepts.value = payload.data.concepts || []
+            scopes.value = payload.data.scopes || []
+            members.value = payload.data.members || []
+            classes.value = payload.data.classes || []
+            staff.value = payload.data.staff || []
+            scopeTypes.value = payload.data.scope_types || []
+            payTo.value = payload.data.pay_to || []
+            // reset selections to avoid cross-club mismatch
+            selectedConceptId.value = null
+            selectedScopeType.value = null
+            selectedScopeId.value = null
+            selectedMemberId.value = null
+            selectedStaffId.value = null
+            payments.value = []
+            summary.value = { payments_count: 0, amount_paid_sum: 0, expected_sum: 0, balance_remaining: 0, by_payment_type: {} }
+            scopeBlocks.value = []
+            activeTabForScope.value = {}
+            reportError.value = ''
+        } catch (e) {
+            console.error(e)
+            reportError.value = 'Failed to load data for selected club.'
+        } finally {
+            loading.value = false
+        }
+    }
+})
 </script>
 
 <template>
@@ -245,6 +285,13 @@ onMounted(async () => {
             <header class="pt-5 pb-3 flex items-center gap-3">
                 <FunnelIcon class="h-6 w-6 text-gray-700" />
                 <h1 class="text-lg font-semibold text-gray-900">Financial Report</h1>
+                <div class="ml-auto flex items-center gap-2 text-sm">
+                    <label class="text-gray-700">Club:</label>
+                    <select v-model="selectedClubId"
+                        class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
+                    </select>
+                </div>
             </header>
 
             <!-- FILTER BAR -->

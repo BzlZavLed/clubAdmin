@@ -17,6 +17,7 @@ const props = defineProps({
     auth_user: { type: Object, required: true },
     user: Object,
     club: { type: Object, required: true },
+    clubs: { type: Array, default: () => [] },
     members: { type: Array, required: true },
     staff: { type: Array, required: true },
     concepts: { type: Array, required: true },
@@ -49,7 +50,22 @@ const selectedScopeId = ref(null)
 const selectedMemberId = ref(null)
 const selectedStaffId = ref(null)
 
-const selectedConcept = computed(() => props.concepts.find(c => c.id === selectedConceptId.value) || null)
+const filteredConcepts = computed(() => {
+    if (!form.club_id) return props.concepts || []
+    return (props.concepts || []).filter(c => Number(c.club_id) === Number(form.club_id))
+})
+
+const filteredMembers = computed(() => {
+    if (!form.club_id) return props.members || []
+    return (props.members || []).filter(m => Number(m.club_id) === Number(form.club_id))
+})
+
+const filteredStaff = computed(() => {
+    if (!form.club_id) return props.staff || []
+    return (props.staff || []).filter(s => Number(s.club_id) === Number(form.club_id))
+})
+
+const selectedConcept = computed(() => filteredConcepts.value.find(c => c.id === selectedConceptId.value) || null)
 const scopesForConcept = computed(() => selectedConcept.value?.scopes ?? [])
 const selectedScope = computed(() => scopesForConcept.value.find(s => s.id === selectedScopeId.value) || null)
 const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? '')
@@ -65,15 +81,15 @@ const payeeOptions = computed(() => {
     if (!scope) return []
     switch (scope.scope_type) {
         case 'member':
-            return props.members.filter(m => Number(m.id) === Number(scope.member_id || scope.member?.id))
+            return filteredMembers.value.filter(m => Number(m.id) === Number(scope.member_id || scope.member?.id))
         case 'staff':
-            return props.staff.filter(s => Number(s.id) === Number(scope.staff_id || scope.staff?.id))
+            return filteredStaff.value.filter(s => Number(s.id) === Number(scope.staff_id || scope.staff?.id))
         case 'staff_wide':
-            return props.staff
+            return filteredStaff.value
         case 'class': {
             const classId = scope.class_id || scope.class?.id
-            if (!classId) return props.members
-            return props.members.filter(m => {
+            if (!classId) return filteredMembers.value
+            return filteredMembers.value.filter(m => {
                 const memberClassId = m.class_id ?? m.current_class.id ?? m.club_class_id
                 return Number(memberClassId) === Number(classId)
             })
@@ -87,6 +103,7 @@ const payeeOptions = computed(() => {
 
 // Form
 const form = useForm({
+    club_id: null,
     payment_concept_id: null,
     member_adventurer_id: null,
     staff_adventurer_id: null,
@@ -100,6 +117,9 @@ const form = useForm({
 
 watch(selectedConceptId, (id) => {
     form.payment_concept_id = id ?? null
+    if (!form.club_id && props.clubs?.length) {
+        form.club_id = props.clubs[0].id
+    }
     selectedScopeId.value = scopesForConcept.value[0]?.id ?? null
     selectedMemberId.value = null
     selectedStaffId.value = null
@@ -130,6 +150,42 @@ watch(selectedScopeId, (id) => {
     }
 })
 
+// Reset concept when club changes
+watch(() => form.club_id, () => {
+    selectedConceptId.value = null
+    selectedScopeId.value = null
+    selectedMemberId.value = null
+    selectedStaffId.value = null
+    form.payment_concept_id = null
+    page.value = 1
+    if (filteredConcepts.value.length) {
+        selectedConceptId.value = filteredConcepts.value[0].id
+        form.payment_concept_id = selectedConceptId.value
+        selectedScopeId.value = scopesForConcept.value[0]?.id ?? null
+    }
+})
+
+// Default club selection
+watch(() => props.clubs, (val) => {
+    if (!form.club_id && Array.isArray(val) && val.length) {
+        form.club_id = val[0].id
+    }
+}, { immediate: true })
+
+// Prefill club_id from initial props (explicit club or first in list)
+if (!form.club_id) {
+    form.club_id = props.club?.id ?? (props.clubs?.[0]?.id ?? null)
+}
+
+// When club changes, reset selections and pick first concept for that club
+watch(() => form.club_id, () => {
+    selectedConceptId.value = filteredConcepts.value[0]?.id ?? null
+    selectedScopeId.value = null
+    selectedMemberId.value = null
+    selectedStaffId.value = null
+    form.payment_concept_id = selectedConceptId.value
+})
+
 // Reset conditional fields when payment_type changes
 watch(() => form.payment_type, (t) => {
     if (t !== 'zelle') form.zelle_phone = ''
@@ -147,6 +203,13 @@ const onCheckFileChange = (e) => {
 const submitting = ref(false)
 const submit = async () => {
     form.clearErrors()
+    if (!form.club_id && props.clubs?.length) {
+        form.club_id = props.clubs[0].id
+    }
+    if (!form.club_id) {
+        form.setError('club_id', 'Select a club.')
+        return
+    }
     if (!selectedScope.value) {
         form.setError('payment_concept_id', 'Select a scope before saving.')
         return
@@ -162,7 +225,9 @@ const submit = async () => {
 
     submitting.value = true
     try {
-        await createClubPayment(form.data())
+        const payload = { ...form.data() }
+        delete payload.club_id
+        await createClubPayment(payload)
         form.reset('amount_paid', 'notes', 'check_image', 'zelle_phone')
         router.reload({ only: ['payments'] })
     } catch (err) {
@@ -187,8 +252,12 @@ const page = ref(1)
 
 const filteredPayments = computed(() => {
     const q = (searchTerm.value || '').toLowerCase().trim()
-    if (!q) return props.payments || []
-    return (props.payments || []).filter(p => {
+    const clubFiltered = (props.payments || []).filter(p => {
+        if (!form.club_id) return true
+        return Number(p.club_id) === Number(form.club_id)
+    })
+    if (!q) return clubFiltered
+    return clubFiltered.filter(p => {
         const name = (p.member?.applicant_name ?? p.staff?.name ?? '').toLowerCase()
         const concept = (p.concept?.concept ?? '').toLowerCase()
         return name.includes(q) || concept.includes(q)
@@ -215,9 +284,18 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <CreditCardIcon class="h-6 w-6 text-gray-700" />
                     <h1 class="text-lg font-semibold text-gray-900">Director Payments</h1>
                 </div>
-                <p class="mt-1 text-sm text-gray-600">
-                    {{ club?.club_name }} • Signed in as <strong>{{ auth_user?.name }}</strong>
-                </p>
+                <div class="mt-2 flex flex-col sm:flex-row sm:items-center sm:gap-4">
+                    <p class="text-sm text-gray-600">
+                        Signed in as <strong>{{ auth_user?.name }}</strong>
+                    </p>
+                    <div class="flex items-center gap-2 text-sm">
+                        <label class="text-gray-700">Club:</label>
+                        <select v-model="form.club_id"
+                            class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
+                        </select>
+                    </div>
+                </div>
             </header>
 
             <main class="px-4 pb-24 sm:px-6">
@@ -232,7 +310,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         <select v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option :value="null" disabled>Select a concept…</option>
-                            <option v-for="c in concepts" :key="c.id" :value="c.id">
+                            <option v-for="c in filteredConcepts" :key="c.id" :value="c.id">
                                 {{ c.concept }} • {{ c.amount ?? '—' }}
                             </option>
                         </select>

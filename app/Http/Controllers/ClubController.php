@@ -100,6 +100,16 @@ class ClubController extends Controller
         return response()->json($clubs);
     }
 
+    public function getByUser(User $user)
+    {
+        $clubs = Club::where('user_id', $user->id)
+            ->with(['clubClasses', 'staffAdventurers'])
+            ->orderBy('club_name')
+            ->get();
+
+        return response()->json($clubs);
+    }
+
     public function getByChurchNames(Request $request)
     {
         $input = $request->input('church_name', []);

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ArrowPathIcon, BanknotesIcon } from '@heroicons/vue/24/outline'
@@ -8,11 +8,13 @@ import { fetchExpenses, createExpense } from '@/Services/api'
 const payToOptions = ref([])
 const expenses = ref([])
 const accounts = ref([])
+const clubs = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const saving = ref(false)
 
 const form = useForm({
+    club_id: null,
     pay_to: null,
     amount: '',
     expense_date: new Date().toISOString().slice(0, 10),
@@ -30,16 +32,24 @@ const selectedBalance = computed(() => {
     const acc = accounts.value.find(a => a.pay_to === form.pay_to)
     return acc?.balance ?? null
 })
+const amountExceedsBalance = computed(() => {
+    if (selectedBalance.value === null) return false
+    const amt = Number(form.amount || 0)
+    return amt > Number(selectedBalance.value || 0)
+})
 
-const loadData = async () => {
+const loadData = async (clubId = null) => {
     loading.value = true
     loadError.value = ''
     try {
-        const { data } = await fetchExpenses()
-        console.log(data)
+        const { data } = await fetchExpenses(clubId || form.club_id)
         payToOptions.value = data?.pay_to || []
         accounts.value = data?.accounts || []
         expenses.value = Array.isArray(data?.expenses) ? data.expenses : []
+        clubs.value = Array.isArray(data?.clubs) ? data.clubs : []
+        if (!form.club_id) {
+            form.club_id = data?.club_id || (clubs.value[0]?.id ?? null)
+        }
         if (!form.pay_to && payToOptions.value.length) form.pay_to = payToOptions.value[0].value
     } catch (e) {
         console.error(e)
@@ -52,6 +62,18 @@ const loadData = async () => {
 const submit = async () => {
     saving.value = true
     form.clearErrors()
+    if (!form.club_id && clubs.value.length) form.club_id = clubs.value[0].id
+    if (!form.club_id) {
+        form.setError('club_id', 'Select a club')
+        saving.value = false
+        return
+    }
+    const bal = selectedBalance.value
+    if (bal !== null && Number(form.amount || 0) > Number(bal)) {
+        form.setError('amount', 'Amount exceeds current account balance.')
+        saving.value = false
+        return
+    }
     try {
         const { data } = await createExpense(form.data())
         expenses.value = [data?.data, ...expenses.value]
@@ -70,7 +92,15 @@ const submit = async () => {
     }
 }
 
-onMounted(loadData)
+onMounted(async () => {
+    await loadData()
+})
+
+watch(() => form.club_id, async (id, old) => {
+    if (id && id !== old) {
+        await loadData(id)
+    }
+})
 </script>
 
 <template>
@@ -98,7 +128,15 @@ onMounted(loadData)
 
                 <div class="mt-4 grid gap-4 md:grid-cols-2">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Account (pay_to)</label>
+                        <label class="block text-sm font-medium text-gray-700">Club</label>
+                        <select v-model="form.club_id" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
+                        </select>
+                        <div v-if="form.errors.club_id" class="mt-1 text-sm text-red-600">{{ form.errors.club_id }}</div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Account</label>
                         <select v-model="form.pay_to" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="p in payToOptions" :key="p.value" :value="p.value">{{ p.label }}</option>
                         </select>
@@ -111,6 +149,9 @@ onMounted(loadData)
                         <input type="number" step="0.01" min="0" v-model="form.amount"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
                         <div v-if="form.errors.amount" class="mt-1 text-sm text-red-600">{{ form.errors.amount }}</div>
+                        <div v-else-if="amountExceedsBalance" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
+                            Amount is greater than the current account balance. Please adjust before saving.
+                        </div>
                     </div>
 
                     <div>

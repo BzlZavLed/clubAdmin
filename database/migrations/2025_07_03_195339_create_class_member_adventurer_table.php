@@ -21,10 +21,14 @@ return new class extends Migration
             $table->date('finished_at')->nullable(); // when the class was completed
         
             $table->boolean('active')->default(true); // true = current class, false = completed or inactive
-        
+
             $table->timestamps();
-        
+
             $table->unique(['members_adventurer_id', 'club_class_id', 'active'], 'member_class_active_unique');
+
+            // Link to new members table (nullable for backfill)
+            $table->unsignedBigInteger('member_id')->nullable()->after('members_adventurer_id');
+            $table->foreign('member_id')->references('id')->on('members')->nullOnDelete();
         });
     }
 

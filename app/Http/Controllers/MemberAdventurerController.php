@@ -9,6 +9,9 @@ use PhpOffice\PhpWord\TemplateProcessor;
 use Illuminate\Support\Str;
 use App\Models\StaffAdventurer;
 use App\Services\DocumentExportService;
+use App\Models\Member;
+use App\Models\Staff;
+use App\Models\ClubClass;
 
 use DB;
 use Auth;
@@ -180,6 +183,25 @@ class MemberAdventurerController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        // Update new members table with active class and assigned staff mapping
+        $member = Member::where('type', 'adventurers')
+            ->where('id_data', $request->members_adventurer_id)
+            ->first();
+        if ($member) {
+            $classId = $request->club_class_id;
+            $clubClass = ClubClass::find($classId);
+            $legacyStaffId = $clubClass?->assigned_staff_id;
+            $newStaffId = null;
+            if ($legacyStaffId) {
+                $newStaffId = Staff::where('type', 'adventurers')
+                    ->where('id_data', $legacyStaffId)
+                    ->value('id');
+            }
+            $member->class_id = $classId;
+            $member->assigned_staff_id = $newStaffId;
+            $member->save();
+        }
 
         return response()->json(['message' => 'Member assigned successfully']);
     }

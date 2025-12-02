@@ -47,9 +47,16 @@ const toast = useToast()
 const clubList = ref(props.clubs ?? [])
 const staffList = ref([])
 const usersClub = ref([])
+watch(() => props.clubs, (val) => {
+    clubList.value = val || []
+    if (!form.club_id && clubList.value.length) {
+        form.club_id = clubList.value[0].id
+    }
+}, { immediate: true })
 const fetchStaff = async (clubId) => {
     try {
         const response = await axios.get(`/clubs/${clubId}/staff`)
+        console.log('Staff response:', response.data)
         staffList.value = response.data.staff
         if(staffList.value.length === 0) {
             toast.error('Create staff first, none found')
@@ -62,6 +69,15 @@ const fetchStaff = async (clubId) => {
         console.error('Failed to fetch staff:', error)
     }
 }
+
+watch(() => form.club_id, (clubId) => {
+    if (clubId) {
+        fetchStaff(clubId)
+    } else {
+        staffList.value = []
+        usersClub.value = []
+    }
+}, { immediate: true })
 watch(
     () => form.assigned_staff_id,
     (newStaffId) => {
@@ -114,8 +130,8 @@ const submit = () => {
 }
 
 onMounted(() => {
-    if (props.user?.club_id) {
-        fetchStaff(props.user.club_id)
+    if (form.club_id) {
+        fetchStaff(form.club_id)
     }
 })
 </script>

@@ -102,8 +102,11 @@ class ReportController extends Controller
     {
         $user = $request->user();
 
-        // Resolve the active club for this user (adapt to your app’s logic)
-        $club = $this->resolveClubFromUser($user);
+        // Allow selecting club via query param
+        $club = $this->resolveClubForUser($user, $request->input('club_id'));
+        $clubs = Club::where('user_id', $user->id)
+            ->orderBy('club_name')
+            ->get(['id', 'club_name']);
 
 
         // --- Catalogs: Scope Types ---
@@ -202,6 +205,8 @@ class ReportController extends Controller
             'data' => [
                 'user' => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email],
                 'club' => ['id' => $club->id, 'club_name' => $club->club_name],
+                'club_id' => $club->id,
+                'clubs' => $clubs,
                 'concepts' => $concepts,
                 'scopes' => $scopes,
                 'members' => $members,
@@ -221,16 +226,35 @@ class ReportController extends Controller
         return Club::where('id', $user->club_id)->firstOrFail();
     }
 
+    /**
+     * Resolve a club that belongs to the user, optionally by explicit id.
+     */
+    protected function resolveClubForUser($user, $clubId = null): Club
+    {
+        $query = Club::where('user_id', $user->id);
+        if ($clubId) {
+            $query->where('id', $clubId);
+        }
+
+        $club = $query->first();
+
+        if (!$club) {
+            $club = Club::where('user_id', $user->id)->firstOrFail();
+        }
+
+        return $club;
+    }
+
     public function financialReport(Request $request)
     {
         $user = $request->user();
-        $clubId = $user->club_id;
-        $club = Club::findOrFail($clubId);
+        $club = $this->resolveClubForUser($user, $request->input('club_id'));
+        $clubId = $club->id;
 
         // Base validation (shared)
         $validated = $request->validate([
             'mode' => ['required', Rule::in(['concept', 'scope', 'date', 'member'])],
-            'concept_id' => ['nullable', 'integer', 'exists:payment_concepts,id'],
+            'concept_id' => ['nullable', 'integer', Rule::exists('payment_concepts', 'id')->where(fn($q) => $q->where('club_id', $clubId))],
             'scope_type' => ['nullable', 'string'],
             'scope_id' => ['nullable', 'integer'],
             'member_id' => ['nullable', 'integer'],
@@ -240,6 +264,7 @@ class ReportController extends Controller
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'paginate' => ['sometimes', 'boolean'],   // optional: to enable pagination
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
         ]);
 
         $mode = $validated['mode'];
@@ -531,24 +556,10 @@ class ReportController extends Controller
         ];
     }
 
-    /**
-     * Account balances by pay_to (entries minus expenses).
-     * Currently expenses are zero unless tracked elsewhere.
-     */
-    public function financialAccountBalances(Request $request)
-    {
-        $user = $request->user();
-        $club = $this->resolveClubFromUser($user);
-
-        $data = $this->buildAccountReportData($club);
-
-        return response()->json(['data' => $data]);
-    }
-
     public function financialAccountBalancesPdf(Request $request)
     {
         $user = $request->user();
-        $club = $this->resolveClubFromUser($user);
+        $club = $this->resolveClubForUser($user, $request->input('club_id'));
         $data = $this->buildAccountReportData($club);
 
         $pdf = Pdf::loadView('reports.account_balances', [
@@ -559,6 +570,21 @@ class ReportController extends Controller
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download('account-balances.pdf');
+    }
+
+    public function financialAccountBalances(Request $request)
+    {
+        $user = $request->user();
+        $club = $this->resolveClubForUser($user, $request->input('club_id'));
+        $clubs = Club::where('user_id', $user->id)
+            ->orderBy('club_name')
+            ->get(['id', 'club_name']);
+
+        $data = $this->buildAccountReportData($club);
+        $data['club_id'] = $club->id;
+        $data['clubs'] = $clubs;
+
+        return response()->json(['data' => $data]);
     }
 
     protected function buildAccountReportData(Club $club): array

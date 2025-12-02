@@ -12,10 +12,13 @@ class ExpenseController extends Controller
 {
     public function index(Request $request)
     {
-        $club = $this->resolveClubFromUser($request->user());
+        $club = $this->resolveClubForUser($request->user(), $request->input('club_id'));
 
         $payTo = $this->payToOptions($club->id);
         $accounts = $this->ensureAccounts($club->id, $payTo);
+        $clubs = \App\Models\Club::where('user_id', $request->user()->id)
+            ->orderBy('club_name')
+            ->get(['id', 'club_name']);
 
         $expenses = Expense::query()
             ->where('club_id', $club->id)
@@ -26,23 +29,27 @@ class ExpenseController extends Controller
         if ($request->wantsJson()) {
             return response()->json([
                 'data' => [
+                    'club_id' => $club->id,
                     'pay_to' => $payTo,
                     'accounts' => $accounts,
+                    'clubs' => $clubs,
                     'expenses' => $expenses,
                 ]
             ]);
         }
 
         return Inertia::render('ClubDirector/Expenses', [
+            'club_id' => $club->id,
             'pay_to' => $payTo,
             'accounts' => $accounts,
+            'clubs' => $clubs,
             'expenses' => $expenses,
         ]);
     }
 
     public function store(Request $request)
     {
-        $club = $this->resolveClubFromUser($request->user());
+        $club = $this->resolveClubForUser($request->user(), $request->input('club_id'));
 
         $validated = $request->validate([
             'pay_to' => ['required', 'string', 'max:255'],
@@ -58,6 +65,18 @@ class ExpenseController extends Controller
 
         $expense = null;
         \DB::transaction(function () use ($club, $validated, $request, &$expense) {
+            $account = Account::firstOrCreate(
+                ['club_id' => $club->id, 'pay_to' => $validated['pay_to']],
+                ['label' => $validated['pay_to'], 'balance' => 0]
+            );
+
+            if ($account->balance < $validated['amount']) {
+                abort(response()->json([
+                    'message' => 'Insufficient balance for this account.',
+                    'errors' => ['amount' => ['Amount exceeds account balance.']]
+                ], 422));
+            }
+
             $expense = Expense::create([
                 'club_id' => $club->id,
                 'pay_to' => $validated['pay_to'],
@@ -68,10 +87,6 @@ class ExpenseController extends Controller
                 'created_by_user_id' => $request->user()->id,
             ]);
 
-            $account = Account::firstOrCreate(
-                ['club_id' => $club->id, 'pay_to' => $validated['pay_to']],
-                ['label' => $validated['pay_to'], 'balance' => 0]
-            );
             $account->decrement('balance', $validated['amount']);
         });
 
@@ -81,9 +96,20 @@ class ExpenseController extends Controller
         ], 201);
     }
 
-    protected function resolveClubFromUser($user)
+    protected function resolveClubForUser($user, $clubId = null)
     {
-        return \App\Models\Club::where('id', $user->club_id)->firstOrFail();
+        $query = \App\Models\Club::where('user_id', $user->id);
+        if ($clubId) {
+            $query->where('id', $clubId);
+        }
+
+        $club = $query->first();
+
+        if (!$club) {
+            $club = \App\Models\Club::where('user_id', $user->id)->firstOrFail();
+        }
+
+        return $club;
     }
 
     protected function payToOptions($clubId)

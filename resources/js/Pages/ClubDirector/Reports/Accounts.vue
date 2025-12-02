@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { fetchFinancialReportBootstrap, fetchFinancialAccountBalances } from '@/Services/api'
@@ -12,19 +12,25 @@ const loading = ref(false)
 const loadError = ref('')
 const balancesLoading = ref(false)
 const balancesError = ref('')
+const clubs = ref([])
+const selectedClubId = ref(null)
 
 const payToLabel = (val) => {
     const match = (payTo.value || []).find(p => p.value === val)
     return match?.label || (val ?? 'Unassigned')
 }
 
-const loadBootstrap = async () => {
+const loadBootstrap = async (clubId = null) => {
     loading.value = true
     loadError.value = ''
     try {
-        const payload = await fetchFinancialReportBootstrap()
+        const payload = await fetchFinancialReportBootstrap(clubId)
         payTo.value = payload.data.pay_to || []
-        await loadBalances()
+        clubs.value = payload.data.clubs || []
+        if (!selectedClubId.value) {
+            selectedClubId.value = payload.data.club_id || (clubs.value[0]?.id ?? null)
+        }
+        await loadBalances(selectedClubId.value)
     } catch (e) {
         console.error(e)
         loadError.value = e?.response?.data?.message || 'Failed to load account data.'
@@ -33,17 +39,21 @@ const loadBootstrap = async () => {
     }
 }
 
-const loadBalances = async () => {
+const loadBalances = async (clubId = null) => {
     balancesError.value = ''
     balancesLoading.value = true
     try {
-        const { data } = await fetchFinancialAccountBalances()
+        const { data } = await fetchFinancialAccountBalances(clubId || selectedClubId.value)
+        if (!selectedClubId.value) {
+            selectedClubId.value = data?.club_id || null
+        }
         const accs = data?.accounts ?? []
         accountBalances.value = Array.isArray(accs) ? accs : Object.values(accs)
         const pays = data?.payments ?? []
         accountPayments.value = Array.isArray(pays) ? pays : Object.values(pays)
         const exps = data?.expenses ?? []
         expenses.value = Array.isArray(exps) ? exps : Object.values(exps)
+        if (!clubs.value.length && data?.clubs) clubs.value = data.clubs
     } catch (e) {
         console.error(e)
         balancesError.value = e?.response?.data?.message || 'Failed to load balances.'
@@ -55,6 +65,12 @@ const loadBalances = async () => {
 const fmtMoney = (n) => `$${Number(n ?? 0).toFixed(2)}`
 
 onMounted(loadBootstrap)
+
+watch(selectedClubId, async (id, old) => {
+    if (id && id !== old) {
+        await loadBalances(id)
+    }
+})
 </script>
 
 <template>
@@ -76,18 +92,25 @@ onMounted(loadBootstrap)
                         <h2 class="text-base font-semibold text-gray-900">Accounts</h2>
                         <p class="text-sm text-gray-600">Auto-loaded from payment concepts.</p>
                     </div>
-                    <div class="flex gap-2">
-                        <button @click="loadBootstrap" :disabled="loading"
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex items-center gap-2 text-sm">
+                            <label class="text-gray-700">Club:</label>
+                            <select v-model="selectedClubId"
+                                class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
+                            </select>
+                        </div>
+                        <button @click="() => loadBootstrap(selectedClubId)" :disabled="loading"
                             class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
                             <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />
                             <span>{{ loading ? 'Reloading…' : 'Reload accounts' }}</span>
                         </button>
-                        <button @click="loadBalances" :disabled="balancesLoading"
+                        <button @click="() => loadBalances(selectedClubId)" :disabled="balancesLoading"
                             class="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60">
                             <ArrowPathIcon v-if="balancesLoading" class="h-4 w-4 animate-spin" />
                             <span>{{ balancesLoading ? 'Refreshing…' : 'Refresh balances' }}</span>
                         </button>
-                        <a :href="route('financial.accounts.pdf')" target="_blank" rel="noopener"
+                        <a :href="route('financial.accounts.pdf', { club_id: selectedClubId })" target="_blank" rel="noopener"
                             class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
                             <span>Download PDF</span>
                         </a>
@@ -117,7 +140,7 @@ onMounted(loadBootstrap)
                                 <td class="px-4 py-2">{{ fmtMoney(acc.entries) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(acc.expenses) }}</td>
                                 <td class="px-4 py-2 font-semibold"
-                                    :class="Number(acc.balance) >= 0 ? 'text-emerald-700' : 'text-red-700'">
+                                    :class="Number(acc.balance) > 0 ? 'text-emerald-700' : 'text-red-700'">
                                     {{ fmtMoney(acc.balance) }}
                                 </td>
                             </tr>
