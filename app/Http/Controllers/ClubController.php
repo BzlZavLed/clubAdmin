@@ -382,8 +382,10 @@ class ClubController extends Controller
 
         // Map short names to FQCN
         $map = [
-            'StaffAdventurer'  => \App\Models\StaffAdventurer::class,
-            'MemberAdventurer' => \App\Models\MemberAdventurer::class,
+            'StaffAdventurer'  => \App\Models\Staff::class,
+            'MemberAdventurer' => \App\Models\Member::class,
+            'Staff'            => \App\Models\Staff::class,
+            'Member'           => \App\Models\Member::class,
         ];
 
         if (isset($map[$type])) {

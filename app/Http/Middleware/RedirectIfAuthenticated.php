@@ -2,29 +2,40 @@
 
 namespace App\Http\Middleware;
 
+use App\Providers\RouteServiceProvider;
 use Closure;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\Response;
 
 class RedirectIfAuthenticated
 {
-    public function handle(Request $request, Closure $next): Response
-{
-    if (Auth::check()) {
-        \Log::info('User is authenticated. Redirecting...', [
-            'profile_type' => Auth::user()->profile_type,
-            'path' => $request->path()
-        ]);
+    public function handle(Request $request, Closure $next, string ...$guards): Response
+    {
+        $guards = empty($guards) ? [null] : $guards;
 
-        return redirect(match (Auth::user()->profile_type) {
-            'club_director' => '/club-director/dashboard',
-            'parent' => '/parent/apply',
-            default => '/dashboard'
-        });
+        foreach ($guards as $guard) {
+            if (Auth::guard($guard)->check()) {
+                return redirect(self::redirectPath());
+            }
+        }
+
+        return $next($request);
     }
 
-    \Log::info('User is not authenticated. Showing guest page.');
-    return $next($request);
-}
+    public static function redirectPath(): string
+    {
+        $user = Auth::user();
+
+        return match ($user?->profile_type) {
+            'club_director' => '/club-director/dashboard',
+            'club_personal' => '/club-personal/dashboard',
+            'conference_manager' => '/conference/dashboard',
+            'regional_manager' => '/regional/dashboard',
+            'union_manager' => '/union/dashboard',
+            'nad_manager' => '/nad/dashboard',
+            'parent' => '/parent/apply',
+            default => RouteServiceProvider::HOME,
+        };
+    }
 }

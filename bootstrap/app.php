@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // All aliases together
         $middleware->alias([
+            'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
             'profile' => EnsureProfileIs::class,
             'auth.parent' => \App\Http\Middleware\EnsureParent::class,
             'redirect_if_authenticated' => \App\Http\Middleware\RedirectIfAuthenticated::class,

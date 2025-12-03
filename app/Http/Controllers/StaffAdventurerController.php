@@ -346,13 +346,16 @@ class StaffAdventurerController extends Controller
             abort(404, 'Club not found.');
         }
 
-        // Use the same staff model for all club types for now
-        $staffModel = StaffAdventurer::class;
+        $staffIdMap = \App\Models\Staff::where('club_id', $clubId)
+            ->pluck('id', 'id_data'); // [staff_adventurer_id => staff_id]
 
-        // Fetch staff for the club
-        $staff = $staffModel::with('assignedClasses')
-            ->where('club_id', $clubId)
-            ->get();
+        $staff = StaffAdventurer::with('assignedClasses')
+            ->whereIn('id', $staffIdMap->keys())
+            ->get()
+            ->map(function ($s) use ($staffIdMap) {
+                $s->staff_id = $staffIdMap[$s->id] ?? null; // expose new table id
+                return $s;
+            });
 
         $staff = $staff->map(function ($staffMember) use ($club) {
             $exists = User::where('email', $staffMember->email)->exists();
@@ -367,12 +370,12 @@ class StaffAdventurerController extends Controller
             return $query->where('club_id', $clubId);
         })
             ->get()
-            ->map(function ($u) use ($staffModel, $clubId) {
-                $existsByName = $staffModel::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
+            ->map(function ($u) use ($clubId) {
+                $existsByName = StaffAdventurer::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
                     ->where('club_id', $clubId)
                     ->exists();
 
-                $existsByEmail = $staffModel::where('email', $u->email)
+                $existsByEmail = StaffAdventurer::where('email', $u->email)
                     ->where('club_id', $clubId)
                     ->exists();
 

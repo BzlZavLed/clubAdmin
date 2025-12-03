@@ -1,26 +1,34 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
-import { ArrowPathIcon, BanknotesIcon } from '@heroicons/vue/24/outline'
-import { fetchExpenses, createExpense } from '@/Services/api'
+import { ArrowPathIcon, BanknotesIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
+import { fetchExpenses, createExpense, uploadExpenseReceipt } from '@/Services/api'
 
 const payToOptions = ref([])
 const expenses = ref([])
 const accounts = ref([])
 const clubs = ref([])
+const reimbursements = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const saving = ref(false)
+const uploadingId = ref(null)
+const rowErrors = ref({})
 
 const form = useForm({
     club_id: null,
     pay_to: null,
+    payment_concept_id: null,
     amount: '',
     expense_date: new Date().toISOString().slice(0, 10),
     description: '',
     reimbursed_to: '',
+    receipt_image: null,
 })
+
+const receiptInputs = ref({})
+const newReceiptInput = ref(null)
 
 const payToLabel = (val) => {
     const m = payToOptions.value.find(p => p.value === val)
@@ -32,11 +40,35 @@ const selectedBalance = computed(() => {
     const acc = accounts.value.find(a => a.pay_to === form.pay_to)
     return acc?.balance ?? null
 })
+const reimbursementOptions = computed(() => reimbursements.value || [])
+const selectedReimbursement = computed(() => reimbursementOptions.value.find(r => r.id === form.payment_concept_id) || null)
+const amountExceedsReimbursement = computed(() => {
+    if (form.pay_to !== 'reimbursement_to') return false
+    if (!selectedReimbursement.value) return false
+    const avail = Number(selectedReimbursement.value.available || 0)
+    return Number(form.amount || 0) > avail
+})
+const disableSave = computed(() => {
+    const exceedsReimb = form.pay_to === 'reimbursement_to' && form.payment_concept_id && amountExceedsReimbursement.value
+    return saving.value || exceedsReimb
+})
+const maxAmount = computed(() => {
+    if (form.pay_to !== 'reimbursement_to') return null
+    if (!selectedReimbursement.value) return null
+    return Number(selectedReimbursement.value.available || 0)
+})
 const amountExceedsBalance = computed(() => {
     if (selectedBalance.value === null) return false
     const amt = Number(form.amount || 0)
     return amt > Number(selectedBalance.value || 0)
 })
+
+const receiptHref = (expense) => {
+    if (!expense) return null
+    if (expense.receipt_url) return expense.receipt_url
+    if (expense.receipt_path) return `${window.location.origin}/storage/${expense.receipt_path}`
+    return null
+}
 
 const loadData = async (clubId = null) => {
     loading.value = true
@@ -47,10 +79,18 @@ const loadData = async (clubId = null) => {
         accounts.value = data?.accounts || []
         expenses.value = Array.isArray(data?.expenses) ? data.expenses : []
         clubs.value = Array.isArray(data?.clubs) ? data.clubs : []
+        reimbursements.value = Array.isArray(data?.reimbursements) ? data.reimbursements : []
         if (!form.club_id) {
+            suppressClubWatch = true
             form.club_id = data?.club_id || (clubs.value[0]?.id ?? null)
         }
         if (!form.pay_to && payToOptions.value.length) form.pay_to = payToOptions.value[0].value
+        if (!form.payment_concept_id && reimbursementOptions.value.length) {
+            form.payment_concept_id = reimbursementOptions.value[0].id
+        }
+        if (form.pay_to === 'reimbursement_to' && selectedReimbursement.value?.payee_name && !form.reimbursed_to) {
+            form.reimbursed_to = selectedReimbursement.value.payee_name
+        }
     } catch (e) {
         console.error(e)
         loadError.value = e?.response?.data?.message || 'Failed to load expenses.'
@@ -68,6 +108,18 @@ const submit = async () => {
         saving.value = false
         return
     }
+    if (form.pay_to === 'reimbursement_to') {
+        if (!form.payment_concept_id) {
+            form.setError('payment_concept_id', 'Select a reimbursement concept')
+            saving.value = false
+            return
+        }
+        if (amountExceedsReimbursement.value) {
+            form.setError('amount', 'Amount exceeds available reimbursement balance.')
+            saving.value = false
+            return
+        }
+    }
     const bal = selectedBalance.value
     if (bal !== null && Number(form.amount || 0) > Number(bal)) {
         form.setError('amount', 'Amount exceeds current account balance.')
@@ -79,6 +131,8 @@ const submit = async () => {
         expenses.value = [data?.data, ...expenses.value]
         form.amount = ''
         form.description = ''
+        form.receipt_image = null
+        if (newReceiptInput.value) newReceiptInput.value.value = ''
     } catch (e) {
         if (e?.response?.status === 422) {
             const errs = e.response.data.errors || {}
@@ -92,15 +146,81 @@ const submit = async () => {
     }
 }
 
-onMounted(async () => {
-    await loadData()
+let suppressClubWatch = false
+watch(
+    () => form.club_id,
+    async (id, old) => {
+        // Initial run
+        if (old === undefined) {
+            await loadData(id)
+            return
+        }
+
+        // Skip when we programmatically set club_id during bootstrap
+        if (suppressClubWatch) {
+            suppressClubWatch = false
+            return
+        }
+
+        if (id && id !== old) {
+            await loadData(id)
+        }
+    },
+    { immediate: true }
+)
+
+watch(() => form.payment_concept_id, () => {
+    syncReimbursementDetails()
 })
 
-watch(() => form.club_id, async (id, old) => {
-    if (id && id !== old) {
-        await loadData(id)
-    }
+watch(() => form.pay_to, () => {
+    syncReimbursementDetails()
 })
+
+const onNewReceiptChange = (event) => {
+    const [file] = event.target.files || []
+    form.receipt_image = file || null
+}
+
+const triggerReceiptUpload = (expenseId) => {
+    const input = receiptInputs.value[expenseId]
+    if (input) input.click()
+}
+
+const handleReceiptSelected = async (expenseId, event) => {
+    const [file] = event.target.files || []
+    event.target.value = ''
+    if (!file) return
+
+    rowErrors.value = { ...rowErrors.value, [expenseId]: '' }
+    uploadingId.value = expenseId
+    try {
+        const { data } = await uploadExpenseReceipt(expenseId, file)
+        const idx = expenses.value.findIndex(e => e.id === expenseId)
+        if (idx !== -1) expenses.value[idx] = data?.data
+    } catch (e) {
+        rowErrors.value = {
+            ...rowErrors.value,
+            [expenseId]: e?.response?.data?.message || 'Failed to upload receipt.',
+        }
+        console.error(e)
+    } finally {
+        uploadingId.value = null
+    }
+}
+
+const syncReimbursementDetails = () => {
+    if (form.pay_to !== 'reimbursement_to') return
+    if (selectedReimbursement.value?.payee_name) {
+        form.reimbursed_to = selectedReimbursement.value.payee_name
+    }
+    if (selectedReimbursement.value) {
+        const avail = Number(selectedReimbursement.value.available || 0)
+        if (avail >= 0 && Number(form.amount || 0) > avail) {
+            form.amount = avail ? String(avail) : ''
+        }
+    }
+}
 </script>
 
 <template>
@@ -144,11 +264,26 @@ watch(() => form.club_id, async (id, old) => {
                         <div v-if="form.errors.pay_to" class="mt-1 text-sm text-red-600">{{ form.errors.pay_to }}</div>
                     </div>
 
+                    <div v-if="form.pay_to === 'reimbursement_to'">
+                        <label class="block text-sm font-medium text-gray-700">Reimbursement source</label>
+                        <select v-model="form.payment_concept_id" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option :value="null">Select a reimbursement</option>
+                            <option v-for="r in reimbursementOptions" :key="r.id" :value="r.id">
+                                {{ r.concept }} — {{ r.payee_name || 'Unknown payee' }} — available {{ fmtMoney(r.available) }}
+                            </option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1" v-if="selectedReimbursement">Paid {{ fmtMoney(selectedReimbursement.paid) }} · Spent {{ fmtMoney(selectedReimbursement.spent) }}</p>
+                        <div v-if="form.errors.payment_concept_id" class="mt-1 text-sm text-red-600">{{ form.errors.payment_concept_id }}</div>
+                    </div>
+
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Amount</label>
-                        <input type="number" step="0.01" min="0" v-model="form.amount"
+                        <input type="number" step="0.01" min="0" :max="form.pay_to === 'reimbursement_to' && selectedReimbursement ? selectedReimbursement.available : null" v-model="form.amount"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
                         <div v-if="form.errors.amount" class="mt-1 text-sm text-red-600">{{ form.errors.amount }}</div>
+                        <div v-else-if="amountExceedsReimbursement" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
+                            Amount exceeds the available reimbursement balance.
+                        </div>
                         <div v-else-if="amountExceedsBalance" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
                             Amount is greater than the current account balance. Please adjust before saving.
                         </div>
@@ -168,6 +303,14 @@ watch(() => form.club_id, async (id, old) => {
                         <div v-if="form.errors.description" class="mt-1 text-sm text-red-600">{{ form.errors.description }}</div>
                     </div>
 
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Receipt image (optional now)</label>
+                        <input type="file" accept="image/*" @change="onNewReceiptChange" ref="newReceiptInput"
+                            class="mt-1 block w-full text-sm text-gray-700" />
+                        <p class="mt-1 text-xs text-gray-500">Attach now to mark as completed, or add it later from the table.</p>
+                        <div v-if="form.errors.receipt_image" class="mt-1 text-sm text-red-600">{{ form.errors.receipt_image }}</div>
+                    </div>
+
                     <div v-if="form.pay_to === 'reimbursement_to'">
                         <label class="block text-sm font-medium text-gray-700">Reimbursed to</label>
                         <input type="text" v-model="form.reimbursed_to"
@@ -178,7 +321,7 @@ watch(() => form.club_id, async (id, old) => {
                 </div>
 
                 <div class="mt-4 flex justify-end">
-                    <button @click="submit" :disabled="saving"
+                    <button @click="submit" :disabled="disableSave"
                         class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
                         <ArrowPathIcon v-if="saving" class="h-4 w-4 animate-spin" />
                         <span>{{ saving ? 'Saving…' : 'Save expense' }}</span>
@@ -197,6 +340,8 @@ watch(() => form.club_id, async (id, old) => {
                                 <th class="px-4 py-2 text-left font-semibold">Date</th>
                                 <th class="px-4 py-2 text-left font-semibold">Account</th>
                                 <th class="px-4 py-2 text-left font-semibold">Amount</th>
+                                <th class="px-4 py-2 text-left font-semibold">Status</th>
+                                <th class="px-4 py-2 text-left font-semibold">Receipt</th>
                                 <th class="px-4 py-2 text-left font-semibold">Reimbursed to</th>
                                 <th class="px-4 py-2 text-left font-semibold">Description</th>
                             </tr>
@@ -206,6 +351,44 @@ watch(() => form.club_id, async (id, old) => {
                                 <td class="px-4 py-2">{{ new Date(e.expense_date).toLocaleDateString() }}</td>
                                 <td class="px-4 py-2">{{ payToLabel(e.pay_to) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(e.amount) }}</td>
+                                <td class="px-4 py-2">
+                                    <span
+                                        :class="[
+                                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                                            e.status === 'completed'
+                                                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                                                : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                                        ]">
+                                        {{ e.status === 'completed' ? 'Completed' : 'Working on' }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2">
+                                    <div class="flex flex-col gap-1">
+                                        <div class="flex items-center gap-2">
+                                            <a v-if="receiptHref(e)" :href="receiptHref(e)" target="_blank" rel="noreferrer"
+                                                class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                                View receipt
+                                            </a>
+                                            <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
+                                                <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
+                                                No receipt
+                                            </span>
+
+                                            <button
+                                                v-if="e.status !== 'completed'"
+                                                @click="triggerReceiptUpload(e.id)"
+                                                :disabled="uploadingId === e.id"
+                                                class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
+                                                <ArrowPathIcon v-if="uploadingId === e.id" class="h-3.5 w-3.5 animate-spin" />
+                                                <span>{{ uploadingId === e.id ? 'Uploading…' : 'Load image' }}</span>
+                                            </button>
+                                            <input type="file" accept="image/*" class="hidden"
+                                                :ref="el => { if (el) receiptInputs[e.id] = el }"
+                                                @change="(ev) => handleReceiptSelected(e.id, ev)" />
+                                        </div>
+                                        <div v-if="rowErrors[e.id]" class="text-xs text-red-600">{{ rowErrors[e.id] }}</div>
+                                    </div>
+                                </td>
                                 <td class="px-4 py-2">{{ e.reimbursed_to || '—' }}</td>
                                 <td class="px-4 py-2">{{ e.description || '—' }}</td>
                             </tr>

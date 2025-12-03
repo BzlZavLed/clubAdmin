@@ -81,15 +81,18 @@ class MemberAdventurerController extends Controller
 
         $club = Club::findOrFail($id);
 
-        if ($club->club_type === 'adventurers') {
-            $members = MemberAdventurer::where('club_id', $id)
-                ->where('status', 'active')
-                ->with(['classAssignments.clubClass'])
-                ->orderBy('created_at', 'desc')
-                ->get();
-        } else {
-            $members = collect();
-        }
+        $memberIdMap = \App\Models\Member::where('club_id', $id)
+            ->pluck('id', 'id_data'); // [member_adventurer_id => member_id]
+
+        $members = MemberAdventurer::whereIn('id', $memberIdMap->keys())
+            ->where('status', 'active')
+            ->with(['classAssignments.clubClass'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($m) use ($memberIdMap) {
+                $m->member_id = $memberIdMap[$m->id] ?? null; // expose new table id
+                return $m;
+            });
 
         return response()->json([
             'club' => $club,

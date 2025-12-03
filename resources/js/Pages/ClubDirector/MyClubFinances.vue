@@ -126,7 +126,6 @@ function scopeOf(pc) {
 }
 
 function scopeLabel(sc) {
-    console.log('Generating label for scope:', sc);
     if (!sc) return 'No scope'
     switch (sc.scope_type) {
         case 'club_wide':
@@ -189,8 +188,8 @@ async function deleteConcept(id) {
     // map FQCN -> short name used in the UI selector
     const toUiPayeeType = (t) => {
     if (!t) return null
-    if (t.endsWith('StaffAdventurer')) return 'StaffAdventurer'
-    if (t.endsWith('MemberAdventurer')) return 'MemberAdventurer'
+    if (t.endsWith('Staff') || t.endsWith('StaffAdventurer')) return 'StaffAdventurer'
+    if (t.endsWith('Member') || t.endsWith('MemberAdventurer')) return 'MemberAdventurer'
     return null
     }
 
@@ -462,33 +461,33 @@ onMounted(async () => {
                         </div>
 
                         <!-- Staff dropdown -->
-                        <div v-if="pcForm.payee_type === 'StaffAdventurer'">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Select Staff</label>
-                            <select v-model="pcForm.payee_id" :disabled="!conceptClubId || staffList.length === 0"
-                                class="w-full mt-1 p-2 border rounded">
-                                <option :value="null">Select staff</option>
-                                <option v-for="s in staffList" :key="s.id" :value="s.id">
-                                    {{ s.name }}
-                                </option>
-                            </select>
-                            <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && staffList.length === 0">
-                                No staff found for this club.
-                            </p>
+        <div v-if="pcForm.payee_type === 'StaffAdventurer'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Select Staff</label>
+            <select v-model="pcForm.payee_id" :disabled="!conceptClubId || staffList.length === 0"
+                class="w-full mt-1 p-2 border rounded">
+                <option :value="null">Select staff</option>
+                <option v-for="s in staffList" :key="s.staff_id || s.id" :value="s.staff_id || s.id">
+                    {{ s.name }}
+                </option>
+            </select>
+            <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && staffList.length === 0">
+                No staff found for this club.
+            </p>
                         </div>
 
                         <!-- Member dropdown -->
-                        <div v-else-if="pcForm.payee_type === 'MemberAdventurer'">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Select Member</label>
-                            <select v-model="pcForm.payee_id" :disabled="!conceptClubId || members.length === 0"
-                                class="w-full mt-1 p-2 border rounded">
-                                <option :value="null">Select member</option>
-                                <option v-for="m in members" :key="m.id" :value="m.id">
-                                    {{ m.applicant_name }}
-                                </option>
-                            </select>
-                            <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && members.length === 0">
-                                No members found for this club.
-                            </p>
+        <div v-else-if="pcForm.payee_type === 'MemberAdventurer'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Select Member</label>
+            <select v-model="pcForm.payee_id" :disabled="!conceptClubId || members.length === 0"
+                class="w-full mt-1 p-2 border rounded">
+                <option :value="null">Select member</option>
+                <option v-for="m in members" :key="m.member_id || m.id" :value="m.member_id || m.id">
+                    {{ m.applicant_name }}
+                </option>
+            </select>
+            <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && members.length === 0">
+                No members found for this club.
+            </p>
                         </div>
                     </div>
 

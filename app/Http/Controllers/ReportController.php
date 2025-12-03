@@ -17,10 +17,12 @@ use App\Models\Payment;
 use App\Models\Expense;
 use App\Models\Account;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 class ReportController extends Controller
 {
     public function generateAssistancePDF($id, $date)
@@ -567,6 +569,7 @@ class ReportController extends Controller
             'accounts' => $data['accounts'],
             'payments' => $data['payments'],
             'expenses' => $data['expenses'],
+            'receipts' => $data['receipts'] ?? [],
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download('account-balances.pdf');
@@ -641,6 +644,7 @@ class ReportController extends Controller
         });
 
         // Detailed payment rows for income table
+        $paymentReceiptCounter = 1;
         $payments = Payment::query()
             ->where('payments.club_id', $club->id)
             ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
@@ -658,10 +662,17 @@ class ReportController extends Controller
                 'payments.member_adventurer_id',
                 'payments.staff_adventurer_id',
                 'payments.payment_concept_id',
+                'payments.check_image_path',
                 'payment_concepts.concept as concept_name',
                 'payment_concepts.pay_to as account',
             ])
-            ->map(function ($p) use ($payToLabelMap) {
+            ->map(function ($p) use ($payToLabelMap, &$paymentReceiptCounter) {
+                $ref = null;
+                $url = null;
+                if ($p->check_image_path) {
+                    $ref = 'P' . $paymentReceiptCounter++;
+                    $url = $this->toPublicUrl($p->check_image_path);
+                }
                 return [
                     'id' => $p->id,
                     'payment_date' => $p->payment_date,
@@ -672,6 +683,9 @@ class ReportController extends Controller
                     'concept' => $p->concept_name ?? '—',
                     'member' => $p->member ? ['id' => $p->member->id, 'applicant_name' => $p->member->applicant_name] : null,
                     'staff' => $p->staff ? ['id' => $p->staff->id, 'name' => $p->staff->name] : null,
+                    'receipt_path' => $p->check_image_path,
+                    'receipt_ref' => $ref,
+                    'receipt_url' => $url,
                 ];
             })
             ->values();
@@ -680,24 +694,84 @@ class ReportController extends Controller
             ->where('club_id', $club->id)
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
-            ->get(['id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to'])
-            ->map(function ($e) use ($payToLabelMap) {
-                return [
-                    'id' => $e->id,
-                    'pay_to' => $e->pay_to,
-                    'pay_to_label' => $payToLabelMap[$e->pay_to] ?? $e->pay_to,
-                    'amount' => (float) $e->amount,
-                    'expense_date' => $e->expense_date,
-                    'description' => $e->description,
-                    'reimbursed_to' => $e->reimbursed_to,
-                ];
-            })
+            ->get(['id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path'])
             ->values();
+
+        // Assign receipt references and map to DTOs
+        $expenseReceiptCounter = 1;
+        $expenseRows = $expenses->map(function ($e) use ($payToLabelMap, &$expenseReceiptCounter) {
+            $ref = null;
+            if ($e->receipt_path) {
+                $ref = 'R' . $expenseReceiptCounter++;
+            }
+            return [
+                'id' => $e->id,
+                'pay_to' => $e->pay_to,
+                'pay_to_label' => $payToLabelMap[$e->pay_to] ?? $e->pay_to,
+                'amount' => (float) $e->amount,
+                'expense_date' => $e->expense_date,
+                'description' => $e->description,
+                'reimbursed_to' => $e->reimbursed_to,
+                'status' => $e->status,
+                'receipt_path' => $e->receipt_path,
+                'receipt_ref' => $ref,
+                'receipt_url' => $e->receipt_url ?? null,
+            ];
+        });
+
+        $buildAnnex = function ($ref, $path, $id, $labelPrefix) {
+            $fullPath = storage_path('app/public/' . ltrim($path, '/'));
+            $dataUri = null;
+            if (file_exists($fullPath)) {
+                $mime = mime_content_type($fullPath) ?: 'image/jpeg';
+                $data = base64_encode(file_get_contents($fullPath));
+                $dataUri = "data:$mime;base64,$data";
+            }
+            return [
+                'ref' => $ref,
+                'source' => $labelPrefix,
+                'record_id' => $id,
+                'data_uri' => $dataUri,
+                'filename' => basename($path),
+            ];
+        };
+
+        $receiptAnnexes = collect();
+        $expenseRows->filter(fn($e) => $e['receipt_path'])->each(function ($e) use (&$receiptAnnexes, $buildAnnex) {
+            $receiptAnnexes->push($buildAnnex($e['receipt_ref'], $e['receipt_path'], $e['id'], 'Expense'));
+        });
+
+        $payments->filter(fn($p) => $p['receipt_path'])->each(function ($p) use (&$receiptAnnexes, $buildAnnex) {
+            $receiptAnnexes->push($buildAnnex($p['receipt_ref'], $p['receipt_path'], $p['id'], 'Payment'));
+        });
 
         return [
             'accounts' => $entries,
             'payments' => $payments,
-            'expenses' => $expenses,
+            'expenses' => $expenseRows,
+            'receipts' => $receiptAnnexes->values(),
         ];
+    }
+
+    protected function toPublicUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+
+        $url = Storage::disk('public')->url($path);
+        $host = request()?->getSchemeAndHttpHost();
+
+        if (Str::startsWith($url, ['http://', 'https://'])) {
+            if (!$host) return $url;
+            $parsed = parse_url($url);
+            $combined = rtrim($host, '/');
+            $combined .= $parsed['path'] ?? '';
+            if (!empty($parsed['query'])) {
+                $combined .= '?' . $parsed['query'];
+            }
+            return $combined;
+        }
+
+        $url = Str::start($url, '/');
+        return $host ? rtrim($host, '/') . $url : url($url);
     }
 }

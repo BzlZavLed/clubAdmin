@@ -10,8 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Providers\RouteServiceProvider;
-use Log;
+use App\Http\Middleware\RedirectIfAuthenticated;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -47,7 +46,7 @@ class AuthenticatedSessionController extends Controller
             'user' => $user,
             'email' => $request->input('email'),
         ]);
-        return redirect($this->redirectToBasedOnProfile(Auth::user()));
+        return redirect(RedirectIfAuthenticated::redirectPath());
     }
 
     /**
@@ -62,20 +61,5 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
-    }
-
-    private function redirectToBasedOnProfile($user): string
-    {
-        //dd($user->profile_type);
-        return match ($user->profile_type) {
-            'club_director' => '/club-director/dashboard',
-            'club_personal' => '/club-personal/dashboard',
-            'conference_manager' => '/conference/dashboard',
-            'regional_manager' => '/regional/dashboard',
-            'union_manager' => '/union/dashboard',
-            'nad_manager' => '/nad/dashboard',
-            'parent' => '/parent/apply',
-            default => RouteServiceProvider::HOME,
-        };
     }
 }

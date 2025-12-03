@@ -1,13 +1,14 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
-import { ArrowPathIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import { fetchFinancialReportBootstrap, fetchFinancialAccountBalances } from '@/Services/api'
 
 const payTo = ref([])
 const accountBalances = ref([])
 const accountPayments = ref([])
 const expenses = ref([])
+const receipts = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const balancesLoading = ref(false)
@@ -53,6 +54,7 @@ const loadBalances = async (clubId = null) => {
         accountPayments.value = Array.isArray(pays) ? pays : Object.values(pays)
         const exps = data?.expenses ?? []
         expenses.value = Array.isArray(exps) ? exps : Object.values(exps)
+        receipts.value = Array.isArray(data?.receipts) ? data.receipts : []
         if (!clubs.value.length && data?.clubs) clubs.value = data.clubs
     } catch (e) {
         console.error(e)
@@ -169,6 +171,7 @@ watch(selectedClubId, async (id, old) => {
                                 <th class="px-4 py-2 text-left font-semibold">Payer</th>
                                 <th class="px-4 py-2 text-left font-semibold">Amount</th>
                                 <th class="px-4 py-2 text-left font-semibold">Type</th>
+                                <th class="px-4 py-2 text-left font-semibold">Receipt</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -179,6 +182,21 @@ watch(selectedClubId, async (id, old) => {
                                 <td class="px-4 py-2">{{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(p.amount_paid) }}</td>
                                 <td class="px-4 py-2 capitalize">{{ p.payment_type }}</td>
+                                <td class="px-4 py-2">
+                                    <div class="flex items-center gap-2">
+                                        <span v-if="p.receipt_ref" class="text-xs text-gray-600">{{ p.receipt_ref }}</span>
+                                        <a v-if="p.receipt_url"
+                                            :href="p.receipt_url"
+                                            target="_blank" rel="noopener"
+                                            class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                            View receipt
+                                        </a>
+                                        <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
+                                            <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
+                                            No receipt
+                                        </span>
+                                    </div>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -202,6 +220,8 @@ watch(selectedClubId, async (id, old) => {
                                 <th class="px-4 py-2 text-left font-semibold">Date</th>
                                 <th class="px-4 py-2 text-left font-semibold">Account</th>
                                 <th class="px-4 py-2 text-left font-semibold">Amount</th>
+                                <th class="px-4 py-2 text-left font-semibold">Status</th>
+                                <th class="px-4 py-2 text-left font-semibold">Receipt</th>
                                 <th class="px-4 py-2 text-left font-semibold">Reimbursed to</th>
                                 <th class="px-4 py-2 text-left font-semibold">Description</th>
                             </tr>
@@ -211,6 +231,32 @@ watch(selectedClubId, async (id, old) => {
                                 <td class="px-4 py-2">{{ new Date(e.expense_date).toLocaleDateString() }}</td>
                                 <td class="px-4 py-2">{{ e.pay_to_label || payToLabel(e.pay_to) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(e.amount) }}</td>
+                                <td class="px-4 py-2">
+                                    <span
+                                        :class="[
+                                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                        e.status === 'completed'
+                            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                            : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                    ]">
+                                        {{ e.status === 'completed' ? 'Completed' : 'Working on' }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2">
+                                    <div class="flex items-center gap-2">
+                                        <span v-if="e.receipt_ref" class="text-xs text-gray-600">{{ e.receipt_ref }}</span>
+                                        <a v-if="e.receipt_url"
+                                            :href="e.receipt_url"
+                                            target="_blank" rel="noopener"
+                                            class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                            View receipt
+                                        </a>
+                                        <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
+                                            <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
+                                            No receipt
+                                        </span>
+                                    </div>
+                                </td>
                                 <td class="px-4 py-2">{{ e.reimbursed_to || '—' }}</td>
                                 <td class="px-4 py-2">{{ e.description || '—' }}</td>
                             </tr>

@@ -51,6 +51,7 @@
                     <th>Payer</th>
                     <th>Amount</th>
                     <th>Type</th>
+                    <th>Receipt Ref</th>
                 </tr>
             </thead>
             <tbody>
@@ -62,6 +63,7 @@
                         <td>{{ $p['member']['applicant_name'] ?? $p['staff']['name'] ?? '—' }}</td>
                         <td>${{ number_format($p['amount_paid'] ?? 0, 2) }}</td>
                         <td>{{ ucfirst($p['payment_type'] ?? '') }}</td>
+                        <td>{{ $p['receipt_ref'] ?? '—' }}</td>
                     </tr>
                 @endforeach
             </tbody>
@@ -76,6 +78,8 @@
                     <th>Date</th>
                     <th>Account</th>
                     <th>Amount</th>
+                    <th>Status</th>
+                    <th>Receipt Ref</th>
                     <th>Reimbursed to</th>
                     <th>Description</th>
                 </tr>
@@ -86,6 +90,8 @@
                         <td>{{ optional($e['expense_date'])->format('Y-m-d') ?? $e['expense_date'] }}</td>
                         <td>{{ $e['pay_to_label'] ?? $e['pay_to'] }}</td>
                         <td>${{ number_format($e['amount'] ?? 0, 2) }}</td>
+                        <td>{{ $e['status'] ? ucfirst($e['status']) : '—' }}</td>
+                        <td>{{ $e['receipt_ref'] ?? '—' }}</td>
                         <td>{{ $e['reimbursed_to'] ?? '—' }}</td>
                         <td>{{ $e['description'] ?? '—' }}</td>
                     </tr>
@@ -93,5 +99,20 @@
             </tbody>
         </table>
     </div>
+
+    @if(!empty($receipts) && count($receipts))
+        @foreach($receipts as $receipt)
+            <div style="page-break-before: always;"></div>
+            <h2>Receipt {{ $receipt['ref'] ?? '' }}</h2>
+            <p style="margin-bottom: 3px;">{{ $receipt['source'] ?? 'Entry' }} ID: {{ $receipt['record_id'] ?? '' }} | File: {{ $receipt['filename'] ?? '' }}</p>
+            @if(!empty($receipt['data_uri']))
+                <div style="width: 80%; text-align: center;">
+                    <img src="{{ $receipt['data_uri'] }}" style="max-width: 400px; max-height: 400px; width: 400px; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 4px;" />
+                </div>
+            @else
+                <p>Receipt image not available.</p>
+            @endif
+        @endforeach
+    @endif
 </body>
 </html>

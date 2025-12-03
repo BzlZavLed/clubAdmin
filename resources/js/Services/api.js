@@ -302,9 +302,27 @@ export const fetchExpenses = async (clubId = null) => {
     const { data } = await axios.get(route('club.director.expenses'), {
         params: clubId ? { club_id: clubId } : {}
     })
+
     return data
 }
 
 export const createExpense = async (payload) => {
-    return await axios.post(route('club.director.expenses.store'), payload)
+    const fd = new FormData()
+    Object.entries(payload).forEach(([k, v]) => {
+        if (v === undefined || v === null) return
+        fd.append(k, v)
+    })
+
+    return await axios.post(route('club.director.expenses.store'), fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    })
+}
+
+export const uploadExpenseReceipt = async (expenseId, file) => {
+    const fd = new FormData()
+    fd.append('receipt_image', file)
+
+    return await axios.post(route('club.director.expenses.upload', expenseId), fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    })
 }

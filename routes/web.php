@@ -20,12 +20,19 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
 use App\Http\Controllers\ReportController;
+use App\Http\Middleware\RedirectIfAuthenticated;
 
 // ---------------------------------
 // 🔗 Public Routes
 // ---------------------------------
 
-Route::get('/', fn() => redirect('/login'));
+Route::get('/', function () {
+    if (Auth::check()) {
+        return redirect(RedirectIfAuthenticated::redirectPath());
+    }
+
+    return redirect('/login');
+});
 Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
 
 Route::post('/logout', function () {
@@ -103,6 +110,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.expenses');
     Route::post('/club-director/expenses', [ExpenseController::class, 'store'])
         ->name('club.director.expenses.store');
+    Route::post('/club-director/expenses/{expense}/receipt', [ExpenseController::class, 'uploadReceipt'])
+        ->name('club.director.expenses.upload');
 
     Route::get('/club-director/staff', function () {
         return Inertia::render('ClubDirector/Staff', [
