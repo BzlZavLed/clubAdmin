@@ -50,6 +50,29 @@ class MemberAdventurerController extends Controller
 
         $member = MemberAdventurer::create($validated);
 
+        // Mirror into members table for adventurer clubs
+        $club = Club::find($validated['club_id']);
+        $isAdventurerClub = $club && strtolower($club->club_type ?? '') === 'adventurers';
+        if ($isAdventurerClub) {
+            Member::firstOrCreate(
+                [
+                    'type' => 'adventurers',
+                    'id_data' => $member->id,
+                ],
+                [
+                    'club_id' => $validated['club_id'],
+                    'class_id' => null,
+                    'parent_id' => auth()->id(),
+                    'assigned_staff_id' => null,
+                    'status' => 'active',
+                ]
+            );
+        }
+
+        if (auth()->user()?->profile_type === 'parent') {
+            return redirect()->route('parent.dashboard')->with('success', 'Member registered successfully.');
+        }
+
         return redirect()->back()->with('success', 'Member registered successfully.');
     }
 
@@ -62,6 +85,40 @@ class MemberAdventurerController extends Controller
         ]);
 
         return response()->json(['message' => 'Member deleted.']);
+    }
+
+    public function updateForParent(Request $request, $id)
+    {
+        $member = MemberAdventurer::findOrFail($id);
+        $parentId = auth()->id();
+
+        $link = Member::where('type', 'adventurers')
+            ->where('id_data', $member->id)
+            ->where('parent_id', $parentId)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'applicant_name' => 'required|string|max:255',
+            'birthdate' => 'required|date',
+            'age' => 'required|integer|min:1|max:99',
+            'grade' => 'required|string|max:20',
+            'mailing_address' => 'required|string',
+            'cell_number' => 'required|string',
+            'emergency_contact' => 'required|string',
+            'investiture_classes' => 'nullable|array',
+            'allergies' => 'nullable|string',
+            'physical_restrictions' => 'nullable|string',
+            'health_history' => 'nullable|string',
+            'parent_name' => 'required|string|max:255',
+            'parent_cell' => 'required|string|max:255',
+            'home_address' => 'required|string',
+            'email_address' => 'required|email',
+            'signature' => 'required|string|max:255',
+        ]);
+
+        $member->update($validated);
+
+        return redirect()->back()->with('success', 'Child updated.');
     }
 
 

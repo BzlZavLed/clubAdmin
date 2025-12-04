@@ -3,6 +3,7 @@ import { ref , h , onMounted} from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import ClubDirectorNav from '@/Components/Nav/ClubDirectorNav.vue'
 import ClubPersonalNav from '@/Components/Nav/ClubPersonalNav.vue'
+import ParentNav from '@/Components/Nav/ParentNav.vue'
 
 const isCollapsed = ref(false)
 const user = usePage().props.auth.user
@@ -19,6 +20,8 @@ const getNavComponent = () => {
         return h(ClubDirectorNav, { isCollapsed: isCollapsed.value })
     } else if (user.profile_type === 'club_personal') {
         return h(ClubPersonalNav, { isCollapsed: isCollapsed.value })
+    } else if (user.profile_type === 'parent') {
+        return h(ParentNav, { isCollapsed: isCollapsed.value })
     }
     return null
 }

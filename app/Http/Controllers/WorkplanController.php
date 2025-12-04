@@ -1,0 +1,521 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Club;
+use App\Models\Member;
+use App\Models\Workplan;
+use App\Models\WorkplanEvent;
+use App\Models\WorkplanRule;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Inertia\Inertia;
+
+class WorkplanController extends Controller
+{
+    public function index(Request $request)
+    {
+        $user = $request->user();
+        $clubs = $user->clubs()
+            ->orderBy('club_name')
+            ->get(['clubs.id', 'club_name']);
+
+        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
+            abort(403, 'Not allowed to view this club workplan.');
+        }
+
+        $workplan = null;
+        if ($selectedClubId) {
+            $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
+                'rules',
+                'events' => function ($query) {
+                    $query->with(['classPlans' => function ($q) {
+                        $q->with(['staff', 'class']);
+                    }])->orderBy('date')->orderBy('start_time');
+                }
+            ]);
+        }
+
+        return Inertia::render('ClubDirector/Workplan', [
+            'auth_user' => $user,
+            'workplan' => $workplan,
+            'clubs' => $clubs,
+            'selected_club_id' => $selectedClubId,
+        ]);
+    }
+
+    public function preview(Request $request)
+    {
+        $payload = $this->validatePayload($request);
+        $workplan = $this->getWorkplanForUser($request->user());
+
+        $existingEvents = $workplan->events()->with('rule')->where('status', 'active')->get();
+        $existingGenerated = $existingEvents->where('is_generated', true);
+
+        $ruleMap = $this->buildRuleMap($payload['rules']);
+        $targets = $this->buildTargets($payload['start_date'], $payload['end_date'], $ruleMap, $payload);
+
+        $diff = $this->diffEvents($existingGenerated, $targets);
+
+        return response()->json([
+            'adds' => array_values($diff['adds']),
+            'removals' => $diff['removals'],
+        ]);
+    }
+
+    public function confirm(Request $request)
+    {
+        $payload = $this->validatePayload($request);
+        $workplan = $this->getWorkplanForUser($request->user());
+
+        $workplan->fill([
+            'start_date' => $payload['start_date'],
+            'end_date' => $payload['end_date'],
+            'default_sabbath_location' => $payload['default_sabbath_location'] ?? null,
+            'default_sunday_location' => $payload['default_sunday_location'] ?? null,
+            'default_sabbath_start_time' => $payload['default_sabbath_start_time'] ?? null,
+            'default_sabbath_end_time' => $payload['default_sabbath_end_time'] ?? null,
+            'default_sunday_start_time' => $payload['default_sunday_start_time'] ?? null,
+            'default_sunday_end_time' => $payload['default_sunday_end_time'] ?? null,
+            'timezone' => $payload['timezone'] ?? null,
+        ])->save();
+
+        $workplan->rules()->delete();
+        $ruleIdMap = [];
+        foreach ($payload['rules'] as $ruleData) {
+            $rule = $workplan->rules()->create([
+                'meeting_type' => $ruleData['meeting_type'],
+                'nth_week' => $ruleData['nth_week'],
+                'note' => $ruleData['note'] ?? null,
+            ]);
+            $ruleIdMap[$ruleData['meeting_type'] . ':' . $ruleData['nth_week']] = $rule->id;
+        }
+
+        $existingEvents = $workplan->events()->with('rule')->where('status', 'active')->get();
+        $existingGenerated = $existingEvents->where('is_generated', true);
+
+        $ruleMap = $this->buildRuleMap($payload['rules']);
+        foreach ($ruleMap as &$rule) {
+            $key = $rule['meeting_type'] . ':' . $rule['nth_week'];
+            $rule['rule_id'] = $ruleIdMap[$key] ?? null;
+        }
+
+        $targets = $this->buildTargets($payload['start_date'], $payload['end_date'], $ruleMap, $payload);
+        $diff = $this->diffEvents($existingGenerated, $targets);
+
+        if (!empty($diff['removals'])) {
+            WorkplanEvent::whereIn('id', $diff['removals'])->delete();
+        }
+
+        foreach ($diff['adds'] as $add) {
+            $workplan->events()->create([
+                'generated_from_rule_id' => $add['rule_id'] ?? null,
+                'date' => $add['date'],
+                'start_time' => $add['start_time'],
+                'end_time' => $add['end_time'],
+                'meeting_type' => $add['meeting_type'],
+                'title' => $add['title'],
+                'description' => $add['description'] ?? null,
+                'location' => $add['location'],
+                'is_generated' => true,
+                'is_edited' => false,
+                'status' => 'active',
+                'created_by' => $request->user()->id,
+            ]);
+        }
+
+        $workplan->refresh()->load(['rules', 'events' => function ($query) {
+            $query->orderBy('date')->orderBy('start_time');
+        }]);
+
+        return response()->json([
+            'workplan' => $workplan,
+        ]);
+    }
+
+    public function storeEvent(Request $request)
+    {
+        $payload = $request->validate([
+            'date' => ['required', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_time' => ['nullable', 'date_format:H:i'],
+            'meeting_type' => ['required', 'in:sabbath,sunday,special'],
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'location' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $workplan = $this->getWorkplanForUser($request->user());
+
+        $event = $workplan->events()->create(array_merge($payload, [
+            'is_generated' => false,
+            'is_edited' => false,
+            'status' => 'active',
+            'created_by' => $request->user()->id,
+        ]));
+
+        return response()->json([
+            'event' => $event,
+        ]);
+    }
+
+    public function updateEvent(Request $request, WorkplanEvent $event)
+    {
+        $this->authorizeEvent($request->user(), $event);
+
+        $payload = $request->validate([
+            'date' => ['required', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_time' => ['nullable', 'date_format:H:i'],
+            'meeting_type' => ['required', 'in:sabbath,sunday,special'],
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'location' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $event->fill($payload);
+        if ($event->is_generated) {
+            $event->is_edited = true;
+        }
+        $event->save();
+
+        return response()->json([
+            'event' => $event->fresh(),
+        ]);
+    }
+
+    public function destroyEvent(Request $request, WorkplanEvent $event)
+    {
+        $this->authorizeEvent($request->user(), $event);
+        $event->delete();
+
+        return response()->json(['status' => 'deleted']);
+    }
+
+    public function data(Request $request)
+    {
+        $user = $request->user();
+        $clubs = $this->allowedClubs($user);
+        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+
+        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
+            abort(403, 'Not allowed to view this club workplan.');
+        }
+
+        $workplan = null;
+        if ($selectedClubId) {
+            $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
+                'rules',
+                'events' => function ($query) {
+                    $query->with(['classPlans' => function ($q) {
+                        $q->with(['staff', 'class']);
+                    }])->orderBy('date')->orderBy('start_time');
+                }
+            ]);
+        }
+
+        return response()->json([
+            'clubs' => $clubs,
+            'selected_club_id' => $selectedClubId,
+            'workplan' => $workplan,
+        ]);
+    }
+
+    public function pdf(Request $request)
+    {
+        $user = $request->user();
+        $clubs = $this->allowedClubs($user);
+        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
+            abort(403, 'Not allowed to view this club workplan.');
+        }
+
+        $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
+            'club',
+            'events' => function ($q) {
+                $q->orderBy('date')->orderBy('start_time');
+            }
+        ]);
+
+        $start = Carbon::parse($request->input('start_date', $workplan->start_date))->startOfDay();
+        $end = Carbon::parse($request->input('end_date', $workplan->end_date))->endOfDay();
+
+        // Clamp to the workplan range
+        if ($start->lt(Carbon::parse($workplan->start_date))) {
+            $start = Carbon::parse($workplan->start_date)->startOfDay();
+        }
+        if ($end->gt(Carbon::parse($workplan->end_date))) {
+            $end = Carbon::parse($workplan->end_date)->endOfDay();
+        }
+
+        $months = [];
+        $cursor = $start->copy()->startOfMonth();
+        while ($cursor->lessThanOrEqualTo($end)) {
+            $months[] = [
+                'label' => $cursor->format('F Y'),
+                'year' => $cursor->year,
+                'month' => $cursor->month,
+            ];
+            $cursor->addMonth()->startOfMonth();
+        }
+
+        $eventsByDate = [];
+        foreach ($workplan->events as $ev) {
+            $date = Carbon::parse($ev->date)->toDateString();
+            if ($date < $start->toDateString() || $date > $end->toDateString()) {
+                continue;
+            }
+            $eventsByDate[$date][] = $ev;
+        }
+
+        $pdf = Pdf::loadView('pdf.workplan', [
+            'workplan' => $workplan,
+            'months' => $months,
+            'eventsByDate' => $eventsByDate,
+            'start' => $start,
+            'end' => $end,
+        ])->setPaper('a4', 'portrait');
+
+        $filename = 'workplan-' . ($workplan->club->club_name ?? 'club') . '.pdf';
+        return $pdf->download($filename);
+    }
+
+    public function ics(Request $request)
+    {
+        $user = $request->user();
+        $clubs = $this->allowedClubs($user);
+        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
+            abort(403, 'Not allowed to view this club workplan.');
+        }
+
+        $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load('club', 'events');
+
+        $lines = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//nadClubs//Workplan//EN',
+            'CALSCALE:GREGORIAN',
+        ];
+
+        foreach ($workplan->events as $ev) {
+            $startDate = Carbon::parse($ev->date)->format('Ymd');
+            $uid = 'wp-' . $ev->id . '@nadclubs';
+            $summary = $ev->title ?: ucfirst($ev->meeting_type) . ' meeting';
+            $descParts = [];
+            if ($ev->description) $descParts[] = $ev->description;
+            if ($ev->location) $descParts[] = 'Location: ' . $ev->location;
+            if ($ev->is_generated) $descParts[] = '(Generated)';
+            $description = implode(' | ', $descParts);
+
+            $dtStart = $startDate;
+            $dtEnd = $startDate;
+            if ($ev->start_time) {
+                $dtStart .= 'T' . str_replace(':', '', substr($ev->start_time, 0, 5)) . '00';
+            }
+            if ($ev->end_time) {
+                $dtEnd .= 'T' . str_replace(':', '', substr($ev->end_time, 0, 5)) . '00';
+            } else {
+                $dtEnd = $dtStart;
+            }
+
+            $lines = array_merge($lines, [
+                'BEGIN:VEVENT',
+                'UID:' . $uid,
+                'DTSTAMP:' . Carbon::now()->utc()->format('Ymd\THis\Z'),
+                'SUMMARY:' . $this->escapeIcs($summary),
+                'DTSTART:' . $dtStart,
+                'DTEND:' . $dtEnd,
+                'DESCRIPTION:' . $this->escapeIcs($description),
+                'LOCATION:' . $this->escapeIcs($ev->location ?? ''),
+                'END:VEVENT',
+            ]);
+        }
+
+        $lines[] = 'END:VCALENDAR';
+
+        $content = implode("\r\n", $lines);
+        $filename = 'workplan-' . ($workplan->club->club_name ?? 'club') . '.ics';
+
+        return response($content, 200, [
+            'Content-Type' => 'text/calendar; charset=utf-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    private function escapeIcs(string $value): string
+    {
+        $escaped = str_replace(['\\', ';', ',', "\n", "\r"], ['\\\\', '\;', '\,', '\n', ''], $value);
+        return $escaped;
+    }
+
+    private function validatePayload(Request $request): array
+    {
+        return $request->validate([
+            'start_date' => ['required', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'timezone' => ['nullable', 'string'],
+            'default_sabbath_location' => ['nullable', 'string', 'max:255'],
+            'default_sunday_location' => ['nullable', 'string', 'max:255'],
+            'default_sabbath_start_time' => ['nullable', 'date_format:H:i'],
+            'default_sabbath_end_time' => ['nullable', 'date_format:H:i'],
+            'default_sunday_start_time' => ['nullable', 'date_format:H:i'],
+            'default_sunday_end_time' => ['nullable', 'date_format:H:i'],
+            'rules' => ['required', 'array', 'min:1'],
+            'rules.*.meeting_type' => ['required', 'in:sabbath,sunday'],
+            'rules.*.nth_week' => ['required', 'integer', 'min:1', 'max:5'],
+            'rules.*.note' => ['nullable', 'string'],
+        ]);
+    }
+
+    private function getWorkplanForUser($user, $clubId = null): Workplan
+    {
+        $clubId = $clubId ?: $user->club_id;
+        if (!$clubId) {
+            abort(422, 'Select a club first to manage the workplan.');
+        }
+
+        return Workplan::firstOrCreate(
+            ['club_id' => $clubId],
+            [
+                'start_date' => Carbon::now()->startOfMonth()->toDateString(),
+                'end_date' => Carbon::now()->addMonthsNoOverflow(1)->endOfMonth()->toDateString(),
+            ]
+        );
+    }
+
+    private function buildRuleMap(array $rules): array
+    {
+        $ruleMap = [];
+        foreach ($rules as $rule) {
+            $ruleMap[] = [
+                'meeting_type' => $rule['meeting_type'],
+                'nth_week' => $rule['nth_week'],
+                'note' => $rule['note'] ?? null,
+            ];
+        }
+        return $ruleMap;
+    }
+
+    private function buildTargets(string $startDate, string $endDate, array $rules, array $payload): array
+    {
+        $start = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->endOfDay();
+
+        $targets = [];
+        $weekdayMap = [
+            'sabbath' => Carbon::SATURDAY,
+            'sunday' => Carbon::SUNDAY,
+        ];
+
+        $cursor = $start->copy()->startOfMonth();
+        while ($cursor->lessThanOrEqualTo($end)) {
+            $year = $cursor->year;
+            $month = $cursor->month;
+            foreach ($rules as $rule) {
+                $weekday = $weekdayMap[$rule['meeting_type']] ?? null;
+                if ($weekday === null) {
+                    continue;
+                }
+                $date = $this->nthWeekdayOfMonth($year, $month, $weekday, (int) $rule['nth_week']);
+                if (!$date) {
+                    continue;
+                }
+                if ($date->lt($start) || $date->gt($end)) {
+                    continue;
+                }
+                $key = $date->toDateString() . ':' . $rule['meeting_type'];
+                $targets[$key] = [
+                    'date' => $date->toDateString(),
+                    'meeting_type' => $rule['meeting_type'],
+                    'start_time' => $this->defaultForType($payload, $rule['meeting_type'], 'start_time'),
+                    'end_time' => $this->defaultForType($payload, $rule['meeting_type'], 'end_time'),
+                    'location' => $this->defaultForType($payload, $rule['meeting_type'], 'location'),
+                    'title' => ucfirst($rule['meeting_type']) . ' Meeting',
+                    'description' => $rule['note'] ?? null,
+                    'rule_id' => $rule['rule_id'] ?? null,
+                ];
+            }
+            $cursor->addMonth()->startOfMonth();
+        }
+
+        return $targets;
+    }
+
+    private function diffEvents(Collection $existingGenerated, array $targets): array
+    {
+        $existingMap = [];
+        foreach ($existingGenerated as $event) {
+            $key = $event->date->toDateString() . ':' . $event->meeting_type;
+            $existingMap[$key] = $event;
+        }
+
+        $adds = [];
+        foreach ($targets as $key => $target) {
+            if (!isset($existingMap[$key])) {
+                $adds[$key] = $target;
+            }
+        }
+
+        $removals = [];
+        foreach ($existingMap as $key => $event) {
+            if (!isset($targets[$key]) && !$event->is_edited) {
+                $removals[] = $event->id;
+            }
+        }
+
+        return compact('adds', 'removals');
+    }
+
+    private function nthWeekdayOfMonth(int $year, int $month, int $weekday, int $nth): ?Carbon
+    {
+        $firstOfMonth = Carbon::create($year, $month, 1)->startOfDay();
+        $offset = ($weekday - $firstOfMonth->dayOfWeek + 7) % 7;
+        $date = $firstOfMonth->copy()->addDays($offset + 7 * ($nth - 1));
+        if ($date->month !== $month) {
+            return null;
+        }
+        return $date;
+    }
+
+    private function defaultForType(array $payload, string $type, string $field): ?string
+    {
+        $map = [
+            'start_time' => "default_{$type}_start_time",
+            'end_time' => "default_{$type}_end_time",
+            'location' => "default_{$type}_location",
+        ];
+        $key = $map[$field] ?? null;
+        return $key && isset($payload[$key]) ? $payload[$key] : null;
+    }
+
+    private function allowedClubs($user)
+    {
+        if ($user->profile_type === 'parent') {
+            $ids = Member::where('parent_id', $user->id)->pluck('club_id')->unique()->filter()->values();
+            return \App\Models\Club::whereIn('id', $ids)->orderBy('club_name')->get(['id', 'club_name']);
+        }
+
+        return $user->clubs()->orderBy('club_name')->get(['clubs.id', 'club_name']);
+    }
+
+    private function parentMemberships($user)
+    {
+        if ($user->profile_type !== 'parent') {
+            return [];
+        }
+
+        return Member::where('parent_id', $user->id)
+            ->get(['id', 'type', 'id_data', 'club_id', 'parent_id']);
+    }
+
+    private function authorizeEvent($user, WorkplanEvent $event): void
+    {
+        if ($event->workplan->club_id !== $user->club_id) {
+            abort(403, 'Not allowed to edit this event.');
+        }
+    }
+}

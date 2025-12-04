@@ -4,7 +4,7 @@ A web-based Club Management System built with **Laravel**, **Vue.js**, and **Tai
 
 ## Features
 
-* User authentication and roles (director, treasurer, secretary, adviser, etc.)
+* User authentication and roles (director, staff, parent, treasurer, secretary, adviser, etc.)
 * Church and Club registration and management
 * Member and Staff management
 * Staff-to-member relationship tracking
@@ -56,6 +56,16 @@ php artisan serve
 * `routes/web.php` – Web routes
 * `database/` – Migrations and seeders
 * `public/` – Public assets and entry point
+
+## Roles (selected)
+
+- `parent`:
+  - Redirect after login: `/parent/apply` (via `RedirectIfAuthenticated::redirectPath`)
+  - Guest self-registration: `GET/POST /register-parent`, helper `GET /churches/{church}/clubs`
+  - Authenticated (middleware: `auth`, `verified`, `auth.parent`):
+    - `GET /parent/apply` (`parent.apply`)
+    - `POST /parent/apply` (`parent.apply.submit`)
+    - `GET /parent/children` (`parent-links.index.parent`)
 
 ## Environment Variables
 

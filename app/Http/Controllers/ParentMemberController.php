@@ -7,16 +7,37 @@ use App\Models\Club;
 use App\Models\MemberAdventurer; 
 use App\Models\User;
 use Illuminate\Http\Request;
+use App\Models\Member;
 
 class ParentMemberController extends Controller
 {
     // View all parent-member links
     public function index()
     {
-        $links = ParentMember::with(['user', 'club', 'church'])->get();
+        $parentId = auth()->id();
 
-        return inertia('ParentLinks/Index', [
-            'links' => $links,
+        // Members table holds type + linkage to parent
+        $memberLinks = Member::where('parent_id', $parentId)
+            ->where('type', 'adventurers')
+            ->get(['id', 'id_data', 'club_id', 'parent_id']);
+
+        $adventurerIds = $memberLinks->pluck('id_data')->all();
+        $clubMap = Club::whereIn('id', $memberLinks->pluck('club_id')->filter()->unique())
+            ->pluck('club_name', 'id');
+
+        $children = MemberAdventurer::whereIn('id', $adventurerIds)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($child) use ($memberLinks, $clubMap) {
+                $member = $memberLinks->firstWhere('id_data', $child->id);
+                $child->member_id = $member?->id;
+                $child->club_id = $member?->club_id;
+                $child->club_name = $member?->club_id ? ($clubMap[$member->club_id] ?? null) : null;
+                return $child;
+            });
+
+        return inertia('Parent/Children', [
+            'children' => $children,
         ]);
     }
 

@@ -6,8 +6,18 @@ import CreateStaffModal from "@/Components/CreateStaffModal.vue";
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import AssistanceReportPdf from "@/Components/Reports/AssistanceReport.vue";
 import { useGeneral } from "@/Composables/useGeneral";
-import { fetchClubsByChurch, fetchStaffRecord, fetchClubClasses, fetchReportsByStaffId, fetchReportByIdAndDate } from "@/Services/api";
+import {
+    fetchClubsByChurch,
+    fetchStaffRecord,
+    fetchClubClasses,
+    fetchReportsByStaffId,
+    fetchReportByIdAndDate,
+    fetchPersonalWorkplan
+} from "@/Services/api";
+import { ArrowDownTrayIcon, CalendarDaysIcon } from "@heroicons/vue/24/outline";
 import { ArrowTurnLeftUpIcon } from "@heroicons/vue/24/solid";
+import WorkplanCalendar from "@/Components/WorkplanCalendar.vue";
+import { createClassPlan } from "@/Services/api";
 
 const page = usePage();
 const { showToast } = useGeneral();
@@ -25,6 +35,21 @@ const pdfShow = ref(false)
 const reports = ref([])
 const clubs = ref([]);
 const showPasswordModal = ref(false);
+const workplan = ref(null)
+const workplanClubs = ref([])
+const selectedWorkplanClubId = ref(null)
+const workplanEvents = ref([])
+const planModalOpen = ref(false)
+const planForm = ref({
+    workplan_event_id: null,
+    class_id: null,
+    type: 'plan',
+    title: '',
+    description: '',
+    requested_date: '',
+    location_override: ''
+})
+const selectedEvent = ref(null)
 
 const fetchClasses = async (clubId) => {
     try {
@@ -61,6 +86,7 @@ const fetchStaffRecordMethod = async () => {
             await loadStaffReports(staff.value.id);
         }
         fetchClubs();
+        await loadWorkplan();
     } catch (error) {
         console.error("Failed to fetch staff record:", error);
     }
@@ -126,6 +152,72 @@ async function fetchReportByIdAndDateWrapper(id, date) {
     }
 }
 
+const normalizeDate = (val) => {
+    if (!val) return ''
+    const raw = String(val)
+    return raw.includes('T') ? raw.slice(0, 10) : raw
+}
+
+const loadWorkplan = async (clubId = null) => {
+    try {
+        const { workplan: wp, clubs: wpClubs, selected_club_id } = await fetchPersonalWorkplan(clubId)
+        workplan.value = wp
+        workplanClubs.value = wpClubs || []
+        selectedWorkplanClubId.value = selected_club_id || null
+        workplanEvents.value = wp?.events || []
+    } catch (e) {
+        console.error('Failed to load workplan', e)
+    }
+}
+
+const workplanPdfHref = computed(() => {
+    if (!selectedWorkplanClubId.value) return '#'
+    return route('club.personal.workplan.pdf', { club_id: selectedWorkplanClubId.value })
+})
+
+const workplanIcsHref = computed(() => {
+    if (!selectedWorkplanClubId.value) return '#'
+    return route('club.personal.workplan.ics', { club_id: selectedWorkplanClubId.value })
+})
+
+const showIcsHelp = ref(false)
+
+const monthLabel = computed(() => {
+    const date = new Date(monthCursor.value)
+    return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+})
+
+const periodLabel = computed(() => isMobile.value ? weekLabel.value : monthLabel.value)
+
+const handleWorkplanClubChange = async () => {
+    if (!selectedWorkplanClubId.value) return
+    await loadWorkplan(selectedWorkplanClubId.value)
+}
+
+const openPlanModal = (event) => {
+    selectedEvent.value = event
+    planForm.value.workplan_event_id = event.id
+    planForm.value.class_id = staff.value?.class_id || null
+    planForm.value.type = 'plan'
+    planForm.value.title = ''
+    planForm.value.description = ''
+    planForm.value.requested_date = event.date ? String(event.date).slice(0, 10) : ''
+    planForm.value.location_override = ''
+    planModalOpen.value = true
+}
+
+const savePlan = async () => {
+    try {
+        await createClassPlan(planForm.value)
+        showToast('Class plan submitted', 'success')
+        planModalOpen.value = false
+        await loadWorkplan(selectedWorkplanClubId.value)
+    } catch (e) {
+        console.error(e)
+        showToast('Failed to save plan', 'error')
+    }
+}
+
 </script>
 
 <template>
@@ -134,6 +226,72 @@ async function fetchReportByIdAndDateWrapper(id, date) {
 
         <div class="space-y-4 text-gray-800">
             <p class="text-lg">Welcome {{ page.props.auth_user.name }} | Class : {{ page.props.auth.user.assigned_classes[0] }}</p>
+
+            <div class="bg-white border rounded shadow-sm p-4">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+                    <div class="space-y-1">
+                        <h2 class="text-xl font-semibold text-gray-800">Club Workplan</h2>
+                        <p class="text-sm text-gray-600">Read-only calendar of club-wide meetings and events.</p>
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm text-gray-700">Club</label>
+                            <select v-model="selectedWorkplanClubId" class="border rounded px-3 py-1 text-sm" @change="handleWorkplanClubChange">
+                                <option value="">Select a club</option>
+                                <option v-for="club in workplanClubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-start gap-2">
+                        <div class="flex gap-2 flex-wrap">
+                            <a :href="workplanPdfHref" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!selectedWorkplanClubId && 'opacity-50 pointer-events-none'">
+                                <ArrowDownTrayIcon class="w-4 h-4" />
+                                <span class="sr-only">Download PDF</span>
+                            </a>
+                            <a :href="workplanIcsHref" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!selectedWorkplanClubId && 'opacity-50 pointer-events-none'">
+                                <CalendarDaysIcon class="w-4 h-4" />
+                                <span class="sr-only">Download ICS</span>
+                            </a>
+                        </div>
+                        <button class="text-sm text-blue-600 hover:underline" @click="showIcsHelp = true" type="button">How to add?</button>
+                    </div>
+                </div>
+
+                <div v-if="workplan">
+                    <WorkplanCalendar
+                        :events="workplanEvents"
+                        :is-read-only="true"
+                        :can-add="false"
+                        :initial-date="workplan?.start_date || new Date().toISOString().slice(0,10)"
+                    />
+                    
+                </div>
+                <div v-else class="text-sm text-gray-600">Select a club to view its workplan.</div>
+            </div>
+
+            
+
+            <!-- ICS Help Modal -->
+            <div v-if="showIcsHelp" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
+                    <h4 class="text-lg font-semibold">Add ICS to your calendar</h4>
+                    <div class="space-y-2 text-sm text-gray-700">
+                        <p class="font-medium text-gray-800">iOS (iPhone/iPad)</p>
+                        <ol class="list-decimal list-inside space-y-1">
+                            <li>Tap the “Download ICS” link.</li>
+                            <li>Choose “Open in Calendar” (or share to Calendar).</li>
+                            <li>Tap “Add All” or select events to import.</li>
+                        </ol>
+                        <p class="font-medium text-gray-800 pt-2">Google Calendar (web)</p>
+                        <ol class="list-decimal list-inside space-y-1">
+                            <li>Download the .ics file.</li>
+                            <li>Go to calendar.google.com → “Other calendars” → “Import”.</li>
+                            <li>Upload the .ics file and pick the calendar to add to.</li>
+                        </ol>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button class="px-4 py-2 border rounded" @click="showIcsHelp = false">Close</button>
+                    </div>
+                </div>
+            </div>
 
             <div v-if="!hasStaffRecord">
                 <label class="block mb-1 font-medium text-gray-700">Select a club</label>

@@ -12,6 +12,7 @@ import {
     ChevronDownIcon,
     ChevronRightIcon,
     BanknotesIcon,
+    CalendarDaysIcon
 
 } from '@heroicons/vue/24/outline'
 
@@ -26,6 +27,7 @@ const menuItems = [
 const clubSubItems = [
     { name: 'Assistance Report', href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
     { name: 'Payments', href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
+    { name: 'Workplan', href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
 ]
 
 const props = defineProps({

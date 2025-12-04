@@ -9,7 +9,8 @@ import {
     CogIcon,
     DocumentTextIcon,
     CurrencyDollarIcon,
-    BanknotesIcon
+    BanknotesIcon,
+    CalendarDaysIcon
 } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 
@@ -45,6 +46,12 @@ const menuItems = [
                 href: '/club-director/expenses',
                 route: 'club.director.expenses',
                 icon: CurrencyDollarIcon
+            },
+            {
+                name: 'Workplan',
+                href: '/club-director/workplan',
+                route: 'club.workplan',
+                icon: CalendarDaysIcon
             }
             
         ]

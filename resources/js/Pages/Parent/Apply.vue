@@ -1,7 +1,9 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useForm, usePage } from '@inertiajs/vue3'
+import { useForm, usePage, router } from '@inertiajs/vue3'
 import { formatPhoneNumber, forceLogout } from '@/Helpers/general'
+import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import { useGeneral } from '@/Composables/useGeneral'
 
 const page = usePage()
 const auth_user = ref(page.props.auth_user || {})
@@ -10,6 +12,7 @@ const sameAsHomeAddress = ref(false)
 
 const showSuccess = ref(false)
 const selectedClubId = ref(null)
+const { showToast } = useGeneral()
 
 const matchingClubs = computed(() =>
     clubs.value.filter(club => club.church_name === auth_user.value.church_name)
@@ -97,11 +100,15 @@ const submit = () => {
     form.post('/parent/apply', {
         preserveScroll: true,
         onSuccess: () => {
-            showSuccess.value = true
             form.reset()
+            showSuccess.value = true
+            showToast('Member registered successfully!', 'success')
         },
         onError: (e) => {
-            console.error('Validation failed', e)
+            const firstError = Object.values(form.errors)[0]
+            if (firstError) {
+                showToast(firstError, 'error')
+            }
         }
     })
 }
@@ -115,128 +122,146 @@ function onParentCellNumberInput(event) {
 }
 </script>
 <template>
-    <div class="p-6 max-w-3xl mx-auto">
-        <h1 class="text-2xl font-bold mb-6">Adventurer Member Registration</h1>
+    <PathfinderLayout>
+        <template #title>Adventurer Member Registration</template>
 
-        <div v-if="showSuccess" class="mb-4 text-green-700 bg-green-100 p-3 rounded">
-            Member registered successfully!
-        </div>
-
-        <form @submit.prevent="submit" class="space-y-4">
-            <!-- Club Selection -->
-            <div>
-                <label>Club Name</label>
-                <select v-model="form.club_id" class="w-full p-2 border rounded">
-                    <option disabled value="">-- Choose a club --</option>
-                    <option v-for="club in matchingClubs" :key="club.id" :value="club.id">
-                        {{ club.club_name }}
-                    </option>
-                </select>
+        <div class="p-4 sm:p-6 max-w-4xl">
+            <div v-if="showSuccess" class="mb-4 text-green-700 bg-green-100 p-3 rounded">
+                Member registered successfully!
             </div>
-            <div>
-                <label>Church Name</label>
-                <input v-model="form.church_name" type="text" class="w-full p-2 border rounded" readonly />
-            </div>
-            <div>
-                <label>Director Name</label>
-                <input v-model="form.director_name" type="text" class="w-full p-2 border rounded" readonly />
-            </div>
-            <div>
-                <label>Applicant Name</label>
-                <input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" required />
+            <div v-if="Object.keys(form.errors).length" class="mb-4 text-red-700 bg-red-100 p-3 rounded text-sm">
+                Please fix the highlighted fields.
             </div>
 
-            <div class="flex gap-4">
+            <form @submit.prevent="submit" class="space-y-4 bg-white border rounded shadow-sm p-4 sm:p-6">
+                <!-- Club Selection -->
                 <div>
-                    <label>Birthdate</label>
-                    <input v-model="form.birthdate" type="date" class="w-full p-2 border rounded" required />
+                    <label>Club Name</label>
+                    <select v-model="form.club_id" class="w-full p-2 border rounded">
+                        <option disabled value="">-- Choose a club --</option>
+                        <option v-for="club in matchingClubs" :key="club.id" :value="club.id">
+                            {{ club.club_name }}
+                        </option>
+                    </select>
+                    <p v-if="form.errors.club_id" class="text-red-600 text-sm mt-1">{{ form.errors.club_id }}</p>
                 </div>
                 <div>
-                    <label>Age</label>
-                    <input v-model="form.age" type="number" class="w-full p-2 border rounded" />
+                    <label>Church Name</label>
+                    <input v-model="form.church_name" type="text" class="w-full p-2 border rounded" readonly />
                 </div>
                 <div>
-                    <label>Grade</label>
-                    <input v-model="form.grade" type="text" class="w-full p-2 border rounded" />
+                    <label>Director Name</label>
+                    <input v-model="form.director_name" type="text" class="w-full p-2 border rounded" readonly />
                 </div>
-            </div>
-            <div>
-                <label>Cell Number</label>
-                <input :value="form.cell_number" @input="onCellNumberInput" type="text"
-                    class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
-            </div>
+                <div>
+                    <label>Applicant Name</label>
+                    <input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" required />
+                    <p v-if="form.errors.applicant_name" class="text-red-600 text-sm mt-1">{{ form.errors.applicant_name }}</p>
+                </div>
 
-            <div>
-                <label>Emergency Contact</label>
-                <input v-model="form.emergency_contact" type="text" class="w-full p-2 border rounded" />
-            </div>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <div class="flex-1">
+                        <label>Birthdate</label>
+                        <input v-model="form.birthdate" type="date" class="w-full p-2 border rounded" required />
+                        <p v-if="form.errors.birthdate" class="text-red-600 text-sm mt-1">{{ form.errors.birthdate }}</p>
+                    </div>
+                    <div class="flex-1">
+                        <label>Age</label>
+                        <input v-model="form.age" type="number" class="w-full p-2 border rounded" />
+                    </div>
+                    <div class="flex-1">
+                        <label>Grade</label>
+                        <input v-model="form.grade" type="text" class="w-full p-2 border rounded" />
+                        <p v-if="form.errors.grade" class="text-red-600 text-sm mt-1">{{ form.errors.grade }}</p>
+                    </div>
+                </div>
+                <div>
+                    <label>Cell Number</label>
+                    <input :value="form.cell_number" @input="onCellNumberInput" type="text"
+                        class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
+                    <p v-if="form.errors.cell_number" class="text-red-600 text-sm mt-1">{{ form.errors.cell_number }}</p>
+                </div>
 
-            <div>
-                <label class="block mb-1">Investiture Class</label>
+                <div>
+                    <label>Emergency Contact</label>
+                    <input v-model="form.emergency_contact" type="text" class="w-full p-2 border rounded" />
+                </div>
+
+                <div>
+                    <label class="block mb-1">Investiture Class</label>
+                    <div class="flex flex-wrap gap-2">
+                        <label
+                            v-for="level in ['Little Lambs', 'Eager Beavers', 'Busy Bee', 'Sunbeam', 'Builder', 'Helping Hand']"
+                            :key="level" class="inline-flex items-center">
+                            <input type="checkbox" :value="level" v-model="form.investiture_classes" class="mr-2" />
+                            {{ level }}
+                        </label>
+                    </div>
+                </div>
+
+                <div>
+                    <label>Allergies</label>
+                    <textarea v-model="form.allergies" class="w-full p-2 border rounded"></textarea>
+                    <p v-if="form.errors.allergies" class="text-red-600 text-sm mt-1">{{ form.errors.allergies }}</p>
+                </div>
+
+                <div>
+                    <label>Physical Restrictions</label>
+                    <textarea v-model="form.physical_restrictions" class="w-full p-2 border rounded"></textarea>
+                    <p v-if="form.errors.physical_restrictions" class="text-red-600 text-sm mt-1">{{ form.errors.physical_restrictions }}</p>
+                </div>
+
+                <div>
+                    <label>Health History</label>
+                    <textarea v-model="form.health_history" class="w-full p-2 border rounded"></textarea>
+                    <p v-if="form.errors.health_history" class="text-red-600 text-sm mt-1">{{ form.errors.health_history }}</p>
+                </div>
+
+                <div>
+                    <label>Parent Name</label>
+                    <input v-model="form.parent_name" type="text" class="w-full p-2 border rounded" required />
+                    <p v-if="form.errors.parent_name" class="text-red-600 text-sm mt-1">{{ form.errors.parent_name }}</p>
+                </div>
+
+                <div>
+                    <label>Parent Cell</label>
+                    <input :value="form.parent_cell" @input="onParentCellNumberInput" type="text"
+                        class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
+                    <p v-if="form.errors.parent_cell" class="text-red-600 text-sm mt-1">{{ form.errors.parent_cell }}</p>
+                </div>
+
+                <div>
+                    <label>Home Address</label>
+                    <input v-model="form.home_address" type="text" class="w-full p-2 border rounded" />
+                    <p v-if="form.errors.home_address" class="text-red-600 text-sm mt-1">{{ form.errors.home_address }}</p>
+                </div>
+                <div>
+                    <label>Mailing Address</label>
+                    <input v-model="form.mailing_address" type="text" class="w-full p-2 border rounded" />
+                    <p v-if="form.errors.mailing_address" class="text-red-600 text-sm mt-1">{{ form.errors.mailing_address }}</p>
+                </div>
+                <div class="flex items-center mb-2">
+                    <input id="same-address" type="checkbox" v-model="sameAsHomeAddress" class="mr-2" />
+                    <label for="same-address">Same as home address</label>
+                </div>
+                <div>
+                    <label>Email Address</label>
+                    <input v-model="form.email_address" type="email" class="w-full p-2 border rounded" />
+                    <p v-if="form.errors.email_address" class="text-red-600 text-sm mt-1">{{ form.errors.email_address }}</p>
+                </div>
+
+                <div>
+                    <label>Signature (Typed)</label>
+                    <input v-model="form.signature" type="text" class="w-full p-2 border rounded" />
+                    <p v-if="form.errors.signature" class="text-red-600 text-sm mt-1">{{ form.errors.signature }}</p>
+                </div>
+
                 <div class="flex flex-wrap gap-2">
-                    <label
-                        v-for="level in ['Little Lambs', 'Eager Beavers', 'Busy Bee', 'Sunbeam', 'Builder', 'Helping Hand']"
-                        :key="level" class="inline-flex items-center">
-                        <input type="checkbox" :value="level" v-model="form.investiture_classes" class="mr-2" />
-                        {{ level }}
-                    </label>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                        Submit Registration
+                    </button>
                 </div>
-            </div>
-
-            <div>
-                <label>Allergies</label>
-                <textarea v-model="form.allergies" class="w-full p-2 border rounded"></textarea>
-            </div>
-
-            <div>
-                <label>Physical Restrictions</label>
-                <textarea v-model="form.physical_restrictions" class="w-full p-2 border rounded"></textarea>
-            </div>
-
-            <div>
-                <label>Health History</label>
-                <textarea v-model="form.health_history" class="w-full p-2 border rounded"></textarea>
-            </div>
-
-            <div>
-                <label>Parent Name</label>
-                <input v-model="form.parent_name" type="text" class="w-full p-2 border rounded" required />
-            </div>
-
-            <div>
-                <label>Parent Cell</label>
-                <input :value="form.parent_cell" @input="onParentCellNumberInput" type="text"
-                    class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
-            </div>
-
-            <div>
-                <label>Home Address</label>
-                <input v-model="form.home_address" type="text" class="w-full p-2 border rounded" />
-            </div>
-            <div>
-                <label>Mailing Address</label>
-                <input v-model="form.mailing_address" type="text" class="w-full p-2 border rounded" />
-            </div>
-            <div class="flex items-center mb-2">
-                <input id="same-address" type="checkbox" v-model="sameAsHomeAddress" class="mr-2" />
-                <label for="same-address">Same as home address</label>
-            </div>
-            <div>
-                <label>Email Address</label>
-                <input v-model="form.email_address" type="email" class="w-full p-2 border rounded" />
-            </div>
-
-            <div>
-                <label>Signature (Typed)</label>
-                <input v-model="form.signature" type="text" class="w-full p-2 border rounded" />
-            </div>
-
-            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                Submit Registration
-            </button>&nbsp;&nbsp;
-            <button type="button" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700" @click="forceLogout">
-                Logout
-            </button>
-        </form>
-    </div>
+            </form>
+        </div>
+    </PathfinderLayout>
 </template>

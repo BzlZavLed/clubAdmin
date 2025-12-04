@@ -21,6 +21,7 @@ use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
 use App\Http\Controllers\ReportController;
 use App\Http\Middleware\RedirectIfAuthenticated;
+use App\Http\Controllers\WorkplanController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -58,15 +59,29 @@ Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('
 // 🔐 Guest Routes (Parent Self-Registration)
 // ---------------------------------
 Route::middleware(['guest'])->group(function () {
-    Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
-    Route::post('/register-parent', [ParentAuthController::class, 'register']);
-    Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
+Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
+Route::post('/register-parent', [ParentAuthController::class, 'register']);
+Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
+});
+
+Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function () {
+    Route::get('/club-personal/workplan', [WorkplanController::class, 'index'])->name('club.personal.workplan');
+    Route::get('/club-personal/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.personal.workplan.pdf');
+    Route::get('/club-personal/workplan/data', [WorkplanController::class, 'data'])->name('club.personal.workplan.data');
+    Route::get('/club-personal/workplan/ics', [WorkplanController::class, 'ics'])->name('club.personal.workplan.ics');
+    Route::post('/club-personal/class-plans', [\App\Http\Controllers\ClassPlanController::class, 'store'])->name('club.personal.class-plans.store');
+    Route::put('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'update'])->name('club.personal.class-plans.update');
+    Route::delete('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'destroy'])->name('club.personal.class-plans.destroy');
 });
 
 // ---------------------------------
 // 🟣 Parent-Only Routes (Authenticated)
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
+    Route::get('/parent/dashboard', fn() => Inertia::render('Parent/Dashboard', [
+        'auth_user' => auth()->user(),
+    ]))->name('parent.dashboard');
+
     Route::get('/parent/apply', fn() => Inertia::render('Parent/Apply', [
         'auth_user' => auth()->user(),
         'clubs' => Club::all(),
@@ -74,6 +89,11 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
 
     Route::post('/parent/apply', [MemberAdventurerController::class, 'store'])->name('parent.apply.submit');
     Route::get('/parent/children', [ParentMemberController::class, 'index'])->name('parent-links.index.parent');
+    Route::put('/parent/children/{id}', [MemberAdventurerController::class, 'updateForParent'])->name('parent.children.update');
+
+    Route::get('/parent/workplan/data', [WorkplanController::class, 'data'])->name('parent.workplan.data');
+    Route::get('/parent/workplan/pdf', [WorkplanController::class, 'pdf'])->name('parent.workplan.pdf');
+    Route::get('/parent/workplan/ics', [WorkplanController::class, 'ics'])->name('parent.workplan.ics');
 });
 
 // ---------------------------------
@@ -119,6 +139,16 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
             'sub_roles' => SubRole::all(),
         ]);
     })->name('club.staff');
+
+    Route::get('/club-director/workplan', [WorkplanController::class, 'index'])->name('club.workplan');
+    Route::post('/club-director/workplan/preview', [WorkplanController::class, 'preview'])->name('club.workplan.preview');
+    Route::post('/club-director/workplan/confirm', [WorkplanController::class, 'confirm'])->name('club.workplan.confirm');
+    Route::post('/club-director/workplan/events', [WorkplanController::class, 'storeEvent'])->name('club.workplan.events.store');
+    Route::put('/club-director/workplan/events/{event}', [WorkplanController::class, 'updateEvent'])->name('club.workplan.events.update');
+    Route::delete('/club-director/workplan/events/{event}', [WorkplanController::class, 'destroyEvent'])->name('club.workplan.events.destroy');
+    Route::get('/club-director/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.workplan.pdf');
+    Route::get('/club-director/workplan/ics', [WorkplanController::class, 'ics'])->name('club.workplan.ics');
+    Route::put('/club-director/class-plans/{plan}/status', [\App\Http\Controllers\ClassPlanController::class, 'updateStatus'])->name('club.workplan.class-plans.status');
 
     Route::get('/club-director/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [

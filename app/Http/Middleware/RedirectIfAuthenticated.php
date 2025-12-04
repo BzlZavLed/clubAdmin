@@ -34,7 +34,7 @@ class RedirectIfAuthenticated
             'regional_manager' => '/regional/dashboard',
             'union_manager' => '/union/dashboard',
             'nad_manager' => '/nad/dashboard',
-            'parent' => '/parent/apply',
+            'parent' => '/parent/dashboard',
             default => RouteServiceProvider::HOME,
         };
     }

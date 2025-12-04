@@ -326,3 +326,66 @@ export const uploadExpenseReceipt = async (expenseId, file) => {
         headers: { 'Content-Type': 'multipart/form-data' },
     })
 }
+
+// Parent workplan
+export const fetchParentWorkplan = async (clubId = null) => {
+    const { data } = await axios.get(route('parent.workplan.data'), {
+        params: clubId ? { club_id: clubId } : {}
+    })
+    return data
+}
+
+// Class Plans
+export const createClassPlan = async (payload) => {
+    const { data } = await axios.post(route('club.personal.class-plans.store'), payload)
+    return data
+}
+
+export const updateClassPlan = async (id, payload) => {
+    const { data } = await axios.put(route('club.personal.class-plans.update', id), payload)
+    return data
+}
+
+export const deleteClassPlan = async (id) => {
+    const { data } = await axios.delete(route('club.personal.class-plans.destroy', id))
+    return data
+}
+
+export const updateClassPlanStatus = async (id, status) => {
+    const { data } = await axios.put(route('club.workplan.class-plans.status', id), { status })
+    return data
+}
+
+// Workplan data for club_personal dashboard
+export const fetchPersonalWorkplan = async (clubId = null) => {
+    const { data } = await axios.get(route('club.personal.workplan.data'), {
+        params: clubId ? { club_id: clubId } : {}
+    })
+    return data
+}
+
+// Workplan
+export const previewWorkplan = async (payload) => {
+    const { data } = await axios.post(route('club.workplan.preview'), payload)
+    return data
+}
+
+export const confirmWorkplan = async (payload) => {
+    const { data } = await axios.post(route('club.workplan.confirm'), payload)
+    return data
+}
+
+export const createWorkplanEvent = async (payload) => {
+    const { data } = await axios.post(route('club.workplan.events.store'), payload)
+    return data
+}
+
+export const updateWorkplanEvent = async (id, payload) => {
+    const { data } = await axios.put(route('club.workplan.events.update', id), payload)
+    return data
+}
+
+export const deleteWorkplanEvent = async (id) => {
+    const { data } = await axios.delete(route('club.workplan.events.destroy', id))
+    return data
+}
