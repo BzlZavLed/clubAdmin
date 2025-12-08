@@ -145,6 +145,19 @@ const icsHref = computed(() => {
 const needsApprovalOnly = ref(false)
 const statusFilter = ref('all')
 
+function safeRoute(name, params = {}, fallbackPath = '#') {
+    try {
+        if (typeof route === 'function' && window?.Ziggy?.routes?.[name]) {
+            return route(name, params)
+        }
+    } catch (e) {
+        // swallow and use fallback
+    }
+    const qs = new URLSearchParams(params).toString()
+    if (!fallbackPath || fallbackPath === '#') return '#'
+    return qs ? `${fallbackPath}?${qs}` : fallbackPath
+}
+
 const plansPdfHref = computed(() => {
     if (!hasClubSelected.value) return '#'
     const params = { club_id: selectedClubId.value }
@@ -152,8 +165,12 @@ const plansPdfHref = computed(() => {
     if (classId) params.class_id = classId
     if (needsApprovalOnly.value) params.needs_approval = 1
     if (statusFilter.value && statusFilter.value !== 'all') params.status = statusFilter.value
-    if (isDirector.value) return route('club.workplan.class-plans.pdf', params)
-    if (props.auth_user?.profile_type === 'club_personal') return route('club.personal.workplan.class-plans.pdf', params)
+    if (isDirector.value) {
+        return safeRoute('club.workplan.class-plans.pdf', params, '/club-director/workplan/class-plans/pdf')
+    }
+    if (props.auth_user?.profile_type === 'club_personal') {
+        return safeRoute('club.personal.workplan.class-plans.pdf', params, '/club-personal/workplan/class-plans/pdf')
+    }
     return '#'
 })
 
