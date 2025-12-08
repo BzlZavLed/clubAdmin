@@ -173,6 +173,11 @@ export const updateStaffAssignedClass = async (staffId, classId) => {
         class_id: classId,
     });
 };
+
+export const linkStaffToClubUser = async (staffId) => {
+    const { data } = await axios.post(route('staff.link-club', staffId))
+    return data
+}
 export const submitStaffForm = async (formData, editingStaffId = null) => {
     const url = editingStaffId
         ? route("staff.update", editingStaffId)
@@ -351,8 +356,9 @@ export const deleteClassPlan = async (id) => {
     return data
 }
 
-export const updateClassPlanStatus = async (id, status) => {
-    const { data } = await axios.put(route('club.workplan.class-plans.status', id), { status })
+export const updateClassPlanStatus = async (id, payload) => {
+    const body = typeof payload === 'string' ? { status: payload } : payload
+    const { data } = await axios.put(route('club.workplan.class-plans.status', id), body)
     return data
 }
 

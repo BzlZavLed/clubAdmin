@@ -225,7 +225,10 @@ const savePlan = async () => {
         <template #title>Club Staff Dashboard</template>
 
         <div class="space-y-4 text-gray-800">
-            <p class="text-lg">Welcome {{ page.props.auth_user.name }} | Class : {{ page.props.auth.user.assigned_classes[0] }}</p>
+            <p class="text-lg">
+                Welcome {{ page.props.auth_user.name }} |
+                Class : {{ page.props.auth_user.assigned_class_name || page.props.auth.user.assigned_classes?.[0] || '—' }}
+            </p>
 
             <div class="bg-white border rounded shadow-sm p-4">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">

@@ -56,7 +56,6 @@ watch(() => props.clubs, (val) => {
 const fetchStaff = async (clubId) => {
     try {
         const response = await axios.get(`/clubs/${clubId}/staff`)
-        console.log('Staff response:', response.data)
         staffList.value = response.data.staff
         if(staffList.value.length === 0) {
             toast.error('Create staff first, none found')

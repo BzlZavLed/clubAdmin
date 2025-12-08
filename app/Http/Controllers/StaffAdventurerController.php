@@ -15,6 +15,7 @@ use App\Models\ClassMemberAdventurer; // Import the ClassMemberAdventurer model
 use App\Models\MemberAdventurer; // Import the MemberAdventurer model
 use App\Models\Staff;
 use App\Models\Club;
+use Illuminate\Support\Facades\DB as FacadesDB;
 
 use Auth;
 use App\Models\ClubClass;
@@ -358,11 +359,14 @@ class StaffAdventurerController extends Controller
             });
 
         $staff = $staff->map(function ($staffMember) use ($club) {
-            $exists = User::where('email', $staffMember->email)->exists();
-            $staffMember->create_user = !$exists;
+            $linkedUser = User::where('email', $staffMember->email)->first();
+            $staffMember->create_user = !$linkedUser;
             $staffMember->church_id = $club->church_id;
+            $staffMember->user_id = $linkedUser?->id;
             return $staffMember;
         });
+
+        $clubUserIds = FacadesDB::table('club_user')->where('club_id', $clubId)->pluck('user_id')->toArray();
 
         $subRoleUsers = User::when($churchId, function ($query) use ($churchId) {
             return $query->where('church_id', $churchId);
@@ -388,6 +392,7 @@ class StaffAdventurerController extends Controller
         return response()->json([
             'staff' => $staff,
             'sub_role_users' => $subRoleUsers,
+            'club_user_ids' => $clubUserIds,
         ]);
     }
 
@@ -404,6 +409,32 @@ class StaffAdventurerController extends Controller
             'hasStaffRecord' => $staffRecord !== null,
             'staffRecord' => $staffRecord,
             'user' => $user,
+        ]);
+    }
+
+    public function linkToClub(Request $request, StaffAdventurer $staff)
+    {
+        $user = User::where('email', $staff->email)->first();
+        if (!$user) {
+            return response()->json(['message' => 'No user found for staff email.'], 404);
+        }
+
+        FacadesDB::table('club_user')->updateOrInsert(
+            [
+                'user_id' => $user->id,
+                'club_id' => $staff->club_id,
+            ],
+            [
+                'status' => 'active',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Staff linked to club users.',
+            'user_id' => $user->id,
+            'club_id' => $staff->club_id,
         ]);
     }
 

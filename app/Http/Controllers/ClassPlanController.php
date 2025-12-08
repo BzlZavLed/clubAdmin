@@ -34,7 +34,10 @@ class ClassPlanController extends Controller
             'created_by' => $user->id,
         ]);
 
-        return response()->json(['message' => 'Plan created', 'plan' => $plan]);
+        return response()->json([
+            'message' => 'Plan created',
+            'plan' => $plan->load(['class', 'staff.user'])
+        ]);
     }
 
     public function update(Request $request, ClassPlan $plan)
@@ -58,7 +61,7 @@ class ClassPlanController extends Controller
         $plan->status = $status;
         $plan->save();
 
-        return response()->json(['message' => 'Plan updated', 'plan' => $plan]);
+        return response()->json(['message' => 'Plan updated', 'plan' => $plan->load(['class', 'staff.user'])]);
     }
 
     public function destroy(Request $request, ClassPlan $plan)
@@ -80,11 +83,20 @@ class ClassPlanController extends Controller
             abort(403);
         }
         $validated = $request->validate([
-            'status' => 'required|in:approved,rejected',
+            'status' => 'required|in:approved,rejected,changes_requested',
+            'request_note' => 'nullable|string|max:1000',
         ]);
         $plan->status = $validated['status'];
+        if (array_key_exists('request_note', $validated)) {
+            $plan->request_note = $validated['request_note'];
+        }
+        if (in_array($validated['status'], ['approved', 'rejected'])) {
+            $plan->authorized_at = now();
+        } else {
+            $plan->authorized_at = null;
+        }
         $plan->save();
-        return response()->json(['message' => 'Status updated', 'plan' => $plan]);
+        return response()->json(['message' => 'Status updated', 'plan' => $plan->load(['class', 'staff.user'])]);
     }
 
     private function validatePlan(Request $request, bool $requireEvent = true): array

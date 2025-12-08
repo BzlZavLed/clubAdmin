@@ -20,6 +20,11 @@ class Staff extends Model
         return $this->belongsTo(Club::class);
     }
 
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
     public function class()
     {
         return $this->belongsTo(ClubClass::class, 'assigned_class');

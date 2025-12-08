@@ -69,6 +69,7 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
     Route::get('/club-personal/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.personal.workplan.pdf');
     Route::get('/club-personal/workplan/data', [WorkplanController::class, 'data'])->name('club.personal.workplan.data');
     Route::get('/club-personal/workplan/ics', [WorkplanController::class, 'ics'])->name('club.personal.workplan.ics');
+    Route::get('/club-personal/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('club.personal.workplan.class-plans.pdf');
     Route::post('/club-personal/class-plans', [\App\Http\Controllers\ClassPlanController::class, 'store'])->name('club.personal.class-plans.store');
     Route::put('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'update'])->name('club.personal.class-plans.update');
     Route::delete('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'destroy'])->name('club.personal.class-plans.destroy');
@@ -94,6 +95,7 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
     Route::get('/parent/workplan/data', [WorkplanController::class, 'data'])->name('parent.workplan.data');
     Route::get('/parent/workplan/pdf', [WorkplanController::class, 'pdf'])->name('parent.workplan.pdf');
     Route::get('/parent/workplan/ics', [WorkplanController::class, 'ics'])->name('parent.workplan.ics');
+    Route::get('/parent/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('parent.workplan.class-plans.pdf');
 });
 
 // ---------------------------------
@@ -148,6 +150,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::delete('/club-director/workplan/events/{event}', [WorkplanController::class, 'destroyEvent'])->name('club.workplan.events.destroy');
     Route::get('/club-director/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.workplan.pdf');
     Route::get('/club-director/workplan/ics', [WorkplanController::class, 'ics'])->name('club.workplan.ics');
+    Route::get('/club-director/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('club.workplan.class-plans.pdf');
     Route::put('/club-director/class-plans/{plan}/status', [\App\Http\Controllers\ClassPlanController::class, 'updateStatus'])->name('club.workplan.class-plans.status');
 
     Route::get('/club-director/reports/assistance', function () {
@@ -207,6 +210,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/clubs/{clubId}/staff/{churchId?}', [StaffAdventurerController::class, 'byClub'])->name('clubs.staff');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::post('/staff/create-user', [StaffAdventurerController::class, 'createUser'])->name('staff.createUser');
+    Route::post('/staff/{staff}/link-club', [StaffAdventurerController::class, 'linkToClub'])->name('staff.link-club');
     Route::get('/staff/{id}/export-word', [StaffAdventurerController::class, 'exportWord'])->name('staff.export-word');
     Route::post('/staff/update-user-account', [StaffAdventurerController::class, 'updateStaffUserAccount'])->name('staff.updateUserAccount');
     Route::post('/staff/update-staff-account', [StaffAdventurerController::class, 'updateStaffAccount'])->name('staff.updateStaffAccount');

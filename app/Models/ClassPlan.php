@@ -13,6 +13,8 @@ class ClassPlan extends Model
         'type',
         'requires_approval',
         'status',
+        'request_note',
+        'authorized_at',
         'title',
         'description',
         'requested_date',
@@ -22,6 +24,7 @@ class ClassPlan extends Model
 
     protected $casts = [
         'requires_approval' => 'boolean',
+        'authorized_at' => 'datetime',
     ];
 
     public function event()

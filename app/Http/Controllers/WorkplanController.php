@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\Member;
+use App\Models\Staff;
 use App\Models\Workplan;
 use App\Models\WorkplanEvent;
 use App\Models\WorkplanRule;
@@ -12,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Inertia\Inertia;
+use Log;
 
 class WorkplanController extends Controller
 {
@@ -33,14 +35,16 @@ class WorkplanController extends Controller
                 'rules',
                 'events' => function ($query) {
                     $query->with(['classPlans' => function ($q) {
-                        $q->with(['staff', 'class']);
+                        $q->with(['staff.user', 'class']);
                     }])->orderBy('date')->orderBy('start_time');
                 }
             ]);
         }
 
+        $authUser = $this->withClassName($user);
+
         return Inertia::render('ClubDirector/Workplan', [
-            'auth_user' => $user,
+            'auth_user' => $authUser,
             'workplan' => $workplan,
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
@@ -200,7 +204,6 @@ class WorkplanController extends Controller
         $user = $request->user();
         $clubs = $this->allowedClubs($user);
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
-
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
@@ -211,7 +214,7 @@ class WorkplanController extends Controller
                 'rules',
                 'events' => function ($query) {
                     $query->with(['classPlans' => function ($q) {
-                        $q->with(['staff', 'class']);
+                        $q->with(['staff.user', 'class']);
                     }])->orderBy('date')->orderBy('start_time');
                 }
             ]);
@@ -344,6 +347,77 @@ class WorkplanController extends Controller
             'Content-Type' => 'text/calendar; charset=utf-8',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ]);
+    }
+
+    public function classPlansPdf(Request $request)
+    {
+        $user = $request->user();
+        $clubs = $this->allowedClubs($user);
+        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
+            abort(403, 'Not allowed to view this club workplan.');
+        }
+
+        $classId = $request->input('class_id');
+        if ($user->profile_type === 'club_personal' && !$classId) {
+            $staff = Staff::where('user_id', $user->id)->first();
+            $classId = $staff?->assigned_class;
+        }
+
+        $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
+            'events' => function ($q) {
+                $q->with(['classPlans' => function ($cp) {
+                    $cp->with(['class', 'staff.user']);
+                }])->orderBy('date')->orderBy('start_time');
+            },
+            'club',
+        ]);
+
+        $needsApproval = $request->boolean('needs_approval', false);
+        $statusFilter = $request->input('status'); // approved, rejected, pending, all
+
+        $plans = collect();
+        foreach ($workplan->events as $event) {
+            foreach ($event->classPlans as $plan) {
+                if ($classId && (string)($plan->class_id ?? $plan->class?->id) !== (string)$classId) {
+                    continue;
+                }
+                if ($needsApproval && !$plan->requires_approval) {
+                    continue;
+                }
+                if ($statusFilter && $statusFilter !== 'all') {
+                    $isPending = in_array($plan->status, ['submitted', 'changes_requested']);
+                    if ($statusFilter === 'pending' && !$isPending) continue;
+                    if ($statusFilter === 'approved' && $plan->status !== 'approved') continue;
+                    if ($statusFilter === 'rejected' && $plan->status !== 'rejected') continue;
+                }
+                $plans->push([
+                    'date' => optional($event->date)->format('Y-m-d'),
+                    'title' => $plan->title,
+                    'type' => $plan->type,
+                    'status' => $plan->status,
+                    'class_name' => $plan->class?->class_name,
+                    'staff_name' => $plan->staff?->user?->name ?? $plan->staff?->name,
+                    'requested_date' => optional($plan->requested_date)->format('Y-m-d'),
+                    'note' => $plan->request_note,
+                    'requires_approval' => $plan->requires_approval,
+                    'authorized_at' => optional($plan->authorized_at)->format('Y-m-d'),
+                ]);
+            }
+        }
+
+        $className = $plans->first()['class_name'] ?? 'All classes';
+        $staffNames = $plans->pluck('staff_name')->filter()->unique()->implode(', ');
+
+        $pdf = Pdf::loadView('pdf.class_plans', [
+            'workplan' => $workplan,
+            'plans' => $plans,
+            'class_name' => $className,
+            'staff_names' => $staffNames,
+        ])->setPaper('a4', 'portrait');
+
+        $filename = 'class-plans-' . ($className ?: 'all') . '.pdf';
+        return $pdf->download($filename);
     }
 
     private function escapeIcs(string $value): string
@@ -517,5 +591,18 @@ class WorkplanController extends Controller
         if ($event->workplan->club_id !== $user->club_id) {
             abort(403, 'Not allowed to edit this event.');
         }
+    }
+
+    private function withClassName($user)
+    {
+        if ($user->profile_type !== 'club_personal') {
+            return $user;
+        }
+        $staff = Staff::with('class')->where('user_id', $user->id)->first();
+        if ($staff) {
+            $user->setAttribute('assigned_class_id', $staff->assigned_class);
+            $user->setAttribute('assigned_class_name', optional($staff->class)->class_name);
+        }
+        return $user;
     }
 }

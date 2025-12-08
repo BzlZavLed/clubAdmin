@@ -22,7 +22,8 @@ import {
     updateUserStatus,
     downloadStaffZip,
     fetchClubClasses,
-    updateStaffAssignedClass
+    updateStaffAssignedClass,
+    linkStaffToClubUser
 } from '@/Services/api'
 import { usePage } from '@inertiajs/vue3';
 
@@ -52,6 +53,7 @@ const selectAll = ref(false)
 const selectedStaffIds = ref(new Set())
 const activeTab = ref('active')
 const activeStaffTab = ref('active')
+const clubUserIds = ref(new Set())
 
 // ✅ Create staff eligibility map
 const createStaffMap = computed(() => {
@@ -116,6 +118,7 @@ const fetchStaff = async (clubId, churchId = null) => {
         const data = await fetchStaffByClubId(clubId, churchId)
         staff.value = data.staff
         sub_roles.value = data.sub_role_users
+        clubUserIds.value = new Set(data.club_user_ids || [])
         fetchClasses(clubId)
         showToast('Staff loaded')
     } catch (error) {
@@ -175,6 +178,21 @@ const createUser = async (person) => {
     } catch (err) {
         console.error('Create user error:', err)
         showToast('Failed to create user', 'error')
+    }
+}
+
+const linkToClubUsers = async (person) => {
+    if (!person.user_id) {
+        showToast('No user linked to this staff (by email).', 'error')
+        return
+    }
+    try {
+        await linkStaffToClubUser(person.id)
+        clubUserIds.value.add(person.user_id)
+        showToast('Staff linked to club access')
+    } catch (err) {
+        console.error('Failed to link staff to club users', err)
+        showToast('Failed to link staff', 'error')
     }
 }
 
@@ -372,14 +390,22 @@ onMounted(fetchClubs)
                                     </button>
 
                                     <!-- Create User -->
-                                    <button v-if="person.create_user" @click="createUser(person)"
-                                        class="text-orange-600" title="Create user">
-                                        <UserPlusIcon class="w-4 h-4 inline" />
-                                    </button>
+                                <button v-if="person.create_user" @click="createUser(person)"
+                                    class="text-orange-600" title="Create user">
+                                    <UserPlusIcon class="w-4 h-4 inline" />
+                                </button>
+                                <button
+                                    v-else-if="person.user_id && !clubUserIds.has(person.user_id)"
+                                    @click="linkToClubUsers(person)"
+                                    class="text-amber-600"
+                                    title="Link to club access"
+                                >
+                                    <UserPlusIcon class="w-4 h-4 inline" />
+                                </button>
 
-                                    <!-- Download Word Form -->
-                                    <button @click="downloadWord(person.id)" class="text-blue-600"
-                                        title="Download Word form">
+                                <!-- Download Word Form -->
+                                <button @click="downloadWord(person.id)" class="text-blue-600"
+                                    title="Download Word form">
                                         <DocumentArrowDownIcon class="w-4 h-4 inline" />
                                     </button>
 
