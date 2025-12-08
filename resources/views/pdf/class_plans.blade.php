@@ -36,7 +36,12 @@
                 <th>Type</th>
                 <th>Status</th>
                 <th>Staff</th>
+                <th>Class</th>
+                <th>Location</th>
                 <th>Note</th>
+            
+                <th>Created</th>
+                <th>Updated</th>
                 <th>Authorized</th>
             </tr>
         </thead>
@@ -48,12 +53,17 @@
                     <td>{{ ucfirst($plan['type']) }}</td>
                     <td>{{ $plan['status'] }}</td>
                     <td>{{ $plan['staff_name'] ?? '—' }}</td>
+                    <td>{{ $plan['class_name'] ?? '—' }}</td>
+                    <td>{{ $plan['type'] === 'outing' ? ($plan['location_override'] ?? '') : ($plan['location'] ?? '') }}</td>
                     <td>{{ $plan['note'] ?? '' }}</td>
+                 
+                    <td>{{ $plan['created_at'] ?? '' }}</td>
+                    <td>{{ $plan['updated_at'] ?? '' }}</td>
                     <td>{{ $plan['authorized_at'] ?? '' }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="7" style="text-align:center;">No class plans.</td>
+                    <td colspan="11" style="text-align:center;">No class plans.</td>
                 </tr>
             @endforelse
         </tbody>

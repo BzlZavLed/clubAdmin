@@ -28,7 +28,6 @@ const props = defineProps({
         default: null
     }
 })
-console.log('Workplan props:', props);
 const { showToast } = useGeneral()
 
 const isDirector = computed(() => props.auth_user?.profile_type === 'club_director')
@@ -185,6 +184,8 @@ const classFilter = ref('')
 const userClassId = computed(() => {
     const au = props.auth_user || {}
     if (au.assigned_class_id) return au.assigned_class_id
+    if (au.staff?.assigned_class) return au.staff.assigned_class
+    if (au.staff_class?.id) return au.staff_class.id
     if (Array.isArray(au.assigned_classes) && au.assigned_classes.length) {
         const first = au.assigned_classes[0]
         return typeof first === 'object' ? first.id : first
@@ -218,8 +219,12 @@ const classesOptions = computed(() => {
 })
 
 const filteredPlans = computed(() => {
-    const targetClass = isDirector.value ? classFilter.value : (userClassId.value || classFilter.value)
+    const defaultClass = props.auth_user?.staff?.assigned_class
+        || props.auth_user?.staff_class?.id
+        || (Array.isArray(props.auth_user?.assigned_classes) ? props.auth_user.assigned_classes[0] : null)
+    const targetClass = isDirector.value ? classFilter.value : (userClassId.value || classFilter.value || defaultClass)
     return allPlans.value.filter(p => {
+        if (!targetClass && !isDirector.value) return false
         if (!targetClass) return true
         const planClassId = p.class_id || p.class?.id
         return String(planClassId || '') === String(targetClass)
@@ -239,6 +244,8 @@ const classDisplayName = computed(() => {
     const fromOptions = classesOptions.value.find(o => String(o.id) === String(userClassId.value))?.name
     if (fromOptions) return fromOptions
     if (staffProfile.value?.assigned_class_name) return staffProfile.value.assigned_class_name
+    if (props.auth_user?.staff?.class?.class_name) return props.auth_user.staff.class.class_name
+    if (props.auth_user?.staff_class?.class_name) return props.auth_user.staff_class.class_name
     if (Array.isArray(props.auth_user?.assigned_classes) && props.auth_user.assigned_classes.length) {
         return props.auth_user.assigned_classes[0]
     }
@@ -437,6 +444,9 @@ async function savePlan() {
         showToast('Select a meeting first', 'warning')
         return
     }
+    if (!planForm.value.class_id && userClassId.value) {
+        planForm.value.class_id = userClassId.value
+    }
     try {
         const { plan } = editingPlanId.value
             ? await updateClassPlan(editingPlanId.value, planForm.value)
@@ -481,9 +491,14 @@ async function updatePlanStatus(plan, status) {
 }
 
 function meetingCardClass(ev) {
-    const targetClass = isDirector.value ? classFilter.value : userClassId.value
+    const targetClass =
+        userClassId.value ||
+        props.auth_user?.staff?.assigned_class ||
+        props.auth_user?.staff_class?.id ||
+        (isDirector.value ? classFilter.value : null)
+
     const plans = (ev.classPlans || []).filter(p => {
-        if (!targetClass) return true
+        if (!targetClass) return false
         const pid = p.class_id || p.class?.id
         return String(pid || '') === String(targetClass)
     })
@@ -586,7 +601,7 @@ watch(userClassId, (val) => {
                         </template>
                         <template v-else>
                             <span class="text-sm font-semibold text-gray-800">
-                                {{ clubs.find(c => String(c.id) === String(selectedClubId))?.club_name || '—' }}
+                                {{ clubs.find(c => String(c.id) === String(selectedClubId))?.club_name || '—' }} -  {{ classDisplayName }}
                             </span>
                         </template>
                     </div>

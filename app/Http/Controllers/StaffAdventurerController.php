@@ -54,14 +54,6 @@ class StaffAdventurerController extends Controller
             'email' => 'nullable|email|max:255',
             'club_name' => 'required|string|max:255',
             'club_id' => 'required|exists:clubs,id',
-            'assigned_class' => [
-                'nullable',
-                'integer',
-                Rule::exists('club_classes', 'id')
-                    ->where(function ($query) use ($request) {
-                        $query->where('club_id', $request->input('club_id'));
-                    }),
-            ],
             // Health limitation section
             'has_health_limitation' => 'required|boolean',
             'health_limitation_description' => 'nullable|string',
@@ -112,7 +104,9 @@ class StaffAdventurerController extends Controller
             }
 
             // Create staff
+            $assignedClass = $request->input('assigned_class');
             $validated['status'] = 'active';
+            unset($validated['assigned_class']);
             $staff = StaffAdventurer::create($validated);
 
             // Determine club type for mirroring
@@ -126,17 +120,11 @@ class StaffAdventurerController extends Controller
                     'club_id' => $staff->club_id,
                 ],
                 [
-                    'assigned_class' => $staff->assigned_class,
+                    'assigned_class' => $assignedClass,
                     'user_id' => null,
                     'status' => 'active',
                 ]
             );
-
-            // Update assigned_class if provided
-            if (!empty($validated['assigned_class'])) {
-                ClubClass::where('id', $validated['assigned_class'])
-                    ->update(['assigned_staff_id' => $staff->id]);
-            }
 
             $user = null;
 
@@ -156,8 +144,8 @@ class StaffAdventurerController extends Controller
                 );
             }
 
-            // Link user to club if assigned_class exists and staff has an email
-            if (!empty($validated['assigned_class']) && !empty($staff->email)) {
+            // Link user to club if staff has an email
+            if (!empty($staff->email)) {
                 $linkedUser = $user ?? User::where('email', $staff->email)->first();
 
                 if ($linkedUser) {
@@ -266,13 +254,18 @@ class StaffAdventurerController extends Controller
         try {
             Log::info('Starting update for staff.', ['staff_id' => $staff->id]);
 
+            $assignedClass = $request->input('assigned_class');
+            unset($validated['assigned_class']);
             $staff->update($validated);
             Log::info('Staff updated.', ['staff_id' => $staff->id]);
 
-            if (!empty($validated['assigned_class'])) {
-                ClubClass::where('id', $validated['assigned_class'])
-                    ->update(['assigned_staff_id' => $staff->id]);
-                Log::info('Assigned class updated.', ['class_id' => $validated['assigned_class']]);
+            // Update new staff table assignment if present
+            if (!empty($assignedClass)) {
+                Staff::where('id_data', $staff->id)->update([
+                    'assigned_class' => $assignedClass,
+                    'club_id' => $validated['club_id'],
+                ]);
+                Log::info('Assigned class updated on staff table.', ['class_id' => $assignedClass]);
             }
 
             $user = User::where('email', $originalEmail)->first();
@@ -349,12 +342,15 @@ class StaffAdventurerController extends Controller
 
         $staffIdMap = \App\Models\Staff::where('club_id', $clubId)
             ->pluck('id', 'id_data'); // [staff_adventurer_id => staff_id]
+        $staffClasses = \App\Models\Staff::with('class')->whereIn('id_data', $staffIdMap->keys())->get()->keyBy('id_data');
 
-        $staff = StaffAdventurer::with('assignedClasses')
-            ->whereIn('id', $staffIdMap->keys())
+        $staff = StaffAdventurer::whereIn('id', $staffIdMap->keys())
             ->get()
-            ->map(function ($s) use ($staffIdMap) {
+            ->map(function ($s) use ($staffIdMap, $staffClasses) {
                 $s->staff_id = $staffIdMap[$s->id] ?? null; // expose new table id
+                $class = $staffClasses[$s->id]->class ?? null;
+                $s->assigned_class_id = $staffClasses[$s->id]->assigned_class ?? null;
+                $s->assigned_class_name = $class?->class_name;
                 return $s;
             });
 
@@ -591,9 +587,7 @@ class StaffAdventurerController extends Controller
 
         $staff = StaffAdventurer::findOrFail($request->staff_id);
         $clubType = Club::where('id', $staff->club_id)->value('club_type') ?? 'adventurers';
-        $staff->assigned_class = $request->class_id;
-        $staff->save();
-        // mirror to new staff table
+
         Staff::updateOrCreate(
             [
                 'type' => $clubType,
@@ -606,14 +600,6 @@ class StaffAdventurerController extends Controller
                 'status' => 'active',
             ]
         );
-
-        // Optionally update the club_class.assigned_staff_id (1:1 assignment)
-        ClubClass::where('assigned_staff_id', $staff->id)
-            ->where('id', '!=', $request->class_id)
-            ->update(['assigned_staff_id' => null]);
-
-        ClubClass::where('id', $request->class_id)
-            ->update(['assigned_staff_id' => $staff->id]);
 
         return response()->json(['message' => 'Assigned class updated']);
     }

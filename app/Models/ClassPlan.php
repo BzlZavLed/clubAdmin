@@ -25,6 +25,9 @@ class ClassPlan extends Model
     protected $casts = [
         'requires_approval' => 'boolean',
         'authorized_at' => 'datetime',
+        'requested_date' => 'date',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     public function event()

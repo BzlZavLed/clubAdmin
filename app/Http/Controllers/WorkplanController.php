@@ -14,12 +14,18 @@ use Illuminate\Support\Collection;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Inertia\Inertia;
 use Log;
+use Illuminate\Support\Facades\Auth;
 
 class WorkplanController extends Controller
 {
     public function index(Request $request)
     {
-        $user = $request->user();
+        $user = $request->user()->load([
+            'staff.class',
+            'staffClass',
+            'clubs',
+            'church',
+        ]);
         $clubs = $user->clubs()
             ->orderBy('club_name')
             ->get(['clubs.id', 'club_name']);
@@ -41,10 +47,8 @@ class WorkplanController extends Controller
             ]);
         }
 
-        $authUser = $this->withClassName($user);
-
         return Inertia::render('ClubDirector/Workplan', [
-            'auth_user' => $authUser,
+            'auth_user' => Auth::user(),
             'workplan' => $workplan,
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
@@ -402,11 +406,17 @@ class WorkplanController extends Controller
                     'note' => $plan->request_note,
                     'requires_approval' => $plan->requires_approval,
                     'authorized_at' => optional($plan->authorized_at)->format('Y-m-d'),
+                    'location' => $plan->location_override,
+                    'location_override' => $plan->location_override,
+                    'created_at' => optional($plan->created_at)->format('Y-m-d'),
+                    'updated_at' => optional($plan->updated_at)->format('Y-m-d'),
                 ]);
             }
         }
 
-        $className = $plans->first()['class_name'] ?? 'All classes';
+        $className = $classId
+            ? ($plans->first()['class_name'] ?? 'Selected class')
+            : ($plans->pluck('class_name')->filter()->unique()->values()->implode(', ') ?: 'All classes');
         $staffNames = $plans->pluck('staff_name')->filter()->unique()->implode(', ');
 
         $pdf = Pdf::loadView('pdf.class_plans', [

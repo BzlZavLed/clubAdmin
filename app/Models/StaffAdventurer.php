@@ -21,7 +21,6 @@ class StaffAdventurer extends Model
         'church_name',
         'club_name',
         'email',
-        'assigned_class',
         'club_id',
         'has_health_limitation',
         'health_limitation_description',

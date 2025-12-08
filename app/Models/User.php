@@ -62,6 +62,23 @@ class User extends Authenticatable
         return $this->belongsTo(Club::class);
     }
 
+    public function staff()
+    {
+        return $this->hasOne(Staff::class);
+    }
+
+    public function staffClass()
+    {
+        return $this->hasOneThrough(
+            ClubClass::class,
+            Staff::class,
+            'user_id',      // Staff.user_id
+            'id',           // ClubClass primary key
+            'id',           // User primary key
+            'assigned_class' // Staff.assigned_class -> ClubClass.id
+        );
+    }
+
     public function church()
     {
         return $this->belongsTo(Church::class);
