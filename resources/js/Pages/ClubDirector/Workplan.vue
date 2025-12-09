@@ -1142,34 +1142,36 @@ watch(userClassId, (val) => {
                                 <input type="time" v-model="form.default_sunday_end_time" class="w-full border rounded px-3 py-2 text-sm" />
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-1">Sabbath recurrence (nth in month)</label>
-                            <div class="flex flex-wrap gap-2">
-                                <button
-                                    v-for="n in nthOptions"
-                                    :key="'sab-'+n"
-                                    type="button"
-                                    class="px-3 py-1 rounded border text-sm"
-                                    :class="recurrence.sabbath.includes(n) ? 'bg-amber-600 text-white border-amber-700' : 'bg-white text-gray-700'"
-                                    @click="toggleNth('sabbath', n)"
-                                >
-                                    {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sabbath
-                                </button>
+                        <div class="sm:col-span-2 space-y-3">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Sabbath recurrence (nth in month)</label>
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        v-for="n in nthOptions"
+                                        :key="'sab-'+n"
+                                        type="button"
+                                        class="px-3 py-1 rounded border text-sm"
+                                        :class="recurrence.sabbath.includes(n) ? 'bg-amber-600 text-white border-amber-700' : 'bg-white text-gray-700'"
+                                        @click="toggleNth('sabbath', n)"
+                                    >
+                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sabbath
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-1">Sunday recurrence (nth in month)</label>
-                            <div class="flex flex-wrap gap-2">
-                                <button
-                                    v-for="n in nthOptions"
-                                    :key="'sun-'+n"
-                                    type="button"
-                                    class="px-3 py-1 rounded border text-sm"
-                                    :class="recurrence.sunday.includes(n) ? 'bg-teal-600 text-white border-teal-700' : 'bg-white text-gray-700'"
-                                    @click="toggleNth('sunday', n)"
-                                >
-                                    {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sunday
-                                </button>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Sunday recurrence (nth in month)</label>
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        v-for="n in nthOptions"
+                                        :key="'sun-'+n"
+                                        type="button"
+                                        class="px-3 py-1 rounded border text-sm"
+                                        :class="recurrence.sunday.includes(n) ? 'bg-teal-600 text-white border-teal-700' : 'bg-white text-gray-700'"
+                                        @click="toggleNth('sunday', n)"
+                                    >
+                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sunday
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
