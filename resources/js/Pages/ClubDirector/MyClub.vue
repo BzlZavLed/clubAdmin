@@ -152,6 +152,7 @@ const selectClub = async (clubId) => {
 // 🧠 Get assigned staff name by class (prefers staff.assigned_class mapping)
 const getStaffName = (cls) => {
     if (!cls) return '—'
+    if (cls.assigned_staff_name) return cls.assigned_staff_name
     const byClass = clubStaff.value.find(s => String(s.assigned_class) === String(cls.id))
     if (byClass) return byClass.name
     if (cls.assigned_staff_id) {

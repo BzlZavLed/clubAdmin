@@ -9,6 +9,10 @@ use App\Models\PaymentConcept;
 use App\Models\PaymentConceptScope;use App\Models\Church;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
+use App\Models\Staff;
+use App\Models\StaffAdventurer;
+use App\Models\Staff;
+use App\Models\StaffAdventurer;
 class ClubController extends Controller
 {
     use AuthorizesRequests;
@@ -107,7 +111,7 @@ class ClubController extends Controller
             ->orderBy('club_name')
             ->get();
 
-        return response()->json($clubs);
+        return response()->json($this->attachStaffAssignments($clubs));
     }
 
     public function getByChurchNames(Request $request)
@@ -134,7 +138,7 @@ class ClubController extends Controller
             ->orderBy('club_name')
             ->get();
 
-        return response()->json($clubs);
+        return response()->json($this->attachStaffAssignments($clubs));
     }
 
     public function selectClub(Request $request)
@@ -157,6 +161,63 @@ class ClubController extends Controller
         $user->load(['clubs.clubClasses', 'church', 'clubs.staffAdventurers']);
 
         return response()->json(['message' => 'Club selected successfully.']);
+    }
+
+    /**
+     * Attach staff assignment info from staff table to each class,
+     * resolving the staff name from staff_adventurers when type is adventurers.
+     */
+    protected function attachStaffAssignments($clubs)
+    {
+        if ($clubs->isEmpty()) {
+            return $clubs;
+        }
+
+        $clubIds = $clubs->pluck('id');
+        $staffRecords = Staff::query()
+            ->whereIn('club_id', $clubIds)
+            ->whereNotNull('assigned_class')
+            ->get(['id', 'id_data', 'club_id', 'assigned_class', 'type']);
+
+        if ($staffRecords->isEmpty()) {
+            return $clubs;
+        }
+
+        $adventurerIds = $staffRecords
+            ->where('type', 'adventurers')
+            ->pluck('id_data')
+            ->filter()
+            ->unique();
+
+        $staffNames = [];
+        if ($adventurerIds->isNotEmpty()) {
+            $staffNames = StaffAdventurer::whereIn('id', $adventurerIds)
+                ->get(['id', 'name'])
+                ->keyBy('id');
+        }
+
+        $byClass = [];
+        foreach ($staffRecords as $record) {
+            $name = null;
+            if ($record->type === 'adventurers' && $record->id_data && isset($staffNames[$record->id_data])) {
+                $name = $staffNames[$record->id_data]->name;
+            }
+            $byClass[$record->assigned_class] = [
+                'staff_id' => $record->id,
+                'name' => $name,
+            ];
+        }
+
+        foreach ($clubs as $club) {
+            foreach ($club->clubClasses as $class) {
+                if (isset($byClass[$class->id])) {
+                    $class->assigned_staff_name = $byClass[$class->id]['name'];
+                    $class->assigned_staff_record_id = $byClass[$class->id]['staff_id'];
+                }
+            }
+        }
+
+        return $clubs;
     }
 
 
