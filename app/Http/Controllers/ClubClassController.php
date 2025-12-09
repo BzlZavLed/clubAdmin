@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\ClubClass;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ClubClassController extends Controller
 {
@@ -17,13 +18,19 @@ class ClubClassController extends Controller
     // Create a new class
     public function store(Request $request)
     {
+        $hasAssignedStaff = Schema::hasColumn('club_classes', 'assigned_staff_id');
+
         $validated = $request->validate([
             'club_id' => 'required|exists:clubs,id',
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
-            'assigned_staff_id' => 'nullable|exists:staff_adventurers,id',
+            'assigned_staff_id' => $hasAssignedStaff ? 'nullable|exists:staff_adventurers,id' : 'nullable',
             'user_id' => 'nullable', // Ensure the user exists
         ]);
+
+        if (!$hasAssignedStaff) {
+            unset($validated['assigned_staff_id']);
+        }
 
         $class = ClubClass::create($validated);
 
@@ -40,6 +47,9 @@ class ClubClassController extends Controller
         );
 
         session()->flash('success', 'Class created successfully.');
+        if (!$hasAssignedStaff) {
+            session()->flash('warning', 'Staff assignment column is missing in club_classes; class saved without staff assignment.');
+        }
 
         return back();
     }
@@ -56,14 +66,20 @@ class ClubClassController extends Controller
     {
         $class = ClubClass::findOrFail($id);
 
+        $hasAssignedStaff = Schema::hasColumn('club_classes', 'assigned_staff_id');
+
         $validated = $request->validate([
             'club_id' => 'required|exists:clubs,id',
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
-            'assigned_staff_id' => 'nullable|exists:staff_adventurers,id',
+            'assigned_staff_id' => $hasAssignedStaff ? 'nullable|exists:staff_adventurers,id' : 'nullable',
             'user_id' => 'nullable', // Ensure the user exists
 
         ]);
+
+        if (!$hasAssignedStaff) {
+            unset($validated['assigned_staff_id']);
+        }
 
         $class->update($validated);
 
@@ -80,6 +96,9 @@ class ClubClassController extends Controller
         );
 
         session()->flash('success', 'Class updated successfully.');
+        if (!$hasAssignedStaff) {
+            session()->flash('warning', 'Staff assignment column is missing in club_classes; class saved without staff assignment.');
+        }
 
         return back();
     }
