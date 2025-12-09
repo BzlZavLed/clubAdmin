@@ -28,7 +28,9 @@ return new class extends Migration
 
             // Link to new members table (nullable for backfill)
             $table->unsignedBigInteger('member_id')->nullable();
-            $table->foreign('member_id')->references('id')->on('members')->nullOnDelete();
+            if (Schema::hasTable('members')) {
+                $table->foreign('member_id')->references('id')->on('members')->nullOnDelete();
+            }
         });
     }
 
