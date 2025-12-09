@@ -405,6 +405,8 @@ async function createWorkplanNow() {
         }
         workplanModalOpen.value = false
         showToast('Workplan created')
+        // Refresh to sync props and state (ensures no stale defaults)
+        window.location.reload()
     } catch (error) {
         console.error(error)
         showToast('Failed to create workplan', 'error')
