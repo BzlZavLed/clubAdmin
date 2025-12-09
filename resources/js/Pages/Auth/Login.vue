@@ -76,5 +76,15 @@ const submit = () => {
                 </PrimaryButton>
             </div>
         </form>
+
+        <div class="mt-6 text-sm text-gray-700 space-y-1">
+            <div>
+                <Link href="/register" class="text-blue-600 hover:underline">Create an account</Link>
+                <span class="text-gray-500"> (staff/director)</span>
+            </div>
+            <div>
+                <Link href="/register-parent" class="text-blue-600 hover:underline">Register as parent</Link>
+            </div>
+        </div>
     </PathfinderLayout>
 </template>
