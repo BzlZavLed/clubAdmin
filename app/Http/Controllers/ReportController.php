@@ -18,6 +18,7 @@ use App\Models\Expense;
 use App\Models\Account;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Log;
 use Illuminate\Validation\Rule;
@@ -198,10 +199,22 @@ class ReportController extends Controller
             ->get(['id', 'class_name', 'club_id']);
 
         // Staff for this club
+        $staffColumns = ['id', 'name', 'email', 'club_id'];
+        if (Schema::hasColumn('staff_adventurers', 'assigned_class')) {
+            $staffColumns[] = 'assigned_class';
+        }
+
         $staff = StaffAdventurer::query()
             ->where('club_id', $club->id)
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'assigned_class', 'club_id']);
+            ->get($staffColumns)
+            ->map(function ($s) {
+                if (!isset($s->assigned_class)) {
+                    $s->assigned_class = null;
+                    $s->class_warning = 'Staff class assignment missing';
+                }
+                return $s;
+            });
 
         return response()->json([
             'data' => [

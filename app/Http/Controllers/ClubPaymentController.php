@@ -11,6 +11,7 @@ use App\Models\StaffAdventurer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -186,10 +187,24 @@ class ClubPaymentController extends Controller
             })
             ->values();
 
+        $staffColumns = ['id', 'name', 'email', 'club_id'];
+        // Some deployments may still lack the old assigned_class column on staff_adventurers
+        if (\Illuminate\Support\Facades\Schema::hasColumn('staff_adventurers', 'assigned_class')) {
+            $staffColumns[] = 'assigned_class';
+        }
+
         $staff = StaffAdventurer::query()
             ->whereIn('club_id', $clubIds)
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'assigned_class', 'club_id']);
+            ->get($staffColumns)
+            ->map(function ($s) {
+                // If no class assignment available, surface a hint to the UI
+                if (!isset($s->assigned_class)) {
+                    $s->assigned_class = null;
+                    $s->class_warning = 'Staff class assignment missing';
+                }
+                return $s;
+            });
 
         $concepts = PaymentConcept::query()
             ->whereIn('club_id', $clubIds)
