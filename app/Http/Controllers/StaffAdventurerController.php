@@ -93,6 +93,7 @@ class StaffAdventurerController extends Controller
 
         try {
             $email = $validated['email'];
+            $userId = $request->input('user_id');
 
             // Ensure the email doesn't exist already
             if (!empty($email)) {
@@ -100,6 +101,10 @@ class StaffAdventurerController extends Controller
 
                 if ($emailExistsInStaff) {
                     throw new \Exception("The email is already registered as a staff profile.");
+                }
+
+                if (!$userId) {
+                    $userId = User::where('email', $email)->value('id');
                 }
             }
 
@@ -121,7 +126,7 @@ class StaffAdventurerController extends Controller
                 ],
                 [
                     'assigned_class' => $assignedClass,
-                    'user_id' => null,
+                    'user_id' => $userId,
                     'status' => 'active',
                 ]
             );

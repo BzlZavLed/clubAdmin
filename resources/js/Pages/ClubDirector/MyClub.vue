@@ -149,10 +149,16 @@ const selectClub = async (clubId) => {
     }
 }
 
-// 🧠 Get assigned staff name
-const getStaffName = (id) => {
-    const staff = clubStaff.value.find(s => s.id === id)
-    return staff ? staff.name : '—'
+// 🧠 Get assigned staff name by class (prefers staff.assigned_class mapping)
+const getStaffName = (cls) => {
+    if (!cls) return '—'
+    const byClass = clubStaff.value.find(s => String(s.assigned_class) === String(cls.id))
+    if (byClass) return byClass.name
+    if (cls.assigned_staff_id) {
+        const legacy = clubStaff.value.find(s => s.id === cls.assigned_staff_id)
+        if (legacy) return legacy.name
+    }
+    return '—'
 }
 
 // 🧠 Modal handling
@@ -534,7 +540,7 @@ onMounted(fetchClubs);
                                         <td class="px-4 py-2">{{ club.club_name }}</td>
                                         <td class="px-4 py-2">{{ cls.class_order }}</td>
                                         <td class="px-4 py-2">{{ cls.class_name }}</td>
-                                        <td class="px-4 py-2">{{ getStaffName(cls.assigned_staff_id) }}</td>
+                                        <td class="px-4 py-2">{{ getStaffName(cls) }}</td>
                                         <td class="p-2 space-x-2">
                                             <button @click="editCls(cls)"
                                                 class="text-blue-600 hover:underline">Edit</button>

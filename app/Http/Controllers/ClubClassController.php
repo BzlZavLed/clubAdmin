@@ -6,6 +6,9 @@ use Illuminate\Http\Request;
 use App\Models\ClubClass;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Models\StaffAdventurer;
+use App\Models\Staff;
+use App\Models\Club;
 
 class ClubClassController extends Controller
 {
@@ -19,6 +22,7 @@ class ClubClassController extends Controller
     public function store(Request $request)
     {
         $hasAssignedStaff = Schema::hasColumn('club_classes', 'assigned_staff_id');
+        $assignStaffId = $request->input('assigned_staff_id');
 
         $validated = $request->validate([
             'club_id' => 'required|exists:clubs,id',
@@ -33,6 +37,7 @@ class ClubClassController extends Controller
         }
 
         $class = ClubClass::create($validated);
+        $this->syncStaffAssignment($class, $assignStaffId);
 
         DB::table('club_user')->updateOrInsert(
             [
@@ -67,6 +72,7 @@ class ClubClassController extends Controller
         $class = ClubClass::findOrFail($id);
 
         $hasAssignedStaff = Schema::hasColumn('club_classes', 'assigned_staff_id');
+        $assignStaffId = $request->input('assigned_staff_id');
 
         $validated = $request->validate([
             'club_id' => 'required|exists:clubs,id',
@@ -82,6 +88,7 @@ class ClubClassController extends Controller
         }
 
         $class->update($validated);
+        $this->syncStaffAssignment($class, $assignStaffId);
 
         DB::table('club_user')->updateOrInsert(
             [
@@ -120,5 +127,32 @@ class ClubClassController extends Controller
             ->get();
 
         return response()->json($classes);
+    }
+
+    protected function syncStaffAssignment(ClubClass $class, $staffId): void
+    {
+        if (!$staffId) {
+            return;
+        }
+
+        $staff = StaffAdventurer::find($staffId);
+        if (!$staff) {
+            return;
+        }
+
+        $clubType = Club::where('id', $class->club_id)->value('club_type') ?? 'adventurers';
+
+        Staff::updateOrCreate(
+            [
+                'type' => $clubType,
+                'id_data' => $staff->id,
+                'club_id' => $staff->club_id,
+            ],
+            [
+                'assigned_class' => $class->id,
+                'user_id' => $staff->user_id ?? null,
+                'status' => 'active',
+            ]
+        );
     }
 }
