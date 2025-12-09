@@ -152,6 +152,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/club-director/workplan/ics', [WorkplanController::class, 'ics'])->name('club.workplan.ics');
     Route::get('/club-director/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('club.workplan.class-plans.pdf');
     Route::put('/club-director/class-plans/{plan}/status', [\App\Http\Controllers\ClassPlanController::class, 'updateStatus'])->name('club.workplan.class-plans.status');
+    Route::get('/club-director/church/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'show'])->name('club.director.church.invite-code');
+    Route::post('/club-director/church/invite-code/regenerate', [\App\Http\Controllers\ChurchInviteCodeController::class, 'regenerate'])->name('club.director.church.invite-code.regenerate');
 
     Route::get('/club-director/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [
@@ -220,6 +222,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     // AI
     Route::post('/nl-query', [AIQueryController::class, 'handle']);
+
+    // User approvals
+    Route::post('/club-director/users/{user}/approve', [\App\Http\Controllers\UserApprovalController::class, 'approve'])->name('club.users.approve');
 
     // Export ZIP
     Route::post('/export/{type}/zip', [ExportController::class, 'exportZip'])->name('export.zip');

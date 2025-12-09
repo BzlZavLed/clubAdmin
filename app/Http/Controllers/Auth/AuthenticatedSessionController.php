@@ -36,6 +36,13 @@ class AuthenticatedSessionController extends Controller
 
         $user = Auth::user();
 
+        if ($user->status && $user->status !== 'active') {
+            Auth::logout();
+            return back()->withErrors([
+                'email' => 'Your account is pending approval by the club director.',
+            ]);
+        }
+
         $clubIds = $user->clubs()->pluck('clubs.id')->toArray();
         
 

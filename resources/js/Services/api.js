@@ -178,6 +178,16 @@ export const linkStaffToClubUser = async (staffId) => {
     const { data } = await axios.post(route('staff.link-club', staffId))
     return data
 }
+
+export const fetchInviteCode = async () => {
+    const { data } = await axios.get(route('club.director.church.invite-code'))
+    return data
+}
+
+export const regenerateInviteCode = async () => {
+    const { data } = await axios.post(route('club.director.church.invite-code.regenerate'))
+    return data
+}
 export const submitStaffForm = async (formData, editingStaffId = null) => {
     const url = editingStaffId
         ? route("staff.update", editingStaffId)

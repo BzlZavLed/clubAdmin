@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Church;
+use App\Models\ChurchInviteCode;
+use Illuminate\Support\Str;
 class ChurchController extends Controller
 {
     /**
@@ -34,6 +36,16 @@ class ChurchController extends Controller
             ['email' => $validated['email']],
             $validated 
         );
+
+        // Ensure an invite code exists for this church
+        if ($church->wasRecentlyCreated) {
+            ChurchInviteCode::create([
+                'church_id' => $church->id,
+                'code' => Str::upper(Str::random(10)),
+                'uses_left' => null,
+                'status' => 'active',
+            ]);
+        }
 
         return response()->json([
             'message' => $church->wasRecentlyCreated

@@ -25,6 +25,7 @@ import {
     updateStaffAssignedClass,
     linkStaffToClubUser
 } from '@/Services/api'
+import axios from 'axios'
 import { usePage } from '@inertiajs/vue3';
 
 const page = usePage();
@@ -45,6 +46,8 @@ const clubs = ref([])
 const staff = ref([])
 const clubClasses = ref([])
 const sub_roles = ref([])
+const pendingUsers = ref([])
+const pendingModalOpen = ref(false)
 const createStaffModalVisible = ref(false)
 const staffToEdit = ref(null)
 const selectedUserForStaff = ref(null)
@@ -118,6 +121,7 @@ const fetchStaff = async (clubId, churchId = null) => {
         const data = await fetchStaffByClubId(clubId, churchId)
         staff.value = data.staff
         sub_roles.value = data.sub_role_users
+        pendingUsers.value = data.pending_users || []
         clubUserIds.value = new Set(data.club_user_ids || [])
         fetchClasses(clubId)
         showToast('Staff loaded')
@@ -229,6 +233,28 @@ const handleBulkAction = async (action) => {
 // ✅ Download
 const downloadWord = (staffId) => {
     window.open(`/staff/${staffId}/export-word`, '_blank')
+}
+
+const approvePending = async (userId) => {
+    try {
+        await axios.post(route('club.users.approve', userId))
+        showToast('User approved')
+        fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (err) {
+        console.error('Approve failed', err)
+        showToast('Failed to approve user', 'error')
+    }
+}
+
+const rejectPending = async (userId) => {
+    try {
+        await updateUserStatus(userId, 301)
+        showToast('User rejected')
+        fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (err) {
+        console.error('Reject failed', err)
+        showToast('Failed to reject user', 'error')
+    }
 }
 
 
@@ -608,6 +634,15 @@ onMounted(fetchClubs)
                         </tbody>
                     </table>
                 </div>
+
+                <div class="mt-8 max-w-5xl mx-auto">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-lg font-semibold">Pending user requests</h3>
+                        <button class="px-3 py-2 bg-blue-600 text-white rounded text-sm" type="button" @click="pendingModalOpen = true">
+                            View requests
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
         <UpdatePasswordModal
@@ -621,6 +656,46 @@ onMounted(fetchClubs)
         <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
             :club-classes="clubClasses" :editing-staff="staffToEdit" @close="closeModal"
             @submitted="fetchStaff(selectedClub.id)" />
+
+        <!-- Pending modal -->
+        <div v-if="pendingModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-lg max-w-2xl w-full p-5 space-y-4">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <h4 class="text-lg font-semibold">Pending user requests</h4>
+                        <p class="text-sm text-gray-600">Awaiting your approval</p>
+                    </div>
+                    <button class="text-gray-500" @click="pendingModalOpen = false">✕</button>
+                </div>
+                <table class="w-full text-sm border rounded overflow-hidden">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="p-2 text-left">Name</th>
+                            <th class="p-2 text-left">Email</th>
+                            <th class="p-2 text-left">Role</th>
+                            <th class="p-2 text-left">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="u in pendingUsers" :key="u.id" class="border-t">
+                            <td class="p-2 text-xs">{{ u.name }}</td>
+                            <td class="p-2 text-xs">{{ u.email }}</td>
+                            <td class="p-2 text-xs capitalize">{{ u.profile_type.replace('_',' ') }}</td>
+                            <td class="p-2 text-xs space-x-2">
+                                <button class="text-green-700" @click="approvePending(u.id)">Approve</button>
+                                <button class="text-red-600" @click="rejectPending(u.id)">Reject</button>
+                            </td>
+                        </tr>
+                        <tr v-if="pendingUsers.length === 0">
+                            <td colspan="4" class="p-3 text-center text-gray-500">No pending requests.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="flex justify-end">
+                    <button class="px-3 py-2 border rounded" @click="pendingModalOpen = false">Close</button>
+                </div>
+            </div>
+        </div>
 
     </PathfinderLayout>
 </template>

@@ -413,6 +413,7 @@ async function createWorkplanNow() {
     }
 }
 
+
 function defaultLocation(type) {
     if (type === 'sabbath') return form.value.default_sabbath_location || ''
     if (type === 'sunday') return form.value.default_sunday_location || ''
@@ -1183,6 +1184,7 @@ watch(userClassId, (val) => {
                     </div>
                 </div>
             </div>
+
         </div>
     </PathfinderLayout>
 </template>

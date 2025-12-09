@@ -389,11 +389,16 @@ class StaffAdventurerController extends Controller
                 return $u;
             });
 
+        $pendingUsers = User::where('church_id', $club->church_id)
+            ->whereIn('profile_type', ['club_director', 'club_personal'])
+            ->where('status', 'pending')
+            ->get(['id', 'name', 'email', 'profile_type', 'church_id', 'club_id', 'status']);
 
         return response()->json([
             'staff' => $staff,
             'sub_role_users' => $subRoleUsers,
             'club_user_ids' => $clubUserIds,
+            'pending_users' => $pendingUsers,
         ]);
     }
 
