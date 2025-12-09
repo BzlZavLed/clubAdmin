@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
-use App\Models\Staff;
-use App\Models\StaffAdventurer;
 class ClubController extends Controller
 {
     use AuthorizesRequests;
