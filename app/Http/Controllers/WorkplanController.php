@@ -37,14 +37,17 @@ class WorkplanController extends Controller
 
         $workplan = null;
         if ($selectedClubId) {
-            $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
-                'rules',
-                'events' => function ($query) {
-                    $query->with(['classPlans' => function ($q) {
-                        $q->with(['staff.user', 'class']);
-                    }])->orderBy('date')->orderBy('start_time');
-                }
-            ]);
+            $existing = $this->getWorkplanForUser($user, $selectedClubId, false);
+            if ($existing) {
+                $workplan = $existing->load([
+                    'rules',
+                    'events' => function ($query) {
+                        $query->with(['classPlans' => function ($q) {
+                            $q->with(['staff.user', 'class']);
+                        }])->orderBy('date')->orderBy('start_time');
+                    }
+                ]);
+            }
         }
 
         return Inertia::render('ClubDirector/Workplan', [
@@ -58,9 +61,11 @@ class WorkplanController extends Controller
     public function preview(Request $request)
     {
         $payload = $this->validatePayload($request);
-        $workplan = $this->getWorkplanForUser($request->user());
+        $workplan = $this->getWorkplanForUser($request->user(), null, false);
 
-        $existingEvents = $workplan->events()->with('rule')->where('status', 'active')->get();
+        $existingEvents = $workplan
+            ? $workplan->events()->with('rule')->where('status', 'active')->get()
+            : collect();
         $existingGenerated = $existingEvents->where('is_generated', true);
 
         $ruleMap = $this->buildRuleMap($payload['rules']);
@@ -77,7 +82,7 @@ class WorkplanController extends Controller
     public function confirm(Request $request)
     {
         $payload = $this->validatePayload($request);
-        $workplan = $this->getWorkplanForUser($request->user());
+        $workplan = $this->getWorkplanForUser($request->user(), null, true);
 
         $workplan->fill([
             'start_date' => $payload['start_date'],
@@ -214,14 +219,17 @@ class WorkplanController extends Controller
 
         $workplan = null;
         if ($selectedClubId) {
-            $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
-                'rules',
-                'events' => function ($query) {
-                    $query->with(['classPlans' => function ($q) {
-                        $q->with(['staff.user', 'class']);
-                    }])->orderBy('date')->orderBy('start_time');
-                }
-            ]);
+            $existing = $this->getWorkplanForUser($user, $selectedClubId, false);
+            if ($existing) {
+                $workplan = $existing->load([
+                    'rules',
+                    'events' => function ($query) {
+                        $query->with(['classPlans' => function ($q) {
+                            $q->with(['staff.user', 'class']);
+                        }])->orderBy('date')->orderBy('start_time');
+                    }
+                ]);
+            }
         }
 
         return response()->json([
@@ -240,7 +248,11 @@ class WorkplanController extends Controller
             abort(403, 'Not allowed to view this club workplan.');
         }
 
-        $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
+        $workplan = $this->getWorkplanForUser($user, $selectedClubId, false);
+        if (!$workplan) {
+            abort(404, 'No workplan found for this club.');
+        }
+        $workplan = $workplan->load([
             'club',
             'events' => function ($q) {
                 $q->orderBy('date')->orderBy('start_time');
@@ -299,7 +311,11 @@ class WorkplanController extends Controller
             abort(403, 'Not allowed to view this club workplan.');
         }
 
-        $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load('club', 'events');
+        $workplan = $this->getWorkplanForUser($user, $selectedClubId, false);
+        if (!$workplan) {
+            abort(404, 'No workplan found for this club.');
+        }
+        $workplan = $workplan->load('club', 'events');
 
         $lines = [
             'BEGIN:VCALENDAR',
@@ -368,7 +384,11 @@ class WorkplanController extends Controller
             $classId = $staff?->assigned_class;
         }
 
-        $workplan = $this->getWorkplanForUser($user, $selectedClubId)->load([
+        $workplan = $this->getWorkplanForUser($user, $selectedClubId, false);
+        if (!$workplan) {
+            abort(404, 'No workplan found for this club.');
+        }
+        $workplan = $workplan->load([
             'events' => function ($q) {
                 $q->with(['classPlans' => function ($cp) {
                     $cp->with(['class', 'staff.user']);
@@ -455,11 +475,16 @@ class WorkplanController extends Controller
         ]);
     }
 
-    private function getWorkplanForUser($user, $clubId = null): Workplan
+    private function getWorkplanForUser($user, $clubId = null, bool $create = true): ?Workplan
     {
         $clubId = $clubId ?: $user->club_id;
         if (!$clubId) {
             abort(422, 'Select a club first to manage the workplan.');
+        }
+
+        $existing = Workplan::where('club_id', $clubId)->first();
+        if ($existing || !$create) {
+            return $existing;
         }
 
         return Workplan::firstOrCreate(
