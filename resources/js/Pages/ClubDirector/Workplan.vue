@@ -176,6 +176,7 @@ const plansPdfHref = computed(() => {
 
 const showIcsHelp = ref(false)
 const selectedEvent = ref(null)
+const workplanModalOpen = ref(false)
 const planForm = ref({
     workplan_event_id: null,
     class_id: null,
@@ -373,6 +374,41 @@ function openEventModal(ev = null, date = null) {
         location: ev?.location || defaultLocation(ev?.meeting_type || 'special'),
     }
     eventModalOpen.value = true
+}
+
+function openWorkplanModal() {
+    if (!hasClubSelected.value || isReadOnly.value) return
+    workplanModalOpen.value = true
+}
+
+async function createWorkplanNow() {
+    if (!hasClubSelected.value || isReadOnly.value) return
+    try {
+        const payload = { ...form.value, rules: buildRulesPayload() }
+        const { workplan } = await confirmWorkplan(payload)
+        events.value = normalizeEvents(workplan.events || [])
+        form.value = {
+            ...form.value,
+            start_date: workplan.start_date,
+            end_date: workplan.end_date,
+            default_sabbath_location: workplan.default_sabbath_location || '',
+            default_sunday_location: workplan.default_sunday_location || '',
+            default_sabbath_start_time: trimTime(workplan.default_sabbath_start_time),
+            default_sabbath_end_time: trimTime(workplan.default_sabbath_end_time),
+            default_sunday_start_time: trimTime(workplan.default_sunday_start_time),
+            default_sunday_end_time: trimTime(workplan.default_sunday_end_time),
+            timezone: workplan.timezone || form.value.timezone,
+        }
+        recurrence.value = {
+            sabbath: (workplan.rules || []).filter(r => r.meeting_type === 'sabbath').map(r => r.nth_week),
+            sunday: (workplan.rules || []).filter(r => r.meeting_type === 'sunday').map(r => r.nth_week),
+        }
+        workplanModalOpen.value = false
+        showToast('Workplan created')
+    } catch (error) {
+        console.error(error)
+        showToast('Failed to create workplan', 'error')
+    }
 }
 
 function defaultLocation(type) {
@@ -639,6 +675,14 @@ watch(userClassId, (val) => {
             </div>
 
             <div v-if="hasClubSelected" class="space-y-6">
+                <div v-if="!props.workplan?.id" class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded flex items-center justify-between">
+                    <div>
+                        <p class="font-semibold">No workplan created for this club.</p>
+                        <p class="text-sm">Set the date range and defaults to start planning.</p>
+                    </div>
+                    <button class="px-3 py-2 bg-amber-600 text-white rounded text-sm" @click="openWorkplanModal">Create workplan</button>
+                </div>
+
                 <div class="bg-white shadow-sm rounded-lg p-4 border">
                     <WorkplanCalendar
                         :events="events"
@@ -683,7 +727,16 @@ watch(userClassId, (val) => {
                                     </div>
                                 </button>
                             </div>
-                            <div v-else class="text-sm text-gray-600">No scheduled meetings in range.</div>
+                            <div v-else class="text-sm text-gray-600 space-y-2">
+                                <div>No scheduled meetings in range.</div>
+                                <button
+                                    class="px-3 py-1 border rounded text-sm text-blue-600 inline-flex items-center gap-1"
+                                    type="button"
+                                    @click="openEventModal()"
+                                >
+                                    Create a meeting
+                                </button>
+                            </div>
                         </div>
 
                         <div class="rounded-lg p-4 border bg-gray-50 border-gray-200">
@@ -1046,6 +1099,53 @@ watch(userClassId, (val) => {
                     <div class="flex justify-end gap-2">
                         <button class="px-4 py-2 border rounded" @click="requestModalOpen = false">Cancel</button>
                         <button class="px-4 py-2 bg-amber-600 text-white rounded" @click="submitRequestNote">Send request</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create workplan modal -->
+            <div v-if="workplanModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                <div class="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 space-y-4">
+                    <h4 class="text-lg font-semibold">Create workplan</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm text-gray-700">Start date</label>
+                            <input type="date" v-model="form.start_date" class="w-full border rounded px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-700">End date</label>
+                            <input type="date" v-model="form.end_date" class="w-full border rounded px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-700">Timezone</label>
+                            <input v-model="form.timezone" class="w-full border rounded px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-700">Sabbath location</label>
+                            <input v-model="form.default_sabbath_location" class="w-full border rounded px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-700">Sabbath start/end</label>
+                            <div class="flex gap-2">
+                                <input type="time" v-model="form.default_sabbath_start_time" class="w-full border rounded px-3 py-2 text-sm" />
+                                <input type="time" v-model="form.default_sabbath_end_time" class="w-full border rounded px-3 py-2 text-sm" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-700">Sunday location</label>
+                            <input v-model="form.default_sunday_location" class="w-full border rounded px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-700">Sunday start/end</label>
+                            <div class="flex gap-2">
+                                <input type="time" v-model="form.default_sunday_start_time" class="w-full border rounded px-3 py-2 text-sm" />
+                                <input type="time" v-model="form.default_sunday_end_time" class="w-full border rounded px-3 py-2 text-sm" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button class="px-4 py-2 border rounded" @click="workplanModalOpen = false">Cancel</button>
+                        <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="createWorkplanNow">Save</button>
                     </div>
                 </div>
             </div>
