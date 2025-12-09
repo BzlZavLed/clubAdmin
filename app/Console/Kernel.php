@@ -15,6 +15,7 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         \App\Console\Commands\RebuildAccountBalances::class,
         \App\Console\Commands\SyncMembersAndStaff::class,
+        \App\Console\Commands\SeedPayToOptions::class,
     ];
 
     /**

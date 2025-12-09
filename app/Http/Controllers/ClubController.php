@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
+use App\Models\PayToOption;
 class ClubController extends Controller
 {
     use AuthorizesRequests;
@@ -307,6 +308,16 @@ class ClubController extends Controller
                     'staff_id'   => $s['staff_id']  ?? null,
                 ]);
             }
+
+            // Ensure pay_to option exists for this club
+            PayToOption::firstOrCreate(
+                ['club_id' => $club->id, 'value' => $payload['pay_to']],
+                [
+                    'label'      => \Illuminate\Support\Str::title(str_replace('_', ' ', $payload['pay_to'])),
+                    'status'     => 'active',
+                    'created_by' => $request->user()->id ?? null,
+                ]
+            );
 
             return response()->json([
                 'data' => $concept->load([

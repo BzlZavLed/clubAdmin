@@ -67,6 +67,14 @@ php artisan serve
     - `POST /parent/apply` (`parent.apply.submit`)
     - `GET /parent/children` (`parent-links.index.parent`)
 
+## Utilities
+
+- Seed default pay-to options (fills `pay_to_options` for all clubs, or one via `--club_id`):
+  ```bash
+  php artisan payto:seed
+  php artisan payto:seed --club_id=1
+  ```
+
 ## Environment Variables
 
 Configure your `.env` file:
