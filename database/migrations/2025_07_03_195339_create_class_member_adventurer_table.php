@@ -11,27 +11,41 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('class_member_adventurer', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('members_adventurer_id')->constrained()->onDelete('cascade');
-            $table->foreignId('club_class_id')->constrained()->onDelete('cascade');
-        
-            $table->string('role')->nullable(); // e.g. 'student', 'assistant'
-            $table->date('assigned_at')->nullable(); // when the member was assigned
-            $table->date('finished_at')->nullable(); // when the class was completed
-        
-            $table->boolean('active')->default(true); // true = current class, false = completed or inactive
+        if (!Schema::hasTable('class_member_adventurer')) {
+            Schema::create('class_member_adventurer', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('members_adventurer_id')->constrained()->onDelete('cascade');
+                $table->foreignId('club_class_id')->constrained()->onDelete('cascade');
+            
+                $table->string('role')->nullable(); // e.g. 'student', 'assistant'
+                $table->date('assigned_at')->nullable(); // when the member was assigned
+                $table->date('finished_at')->nullable(); // when the class was completed
+            
+                $table->boolean('active')->default(true); // true = current class, false = completed or inactive
 
-            $table->timestamps();
+                $table->timestamps();
 
-            $table->unique(['members_adventurer_id', 'club_class_id', 'active'], 'member_class_active_unique');
+                $table->unique(['members_adventurer_id', 'club_class_id', 'active'], 'member_class_active_unique');
 
-            // Link to new members table (nullable for backfill)
-            $table->unsignedBigInteger('member_id')->nullable();
-            if (Schema::hasTable('members')) {
-                $table->foreign('member_id')->references('id')->on('members')->nullOnDelete();
+                // Link to new members table (nullable for backfill)
+                $table->unsignedBigInteger('member_id')->nullable();
+                if (Schema::hasTable('members')) {
+                    $table->foreign('member_id')->references('id')->on('members')->nullOnDelete();
+                }
+            });
+        } else {
+            // Table already exists; ensure the optional member_id column exists
+            if (!Schema::hasColumn('class_member_adventurer', 'member_id')) {
+                Schema::table('class_member_adventurer', function (Blueprint $table) {
+                    $table->unsignedBigInteger('member_id')->nullable()->after('members_adventurer_id');
+                });
+                if (Schema::hasTable('members')) {
+                    Schema::table('class_member_adventurer', function (Blueprint $table) {
+                        $table->foreign('member_id')->references('id')->on('members')->nullOnDelete();
+                    });
+                }
             }
-        });
+        }
     }
 
     public function down(): void
