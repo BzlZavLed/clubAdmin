@@ -110,7 +110,7 @@ class StaffAdventurerController extends Controller
 
             // Create staff
             $assignedClass = $request->input('assigned_class');
-            $validated['status'] = 'active';
+            $validated['status'] = 'pending';
             unset($validated['assigned_class']);
             $staff = StaffAdventurer::create($validated);
 
@@ -125,9 +125,9 @@ class StaffAdventurerController extends Controller
                     'club_id' => $staff->club_id,
                 ],
                 [
-                    'assigned_class' => $assignedClass,
+                    'assigned_class' => null,
                     'user_id' => $userId,
-                    'status' => 'active',
+                    'status' => 'pending',
                 ]
             );
 
@@ -144,6 +144,7 @@ class StaffAdventurerController extends Controller
                         'club_id' => $validated['club_id'],
                         'profile_type' => 'club_personal',
                         'sub_role' => 'staff',
+                        'status' => 'pending',
                         'password' => bcrypt('password'), // Consider sending a reset email later
                     ]
                 );
@@ -160,7 +161,7 @@ class StaffAdventurerController extends Controller
                             'club_id' => $staff->club_id,
                         ],
                         [
-                            'status' => 'active',
+                            'status' => 'pending',
                             'updated_at' => now(),
                             'created_at' => now(), // Optional; won't affect existing record
                         ]
@@ -174,7 +175,7 @@ class StaffAdventurerController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Staff member registered.',
+                'message' => 'Staff member registered and pending director approval.',
                 'staff' => $staff->only(['id', 'name', 'email', 'club_id']),
                 'user' => $user,
             ]);
@@ -339,33 +340,43 @@ class StaffAdventurerController extends Controller
             abort(403, 'Unauthorized access to this club.');
         }
 
-        // Get the club type from the user's club
         $club = $user->clubs()->where('clubs.id', $clubId)->first();
         if (!$club) {
             abort(404, 'Club not found.');
         }
 
-        $staffIdMap = \App\Models\Staff::where('club_id', $clubId)
-            ->pluck('id', 'id_data'); // [staff_adventurer_id => staff_id]
-        $staffClasses = \App\Models\Staff::with('class')->whereIn('id_data', $staffIdMap->keys())->get()->keyBy('id_data');
-
-        $staff = StaffAdventurer::whereIn('id', $staffIdMap->keys())
+        $staffActive = Staff::query()
+            ->where('club_id', $clubId)
+            ->where('status', 'active')
+            ->with(['user:id,name,email', 'classes:id,class_name'])
             ->get()
-            ->map(function ($s) use ($staffIdMap, $staffClasses) {
-                $s->staff_id = $staffIdMap[$s->id] ?? null; // expose new table id
-                $class = $staffClasses[$s->id]->class ?? null;
-                $s->assigned_class_id = $staffClasses[$s->id]->assigned_class ?? null;
-                $s->assigned_class_name = $class?->class_name;
-                return $s;
+            ->map(function ($s) {
+                return [
+                    'id' => $s->id,
+                    'name' => $s->user?->name,
+                    'email' => $s->user?->email,
+                    'club_id' => $s->club_id,
+                    'status' => $s->status,
+                    'class_names' => $s->classes->pluck('class_name')->values(),
+                    'user_id' => $s->user_id,
+                ];
             });
 
-        $staff = $staff->map(function ($staffMember) use ($club) {
-            $linkedUser = User::where('email', $staffMember->email)->first();
-            $staffMember->create_user = !$linkedUser;
-            $staffMember->church_id = $club->church_id;
-            $staffMember->user_id = $linkedUser?->id;
-            return $staffMember;
-        });
+        $staffPending = Staff::query()
+            ->where('club_id', $clubId)
+            ->where('status', 'pending')
+            ->with(['user:id,name,email'])
+            ->get()
+            ->map(function ($s) {
+                return [
+                    'id' => $s->id,
+                    'name' => $s->user?->name,
+                    'email' => $s->user?->email,
+                    'club_id' => $s->club_id,
+                    'status' => $s->status,
+                    'user_id' => $s->user_id,
+                ];
+            });
 
         $clubUserIds = FacadesDB::table('club_user')->where('club_id', $clubId)->pluck('user_id')->toArray();
 
@@ -389,13 +400,13 @@ class StaffAdventurerController extends Controller
                 return $u;
             });
 
-        $pendingUsers = User::where('church_id', $club->church_id)
-            ->whereIn('profile_type', ['club_director', 'club_personal'])
+        $pendingUsers = User::where('club_id', $clubId)
             ->where('status', 'pending')
             ->get(['id', 'name', 'email', 'profile_type', 'church_id', 'club_id', 'status']);
 
         return response()->json([
-            'staff' => $staff,
+            'staff' => $staffActive,
+            'pending_staff' => $staffPending,
             'sub_role_users' => $subRoleUsers,
             'club_user_ids' => $clubUserIds,
             'pending_users' => $pendingUsers,

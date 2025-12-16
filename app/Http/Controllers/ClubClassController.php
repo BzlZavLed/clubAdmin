@@ -6,7 +6,6 @@ use Illuminate\Http\Request;
 use App\Models\ClubClass;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use App\Models\StaffAdventurer;
 use App\Models\Staff;
 use App\Models\Club;
 
@@ -15,29 +14,26 @@ class ClubClassController extends Controller
     // Get all classes
     public function index()
     {
-        return ClubClass::with(['club', 'assignedStaff'])->get();
+        return ClubClass::with(['club', 'staff.user'])->get();
     }
 
     // Create a new class
     public function store(Request $request)
     {
-        $hasAssignedStaff = Schema::hasColumn('club_classes', 'assigned_staff_id');
-        $assignStaffId = $request->input('assigned_staff_id');
-
         $validated = $request->validate([
             'club_id' => 'required|exists:clubs,id',
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
-            'assigned_staff_id' => $hasAssignedStaff ? 'nullable|exists:staff_adventurers,id' : 'nullable',
-            'user_id' => 'nullable', // Ensure the user exists
+            'staff_ids' => 'array',
+            'staff_ids.*' => 'integer|exists:staff,id',
+            'user_id' => 'nullable', // optional back-compat: add user to club
         ]);
 
-        if (!$hasAssignedStaff) {
-            unset($validated['assigned_staff_id']);
-        }
+        $staffIds = $validated['staff_ids'] ?? [];
+        unset($validated['staff_ids']);
 
         $class = ClubClass::create($validated);
-        $this->syncStaffAssignment($class, $assignStaffId);
+        $class->staff()->sync($staffIds);
 
         DB::table('club_user')->updateOrInsert(
             [
@@ -52,9 +48,6 @@ class ClubClassController extends Controller
         );
 
         session()->flash('success', 'Class created successfully.');
-        if (!$hasAssignedStaff) {
-            session()->flash('warning', 'Staff assignment column is missing in club_classes; class saved without staff assignment.');
-        }
 
         return back();
     }
@@ -62,7 +55,7 @@ class ClubClassController extends Controller
     // Get a single class by ID
     public function show($id)
     {
-        $class = ClubClass::with(['club', 'assignedStaff'])->findOrFail($id);
+        $class = ClubClass::with(['club', 'staff.user'])->findOrFail($id);
         return response()->json($class);
     }
 
@@ -71,24 +64,21 @@ class ClubClassController extends Controller
     {
         $class = ClubClass::findOrFail($id);
 
-        $hasAssignedStaff = Schema::hasColumn('club_classes', 'assigned_staff_id');
-        $assignStaffId = $request->input('assigned_staff_id');
-
         $validated = $request->validate([
             'club_id' => 'required|exists:clubs,id',
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
-            'assigned_staff_id' => $hasAssignedStaff ? 'nullable|exists:staff_adventurers,id' : 'nullable',
+            'staff_ids' => 'array',
+            'staff_ids.*' => 'integer|exists:staff,id',
             'user_id' => 'nullable', // Ensure the user exists
 
         ]);
 
-        if (!$hasAssignedStaff) {
-            unset($validated['assigned_staff_id']);
-        }
+        $staffIds = $validated['staff_ids'] ?? [];
+        unset($validated['staff_ids']);
 
         $class->update($validated);
-        $this->syncStaffAssignment($class, $assignStaffId);
+        $class->staff()->sync($staffIds);
 
         DB::table('club_user')->updateOrInsert(
             [
@@ -103,9 +93,6 @@ class ClubClassController extends Controller
         );
 
         session()->flash('success', 'Class updated successfully.');
-        if (!$hasAssignedStaff) {
-            session()->flash('warning', 'Staff assignment column is missing in club_classes; class saved without staff assignment.');
-        }
 
         return back();
     }
@@ -121,38 +108,11 @@ class ClubClassController extends Controller
 
     public function getByClubId($clubId)
     {
-        $classes = ClubClass::with('assignedStaff')
+        $classes = ClubClass::with('staff.user')
             ->where('club_id', $clubId)
             ->orderBy('class_order')
             ->get();
 
         return response()->json($classes);
-    }
-
-    protected function syncStaffAssignment(ClubClass $class, $staffId): void
-    {
-        if (!$staffId) {
-            return;
-        }
-
-        $staff = StaffAdventurer::find($staffId);
-        if (!$staff) {
-            return;
-        }
-
-        $clubType = Club::where('id', $class->club_id)->value('club_type') ?? 'adventurers';
-
-        Staff::updateOrCreate(
-            [
-                'type' => $clubType,
-                'id_data' => $staff->id,
-                'club_id' => $staff->club_id,
-            ],
-            [
-                'assigned_class' => $class->id,
-                'user_id' => $staff->user_id ?? null,
-                'status' => 'active',
-            ]
-        );
     }
 }

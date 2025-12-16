@@ -167,6 +167,14 @@ export const updateUserStatus = async (userId, status_code) => {
     });
 };
 
+export const approveStaff = async (staffId) => {
+    return await axios.post(route('staff.approve', staffId))
+}
+
+export const rejectStaff = async (staffId) => {
+    return await axios.post(route('staff.reject', staffId))
+}
+
 export const updateStaffAssignedClass = async (staffId, classId) => {
     return await axios.put(route("staff.update-class"), {
         staff_id: staffId,
@@ -403,5 +411,28 @@ export const updateWorkplanEvent = async (id, payload) => {
 
 export const deleteWorkplanEvent = async (id) => {
     const { data } = await axios.delete(route('club.workplan.events.destroy', id))
+    return data
+}
+
+// Pathfinder temp data
+export const fetchTempMembersPathfinder = async (clubId) => {
+    const { data } = await axios.get(route('clubs.temp-members.index', clubId))
+    return data
+}
+
+export const createTempMemberPathfinder = async (payload) => {
+    const clubId = payload.club_id
+    const { data } = await axios.post(route('clubs.temp-members.store', clubId), payload)
+    return data
+}
+
+export const fetchTempStaffPathfinder = async (clubId) => {
+    const { data } = await axios.get(route('clubs.temp-staff.index', clubId))
+    return data
+}
+
+export const createTempStaffPathfinder = async (payload) => {
+    const clubId = payload.club_id
+    const { data } = await axios.post(route('clubs.temp-staff.store', clubId), payload)
     return data
 }

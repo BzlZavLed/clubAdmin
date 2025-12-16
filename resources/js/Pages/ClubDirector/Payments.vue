@@ -24,7 +24,20 @@ const props = defineProps({
     payments: { type: Array, required: true },
     payment_types: { type: Array, required: true },
 })
+const allowedClubs = computed(() => {
+    const userClubId = props.auth_user?.club_id
+        ? Number(props.auth_user.club_id)
+        : (props.user?.club_id ? Number(props.user.club_id) : null)
 
+    // Build base list from props.clubs; if empty, fall back to single club prop
+    const baseClubs = Array.isArray(props.clubs) && props.clubs.length
+        ? props.clubs
+        : (props.club ? [props.club] : [])
+
+    if (!userClubId) return baseClubs
+    const filtered = baseClubs.filter(c => Number(c.id) === userClubId)
+    return filtered.length ? filtered : baseClubs
+})
 const scopeLabel = (sc) => {
     if (!sc) return 'No scope'
     switch (sc.scope_type) {
@@ -117,8 +130,8 @@ const form = useForm({
 
 watch(selectedConceptId, (id) => {
     form.payment_concept_id = id ?? null
-    if (!form.club_id && props.clubs?.length) {
-        form.club_id = props.clubs[0].id
+    if (!form.club_id && allowedClubs.value?.length) {
+        form.club_id = allowedClubs.value[0].id
     }
     selectedScopeId.value = scopesForConcept.value[0]?.id ?? null
     selectedMemberId.value = null
@@ -166,7 +179,7 @@ watch(() => form.club_id, () => {
 })
 
 // Default club selection
-watch(() => props.clubs, (val) => {
+watch(allowedClubs, (val) => {
     if (!form.club_id && Array.isArray(val) && val.length) {
         form.club_id = val[0].id
     }
@@ -174,7 +187,7 @@ watch(() => props.clubs, (val) => {
 
 // Prefill club_id from initial props (explicit club or first in list)
 if (!form.club_id) {
-    form.club_id = props.club?.id ?? (props.clubs?.[0]?.id ?? null)
+    form.club_id = props.club?.id ?? (allowedClubs.value?.[0]?.id ?? null)
 }
 
 // When club changes, reset selections and pick first concept for that club
@@ -292,7 +305,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         <label class="text-gray-700">Club:</label>
                         <select v-model="form.club_id"
                             class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
+                            <option v-for="c in allowedClubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
                         </select>
                     </div>
                 </div>

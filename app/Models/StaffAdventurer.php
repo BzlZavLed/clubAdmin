@@ -68,7 +68,15 @@ class StaffAdventurer extends Model
 
     public function assignedClasses()
     {
-        return $this->hasMany(ClubClass::class, 'assigned_staff_id');
+        // Resolve classes via the Staff record that references this detail record
+        return $this->hasManyThrough(
+            ClubClass::class,
+            Staff::class,
+            'id_data',            // Staff.id_data points to this record
+            'assigned_staff_id',  // ClubClass belongs to Staff
+            'id',                 // StaffAdventurer id
+            'id'                  // Staff id
+        )->where('staff.type', 'adventurers');
     }
     public function reportsAssistance()
     {

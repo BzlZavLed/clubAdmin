@@ -14,12 +14,13 @@ use App\Models\MemberAdventurer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
+use App\Support\ClubHelper;
 
 class ExpenseController extends Controller
 {
     public function index(Request $request)
     {
-        $club = $this->resolveClubForUser($request->user(), $request->input('club_id'));
+        $club = ClubHelper::clubForUser($request->user(), $request->input('club_id'));
 
         $payTo = $this->payToOptions($club->id);
         $accounts = $this->ensureAccounts($club->id, $payTo);
@@ -113,10 +114,12 @@ class ExpenseController extends Controller
                     'errors' => ['amount' => ['Amount exceeds available reimbursement balance.']],
                 ], 422);
             }
+        } else {
+            $payeeName = null;
         }
 
         $expense = null;
-        \DB::transaction(function () use ($club, $validated, $request, &$expense, $payeeId) {
+        \DB::transaction(function () use ($club, $validated, $request, &$expense, $payeeId, $payeeName) {
             $account = Account::firstOrCreate(
                 ['club_id' => $club->id, 'pay_to' => $validated['pay_to']],
                 ['label' => $validated['pay_to'], 'balance' => 0]
@@ -184,15 +187,32 @@ class ExpenseController extends Controller
 
     protected function resolveClubForUser($user, $clubId = null)
     {
-        $query = \App\Models\Club::where('user_id', $user->id);
+        // Allow access to:
+        // - clubs owned by the user
+        // - clubs linked through the pivot (club_users relation)
+        // - the explicit club_id stored on the user record
+        $pivotIds = $user->clubs?->pluck('id') ?? collect();
+        $explicitId = $user->club_id ? collect([$user->club_id]) : collect();
+
+        $allowed = \App\Models\Club::query()
+            ->where('user_id', $user->id)
+            ->orWhereIn('id', $pivotIds)
+            ->orWhereIn('id', $explicitId)
+            ->orderBy('club_name');
+
         if ($clubId) {
-            $query->where('id', $clubId);
+            $allowed->where('id', $clubId);
         }
 
-        $club = $query->first();
+        $club = $allowed->first();
 
+        // Fallback: if still empty but the user has any allowed IDs, grab the first
         if (!$club) {
-            $club = \App\Models\Club::where('user_id', $user->id)->firstOrFail();
+            $club = \App\Models\Club::query()
+                ->where('user_id', $user->id)
+                ->orWhereIn('id', $pivotIds)
+                ->orWhereIn('id', $explicitId)
+                ->firstOrFail();
         }
 
         return $club;

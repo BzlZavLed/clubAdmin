@@ -34,7 +34,7 @@ const hasClub = ref(false)
 
 // 🧠 Derived data
 const church_name = user.value.church_name || 'Unknown Church'
-const clubId = user.value.club_id || null
+const clubId = ref(user.value.club_id || null)
 
 const clubStaff = computed(() => {
     return clubs.value[0]?.staff_adventurers ?? []
@@ -70,6 +70,12 @@ const fetchClubs = async () => {
         const data = await fetchClubsByUserId(user.value.id)
         clubs.value = Array.isArray(data) ? data : []
         hasClub.value = clubs.value.length > 0
+        if (!clubId.value && clubs.value.length) {
+            clubId.value = clubs.value[0].id
+        }
+        if (!selectedClubId.value && clubId.value) {
+            selectedClubId.value = clubId.value
+        }
         showToast('Clubs fetched successfully!')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
@@ -403,7 +409,7 @@ onMounted(fetchClubs);
     <PathfinderLayout>
         <template #title>My Club</template>
 
-        <div v-if="(clubId == null && clubs.length == 0) || isEditing || addClub" class="space-y-6">
+        <div v-if="isEditing || addClub || (clubs.length === 0 && !clubId)" class="space-y-6">
             <p class="text-gray-700">
                 {{ isEditing ? 'Edit your club below:' : 'Create your club below.' }}
             </p>
@@ -447,7 +453,7 @@ onMounted(fetchClubs);
                 </div>
             </form>
         </div>
-        <div v-else-if="clubId == null && clubs.length > 0" class="space-y-6">
+        <div v-else-if="!clubId && clubs.length > 0" class="space-y-6">
             <p class="text-gray-700">Select an existing club from your church: {{ church_name || 'Unknown Church' }}</p>
             <table class="min-w-full border rounded text-sm">
                 <thead class="bg-gray-100">

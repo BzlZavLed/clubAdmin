@@ -23,7 +23,9 @@ import {
     undoClassAssignment,
     deleteMemberById,
     bulkDeleteMembers,
-    downloadMemberZip
+    downloadMemberZip,
+    fetchTempMembersPathfinder,
+    createTempMemberPathfinder,
 } from '@/Services/api'
 
 // ✅ Auth context
@@ -43,6 +45,16 @@ const deletingMember = ref(null)
 const selectedMemberIds = ref(new Set())
 const selectAll = ref(false)
 const selectedTab = ref('members')
+const tempMembers = ref([])
+const tempMemberForm = ref({
+    club_id: '',
+    nombre: '',
+    dob: '',
+    phone: '',
+    email: '',
+    father_name: '',
+    father_phone: '',
+})
 
 const activeTabClass = 'border-b-2 border-blue-600 text-blue-600 font-semibold pb-2'
 const inactiveTabClass = 'text-gray-500 hover:text-gray-700 pb-2'
@@ -120,8 +132,47 @@ const onClubChange = async () => {
 
         await fetchMembers(selectedClub.value.id)
         await fetchClasses(selectedClub.value.id)
+        if (selectedClub.value.club_type === 'pathfinders') {
+            await loadTempMembers(selectedClub.value.id)
+        } else {
+            tempMembers.value = []
+        }
 
 
+    }
+}
+
+const loadTempMembers = async (clubId) => {
+    try {
+        tempMembers.value = await fetchTempMembersPathfinder(clubId)
+    } catch (err) {
+        console.error('Failed to load temp members', err)
+        tempMembers.value = []
+    }
+}
+
+const saveTempMember = async () => {
+    try {
+        tempMemberForm.value.club_id = selectedClub.value?.id || ''
+        if (!tempMemberForm.value.club_id) {
+            showToast('Select a club first', 'error')
+            return
+        }
+        await createTempMemberPathfinder(tempMemberForm.value)
+        showToast('Temp member saved', 'success')
+        await loadTempMembers(tempMemberForm.value.club_id)
+        tempMemberForm.value = {
+            club_id: selectedClub.value?.id || '',
+            nombre: '',
+            dob: '',
+            phone: '',
+            email: '',
+            father_name: '',
+            father_phone: '',
+        }
+    } catch (err) {
+        console.error('Failed to save temp member', err)
+        showToast('Failed to save temp member', 'error')
     }
 }
 
@@ -301,6 +352,68 @@ onMounted(fetchClubs)
                         {{ club.club_name }} ({{ club.club_type }})
                     </option>
                 </select>
+            </div>
+
+            <!-- Pathfinder temp members -->
+            <div v-if="selectedClub && selectedClub.club_type === 'pathfinders'" class="mb-8 border rounded p-4 bg-amber-50">
+                <h2 class="font-semibold text-amber-800 mb-3">Temporary Pathfinder Members</h2>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nombre</label>
+                        <input v-model="tempMemberForm.nombre" type="text" class="w-full border rounded p-2" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">DOB</label>
+                        <input v-model="tempMemberForm.dob" type="date" class="w-full border rounded p-2" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Phone</label>
+                        <input v-model="tempMemberForm.phone" type="text" class="w-full border rounded p-2" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Email</label>
+                        <input v-model="tempMemberForm.email" type="email" class="w-full border rounded p-2" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Father name</label>
+                        <input v-model="tempMemberForm.father_name" type="text" class="w-full border rounded p-2" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Father phone</label>
+                        <input v-model="tempMemberForm.father_phone" type="text" class="w-full border rounded p-2" />
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button @click="saveTempMember" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save temp member</button>
+                </div>
+
+                <div class="mt-4 overflow-x-auto">
+                    <table class="min-w-full text-sm border">
+                        <thead class="bg-amber-100">
+                            <tr>
+                                <th class="p-2 text-left">Nombre</th>
+                                <th class="p-2 text-left">DOB</th>
+                                <th class="p-2 text-left">Phone</th>
+                                <th class="p-2 text-left">Email</th>
+                                <th class="p-2 text-left">Father</th>
+                                <th class="p-2 text-left">Father phone</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-if="!tempMembers.length">
+                                <td colspan="6" class="p-3 text-center text-gray-500">No temp members</td>
+                            </tr>
+                            <tr v-for="tm in tempMembers" :key="tm.id" class="border-t">
+                                <td class="p-2">{{ tm.nombre }}</td>
+                                <td class="p-2">{{ tm.dob || '—' }}</td>
+                                <td class="p-2">{{ tm.phone || '—' }}</td>
+                                <td class="p-2">{{ tm.email || '—' }}</td>
+                                <td class="p-2">{{ tm.father_name || '—' }}</td>
+                                <td class="p-2">{{ tm.father_phone || '—' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- Tab 1: Members Table -->

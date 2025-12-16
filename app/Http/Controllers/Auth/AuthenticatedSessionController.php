@@ -44,11 +44,13 @@ class AuthenticatedSessionController extends Controller
         }
 
         $clubIds = $user->clubs()->pluck('clubs.id')->toArray();
+        $primaryClubId = $user->club_id ?: ($clubIds[0] ?? null);
         
 
         session([
             'is_in_club' => count($clubIds) > 0,
             'user_club_ids' => $clubIds,
+            'club_id' => $primaryClubId,
             'church_name' => $user->church_name,
             'user' => $user,
             'email' => $request->input('email'),

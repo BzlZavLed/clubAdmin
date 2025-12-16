@@ -7,7 +7,8 @@ use App\Models\Account;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
 use App\Models\MemberAdventurer;
-use App\Models\StaffAdventurer;
+use App\Models\Staff;
+use App\Support\ClubHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
@@ -35,41 +36,34 @@ class ClubPaymentController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $club = $this->resolveClubFromUser();
+        $club = ClubHelper::clubForUser($user, $request->input('club_id'));
         $this->assertClubAccess($club);
 
         // --- your existing queries ---
-        $members = MemberAdventurer::query()
-            ->where('club_id', $club->id)
-            ->with([
-                'clubClasses' => function ($q) {
-                    $q->wherePivot('active', true);
-                },
-            ])
-            ->orderBy('applicant_name')
-            ->get(['id', 'applicant_name', 'club_id'])
-            ->map(function ($m) {
-                $current = $m->clubClasses->first();
-                $classId = $current?->pivot?->club_class_id ?? $current?->id;
-                return [
-                    'id' => $m->id,
-                    'applicant_name' => $m->applicant_name,
-                    'club_id' => $m->club_id,
-                    'class_id' => $classId,
-                    'current_class' => $current ? [
-                        'id' => $classId,
-                        'class_name' => $current->class_name,
-                    ] : null,
-                ];
-            })
-            ->values();
+        $members = ClubHelper::membersOfClub($club->id)->map(function ($m) {
+            $current = $m->clubClasses->first();
+            $classId = $current?->pivot?->club_class_id ?? $current?->id;
+            return [
+                'id' => $m->id,
+                'applicant_name' => $m->applicant_name,
+                'club_id' => $m->club_id,
+                'class_id' => $classId,
+                'current_class' => $current ? [
+                    'id' => $classId,
+                    'class_name' => $current->class_name,
+                ] : null,
+            ];
+        })->values();
 
-        $staff = StaffAdventurer::query()
+        $staff = Staff::query()
             ->where('club_id', $club->id)
-            ->whereRaw('LOWER(email) = ?', [Str::lower($user->email)])
+            ->whereHas('user', function ($q) use ($user) {
+                $q->whereRaw('LOWER(email) = ?', [Str::lower($user->email)]);
+            })
+            ->with(['classes'])
             ->first();
 
-        $assignedClassId = (int)$staff->assigned_class;
+        $assignedClassId = (int)optional($staff?->classes?->first())->id;
 
         $concepts = PaymentConcept::query()
             ->where('club_id', $club->id)
@@ -154,13 +148,11 @@ class ClubPaymentController extends Controller
     public function directorIndex(Request $request)
     {
         $user = $request->user();
-        $club = $this->resolveClubFromUser();
+        $clubIds = ClubHelper::clubIdsForUser($user);
+        $club = ClubHelper::clubForUser($user, $request->input('club_id'));
         $this->assertClubAccess($club);
 
-        $clubsForUser = Club::where('user_id', $user->id)
-            ->orderBy('club_name')
-            ->get(['id', 'club_name']);
-        $clubIds = $clubsForUser->pluck('id');
+        $clubsForUser = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
 
         $members = MemberAdventurer::query()
             ->whereIn('club_id', $clubIds)
@@ -187,23 +179,20 @@ class ClubPaymentController extends Controller
             })
             ->values();
 
-        $staffColumns = ['id', 'name', 'email', 'club_id'];
-        // Some deployments may still lack the old assigned_class column on staff_adventurers
-        if (\Illuminate\Support\Facades\Schema::hasColumn('staff_adventurers', 'assigned_class')) {
-            $staffColumns[] = 'assigned_class';
-        }
-
-        $staff = StaffAdventurer::query()
+        $staff = Staff::query()
             ->whereIn('club_id', $clubIds)
-            ->orderBy('name')
-            ->get($staffColumns)
+            ->with(['user:id,name,email', 'classes:id,class_name'])
+            ->orderBy('id')
+            ->get(['id', 'user_id', 'club_id', 'status'])
             ->map(function ($s) {
-                // If no class assignment available, surface a hint to the UI
-                if (!isset($s->assigned_class)) {
-                    $s->assigned_class = null;
-                    $s->class_warning = 'Staff class assignment missing';
-                }
-                return $s;
+                return [
+                    'id' => $s->id,
+                    'name' => $s->user?->name,
+                    'email' => $s->user?->email,
+                    'club_id' => $s->club_id,
+                    'status' => $s->status,
+                    'class_names' => $s->classes->pluck('class_name')->values(),
+                ];
             });
 
         $concepts = PaymentConcept::query()

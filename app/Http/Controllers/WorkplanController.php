@@ -15,21 +15,20 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Inertia\Inertia;
 use Log;
 use Illuminate\Support\Facades\Auth;
+use App\Support\ClubHelper;
 
 class WorkplanController extends Controller
 {
     public function index(Request $request)
     {
         $user = $request->user()->load([
-            'staff.class',
+            'staff.classes',
             'staffClass',
             'clubs',
             'church',
         ]);
-        $clubs = $user->clubs()
-            ->orderBy('club_name')
-            ->get(['clubs.id', 'club_name']);
-
+        $clubIds = ClubHelper::clubIdsForUser($user);
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
@@ -211,7 +210,7 @@ class WorkplanController extends Controller
     public function data(Request $request)
     {
         $user = $request->user();
-        $clubs = $this->allowedClubs($user);
+        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
@@ -242,7 +241,7 @@ class WorkplanController extends Controller
     public function pdf(Request $request)
     {
         $user = $request->user();
-        $clubs = $this->allowedClubs($user);
+        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
@@ -305,7 +304,7 @@ class WorkplanController extends Controller
     public function ics(Request $request)
     {
         $user = $request->user();
-        $clubs = $this->allowedClubs($user);
+        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
@@ -372,7 +371,7 @@ class WorkplanController extends Controller
     public function classPlansPdf(Request $request)
     {
         $user = $request->user();
-        $clubs = $this->allowedClubs($user);
+        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
@@ -380,8 +379,8 @@ class WorkplanController extends Controller
 
         $classId = $request->input('class_id');
         if ($user->profile_type === 'club_personal' && !$classId) {
-            $staff = Staff::where('user_id', $user->id)->first();
-            $classId = $staff?->assigned_class;
+            $staff = Staff::where('user_id', $user->id)->with('classes')->first();
+            $classId = $staff?->classes?->first()?->id;
         }
 
         $workplan = $this->getWorkplanForUser($user, $selectedClubId, false);

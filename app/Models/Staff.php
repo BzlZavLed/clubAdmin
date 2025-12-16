@@ -25,8 +25,17 @@ class Staff extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function class()
+    /**
+     * Classes this staff member is assigned to (many-to-many).
+     */
+    public function classes()
     {
-        return $this->belongsTo(ClubClass::class, 'assigned_class');
+        return $this->belongsToMany(ClubClass::class, 'class_staff', 'staff_id', 'club_class_id');
+    }
+
+    // Backward alias for legacy usage
+    public function assignedClasses()
+    {
+        return $this->classes();
     }
 }

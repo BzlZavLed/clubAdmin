@@ -312,8 +312,14 @@ const fetchMembers = async (clubId) => {
 const fetchClubs = async () => {
     try {
         const data = await fetchClubsByChurchId(user.value.church_id)
-        clubs.value = [...data]
-        hasClub.value = data.length > 0
+        const targetClubId = user.value?.club_id ? String(user.value.club_id) : null
+        const filtered = targetClubId ? data.filter(c => String(c.id) === targetClubId) : data
+        clubs.value = [...filtered]
+        hasClub.value = filtered.length > 0
+        if (!conceptClubId.value && filtered.length) {
+            conceptClubId.value = filtered[0].id
+            pcForm.club_id = filtered[0].id
+        }
         showToast('Clubs fetched successfully!')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
@@ -366,9 +372,8 @@ onMounted(async () => {
     // Optional: auto-select first club
     if (!conceptClubId.value && clubs.value.length) {
         conceptClubId.value = clubs.value[0].id
-    } else {
-        await loadPaymentConcepts()
     }
+    await loadPaymentConcepts()
     ensureSingleScope()
 })
 

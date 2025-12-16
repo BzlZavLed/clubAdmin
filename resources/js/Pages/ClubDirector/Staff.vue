@@ -18,12 +18,16 @@ import {
     fetchClubsByUserId,
     fetchStaffByClubId,
     createStaffUser,
+    approveStaff,
+    rejectStaff,
     updateStaffStatus,
     updateUserStatus,
     downloadStaffZip,
     fetchClubClasses,
     updateStaffAssignedClass,
-    linkStaffToClubUser
+    linkStaffToClubUser,
+    fetchTempStaffPathfinder,
+    createTempStaffPathfinder
 } from '@/Services/api'
 import axios from 'axios'
 import { usePage } from '@inertiajs/vue3';
@@ -44,10 +48,19 @@ const showPasswordModal = ref(false)
 const selectedClub = ref(null)
 const clubs = ref([])
 const staff = ref([])
+const pendingStaff = ref([])
+const tempStaff = ref([])
+const tempStaffForm = ref({
+    club_id: '',
+    staff_name: '',
+    staff_dob: '',
+    staff_age: '',
+    staff_email: '',
+    staff_phone: '',
+})
 const clubClasses = ref([])
 const sub_roles = ref([])
 const pendingUsers = ref([])
-const pendingModalOpen = ref(false)
 const createStaffModalVisible = ref(false)
 const staffToEdit = ref(null)
 const selectedUserForStaff = ref(null)
@@ -68,8 +81,21 @@ const createStaffMap = computed(() => {
 })
 
 // ✅ Filtered lists
+const userClubId = computed(() => user.value?.club_id || null)
+
 const filteredUsers = computed(() =>
-    sub_roles.value.filter(user => user.status === (activeTab.value === 'active' ? 'active' : 'deleted'))
+    sub_roles.value.filter(user => {
+        if (activeTab.value === 'pending') return false
+        const targetStatus = activeTab.value === 'active' ? 'active' : 'deleted'
+        return user.status === targetStatus && (!userClubId.value || String(user.club_id) === String(userClubId.value))
+    })
+)
+
+const filteredPendingUsers = computed(() =>
+    pendingUsers.value.filter(u => !userClubId.value || String(u.club_id) === String(userClubId.value))
+)
+const filteredPendingStaff = computed(() =>
+    pendingStaff.value.filter(u => !userClubId.value || String(u.club_id) === String(userClubId.value))
 )
 
 const filteredStaff = computed(() =>
@@ -122,8 +148,14 @@ const fetchStaff = async (clubId, churchId = null) => {
         staff.value = data.staff
         sub_roles.value = data.sub_role_users
         pendingUsers.value = data.pending_users || []
+        pendingStaff.value = data.pending_staff || []
         clubUserIds.value = new Set(data.club_user_ids || [])
         fetchClasses(clubId)
+        if (selectedClub.value?.club_type === 'pathfinders') {
+            await loadTempStaff(clubId)
+        } else {
+            tempStaff.value = []
+        }
         showToast('Staff loaded')
     } catch (error) {
         console.error('Failed to fetch staff:', error)
@@ -335,10 +367,83 @@ onMounted(fetchClubs)
                 <button v-if="selectedClub && selectedClub.club_type === 'adventurers'"
                     class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700" @click="openStaffForm(user)">
                     Create Staff</button>
+                <p v-else-if="selectedClub" class="text-sm text-gray-600">
+                    Staff module is currently available for Adventurers clubs only.
+                </p>
 
             </div>
 
-            <div v-if="selectedClub && selectedClub.club_type === 'adventurers'" class="max-w-5xl mx-auto">
+            <div v-if="selectedClub" class="max-w-5xl mx-auto">
+                <div v-if="selectedClub.club_type === 'pathfinders'" class="mb-6 border rounded p-4 bg-amber-50">
+                    <h2 class="font-semibold text-amber-800 mb-2">Temporary Pathfinder Staff</h2>
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Name</label>
+                            <input v-model="tempStaffForm.staff_name" type="text" class="w-full border rounded p-2" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">DOB</label>
+                            <input v-model="tempStaffForm.staff_dob" type="date" class="w-full border rounded p-2" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Age</label>
+                            <input v-model="tempStaffForm.staff_age" type="number" min="0" class="w-full border rounded p-2" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Email</label>
+                            <input v-model="tempStaffForm.staff_email" type="email" class="w-full border rounded p-2" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Phone</label>
+                            <input v-model="tempStaffForm.staff_phone" type="text" class="w-full border rounded p-2" />
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button @click="saveTempStaff" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save temp staff</button>
+                    </div>
+
+                    <div class="mt-4 overflow-x-auto">
+                        <table class="min-w-full text-sm border">
+                            <thead class="bg-amber-100">
+                                <tr>
+                                    <th class="p-2 text-left">Name</th>
+                                    <th class="p-2 text-left">DOB</th>
+                                    <th class="p-2 text-left">Age</th>
+                                    <th class="p-2 text-left">Email</th>
+                                    <th class="p-2 text-left">Phone</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-if="!tempStaff.length">
+                                    <td colspan="5" class="p-3 text-center text-gray-500">No temp staff</td>
+                                </tr>
+                                <tr v-for="ts in tempStaff" :key="ts.id" class="border-t">
+                                    <td class="p-2">{{ ts.staff_name }}</td>
+                                    <td class="p-2">{{ ts.staff_dob || '—' }}</td>
+                                    <td class="p-2">{{ ts.staff_age || '—' }}</td>
+                                    <td class="p-2">{{ ts.staff_email || '—' }}</td>
+                                    <td class="p-2">{{ ts.staff_phone || '—' }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div v-if="filteredPendingStaff.length" class="mb-6 border rounded p-4 bg-amber-50">
+                    <h2 class="font-semibold text-amber-800 mb-2">Pending staff approvals</h2>
+                    <div class="space-y-2">
+                        <div v-for="person in filteredPendingStaff" :key="person.id" class="flex items-center justify-between bg-white border rounded px-3 py-2">
+                            <div>
+                                <div class="font-medium text-gray-900">{{ person.name || 'Unnamed' }}</div>
+                                <div class="text-sm text-gray-600">{{ person.email || 'No email' }}</div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="approvePendingStaff(person)" class="px-3 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700">Approve</button>
+                                <button @click="rejectPendingStaff(person)" class="px-3 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700">Reject</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="mb-4 flex space-x-4 border-b pb-2">
                     <button @click="activeStaffTab = 'active'"
@@ -397,7 +502,7 @@ onMounted(fetchClubs)
                                         @change="() => toggleSelectStaff(person.id)" />
                                 </td>
                                 <td class="p-2 text-xs">{{ person.name }}</td>
-                                <td class="p-2 text-xs">{{ person.dob.slice(0, 10) }}</td>
+                                <td class="p-2 text-xs">{{ person.dob ? person.dob.slice(0, 10) : '—' }}</td>
                                 <td class="p-2 text-xs">{{ person.address }}</td>
                                 <!-- <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td> -->
                                 <td class="p-2 text-xs">{{ person.cell_phone }}</td>
@@ -567,82 +672,107 @@ onMounted(fetchClubs)
                             :class="activeTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
                             Inactive Accounts
                         </button>
+                        <button v-if="filteredPendingUsers.length"
+                            @click="activeTab = 'pending'"
+                            :class="activeTab === 'pending' ? 'font-bold border-b-2 border-amber-600' : 'text-gray-500'">
+                            Pending Requests
+                        </button>
                     </div>
 
-                    <table class="w-full text-sm border rounded overflow-hidden">
-                        <thead class="bg-gray-100">
-                            <tr>
-                                <th class="p-2 text-left">Name</th>
-                                <th class="p-2 text-left">Email</th>
-                                <th class="p-2 text-left">Role</th>
-                                <th class="p-2 text-left">Sub Role</th>
-                                <th class="p-2 text-left">Church</th>
-                                <th class="p-2 text-left">Status</th>
-                                <th class="p-2 text-left">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="user in filteredUsers" :key="user.id" class="border-t">
-                                <td class="p-2 text-xs">{{ user.name }}</td>
-                                <td class="p-2 text-xs">{{ user.email }}</td>
-                                <td class="p-2 text-xs">{{ user.profile_type }}</td>
+                    <template v-if="activeTab !== 'pending'">
+                        <table class="w-full text-sm border rounded overflow-hidden">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="p-2 text-left">Name</th>
+                                    <th class="p-2 text-left">Email</th>
+                                    <th class="p-2 text-left">Role</th>
+                                    <th class="p-2 text-left">Sub Role</th>
+                                    <th class="p-2 text-left">Church</th>
+                                    <th class="p-2 text-left">Status</th>
+                                    <th class="p-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="user in filteredUsers" :key="user.id" class="border-t">
+                                    <td class="p-2 text-xs">{{ user.name }}</td>
+                                    <td class="p-2 text-xs">{{ user.email }}</td>
+                                    <td class="p-2 text-xs">{{ user.profile_type }}</td>
 
 
-                                <td class="p-2 capitalize text-xs">
-                                    <select id="sub_role" class="border p-1 rounded text-xs" v-model="user.sub_role">
-                                        <option value="">-- Select Sub Role --</option>
-                                        <option v-for="role in subRoles" :key="role.id" :value="role.key">
-                                            {{ role.label }}
-                                        </option>
-                                    </select>
-                                </td>
+                                    <td class="p-2 capitalize text-xs">
+                                        <select id="sub_role" class="border p-1 rounded text-xs" v-model="user.sub_role">
+                                            <option value="">-- Select Sub Role --</option>
+                                            <option v-for="role in subRoles" :key="role.id" :value="role.key">
+                                                {{ role.label }}
+                                            </option>
+                                        </select>
+                                    </td>
 
 
-                                <!-- <td class="p-2 capitalize text-xs">{{ user.sub_role }}</td> -->
-                                <td class="p-2 text-xs">{{ user.church_name }}</td>
-                                <td class="p-2 text-xs">{{ user.status }}</td>
-                                <td class="p-2 text-xs">
-                                    <template v-if="user.status === 'active'">
-                                        <div class="flex items-center space-x-2">
-                                            <button @click="changePassword(user)"class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
-                                                Change Password
-                                            </button>
+                                    <!-- <td class="p-2 capitalize text-xs">{{ user.sub_role }}</td> -->
+                                    <td class="p-2 text-xs">{{ user.church_name }}</td>
+                                    <td class="p-2 text-xs">{{ user.status }}</td>
+                                    <td class="p-2 text-xs">
+                                        <template v-if="user.status === 'active'">
+                                            <div class="flex items-center space-x-2">
+                                                <button @click="changePassword(user)"class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                                                    Change Password
+                                                </button>
 
-                                            <button @click="updateStaffUserAccount(user, 301)"
-                                                class="text-red-600 hover:underline" title="Delete record">
-                                                <TrashIcon class="w-4 h-4 inline" />
-                                            </button>
+                                                <button @click="updateStaffUserAccount(user, 301)"
+                                                    class="text-red-600 hover:underline" title="Delete record">
+                                                    <TrashIcon class="w-4 h-4 inline" />
+                                                </button>
 
-                                            <button v-if="createStaffMap[user.id]"
+                                            <button v-if="createStaffMap[user.id] && selectedClub?.club_type === 'adventurers'"
                                                 class="text-green-600 hover:underline" @click="openStaffForm(user)"
                                                 title="Click to add user as staff">
                                                 <UserPlusIcon class="w-5 h-5 text-green-600" />
                                             </button>
-                                        </div>
-                                    </template>
-                                    <template v-else-if="user.status !== 'active'">
-                                        <button @click="updateStaffUserAccount(user, 423)"
-                                            class="text-blue-600 hover:underline">
-                                            Reactivate Account
-                                        </button>
-                                    </template>
-                                    <template v-else>
-                                        <span class="text-gray-400 italic">No actions</span>
-                                    </template>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                            </div>
+                                        </template>
+                                        <template v-else-if="user.status !== 'active'">
+                                            <button @click="updateStaffUserAccount(user, 423)"
+                                                class="text-blue-600 hover:underline">
+                                                Reactivate Account
+                                            </button>
+                                        </template>
+                                        <template v-else>
+                                            <span class="text-gray-400 italic">No actions</span>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </template>
+                    <template v-else>
+                        <table class="w-full text-sm border rounded overflow-hidden">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="p-2 text-left">Name</th>
+                                    <th class="p-2 text-left">Email</th>
+                                    <th class="p-2 text-left">Role</th>
+                                    <th class="p-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="u in filteredPendingUsers" :key="u.id" class="border-t">
+                                    <td class="p-2 text-xs">{{ u.name }}</td>
+                                    <td class="p-2 text-xs">{{ u.email }}</td>
+                                    <td class="p-2 text-xs capitalize">{{ u.profile_type.replace('_',' ') }}</td>
+                                    <td class="p-2 text-xs space-x-2">
+                                        <button class="text-green-700" @click="approvePending(u.id)">Approve</button>
+                                        <button class="text-red-600" @click="rejectPending(u.id)">Reject</button>
+                                    </td>
+                                </tr>
+                                <tr v-if="filteredPendingUsers.length === 0">
+                                    <td colspan="4" class="p-3 text-center text-gray-500">No pending requests.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </template>
                 </div>
 
-                <div class="mt-8 max-w-5xl mx-auto">
-                    <div class="flex items-center justify-between">
-                        <h3 class="text-lg font-semibold">Pending user requests</h3>
-                        <button class="px-3 py-2 bg-blue-600 text-white rounded text-sm" type="button" @click="pendingModalOpen = true">
-                            View requests
-                        </button>
-                    </div>
-                </div>
             </div>
         </div>
         <UpdatePasswordModal
@@ -657,45 +787,59 @@ onMounted(fetchClubs)
             :club-classes="clubClasses" :editing-staff="staffToEdit" @close="closeModal"
             @submitted="fetchStaff(selectedClub.id)" />
 
-        <!-- Pending modal -->
-        <div v-if="pendingModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div class="bg-white rounded-lg shadow-lg max-w-2xl w-full p-5 space-y-4">
-                <div class="flex items-start justify-between">
-                    <div>
-                        <h4 class="text-lg font-semibold">Pending user requests</h4>
-                        <p class="text-sm text-gray-600">Awaiting your approval</p>
-                    </div>
-                    <button class="text-gray-500" @click="pendingModalOpen = false">✕</button>
-                </div>
-                <table class="w-full text-sm border rounded overflow-hidden">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="p-2 text-left">Name</th>
-                            <th class="p-2 text-left">Email</th>
-                            <th class="p-2 text-left">Role</th>
-                            <th class="p-2 text-left">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="u in pendingUsers" :key="u.id" class="border-t">
-                            <td class="p-2 text-xs">{{ u.name }}</td>
-                            <td class="p-2 text-xs">{{ u.email }}</td>
-                            <td class="p-2 text-xs capitalize">{{ u.profile_type.replace('_',' ') }}</td>
-                            <td class="p-2 text-xs space-x-2">
-                                <button class="text-green-700" @click="approvePending(u.id)">Approve</button>
-                                <button class="text-red-600" @click="rejectPending(u.id)">Reject</button>
-                            </td>
-                        </tr>
-                        <tr v-if="pendingUsers.length === 0">
-                            <td colspan="4" class="p-3 text-center text-gray-500">No pending requests.</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div class="flex justify-end">
-                    <button class="px-3 py-2 border rounded" @click="pendingModalOpen = false">Close</button>
-                </div>
-            </div>
-        </div>
-
     </PathfinderLayout>
 </template>
+const approvePendingStaff = async (staffRow) => {
+    try {
+        await approveStaff(staffRow.id)
+        showToast('Staff approved')
+        fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (err) {
+        console.error('Approve staff failed', err)
+        showToast('Failed to approve staff', 'error')
+    }
+}
+
+const rejectPendingStaff = async (staffRow) => {
+    try {
+        await rejectStaff(staffRow.id)
+        showToast('Staff rejected')
+        fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (err) {
+        console.error('Reject staff failed', err)
+        showToast('Failed to reject staff', 'error')
+    }
+}
+
+const loadTempStaff = async (clubId) => {
+    try {
+        tempStaff.value = await fetchTempStaffPathfinder(clubId)
+    } catch (err) {
+        console.error('Failed to load temp staff', err)
+        tempStaff.value = []
+    }
+}
+
+const saveTempStaff = async () => {
+    try {
+        tempStaffForm.value.club_id = selectedClub.value?.id || ''
+        if (!tempStaffForm.value.club_id) {
+            showToast('Select a club first', 'error')
+            return
+        }
+        await createTempStaffPathfinder(tempStaffForm.value)
+        showToast('Temp staff saved', 'success')
+        await loadTempStaff(tempStaffForm.value.club_id)
+        tempStaffForm.value = {
+            club_id: selectedClub.value?.id || '',
+            staff_name: '',
+            staff_dob: '',
+            staff_age: '',
+            staff_email: '',
+            staff_phone: '',
+        }
+    } catch (err) {
+        console.error('Failed to save temp staff', err)
+        showToast('Failed to save temp staff', 'error')
+    }
+}

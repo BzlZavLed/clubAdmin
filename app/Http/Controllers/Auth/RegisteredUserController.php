@@ -12,6 +12,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use App\Providers\RouteServiceProvider;
 use App\Models\Church;
+use App\Models\Club;
 use App\Models\ChurchInviteCode;
 use Illuminate\Support\Facades\DB;
 class RegisteredUserController extends Controller
@@ -58,7 +59,27 @@ class RegisteredUserController extends Controller
             'sub_role' => ['nullable', 'string'],
             'church_id' => 'required|exists:churches,id',
             'church_name' => 'required|string|max:255',
-            'club_id' => ['nullable', 'string'],
+            'club_id' => [
+                'nullable',
+                function ($attribute, $value, $fail) use ($request) {
+                    $isDirector = $request->input('profile_type') === 'club_director';
+                    if (!$isDirector && ($value === null || $value === 'new')) {
+                        return $fail('Please select an existing club.');
+                    }
+                    if ($value === null || $value === 'new') {
+                        return;
+                    }
+                    if (!is_numeric($value)) {
+                        return $fail('The club id must be an integer.');
+                    }
+                    $exists = Club::where('id', $value)
+                        ->where('church_id', $request->input('church_id'))
+                        ->exists();
+                    if (!$exists) {
+                        return $fail('Selected club is not valid for this church.');
+                    }
+                },
+            ],
             'invite_code' => ['required', 'string'],
         ]);
 
@@ -77,13 +98,7 @@ class RegisteredUserController extends Controller
         $clubIdInput = $request->input('club_id');
         $clubId = null;
         if ($clubIdInput && $clubIdInput !== 'new') {
-            $clubExists = \App\Models\Club::where('id', $clubIdInput)
-                ->where('church_id', $validated['church_id'])
-                ->exists();
-            if (!$clubExists) {
-                return back()->withErrors(['club_id' => 'Selected club is not valid for this church.'])->withInput();
-            }
-            $clubId = $clubIdInput;
+            $clubId = (int) $clubIdInput;
         }
 
         $status = $validated['profile_type'] === 'club_director' ? 'active' : 'pending';
@@ -99,6 +114,13 @@ class RegisteredUserController extends Controller
             'club_id' => $clubId,
             'status' => $status,
         ]);
+
+        if ($clubId) {
+            DB::table('club_user')->updateOrInsert(
+                ['user_id' => $user->id, 'club_id' => $clubId],
+                ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+            );
+        }
 
         // decrement uses_left if applicable
         if (!is_null($invite->uses_left) && $invite->uses_left > 0) {

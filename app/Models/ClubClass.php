@@ -25,10 +25,10 @@ class ClubClass extends Model
     }
 
     /**
-     * Relationship: ClubClass is assigned to a StaffAdventurer
+     * Staff assigned to this class (many-to-many).
      */
-    public function assignedStaff()
+    public function staff()
     {
-        return $this->belongsTo(StaffAdventurer::class, 'assigned_staff_id');
+        return $this->belongsToMany(Staff::class, 'class_staff', 'club_class_id', 'staff_id');
     }
 }

@@ -10,8 +10,9 @@ use Illuminate\Support\Str;
 use App\Models\StaffAdventurer;
 use App\Services\DocumentExportService;
 use App\Models\Member;
-use App\Models\Staff;
 use App\Models\ClubClass;
+use App\Models\Staff;
+use App\Support\ClubHelper;
 
 use DB;
 use Auth;
@@ -124,19 +125,8 @@ class MemberAdventurerController extends Controller
 
     public function byClub($id, Request $request)
     {
-        $userId = Auth::id();
-
-        $isLinked = DB::table('club_user')
-            ->where('club_id', $id)
-            ->where('user_id', $userId)
-            ->where('status', 'active')
-            ->exists();
-
-        if (!$isLinked) {
-            abort(403, 'You do not have access to this club.');
-        }
-
-        $club = Club::findOrFail($id);
+        $user = Auth::user();
+        $club = ClubHelper::clubForUser($user, $id);
 
         $memberIdMap = \App\Models\Member::where('club_id', $id)
             ->pluck('id', 'id_data'); // [member_adventurer_id => member_id]
@@ -250,15 +240,9 @@ class MemberAdventurerController extends Controller
             ->first();
         if ($member) {
             $classId = $request->club_class_id;
-            $clubClass = ClubClass::find($classId);
-            $legacyStaffId = $clubClass?->assigned_staff_id;
-            $newStaffId = null;
-            if ($legacyStaffId) {
-                $newStaffId = Staff::where('type', 'adventurers')
-                    ->where('id_data', $legacyStaffId)
-                    ->value('id');
-            }
             $member->class_id = $classId;
+            // With many-to-many staff, pick first staff for reference (optional)
+            $newStaffId = $clubClass?->staff()->pluck('staff.id')->first();
             $member->assigned_staff_id = $newStaffId;
             $member->save();
         }

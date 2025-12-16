@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
 use App\Models\PayToOption;
+use App\Support\ClubHelper;
 class ClubController extends Controller
 {
     use AuthorizesRequests;
@@ -105,7 +106,9 @@ class ClubController extends Controller
 
     public function getByUser(User $user)
     {
-        $clubs = Club::where('user_id', $user->id)
+        $clubIds = ClubHelper::clubIdsForUser($user);
+
+        $clubs = Club::whereIn('id', $clubIds)
             ->with(['clubClasses', 'staffAdventurers'])
             ->orderBy('club_name')
             ->get();

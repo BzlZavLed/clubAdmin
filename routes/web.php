@@ -128,6 +128,13 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     Route::get('/club-director/payments', [ClubPaymentController::class, 'directorIndex'])
         ->name('club.director.payments');
+    Route::post('/club-director/staff/{staff}/approve', [\App\Http\Controllers\StaffApprovalController::class, 'approve'])->name('staff.approve');
+    Route::post('/club-director/staff/{staff}/reject', [\App\Http\Controllers\StaffApprovalController::class, 'reject'])->name('staff.reject');
+    // Pathfinder temp records
+    Route::get('/clubs/{club}/temp-members', [\App\Http\Controllers\TempPathfinderController::class, 'listMembers'])->name('clubs.temp-members.index');
+    Route::post('/clubs/{club}/temp-members', [\App\Http\Controllers\TempPathfinderController::class, 'storeMember'])->name('clubs.temp-members.store');
+    Route::get('/clubs/{club}/temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'listStaff'])->name('clubs.temp-staff.index');
+    Route::post('/clubs/{club}/temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'storeStaff'])->name('clubs.temp-staff.store');
     Route::get('/club-director/expenses', [ExpenseController::class, 'index'])
         ->name('club.director.expenses');
     Route::post('/club-director/expenses', [ExpenseController::class, 'store'])

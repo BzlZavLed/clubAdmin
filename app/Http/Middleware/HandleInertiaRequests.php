@@ -30,11 +30,11 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request)
     {
-        $user = $request->user()?->load(['church', 'clubs', 'staff.class', 'staff.club']);
+        $user = $request->user()?->load(['church', 'clubs', 'staff.classes', 'staff.club']);
         $staffRecord = $user?->staff;
         $assignedClasses = collect();
-        if ($staffRecord && $staffRecord->class) {
-            $assignedClasses = collect([$staffRecord->class->class_name]);
+        if ($staffRecord && $staffRecord->classes && $staffRecord->classes->count()) {
+            $assignedClasses = $staffRecord->classes->pluck('class_name');
         }
 
         return array_merge(parent::share($request), [
@@ -51,8 +51,8 @@ class HandleInertiaRequests extends Middleware
                         'pastor_name' => optional($user->church)->pastor_name,
                         'conference_name' => optional($user->church)->conference,
                         'assigned_classes' => $assignedClasses->values(),
-                        'assigned_class_id' => $staffRecord?->assigned_class,
-                        'assigned_class_name' => optional($staffRecord?->class)->class_name,
+                        'assigned_class_id' => $staffRecord?->classes?->first()?->id,
+                        'assigned_class_name' => $staffRecord?->classes?->first()?->class_name,
                         'clubs' => $user->clubs->map(fn($club) => [
                             'id' => $club->id,
                             'club_name' => $club->club_name,
@@ -63,8 +63,8 @@ class HandleInertiaRequests extends Middleware
                             'id' => $staffRecord->id,
                             'club_id' => $staffRecord->club_id,
                             'club_name' => optional($staffRecord->club)->club_name,
-                            'assigned_class_id' => $staffRecord->assigned_class,
-                            'assigned_class_name' => optional($staffRecord->class)->class_name,
+                            'assigned_class_id' => $staffRecord->classes?->first()?->id,
+                            'assigned_class_name' => $staffRecord->classes?->first()?->class_name,
                             'status' => $staffRecord->status,
                         ] : null,
                     ]
