@@ -534,7 +534,6 @@ onMounted(fetchClubs);
                                 <th class="border-b px-4 py-2">Club</th>
                                 <th class="border-b px-4 py-2">Order</th>
                                 <th class="border-b px-4 py-2">Name</th>
-                                <th class="border-b px-4 py-2">Assigned Staff</th>
                                 <th class="border-b px-4 py-2">Actions</th>
                             </tr>
                         </thead>
@@ -547,7 +546,6 @@ onMounted(fetchClubs);
                                         <td class="px-4 py-2">{{ club.club_name }}</td>
                                         <td class="px-4 py-2">{{ cls.class_order }}</td>
                                         <td class="px-4 py-2">{{ cls.class_name }}</td>
-                                        <td class="px-4 py-2">{{ getStaffName(cls) }}</td>
                                         <td class="p-2 space-x-2">
                                             <button @click="editCls(cls)"
                                                 class="text-blue-600 hover:underline">Edit</button>

@@ -50,6 +50,8 @@ const clubs = ref([])
 const staff = ref([])
 const pendingStaff = ref([])
 const tempStaff = ref([])
+const assignedClassChanges = ref({})
+const isUpdatingClass = ref({})
 const tempStaffForm = ref({
     club_id: '',
     staff_name: '',
@@ -101,6 +103,20 @@ const filteredPendingStaff = computed(() =>
 const filteredStaff = computed(() =>
     staff.value.filter(person => person.status === activeStaffTab.value)
 )
+const availableClasses = computed(() => {
+    if (!selectedClub.value) return []
+    const cls = clubClasses.value.filter(c => c.club_id === selectedClub.value.id || !c.club_id)
+    return cls
+})
+
+const classDisplay = (person) => {
+    if (person.class_names?.length) return person.class_names.join(', ')
+    if (person.assigned_class) {
+        const match = clubClasses.value.find(c => String(c.id) === String(person.assigned_class))
+        if (match) return match.class_name
+    }
+    return '—'
+}
 
 
 const openEditStaffModal = (staff) => {
@@ -150,7 +166,16 @@ const fetchStaff = async (clubId, churchId = null) => {
         pendingUsers.value = data.pending_users || []
         pendingStaff.value = data.pending_staff || []
         clubUserIds.value = new Set(data.club_user_ids || [])
-        fetchClasses(clubId)
+        await fetchClasses(clubId)
+        // hydrate current class selections
+        staff.value.forEach(person => {
+            if (person.assigned_class) {
+                assignedClassChanges.value[person.id] = person.assigned_class
+            } else if (person.class_names?.length === 1) {
+                const match = clubClasses.value.find(c => c.class_name === person.class_names[0])
+                if (match) assignedClassChanges.value[person.id] = match.id
+            }
+        })
         if (selectedClub.value?.club_type === 'pathfinders') {
             await loadTempStaff(clubId)
         } else {
@@ -160,6 +185,21 @@ const fetchStaff = async (clubId, churchId = null) => {
     } catch (error) {
         console.error('Failed to fetch staff:', error)
         showToast('Error loading staff', 'error')
+    }
+}
+const saveAssignedClass = async (person) => {
+    const newClassId = assignedClassChanges.value[person.id]
+    if (!newClassId) return
+    try {
+        isUpdatingClass.value[person.id] = true
+        await updateStaffAssignedClass(person.id, newClassId)
+        showToast('Class updated!')
+        await fetchStaff(person.club_id)
+    } catch (err) {
+        console.error('Failed to update class', err)
+        showToast('Error updating class', 'error')
+    } finally {
+        isUpdatingClass.value[person.id] = false
     }
 }
 
@@ -290,6 +330,7 @@ const rejectPending = async (userId) => {
 }
 
 
+
 // ✅ Selection helpers
 const toggleSelectStaff = (id) => {
     selectedStaffIds.value.has(id)
@@ -311,39 +352,66 @@ const changePassword = (user) => {
     showPasswordModal.value = true
     changePasswordUserId.value = user.id
 }
-const assignedClassChanges = ref({})
-const isUpdatingClass = ref({})
-
-const saveAssignedClass = async (staff) => {
-    const newClassId = assignedClassChanges.value[staff.id]
-    if (!newClassId || newClassId === staff.assigned_classes?.[0]?.id) return
-
-    try {
-        isUpdatingClass.value[staff.id] = true
-        await updateStaffAssignedClass(staff.id, newClassId)
-        showToast('Class updated!')
-        await fetchStaff(staff.club_id)
-    } catch (err) {
-        console.error('Failed to update class', err)
-        showToast('Error updating class', 'error')
-    } finally {
-        isUpdatingClass.value[staff.id] = false
-    }
-}
-watchEffect(() => {
-    staff.value.forEach(person => {
-        const assignedId = parseInt(person.assigned_classes[0]?.id)
-        if (!isNaN(assignedId)) {
-            assignedClassChanges.value[person.id] = assignedId
-        } else if (typeof person.assigned_class === 'string') {
-            const match = clubClasses.value.find(cls => cls.class_name === person.assigned_class)
-            if (match) assignedClassChanges.value[person.id] = match.id
-        }
-    })
-})
 const closeModal = () => {
     createStaffModalVisible.value = false
     staffToEdit.value = null
+}
+const approvePendingStaff = async (staffRow) => {
+    try {
+        await approveStaff(staffRow.id)
+        showToast('Staff approved')
+        fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (err) {
+        console.error('Approve staff failed', err)
+        showToast('Failed to approve staff', 'error')
+    }
+}
+
+const rejectPendingStaff = async (staffRow) => {
+    try {
+        await rejectStaff(staffRow.id)
+        showToast('Staff rejected')
+        fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (err) {
+        console.error('Reject staff failed', err)
+        showToast('Failed to reject staff', 'error')
+    }
+}
+
+const loadTempStaff = async (clubId) => {
+    try {
+        tempStaff.value = await fetchTempStaffPathfinder(clubId)
+        console.log('Loaded temp staff:', tempStaff.value)
+    } catch (err) {
+        console.error('Failed to load temp staff', err)
+        tempStaff.value = []
+    }
+}
+
+const saveTempStaff = async () => {
+    try {
+        tempStaffForm.value.club_id = selectedClub.value?.id || ''
+        if (!tempStaffForm.value.club_id) {
+            showToast('Select a club first', 'error')
+            return
+        }
+        await createTempStaffPathfinder(tempStaffForm.value)
+        showToast('Temp staff saved', 'success')
+        await loadTempStaff(tempStaffForm.value.club_id)
+        tempStaffForm.value = {
+            club_id: selectedClub.value?.id || '',
+            staff_name: '',
+            staff_dob: '',
+            staff_age: '',
+            staff_email: '',
+            staff_phone: '',
+        }
+        // Refresh entire staff view to reflect new temp staff everywhere
+        await fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (err) {
+        console.error('Failed to save temp staff', err)
+        showToast('Failed to save temp staff', 'error')
+    }
 }
 
 onMounted(fetchClubs)
@@ -490,7 +558,7 @@ onMounted(fetchClubs)
                             <th class="p-2 text-left w-16">Email</th>
                             <th class="p-2 text-left">Status</th>
                             <th class="p-2 text-left">Actions</th>
-                            <th class="p-2 text-left">Assigned Class</th>
+                            <th class="p-2 text-left">Assigned Classes</th>
 
                         </tr>
                     </thead>
@@ -535,7 +603,10 @@ onMounted(fetchClubs)
                                 </button>
 
                                 <!-- Download Word Form -->
-                                <button @click="downloadWord(person.id)" class="text-blue-600"
+                                <button
+                                    v-if="person.type !== 'temp_pathfinder'"
+                                    @click="downloadWord(person.id)"
+                                    class="text-blue-600"
                                     title="Download Word form">
                                         <DocumentArrowDownIcon class="w-4 h-4 inline" />
                                     </button>
@@ -549,26 +620,33 @@ onMounted(fetchClubs)
                                         title="Reactivate staff">
                                         <ArrowPathIcon class="w-4 h-4 inline" />
                                     </button>
-                                    <button class="text-indigo-600 hover:underline" @click="openEditStaffModal(person)">
+                                    <button
+                                        v-if="person.type !== 'temp_pathfinder'"
+                                        class="text-indigo-600 hover:underline"
+                                        @click="openEditStaffModal(person)">
                                         <PencilIcon class="w-4 h-4 inline" />
                                     </button>
                                 </td>
-
-
-                                <td class="p-2">
-                                    <select v-model="assignedClassChanges[person.id]"
-                                        class="border p-1 rounded text-xs">
-                                        <option disabled value="">Select class</option>
-                                        <option v-for="cls in clubClasses" :key="cls.id" :value="cls.id">
-                                            {{ cls.class_name }}
-                                        </option>
-                                    </select>
-
-                                    <button @click="() => saveAssignedClass(person)"
-                                        :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
-                                        class="ml-2 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
-                                        {{ isUpdatingClass[person.id] ? 'Saving...' : 'Save' }}
-                                    </button>
+                                <td class="p-2 text-xs">
+                                    {{ classDisplay(person) }}
+                                    <div class="mt-1 flex items-center gap-2">
+                                        <select
+                                            v-model="assignedClassChanges[person.id]"
+                                            class="border p-1 rounded text-xs"
+                                        >
+                                            <option disabled value="">Select class</option>
+                                            <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
+                                                {{ cls.class_name }}
+                                            </option>
+                                        </select>
+                                        <button
+                                            @click="() => saveAssignedClass(person)"
+                                            :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
+                                            class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                                        >
+                                            {{ isUpdatingClass[person.id] ? 'Saving...' : 'Save' }}
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
 
@@ -789,57 +867,3 @@ onMounted(fetchClubs)
 
     </PathfinderLayout>
 </template>
-const approvePendingStaff = async (staffRow) => {
-    try {
-        await approveStaff(staffRow.id)
-        showToast('Staff approved')
-        fetchStaff(selectedClub.value.id, churchId.value)
-    } catch (err) {
-        console.error('Approve staff failed', err)
-        showToast('Failed to approve staff', 'error')
-    }
-}
-
-const rejectPendingStaff = async (staffRow) => {
-    try {
-        await rejectStaff(staffRow.id)
-        showToast('Staff rejected')
-        fetchStaff(selectedClub.value.id, churchId.value)
-    } catch (err) {
-        console.error('Reject staff failed', err)
-        showToast('Failed to reject staff', 'error')
-    }
-}
-
-const loadTempStaff = async (clubId) => {
-    try {
-        tempStaff.value = await fetchTempStaffPathfinder(clubId)
-    } catch (err) {
-        console.error('Failed to load temp staff', err)
-        tempStaff.value = []
-    }
-}
-
-const saveTempStaff = async () => {
-    try {
-        tempStaffForm.value.club_id = selectedClub.value?.id || ''
-        if (!tempStaffForm.value.club_id) {
-            showToast('Select a club first', 'error')
-            return
-        }
-        await createTempStaffPathfinder(tempStaffForm.value)
-        showToast('Temp staff saved', 'success')
-        await loadTempStaff(tempStaffForm.value.club_id)
-        tempStaffForm.value = {
-            club_id: selectedClub.value?.id || '',
-            staff_name: '',
-            staff_dob: '',
-            staff_age: '',
-            staff_email: '',
-            staff_phone: '',
-        }
-    } catch (err) {
-        console.error('Failed to save temp staff', err)
-        showToast('Failed to save temp staff', 'error')
-    }
-}

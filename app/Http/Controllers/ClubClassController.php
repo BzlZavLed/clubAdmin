@@ -24,28 +24,24 @@ class ClubClassController extends Controller
             'club_id' => 'required|exists:clubs,id',
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
-            'staff_ids' => 'array',
-            'staff_ids.*' => 'integer|exists:staff,id',
             'user_id' => 'nullable', // optional back-compat: add user to club
         ]);
 
-        $staffIds = $validated['staff_ids'] ?? [];
-        unset($validated['staff_ids']);
-
         $class = ClubClass::create($validated);
-        $class->staff()->sync($staffIds);
 
-        DB::table('club_user')->updateOrInsert(
-            [
-                'user_id' => $validated['user_id'],
-                'club_id' => $validated['club_id'],
-            ],
-            [
-                'status' => 'active',
-                'updated_at' => now(),
-                'created_at' => now(),
-            ]
-        );
+        if (!empty($validated['user_id'])) {
+            DB::table('club_user')->updateOrInsert(
+                [
+                    'user_id' => $validated['user_id'],
+                    'club_id' => $validated['club_id'],
+                ],
+                [
+                    'status' => 'active',
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ]
+            );
+        }
 
         session()->flash('success', 'Class created successfully.');
 
@@ -68,29 +64,25 @@ class ClubClassController extends Controller
             'club_id' => 'required|exists:clubs,id',
             'class_order' => 'required|integer',
             'class_name' => 'required|string|max:255',
-            'staff_ids' => 'array',
-            'staff_ids.*' => 'integer|exists:staff,id',
             'user_id' => 'nullable', // Ensure the user exists
 
         ]);
 
-        $staffIds = $validated['staff_ids'] ?? [];
-        unset($validated['staff_ids']);
-
         $class->update($validated);
-        $class->staff()->sync($staffIds);
 
-        DB::table('club_user')->updateOrInsert(
-            [
-                'user_id' => $validated['user_id'],
-                'club_id' => $validated['club_id'],
-            ],
-            [
-                'status' => 'active',
-                'updated_at' => now(),
-                'created_at' => now(), 
-            ]
-        );
+        if (!empty($validated['user_id'])) {
+            DB::table('club_user')->updateOrInsert(
+                [
+                    'user_id' => $validated['user_id'],
+                    'club_id' => $validated['club_id'],
+                ],
+                [
+                    'status' => 'active',
+                    'updated_at' => now(),
+                    'created_at' => now(), 
+                ]
+            );
+        }
 
         session()->flash('success', 'Class updated successfully.');
 

@@ -14,6 +14,7 @@ class TempStaffPathfinder extends Model
     protected $fillable = [
         'club_id',
         'staff_id',
+        'user_id',
         'staff_name',
         'staff_dob',
         'staff_age',

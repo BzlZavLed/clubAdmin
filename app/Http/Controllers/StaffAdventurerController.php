@@ -15,6 +15,7 @@ use App\Models\ClassMemberAdventurer; // Import the ClassMemberAdventurer model
 use App\Models\MemberAdventurer; // Import the MemberAdventurer model
 use App\Models\Staff;
 use App\Models\Club;
+use App\Models\TempStaffPathfinder;
 use Illuminate\Support\Facades\DB as FacadesDB;
 
 use Auth;
@@ -351,14 +352,24 @@ class StaffAdventurerController extends Controller
             ->with(['user:id,name,email', 'classes:id,class_name'])
             ->get()
             ->map(function ($s) {
+                $displayName = $s->user?->name;
+                if ($s->type === 'temp_pathfinder') {
+                    $tmp = \App\Models\TempStaffPathfinder::where('staff_id', $s->id)
+                        ->orWhere('user_id', $s->user_id)
+                        ->first();
+                    $displayName = $tmp?->staff_name ?? $displayName;
+                }
                 return [
                     'id' => $s->id,
-                    'name' => $s->user?->name,
+                    'type' => $s->type,
+                    'name' => $displayName,
                     'email' => $s->user?->email,
                     'club_id' => $s->club_id,
                     'status' => $s->status,
                     'class_names' => $s->classes->pluck('class_name')->values(),
                     'user_id' => $s->user_id,
+                    'id_data' => $s->id_data,
+                    'assigned_class' => $s->assigned_class,
                 ];
             });
 
@@ -404,9 +415,13 @@ class StaffAdventurerController extends Controller
             ->where('status', 'pending')
             ->get(['id', 'name', 'email', 'profile_type', 'church_id', 'club_id', 'status']);
 
+        $tempStaff = TempStaffPathfinder::where('club_id', $clubId)
+            ->get(['id', 'club_id', 'user_id', 'staff_name', 'staff_dob', 'staff_age', 'staff_email', 'staff_phone']);
+
         return response()->json([
             'staff' => $staffActive,
             'pending_staff' => $staffPending,
+            'temp_staff' => $tempStaff,
             'sub_role_users' => $subRoleUsers,
             'club_user_ids' => $clubUserIds,
             'pending_users' => $pendingUsers,
@@ -549,7 +564,7 @@ class StaffAdventurerController extends Controller
     public function updateStaffAccount(Request $request)
     {
         $validated = $request->validate([
-            'staff_id' => 'required|integer|exists:staff_adventurers,id',
+            'staff_id' => 'required|integer',
             'status_code' => 'required|integer|between:100,999'
         ]);
 
@@ -565,62 +580,103 @@ class StaffAdventurerController extends Controller
             ], 422);
         }
 
-        $staff = StaffAdventurer::find($validated['staff_id']);
-
-        if (!$staff) {
-            return response()->json([
-                'message' => 'Staff not found.',
-                'success' => false
-            ], 404);
-        }
-
-        if (auth()->user()->club_id !== $staff->club_id) {
-            return response()->json([
-                'message' => 'Unauthorized.',
-                'success' => false
-            ], 403);
-        }
-
         $newStatus = $statusMap[$validated['status_code']];
-        $staff->status = $newStatus;
-        $staff->save();
 
-        // Update user account with matching email if exists
-        $user = User::where('email', $staff->email)->first();
-        if ($user && $user->club_id === $staff->club_id) {
+        $staffAdv = StaffAdventurer::find($validated['staff_id']);
+        $staffModel = null;
+        $tempRow = null;
+
+        if ($staffAdv) {
+            // legacy/adventurer staff
+            if (auth()->user()->club_id !== $staffAdv->club_id) {
+                return response()->json(['message' => 'Unauthorized.', 'success' => false], 403);
+            }
+            $staffAdv->status = $newStatus;
+            $staffAdv->save();
+            $staffModel = Staff::where('club_id', $staffAdv->club_id)
+                ->where('id_data', $staffAdv->id)
+                ->first();
+            $user = User::where('email', $staffAdv->email)->first();
+        } else {
+            // staff table entry (incl. temp pathfinder)
+            $staffModel = Staff::find($validated['staff_id']);
+            if (!$staffModel) {
+                return response()->json(['message' => 'Staff not found.', 'success' => false], 404);
+            }
+            if (auth()->user()->club_id !== $staffModel->club_id) {
+                return response()->json(['message' => 'Unauthorized.', 'success' => false], 403);
+            }
+            $staffModel->status = $newStatus;
+            $staffModel->save();
+            $user = $staffModel->user_id ? User::find($staffModel->user_id) : null;
+            // If this is a temp pathfinder staff, try to fetch its temp row
+            if ($staffModel->type === 'temp_pathfinder') {
+                $tempRow = \App\Models\TempStaffPathfinder::where('staff_id', $staffModel->id)
+                    ->orWhere('user_id', $staffModel->user_id)
+                    ->first();
+            }
+        }
+
+        if ($user && $user->club_id === ($staffModel->club_id ?? $staffAdv->club_id ?? null)) {
             $user->status = $newStatus;
             $user->save();
+            DB::table('club_user')
+                ->where('user_id', $user->id)
+                ->where('club_id', $staffModel->club_id ?? $staffAdv->club_id)
+                ->update(['status' => $newStatus]);
+        }
+
+        // For temp pathfinder staff, remove the temp entry when deactivated
+        if ($newStatus === 'deleted' && $tempRow) {
+            $tempRow->delete();
         }
 
         return response()->json([
             'message' => 'Staff account marked as ' . $newStatus,
-            'staff_id' => $staff->id,
+            'staff_id' => $staffModel?->id ?? $staffAdv?->id,
             'status' => $newStatus,
             'success' => true
         ]);
     }
     public function updateAssignedClass(Request $request)
     {
-        $request->validate([
-            'staff_id' => 'required|exists:staff_adventurers,id',
+        $data = $request->validate([
+            'staff_id' => 'required|integer',
             'class_id' => 'required|exists:club_classes,id',
         ]);
 
-        $staff = StaffAdventurer::findOrFail($request->staff_id);
-        $clubType = Club::where('id', $staff->club_id)->value('club_type') ?? 'adventurers';
+        // Try staff table first (handles temp/pathfinder and normal staff)
+        $staff = Staff::find($data['staff_id']);
+        if ($staff) {
+            $staff->assigned_class = $data['class_id'];
+            $staff->save();
+            // Only one class per staff: replace pivot links
+            $staff->classes()->sync([$data['class_id']]);
 
-        Staff::updateOrCreate(
+            if ($staff->type === 'adventurers' && $staff->id_data) {
+                StaffAdventurer::where('id', $staff->id_data)->update(['assigned_class' => $data['class_id']]);
+            }
+            return response()->json(['message' => 'Assigned class updated']);
+        }
+
+        // Fallback legacy: staff_adventurer id
+        $staffAdv = StaffAdventurer::findOrFail($data['staff_id']);
+        $staffAdv->assigned_class = $data['class_id'];
+        $staffAdv->save();
+
+        $staffModel = Staff::updateOrCreate(
             [
-                'type' => $clubType,
-                'id_data' => $staff->id,
-                'club_id' => $staff->club_id,
+                'type' => Club::where('id', $staffAdv->club_id)->value('club_type') ?? 'adventurers',
+                'id_data' => $staffAdv->id,
+                'club_id' => $staffAdv->club_id,
             ],
             [
-                'assigned_class' => $request->class_id,
-                'user_id' => $staff->user_id ?? null,
-                'status' => 'active',
+                'assigned_class' => $data['class_id'],
+                'user_id' => $staffAdv->user_id ?? null,
+                'status' => $staffAdv->status ?? 'active',
             ]
         );
+        $staffModel->classes()->sync([$data['class_id']]);
 
         return response()->json(['message' => 'Assigned class updated']);
     }
