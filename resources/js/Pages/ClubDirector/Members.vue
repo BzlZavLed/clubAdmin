@@ -233,7 +233,8 @@ const handleBulkAction = async (action, type = null) => {
 const assignToClass = async (member) => {
     if (!member.assigned_class) return
     try {
-        await assignMemberToClass({ memberId: member.id, classId: member.assigned_class })
+        const memberId = member.member_id || member.id
+        await assignMemberToClass({ memberId, classId: member.assigned_class })
         showToast(`Assigned ${member.applicant_name} to class`, 'success')
         await fetchMembers(selectedClub.value.id)
     } catch (error) {
@@ -244,7 +245,8 @@ const assignToClass = async (member) => {
 
 const undoAssignment = async (member) => {
     try {
-        var resp = await undoClassAssignment(member.id)
+        const memberId = member.member_id || member.id
+        var resp = await undoClassAssignment(memberId)
         showToast(`Undid last assignment for ${member.applicant_name}`, 'success')
         await fetchMembers(selectedClub.value.id)
     } catch (error) {
@@ -284,6 +286,13 @@ const toggleRegistrationForm = async () => {
 }
 
 // Computed filters
+const displayAge = (age) => {
+    if (age === null || age === undefined) return '—'
+    const n = Number(age)
+    if (Number.isNaN(n) || n < 0) return '—'
+    return Math.floor(n)
+}
+
 const unassignedMembers = computed(() =>
     members.value.filter(member =>
         !member.class_assignments ||
@@ -355,7 +364,7 @@ onMounted(fetchClubs)
             </div>
 
             <!-- Pathfinder temp members -->
-            <div v-if="selectedClub && selectedClub.club_type === 'pathfinders'" class="mb-8 border rounded p-4 bg-amber-50">
+            <div v-if="selectedTab === 'members' && selectedClub && selectedClub.club_type === 'pathfinders'" class="mb-8 border rounded p-4 bg-amber-50">
                 <h2 class="font-semibold text-amber-800 mb-3">Temporary Pathfinder Members</h2>
                 <div class="grid md:grid-cols-2 gap-4">
                     <div>
@@ -417,7 +426,7 @@ onMounted(fetchClubs)
             </div>
 
             <!-- Tab 1: Members Table -->
-            <div v-if="selectedTab === 'members' && selectedClub && selectedClub.club_type === 'adventurers'">
+            <div v-if="selectedTab === 'members' && selectedClub">
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-4">
                         <label class="inline-flex items-center">
@@ -487,9 +496,9 @@ onMounted(fetchClubs)
                             <tr v-if="expandedRows.has(member.id)" class="bg-gray-50 border-t">
                                 <td colspan="6" class="p-4">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
-                                        <div><strong>Birthdate:</strong> {{ formatDate(member.birthdate) }}</div>
-                                        <div><strong>Age:</strong> {{ member.age }}</div>
-                                        <div><strong>Grade:</strong> {{ member.grade }}</div>
+                                        <div><strong>Birthdate:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
+                                        <div><strong>Age:</strong> {{ member.age ?? '—' }}</div>
+                                        <div><strong>Grade:</strong> {{ member.grade ?? '—' }}</div>
                                         <div><strong>Mailing Address:</strong> {{ member.mailing_address }}</div>
                                         <div><strong>Cell Number:</strong> {{ member.cell_number }}</div>
                                         <div><strong>Emergency Contact:</strong> {{ member.emergency_contact }}</div>
@@ -537,7 +546,7 @@ onMounted(fetchClubs)
                             <tbody>
                                 <tr v-for="member in unassignedMembers" :key="member.id">
                                     <td class="p-2 text-center">{{ member.applicant_name }}</td>
-                                    <td class="p-2 text-center">{{ member.age }}</td>
+                                    <td class="p-2 text-center">{{ displayAge(member.age) }}</td>
                                     <td class="p-2 text-center">
                                         <select v-model="member.assigned_class" class="border p-2 rounded">
                                             <option value="" disabled selected>Select class</option>
@@ -561,7 +570,7 @@ onMounted(fetchClubs)
                         <h3 class="text-md font-bold">
                             {{ clubClass.class_name }} (Order: {{ clubClass.class_order }})
                         </h3>
-                        <p class="text-sm text-gray-700 mb-2">
+                        <p class="text-sm text-gray-700 mb-2" v-if="selectedClub.club_type === 'adventurers'">
                             Assigned Staff: {{ clubClass.assigned_staff?.name }}
                         </p>
                         <div v-if="membersInClass(clubClass.id).length === 0" class="text-gray-600">
@@ -579,7 +588,7 @@ onMounted(fetchClubs)
                             <tbody>
                                 <tr v-for="member in membersInClass(clubClass.id)" :key="member.id">
                                     <td class="p-2 text-center">{{ member.applicant_name }}</td>
-                                    <td class="p-2 text-center">{{ member.age }}</td>
+                                    <td class="p-2 text-center">{{ displayAge(member.age) }}</td>
                                     <td class="p-2 text-center">
                                         <select v-model="member.assigned_class" class="border p-1 rounded">
                                             <option v-for="targetClass in classOptionsExcluding(clubClass.class_order)"

@@ -130,11 +130,6 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.payments');
     Route::post('/club-director/staff/{staff}/approve', [\App\Http\Controllers\StaffApprovalController::class, 'approve'])->name('staff.approve');
     Route::post('/club-director/staff/{staff}/reject', [\App\Http\Controllers\StaffApprovalController::class, 'reject'])->name('staff.reject');
-    // Pathfinder temp records
-    Route::get('/clubs/{club}/temp-members', [\App\Http\Controllers\TempPathfinderController::class, 'listMembers'])->name('clubs.temp-members.index');
-    Route::post('/clubs/{club}/temp-members', [\App\Http\Controllers\TempPathfinderController::class, 'storeMember'])->name('clubs.temp-members.store');
-    Route::get('/clubs/{club}/temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'listStaff'])->name('clubs.temp-staff.index');
-    Route::post('/clubs/{club}/temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'storeStaff'])->name('clubs.temp-staff.store');
     Route::get('/club-director/expenses', [ExpenseController::class, 'index'])
         ->name('club.director.expenses');
     Route::post('/club-director/expenses', [ExpenseController::class, 'store'])
@@ -262,6 +257,12 @@ Route::middleware(['auth'])->group(function () {
         Route::get('payment-concepts/{paymentConcept}',   [ClubController::class, 'paymentConceptsShow'])->name('payment-concepts.show');
         Route::put('payment-concepts/{paymentConcept}',   [ClubController::class, 'paymentConceptsUpdate'])->name('payment-concepts.update');
         Route::delete('payment-concepts/{paymentConcept}',[ClubController::class, 'paymentConceptsDestroy'])->name('payment-concepts.destroy');
+
+        // Pathfinder temp records (available to any authenticated user with club access)
+        Route::get('temp-members', [\App\Http\Controllers\TempPathfinderController::class, 'listMembers'])->name('temp-members.index');
+        Route::post('temp-members', [\App\Http\Controllers\TempPathfinderController::class, 'storeMember'])->name('temp-members.store');
+        Route::get('temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'listStaff'])->name('temp-staff.index');
+        Route::post('temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'storeStaff'])->name('temp-staff.store');
     });
     //Update password
     Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');

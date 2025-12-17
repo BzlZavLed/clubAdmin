@@ -12,8 +12,8 @@ class Payment extends Model
     protected $fillable = [
         'club_id',
         'payment_concept_id',
-        'member_adventurer_id',
-        'staff_adventurer_id',
+        'member_id',
+        'staff_id',
         'amount_paid',
         'expected_amount',
         'payment_date',
@@ -43,11 +43,11 @@ class Payment extends Model
 
     public function member()
     {
-        return $this->belongsTo(MemberAdventurer::class, 'member_adventurer_id');
+        return $this->belongsTo(Member::class, 'member_id');
     }
     public function staff()
     {
-        return $this->belongsTo(StaffAdventurer::class, 'staff_adventurer_id');
+        return $this->belongsTo(Staff::class, 'staff_id');
     }
 
     public function receivedBy()

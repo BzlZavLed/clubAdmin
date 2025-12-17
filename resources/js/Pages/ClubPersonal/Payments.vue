@@ -10,10 +10,7 @@ import {
     PhotoIcon,
     ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
-import {
-    fetchAssignedMembersByStaff,
-    createClubPayment
-} from '@/Services/api';
+import { fetchAssignedMembersByStaff, createClubPayment } from '@/Services/api';
 // ----- Props from controller::index -----
 const props = defineProps({
     auth_user: { type: Object, required: true },
@@ -25,6 +22,8 @@ const props = defineProps({
     concepts: { type: Array, required: true }, // includes scopes (club_wide/class) + amount + payment_expected_by
     payments: { type: Array, required: true }, // recent
     payment_types: { type: Array, required: true }, // ['zelle','cash','check']
+    assigned_members: { type: Array, default: () => [] },
+    assigned_class: { type: Object, default: null },
 })
 const assignedMembers = ref([]);
 const assignedClass = ref(null);
@@ -36,7 +35,12 @@ const loadAssignedMembers = async (staffId) => {
 };
 
 onMounted(async () => {
-    await loadAssignedMembers(props.staff.id);
+    if (Array.isArray(props.assigned_members) && props.assigned_members.length) {
+        assignedMembers.value = props.assigned_members
+        assignedClass.value = props.assigned_class
+    } else if (props.staff?.id) {
+        await loadAssignedMembers(props.staff.id);
+    }
 });
 
 // ----- Helpers -----
@@ -68,8 +72,8 @@ const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? 
 // ----- Form -----
 const form = useForm({
     payment_concept_id: null,
-    member_adventurer_id: null,
-    staff_adventurer_id: null, // reserved for later
+    member_id: null,
+    staff_id: null, // reserved for later
     amount_paid: '',
     payment_date: new Date().toISOString().slice(0, 10), // yyyy-mm-dd
     payment_type: 'cash',
@@ -87,7 +91,7 @@ watch(selectedConceptId, (id) => {
 })
 
 watch(selectedMemberId, (id) => {
-    form.member_adventurer_id = id ?? null
+    form.member_id = id ?? null
 })
 
 // Reset conditional fields when payment_type changes
@@ -137,7 +141,7 @@ const filteredPayments = computed(() => {
     const q = (searchTerm.value || '').toLowerCase().trim()
     if (!q) return props.payments || []
     return (props.payments || []).filter(p => {
-        const name = (p.member?.applicant_name ?? p.staff?.name ?? '').toLowerCase()
+        const name = (p.member_display_name ?? p.staff_display_name ?? '').toLowerCase()
         const concept = (p.concept?.concept ?? '').toLowerCase()
         return name.includes(q) || concept.includes(q)
     })
@@ -192,8 +196,8 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 </option>
                             </select>
                         </div>
-                        <div v-if="form.errors.member_adventurer_id" class="mt-1 text-sm text-red-600">
-                            {{ form.errors.member_adventurer_id }}
+                        <div v-if="form.errors.member_id" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.member_id }}
                         </div>
                     </div>
 
@@ -360,7 +364,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 <div class="flex-1">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <div class="text-sm font-medium text-gray-900">
-                                            {{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}
+                                            {{ p.member_display_name ?? p.staff_display_name ?? '—' }}
                                         </div>
 
                                         <!-- Payment type badge -->

@@ -201,7 +201,13 @@ const totalCuotaAmount = computed(() => {
 });
 onMounted(async () => {
     if (userId.value && staff.value?.id) {
-        await loadAssignedMembers(staff.value.id);
+        // Prefer server-provided assigned members/class (derived from members table)
+        if (Array.isArray(page.props.assigned_members) && page.props.assigned_members.length) {
+            assignedMembers.value = page.props.assigned_members;
+            assignedClass.value = page.props.assigned_class || null;
+        } else {
+            await loadAssignedMembers(staff.value.id);
+        }
         await checkIfReportExistsToday(staff.value.id);
     }
 });

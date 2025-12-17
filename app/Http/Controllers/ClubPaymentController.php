@@ -4,9 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\Account;
+use App\Models\ClubClass;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
-use App\Models\MemberAdventurer;
 use App\Models\Staff;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
@@ -39,22 +39,6 @@ class ClubPaymentController extends Controller
         $club = ClubHelper::clubForUser($user, $request->input('club_id'));
         $this->assertClubAccess($club);
 
-        // --- your existing queries ---
-        $members = ClubHelper::membersOfClub($club->id)->map(function ($m) {
-            $current = $m->clubClasses->first();
-            $classId = $current?->pivot?->club_class_id ?? $current?->id;
-            return [
-                'id' => $m->id,
-                'applicant_name' => $m->applicant_name,
-                'club_id' => $m->club_id,
-                'class_id' => $classId,
-                'current_class' => $current ? [
-                    'id' => $classId,
-                    'class_name' => $current->class_name,
-                ] : null,
-            ];
-        })->values();
-
         $staff = Staff::query()
             ->where('club_id', $club->id)
             ->whereHas('user', function ($q) use ($user) {
@@ -63,7 +47,22 @@ class ClubPaymentController extends Controller
             ->with(['classes'])
             ->first();
 
-        $assignedClassId = (int)optional($staff?->classes?->first())->id;
+        $assignedClassId = $staff?->assigned_class ?: (int)optional($staff?->classes?->first())->id;
+        $assignedClass = $assignedClassId ? ClubClass::find($assignedClassId) : null;
+
+        // Members dropdown source of truth: members table filtered by club+class
+        $assignedMembers = ClubHelper::getMembersByClassAndClub((int)$club->id, (int)$assignedClassId)
+            ->map(function ($m) {
+                return [
+                    // Use members.id as the value for payments
+                    'id' => $m['member_id'],
+                    'applicant_name' => $m['applicant_name'],
+                    'member_type' => $m['member_type'],
+                    'id_data' => $m['id_data'],
+                    'class_id' => $m['class_id'],
+                ];
+            })
+            ->values();
 
         $concepts = PaymentConcept::query()
             ->where('club_id', $club->id)
@@ -106,19 +105,54 @@ class ClubPaymentController extends Controller
             ->latest()
             ->take(25)
             ->with([
-                'member:id,applicant_name',
-                'staff:id,name',
+                'member:id,type,id_data',
+                'staff:id,type,id_data,user_id',
+                'staff.user:id,name',
                 'concept:id,concept,amount',
                 'receivedBy:id,name',
             ])
-            ->get();
+            ->get()
+            ->map(function ($p) {
+                $member = ClubHelper::memberDetail($p->member);
+                $staff = ClubHelper::staffDetail($p->staff);
+                return [
+                    'id' => $p->id,
+                    'club_id' => $p->club_id,
+                    'payment_concept_id' => $p->payment_concept_id,
+                    'member_id' => $p->member_id,
+                    'staff_id' => $p->staff_id,
+                    'amount_paid' => $p->amount_paid,
+                    'expected_amount' => $p->expected_amount,
+                    'balance_due_after' => $p->balance_due_after,
+                    'payment_date' => $p->payment_date,
+                    'payment_type' => $p->payment_type,
+                    'zelle_phone' => $p->zelle_phone,
+                    'check_image_path' => $p->check_image_path,
+                    'received_by_user_id' => $p->received_by_user_id,
+                    'notes' => $p->notes,
+                    'created_at' => $p->created_at,
+                    'updated_at' => $p->updated_at,
+                    'member_display_name' => $member['name'] ?? null,
+                    'staff_display_name' => $staff['name'] ?? null,
+                    'concept' => $p->concept ? [
+                        'id' => $p->concept->id,
+                        'concept' => $p->concept->concept,
+                        'amount' => $p->concept->amount,
+                    ] : null,
+                    'received_by' => $p->receivedBy ? [
+                        'id' => $p->receivedBy->id,
+                        'name' => $p->receivedBy->name,
+                    ] : null,
+                ];
+            });
 
         // If you still want to serve JSON to API/XHR callers:
         if ($request->wantsJson()) {
             return response()->json([
                 'data' => [
                     'club' => ['id' => $club->id, 'club_name' => $club->club_name],
-                    'members' => $members,
+                    'members' => $assignedMembers,
+                    'assigned_class' => $assignedClass ? ['id' => $assignedClass->id, 'name' => $assignedClass->class_name] : null,
                     'concepts' => $concepts,
                     'payments' => $recent,
                     'payment_types' => ['zelle', 'cash', 'check'],
@@ -134,7 +168,9 @@ class ClubPaymentController extends Controller
             'clubs' => Club::all(['id', 'club_name']),
             'staff' => $staff ?? [],
             'club' => ['id' => $club->id, 'club_name' => $club->club_name],
-            'members' => $members,
+            'members' => $assignedMembers,
+            'assigned_class' => $assignedClass ? ['id' => $assignedClass->id, 'name' => $assignedClass->class_name] : null,
+            'assigned_members' => $assignedMembers,
             'concepts' => $concepts,
             'payments' => $recent,
             'payment_types' => ['zelle', 'cash', 'check'],
@@ -154,46 +190,32 @@ class ClubPaymentController extends Controller
 
         $clubsForUser = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
 
-        $members = MemberAdventurer::query()
-            ->whereIn('club_id', $clubIds)
-            ->with([
-                'clubClasses' => function ($q) {
-                    $q->wherePivot('active', true);
-                },
-            ])
-            ->orderBy('applicant_name')
-            ->get(['id', 'applicant_name', 'club_id'])
+        $members = ClubHelper::membersOfClub((int)$club->id)
             ->map(function ($m) {
-                $current = $m->clubClasses->first();
-                $classId = $current?->pivot?->club_class_id ?? $current?->id;
                 return [
-                    'id' => $m->id,
-                    'applicant_name' => $m->applicant_name,
-                    'club_id' => $m->club_id,
-                    'class_id' => $classId,
-                    'current_class' => $current ? [
-                        'id' => $classId,
-                        'class_name' => $current->class_name,
-                    ] : null,
+                    'id' => $m['member_id'],
+                    'applicant_name' => $m['applicant_name'],
+                    'club_id' => $m['club_id'],
+                    'class_id' => $m['class_id'],
+                    'member_type' => $m['member_type'],
+                    'id_data' => $m['id_data'],
                 ];
             })
             ->values();
 
-        $staff = Staff::query()
-            ->whereIn('club_id', $clubIds)
-            ->with(['user:id,name,email', 'classes:id,class_name'])
-            ->orderBy('id')
-            ->get(['id', 'user_id', 'club_id', 'status'])
+        $staff = ClubHelper::staffOfClub((int)$club->id)
+            ->loadMissing('user:id,name,email')
             ->map(function ($s) {
+                $detail = ClubHelper::staffDetail($s);
                 return [
                     'id' => $s->id,
-                    'name' => $s->user?->name,
+                    'name' => $detail['name'] ?? $s->user?->name,
                     'email' => $s->user?->email,
                     'club_id' => $s->club_id,
                     'status' => $s->status,
-                    'class_names' => $s->classes->pluck('class_name')->values(),
                 ];
-            });
+            })
+            ->values();
 
         $concepts = PaymentConcept::query()
             ->whereIn('club_id', $clubIds)
@@ -212,12 +234,46 @@ class ClubPaymentController extends Controller
             ->latest()
             ->take(50)
             ->with([
-                'member:id,applicant_name',
-                'staff:id,name',
+                'member:id,type,id_data',
+                'staff:id,type,id_data,user_id',
+                'staff.user:id,name',
                 'concept:id,concept,amount',
                 'receivedBy:id,name',
             ])
-            ->get();
+            ->get()
+            ->map(function ($p) {
+                $member = ClubHelper::memberDetail($p->member);
+                $staff = ClubHelper::staffDetail($p->staff);
+                return [
+                    'id' => $p->id,
+                    'club_id' => $p->club_id,
+                    'payment_concept_id' => $p->payment_concept_id,
+                    'member_id' => $p->member_id,
+                    'staff_id' => $p->staff_id,
+                    'amount_paid' => $p->amount_paid,
+                    'expected_amount' => $p->expected_amount,
+                    'balance_due_after' => $p->balance_due_after,
+                    'payment_date' => $p->payment_date,
+                    'payment_type' => $p->payment_type,
+                    'zelle_phone' => $p->zelle_phone,
+                    'check_image_path' => $p->check_image_path,
+                    'received_by_user_id' => $p->received_by_user_id,
+                    'notes' => $p->notes,
+                    'created_at' => $p->created_at,
+                    'updated_at' => $p->updated_at,
+                    'member_display_name' => $member['name'] ?? null,
+                    'staff_display_name' => $staff['name'] ?? null,
+                    'concept' => $p->concept ? [
+                        'id' => $p->concept->id,
+                        'concept' => $p->concept->concept,
+                        'amount' => $p->concept->amount,
+                    ] : null,
+                    'received_by' => $p->receivedBy ? [
+                        'id' => $p->receivedBy->id,
+                        'name' => $p->receivedBy->name,
+                    ] : null,
+                ];
+            });
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -257,8 +313,8 @@ class ClubPaymentController extends Controller
 
         $validated = $request->validate([
             'payment_concept_id' => ['required', 'integer', 'exists:payment_concepts,id'],
-            'member_adventurer_id' => ['nullable', 'integer', 'exists:members_adventurers,id'],
-            'staff_adventurer_id' => ['nullable', 'integer', 'exists:staff_adventurers,id'],
+            'member_id' => ['nullable', 'integer', 'exists:members,id'],
+            'staff_id' => ['nullable', 'integer', 'exists:staff,id'],
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
             'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check'])],
@@ -268,8 +324,8 @@ class ClubPaymentController extends Controller
         ]);
 
         // exactly one payer
-        $isMember = !empty($validated['member_adventurer_id']);
-        $isStaff = !empty($validated['staff_adventurer_id']);
+        $isMember = !empty($validated['member_id']);
+        $isStaff = !empty($validated['staff_id']);
         if ($isMember === $isStaff) {
             return response()->json(['message' => 'Provide exactly one payer: member OR staff.'], 422);
         }
@@ -280,8 +336,9 @@ class ClubPaymentController extends Controller
             ->where('status', 'active')
             ->firstOrFail();
 
-        $allowedClubIds = Club::where('user_id', $user->id)->pluck('id');
-        if (!$allowedClubIds->contains($concept->club_id)) {
+        // Club-personal users may record payments only for clubs they can access (pivot/explicit/owned)
+        $allowedClubIds = ClubHelper::clubIdsForUser($user);
+        if (!$allowedClubIds->contains((int) $concept->club_id)) {
             abort(403, 'You cannot record payments for this club.');
         }
 
@@ -296,9 +353,9 @@ class ClubPaymentController extends Controller
             ->where('payment_concept_id', $concept->id);
 
         if ($isMember) {
-            $priorPaidQuery->where('member_adventurer_id', $validated['member_adventurer_id']);
+            $priorPaidQuery->where('member_id', $validated['member_id']);
         } else {
-            $priorPaidQuery->where('staff_adventurer_id', $validated['staff_adventurer_id']);
+            $priorPaidQuery->where('staff_id', $validated['staff_id']);
         }
 
         $priorPaid = (float) ($priorPaidQuery->sum('amount_paid'));
@@ -330,8 +387,8 @@ class ClubPaymentController extends Controller
             $payment = Payment::create([
                 'club_id' => $clubId,
                 'payment_concept_id' => $concept->id,
-                'member_adventurer_id' => $validated['member_adventurer_id'] ?? null,
-                'staff_adventurer_id' => $validated['staff_adventurer_id'] ?? null,
+                'member_id' => $validated['member_id'] ?? null,
+                'staff_id' => $validated['staff_id'] ?? null,
                 'amount_paid' => $amountPaid,
                 'expected_amount' => $expected,
                 'balance_due_after' => $balanceAfter,
@@ -352,11 +409,17 @@ class ClubPaymentController extends Controller
         });
 
         $payment->load([
-            'member:id,applicant_name',
-            'staff:id,name',
+            'member:id,type,id_data',
+            'staff:id,type,id_data,user_id',
+            'staff.user:id,name',
             'concept:id,concept,amount',
             'receivedBy:id,name',
         ]);
+
+        $detailMember = ClubHelper::memberDetail($payment->member);
+        $detailStaff = ClubHelper::staffDetail($payment->staff);
+        $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
+        $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
 
         return response()->json(['message' => 'Payment recorded', 'data' => $payment], 201);
     }

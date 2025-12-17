@@ -13,6 +13,9 @@ use App\Models\Member;
 use App\Models\ClubClass;
 use App\Models\Staff;
 use App\Support\ClubHelper;
+use App\Models\TempMemberPathfinder;
+use App\Models\ClassMemberPathfinder;
+use Carbon\Carbon;
 
 use DB;
 use Auth;
@@ -128,18 +131,87 @@ class MemberAdventurerController extends Controller
         $user = Auth::user();
         $club = ClubHelper::clubForUser($user, $id);
 
-        $memberIdMap = \App\Models\Member::where('club_id', $id)
-            ->pluck('id', 'id_data'); // [member_adventurer_id => member_id]
+        $memberRows = \App\Models\Member::where('club_id', $id)
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->get();
 
-        $members = MemberAdventurer::whereIn('id', $memberIdMap->keys())
+        $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->all();
+        $pathfinderMemberIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id')->all();
+        $tempPathfinderIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id_data')->all();
+
+        $pathfinderAssignments = ClassMemberPathfinder::whereIn('member_id', $pathfinderMemberIds)
+            ->with(['clubClass:id,club_id,class_order,class_name'])
+            ->get()
+            ->groupBy('member_id');
+
+        $adventurers = MemberAdventurer::whereIn('id', $adventurerIds)
             ->where('status', 'active')
             ->with(['classAssignments.clubClass'])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function ($m) use ($memberIdMap) {
-                $m->member_id = $memberIdMap[$m->id] ?? null; // expose new table id
+            ->map(function ($m) use ($memberRows) {
+                $memberId = optional($memberRows->firstWhere('id_data', $m->id))->id;
+                $m->member_id = $memberId;
                 return $m;
             });
+
+        $pathfinderRows = \App\Models\TempMemberPathfinder::whereIn('id', $tempPathfinderIds)->get()
+            ->map(function ($row) use ($memberRows, $pathfinderAssignments) {
+                $memberId = optional($memberRows->firstWhere('id_data', $row->id))->id;
+                $age = null;
+                if ($row->dob) {
+                    $age = Carbon::parse($row->dob)->age;
+                }
+
+                $assignments = [];
+                if ($memberId && isset($pathfinderAssignments[$memberId])) {
+                    $assignments = $pathfinderAssignments[$memberId]
+                        ->map(function ($a) {
+                            return [
+                                'id' => $a->id,
+                                'member_id' => $a->member_id,
+                                'club_class_id' => $a->club_class_id,
+                                'role' => $a->role,
+                                'assigned_at' => optional($a->assigned_at)->toDateString(),
+                                'finished_at' => optional($a->finished_at)->toDateString(),
+                                'active' => (bool)$a->active,
+                                'club_class' => $a->clubClass ? [
+                                    'id' => $a->clubClass->id,
+                                    'class_name' => $a->clubClass->class_name,
+                                    'class_order' => $a->clubClass->class_order,
+                                ] : null,
+                            ];
+                        })
+                        ->values()
+                        ->all();
+                }
+
+                return [
+                    'id' => $row->id,
+                    'member_id' => $memberId,
+                    'member_type' => 'temp_pathfinder',
+                    'applicant_name' => $row->nombre,
+                    'birthdate' => $row->dob,
+                    'age' => $age,
+                    'grade' => null,
+                    'mailing_address' => null,
+                    'cell_number' => $row->phone,
+                    'emergency_contact' => null,
+                    'investiture_classes' => [],
+                    'allergies' => null,
+                    'physical_restrictions' => null,
+                    'health_history' => null,
+                    'parent_name' => $row->father_name,
+                    'parent_cell' => $row->father_phone,
+                    'home_address' => null,
+                    'email_address' => $row->email,
+                    'signature' => null,
+                    'status' => 'active',
+                    'class_assignments' => $assignments,
+                ];
+            });
+
+        $members = $adventurers->concat($pathfinderRows)->values();
 
         return response()->json([
             'club' => $club,
@@ -210,93 +282,201 @@ class MemberAdventurerController extends Controller
 
     public function assignMember(Request $request)
     {
-        $request->validate([
-            'members_adventurer_id' => 'required|exists:members_adventurers,id',
+        $data = $request->validate([
+            'member_id' => 'nullable|integer|exists:members,id',
+            // Backward compatibility: frontend previously sent members_adventurer_id (either adventurer id or temp id)
+            'members_adventurer_id' => 'nullable|integer',
             'club_class_id' => 'required|exists:club_classes,id',
+            'role' => 'nullable|string|max:50',
+            'assigned_at' => 'nullable|date',
         ]);
 
-        // Optional: deactivate previous active assignment
-        DB::table('class_member_adventurer')
-            ->where('members_adventurer_id', $request->members_adventurer_id)
-            ->where('active', true)
-            ->update([
-                'active' => false,
-                'finished_at' => now(),
-            ]);
-
-        DB::table('class_member_adventurer')->insert([
-            'members_adventurer_id' => $request->members_adventurer_id,
-            'club_class_id' => $request->club_class_id,
-            'role' => $request->input('role', 'student'),
-            'assigned_at' => $request->input('assigned_at', now()->toDateString()),
-            'active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        // Update new members table with active class and assigned staff mapping
-        $member = Member::where('type', 'adventurers')
-            ->where('id_data', $request->members_adventurer_id)
-            ->first();
-        if ($member) {
-            $classId = $request->club_class_id;
-            $member->class_id = $classId;
-            // With many-to-many staff, pick first staff for reference (optional)
-            $newStaffId = $clubClass?->staff()->pluck('staff.id')->first();
-            $member->assigned_staff_id = $newStaffId;
-            $member->save();
+        $member = null;
+        if (!empty($data['member_id'])) {
+            $member = Member::find($data['member_id']);
+        } elseif (!empty($data['members_adventurer_id'])) {
+            $member = Member::where('type', 'adventurers')->where('id_data', $data['members_adventurer_id'])->first()
+                ?? Member::where('type', 'temp_pathfinder')->where('id_data', $data['members_adventurer_id'])->first();
         }
 
-        return response()->json(['message' => 'Member assigned successfully']);
+        if (!$member) {
+            return response()->json(['message' => 'Member not found'], 404);
+        }
+
+        $clubClass = ClubClass::find($data['club_class_id']);
+        $newStaffId = $clubClass?->staff()->pluck('staff.id')->first();
+
+        $role = $data['role'] ?? 'student';
+        $assignedAt = $data['assigned_at'] ?? now()->toDateString();
+
+        if ($member->type === 'adventurers') {
+            $adventurerId = $member->id_data;
+            if (!$adventurerId) {
+                return response()->json(['message' => 'Adventurer detail missing (id_data)'], 422);
+            }
+
+            DB::table('class_member_adventurer')
+                ->where('members_adventurer_id', $adventurerId)
+                ->where('active', true)
+                ->update([
+                    'active' => false,
+                    'finished_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+            DB::table('class_member_adventurer')->insert([
+                'members_adventurer_id' => $adventurerId,
+                'club_class_id' => $data['club_class_id'],
+                'role' => $role,
+                'assigned_at' => $assignedAt,
+                'active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $member->class_id = $data['club_class_id'];
+            $member->assigned_staff_id = $newStaffId;
+            $member->save();
+
+            return response()->json(['message' => 'Member assigned successfully']);
+        }
+
+        if (in_array($member->type, ['temp_pathfinder', 'pathfinders'], true)) {
+            ClassMemberPathfinder::where('member_id', $member->id)
+                ->where('active', true)
+                ->update([
+                    'active' => false,
+                    'finished_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+            ClassMemberPathfinder::create([
+                'member_id' => $member->id,
+                'club_class_id' => $data['club_class_id'],
+                'role' => $role,
+                'assigned_at' => $assignedAt,
+                'active' => true,
+            ]);
+
+            $member->class_id = $data['club_class_id'];
+            $member->assigned_staff_id = $newStaffId;
+            $member->save();
+
+            return response()->json(['message' => 'Member assigned successfully']);
+        }
+
+        return response()->json(['message' => 'Unsupported member type'], 422);
     }
 
     public function undoLastAssignment(Request $request)
     {
-        $request->validate([
-            'members_adventurer_id' => 'required|exists:members_adventurers,id',
+        $data = $request->validate([
+            'member_id' => 'nullable|integer|exists:members,id',
+            'members_adventurer_id' => 'nullable|integer',
         ]);
 
-        $memberId = $request->members_adventurer_id;
-
-        // Get the last active assignment (not undone)
-        $lastAssignment = DB::table('class_member_adventurer')
-            ->where('members_adventurer_id', $memberId)
-            ->whereNull('undone_at')
-            ->orderByDesc('created_at')
-            ->first();
-
-        if (!$lastAssignment) {
-            return response()->json(['message' => 'No assignment found to undo'], 404);
+        $member = null;
+        if (!empty($data['member_id'])) {
+            $member = Member::find($data['member_id']);
+        } elseif (!empty($data['members_adventurer_id'])) {
+            $member = Member::where('type', 'adventurers')->where('id_data', $data['members_adventurer_id'])->first()
+                ?? Member::where('type', 'temp_pathfinder')->where('id_data', $data['members_adventurer_id'])->first();
         }
 
-        // Mark it as undone
-        DB::table('class_member_adventurer')
-            ->where('id', $lastAssignment->id)
-            ->update([
+        if (!$member) {
+            return response()->json(['message' => 'Member not found'], 404);
+        }
+
+        if ($member->type === 'adventurers') {
+            $adventurerId = $member->id_data;
+            if (!$adventurerId) {
+                return response()->json(['message' => 'Adventurer detail missing (id_data)'], 422);
+            }
+
+            $lastAssignment = DB::table('class_member_adventurer')
+                ->where('members_adventurer_id', $adventurerId)
+                ->whereNull('undone_at')
+                ->orderByDesc('created_at')
+                ->first();
+
+            if (!$lastAssignment) {
+                return response()->json(['message' => 'No assignment found to undo'], 404);
+            }
+
+            DB::table('class_member_adventurer')
+                ->where('id', $lastAssignment->id)
+                ->update([
+                    'active' => false,
+                    'finished_at' => now(),
+                    'undone_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+            $previous = DB::table('class_member_adventurer')
+                ->where('members_adventurer_id', $adventurerId)
+                ->whereNull('undone_at')
+                ->orderByDesc('created_at')
+                ->first();
+
+            if ($previous) {
+                DB::table('class_member_adventurer')
+                    ->where('id', $previous->id)
+                    ->update([
+                        'active' => true,
+                        'finished_at' => null,
+                        'updated_at' => now(),
+                    ]);
+                $clubClass = ClubClass::find($previous->club_class_id);
+                $member->class_id = $previous->club_class_id;
+                $member->assigned_staff_id = $clubClass?->staff()->pluck('staff.id')->first();
+            } else {
+                $member->class_id = null;
+                $member->assigned_staff_id = null;
+            }
+
+            $member->save();
+            return response()->json(['message' => 'Undo successful']);
+        }
+
+        if (in_array($member->type, ['temp_pathfinder', 'pathfinders'], true)) {
+            $lastAssignment = ClassMemberPathfinder::where('member_id', $member->id)
+                ->whereNull('undone_at')
+                ->orderByDesc('created_at')
+                ->first();
+
+            if (!$lastAssignment) {
+                return response()->json(['message' => 'No assignment found to undo'], 404);
+            }
+
+            $lastAssignment->update([
                 'active' => false,
                 'finished_at' => now(),
                 'undone_at' => now(),
-                'updated_at' => now(),
             ]);
 
-        // Restore the previous assignment (if any, also not undone)
-        $previousAssignment = DB::table('class_member_adventurer')
-            ->where('members_adventurer_id', $memberId)
-            ->whereNull('undone_at')
-            ->orderByDesc('created_at')
-            ->first();
+            $previous = ClassMemberPathfinder::where('member_id', $member->id)
+                ->whereNull('undone_at')
+                ->orderByDesc('created_at')
+                ->first();
 
-        if ($previousAssignment) {
-            DB::table('class_member_adventurer')
-                ->where('id', $previousAssignment->id)
-                ->update([
+            if ($previous) {
+                $previous->update([
                     'active' => true,
                     'finished_at' => null,
-                    'updated_at' => now(),
                 ]);
+                $clubClass = ClubClass::find($previous->club_class_id);
+                $member->class_id = $previous->club_class_id;
+                $member->assigned_staff_id = $clubClass?->staff()->pluck('staff.id')->first();
+            } else {
+                $member->class_id = null;
+                $member->assigned_staff_id = null;
+            }
+
+            $member->save();
+            return response()->json(['message' => 'Undo successful']);
         }
 
-        return response()->json(['message' => 'Undo successful']);
+        return response()->json(['message' => 'Unsupported member type'], 422);
     }
 
     /* private function generateMemberDoc(MemberAdventurer $member, string $outputDir): string

@@ -1,5 +1,5 @@
 <script setup>
-import { ref,onMounted } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
     show: Boolean,
@@ -12,6 +12,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'updated'])
 
 const newPassword = ref('')
+const errorMessage = ref('')
 
 const updatePassword = async () => {
     try {
@@ -21,11 +22,25 @@ const updatePassword = async () => {
         emit('updated')
         emit('close')
         newPassword.value = ''
+        errorMessage.value = ''
     } catch (err) {
         console.error('Password update error:', err)
-        alert('Failed to update password')
+        if (err?.response?.data?.errors?.password?.[0]) {
+            errorMessage.value = err.response.data.errors.password[0]
+        } else if (err?.response?.data?.message) {
+            errorMessage.value = err.response.data.message
+        } else {
+            errorMessage.value = 'Failed to update password'
+        }
     }
 }
+
+watch(() => props.show, (val) => {
+    if (val) {
+        errorMessage.value = ''
+        newPassword.value = ''
+    }
+})
 </script>
 
 <template>
@@ -36,6 +51,7 @@ const updatePassword = async () => {
                 <div class="mb-4">
                     <label class="block mb-1 text-sm">New Password</label>
                     <input v-model="newPassword" type="password" class="w-full border rounded px-3 py-2 text-sm" required />
+                    <p v-if="errorMessage" class="text-red-600 text-xs mt-1">{{ errorMessage }}</p>
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" @click="$emit('close')"

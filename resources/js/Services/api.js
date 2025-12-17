@@ -14,7 +14,7 @@ export const fetchStaffRecord = async () => {
 
 export const assignMemberToClass = async ({ memberId, classId }) => {
     return await axios.post(route("members.assign"), {
-        members_adventurer_id: memberId,
+        member_id: memberId,
         club_class_id: classId,
         role: "student",
         assigned_at: new Date().toISOString().slice(0, 10),
@@ -24,7 +24,7 @@ export const assignMemberToClass = async ({ memberId, classId }) => {
 
 export const undoClassAssignment = async (memberId) => {
     return await axios.post(route("members.assignment.undo"), {
-        members_adventurer_id: memberId,
+        member_id: memberId,
     });
 };
 

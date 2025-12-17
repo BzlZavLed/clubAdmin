@@ -414,6 +414,20 @@ const saveTempStaff = async () => {
     }
 }
 
+// Auto-fill age from DOB
+watch(() => tempStaffForm.value.staff_dob, (dob) => {
+    if (!dob) return
+    const birth = new Date(dob)
+    if (isNaN(birth.getTime())) return
+    const today = new Date()
+    let age = today.getFullYear() - birth.getFullYear()
+    const m = today.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+        age--
+    }
+    tempStaffForm.value.staff_age = age
+})
+
 onMounted(fetchClubs)
 </script>
 

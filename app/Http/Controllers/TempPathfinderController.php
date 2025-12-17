@@ -36,8 +36,29 @@ class TempPathfinderController extends Controller
             'father_phone' => 'nullable|string|max:50',
         ]);
 
-        $row = TempMemberPathfinder::create($data);
-        return response()->json($row, 201);
+        return DB::transaction(function () use ($data) {
+            // Create temp row first
+            $row = TempMemberPathfinder::create($data);
+
+            // Create member pointing to temp row id_data
+            $member = \App\Models\Member::create([
+                'type' => 'temp_pathfinder',
+                'club_id' => $data['club_id'],
+                'id_data' => $row->id,
+                'class_id' => null,
+                'parent_id' => auth()->id(),
+                'assigned_staff_id' => null,
+                'status' => 'active',
+            ]);
+
+            // Link back the temp row to the member id (if column exists)
+            if (Schema::hasColumn('temp_member_pathfinder', 'member_id')) {
+                $row->member_id = $member->id;
+                $row->save();
+            }
+
+            return response()->json($row, 201);
+        });
     }
 
     public function listStaff($clubId)
@@ -127,7 +148,10 @@ class TempPathfinderController extends Controller
         $user = Auth::user();
         if (!$user) abort(401);
         $allowed = $user->clubs()->pluck('clubs.id')->toArray();
-        if (!in_array((int)$clubId, $allowed, true)) {
+        $directClubId = $user->club_id ? [(int)$user->club_id] : [];
+        $allAllowed = array_unique(array_merge($allowed, $directClubId));
+
+        if (!in_array((int)$clubId, $allAllowed, true)) {
             abort(403, 'Unauthorized');
         }
     }

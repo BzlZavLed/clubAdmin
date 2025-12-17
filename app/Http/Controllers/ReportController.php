@@ -23,6 +23,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Collection;
+use App\Support\ClubHelper;
 use Illuminate\Support\Str;
 class ReportController extends Controller
 {
@@ -540,9 +541,9 @@ class ReportController extends Controller
         $totalPaid = (float) $rows->sum('amount_paid');
 
         $groups = $rows->groupBy(function ($p) {
-            $payerKey = $p->member_adventurer_id
-                ? ('m:' . $p->member_adventurer_id)
-                : ('s:' . $p->staff_adventurer_id);
+            $payerKey = $p->member_id
+                ? ('m:' . $p->member_id)
+                : ('s:' . $p->staff_id);
             return $payerKey . '|c:' . $p->payment_concept_id;
         });
 
@@ -662,8 +663,9 @@ class ReportController extends Controller
             ->where('payments.club_id', $club->id)
             ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
             ->with([
-                'member:id,applicant_name',
-                'staff:id,name',
+                'member:id,type,id_data',
+                'staff:id,type,id_data,user_id',
+                'staff.user:id,name',
             ])
             ->orderByDesc('payment_date')
             ->orderByDesc('payments.id')
@@ -672,8 +674,8 @@ class ReportController extends Controller
                 'payments.payment_date',
                 'payments.amount_paid',
                 'payments.payment_type',
-                'payments.member_adventurer_id',
-                'payments.staff_adventurer_id',
+                'payments.member_id',
+                'payments.staff_id',
                 'payments.payment_concept_id',
                 'payments.check_image_path',
                 'payment_concepts.concept as concept_name',
@@ -694,8 +696,8 @@ class ReportController extends Controller
                     'account' => $p->account ?? 'unknown',
                     'account_label' => $payToLabelMap[$p->account] ?? ($p->account ?? 'Unassigned'),
                     'concept' => $p->concept_name ?? '—',
-                    'member' => $p->member ? ['id' => $p->member->id, 'applicant_name' => $p->member->applicant_name] : null,
-                    'staff' => $p->staff ? ['id' => $p->staff->id, 'name' => $p->staff->name] : null,
+                    'member' => $p->member ? ['id' => $p->member->id, 'applicant_name' => (ClubHelper::memberDetail($p->member)['name'] ?? '—')] : null,
+                    'staff' => $p->staff ? ['id' => $p->staff->id, 'name' => (ClubHelper::staffDetail($p->staff)['name'] ?? ($p->staff->user?->name ?? '—'))] : null,
                     'receipt_path' => $p->check_image_path,
                     'receipt_ref' => $ref,
                     'receipt_url' => $url,

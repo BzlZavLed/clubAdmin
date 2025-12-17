@@ -434,11 +434,25 @@ class StaffAdventurerController extends Controller
     public function checkStaffRecord()
     {
         $user = Auth::user();
+        $staffRecord = null;
+        $hasStaff = false;
 
-        $staffRecord = StaffAdventurer::where('email', $user->email)->first();
+        if ($user) {
+            // Check staff table by user_id first
+            $staffRecord = Staff::with(['classes'])
+                ->where('user_id', $user->id)
+                ->first();
+            if (!$staffRecord) {
+                // fallback by email for legacy data
+                $staffRecord = Staff::whereHas('user', function ($q) use ($user) {
+                    $q->where('email', $user->email);
+                })->with('classes')->first();
+            }
+            $hasStaff = $staffRecord !== null;
+        }
 
         return response()->json([
-            'hasStaffRecord' => $staffRecord !== null,
+            'hasStaffRecord' => $hasStaff,
             'staffRecord' => $staffRecord,
             'user' => $user,
         ]);
@@ -696,17 +710,36 @@ class StaffAdventurerController extends Controller
 
     public function getAssignedMembersByStaff($staffId)
     {
-        // Step 1: Get the class assigned to the staff
-        $assignedClass = ClubClass::where('assigned_staff_id', $staffId)->first();
+        // Look up staff (handles regular + temp/pathfinder)
+        $staff = Staff::with(['classes' => function ($q) {
+            $q->orderBy('class_order');
+        }])->find($staffId);
 
-        if (!$assignedClass) {
+        if (!$staff) {
+            return response()->json([
+                'message' => 'Staff not found.',
+                'members' => [],
+            ], 404);
+        }
+
+        // Determine the class id from staff->assigned_class or first pivoted class
+        $classId = $staff->assigned_class ?? ($staff->classes->first()?->id);
+        if (!$classId) {
             return response()->json([
                 'message' => 'No class assigned to this staff member.',
                 'members' => [],
             ], 404);
         }
 
-        // Step 2: Get student member links for this class
+        $assignedClass = ClubClass::find($classId);
+        if (!$assignedClass) {
+            return response()->json([
+                'message' => 'Class not found.',
+                'members' => [],
+            ], 404);
+        }
+
+        // Get student member links for this class
         $studentLinks = ClassMemberAdventurer::where('club_class_id', $assignedClass->id)
             ->where('role', 'student')
             ->where('active', true)

@@ -7,12 +7,12 @@ import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import AssistanceReportPdf from "@/Components/Reports/AssistanceReport.vue";
 import { useGeneral } from "@/Composables/useGeneral";
 import {
-    fetchClubsByChurch,
     fetchStaffRecord,
     fetchClubClasses,
     fetchReportsByStaffId,
     fetchReportByIdAndDate,
-    fetchPersonalWorkplan
+    fetchPersonalWorkplan,
+    createTempStaffPathfinder
 } from "@/Services/api";
 import { ArrowDownTrayIcon, CalendarDaysIcon } from "@heroicons/vue/24/outline";
 import { ArrowTurnLeftUpIcon } from "@heroicons/vue/24/solid";
@@ -23,6 +23,7 @@ const page = usePage();
 const { showToast } = useGeneral();
 const formatDate = (date) => new Date(date).toLocaleDateString()
 const createStaffModalVisible = ref(false);
+const tempStaffModalVisible = ref(false);
 const selectedUserForStaff = ref(null);
 const selectedClub = ref(null);
 const hasStaffRecord = ref(false);
@@ -50,6 +51,14 @@ const planForm = ref({
     location_override: ''
 })
 const selectedEvent = ref(null)
+const tempStaffForm = ref({
+    staff_name: '',
+    staff_dob: '',
+    staff_age: '',
+    staff_email: '',
+    staff_phone: '',
+    club_id: ''
+})
 
 const fetchClasses = async (clubId) => {
     try {
@@ -58,34 +67,66 @@ const fetchClasses = async (clubId) => {
         console.error('Failed to fetch club classes:', error)
     }
 }
+const computeAge = (dob) => {
+    if (!dob) return ''
+    const birth = new Date(dob)
+    const today = new Date()
+    let age = today.getFullYear() - birth.getFullYear()
+    const m = today.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+        age--
+    }
+    return age
+}
+
 const openStaffForm = (usr) => {
     if (!selectedClub.value) {
         showToast("Please select a club first", "error");
         return;
     }
     selectedUserForStaff.value = usr;
-    createStaffModalVisible.value = true;
-};
-
-const fetchClubs = async () => {
-    try {
-        const data = await fetchClubsByChurch(user.value.church_name);
-        clubs.value = data;
-    } catch (error) {
-        showToast("Error loading clubs", "error");
-        console.error("Failed to fetch clubs:", error);
+    if (['pathfinders', 'temp_pathfinder'].includes(selectedClub.value?.club_type)) {
+        tempStaffForm.value.club_id = selectedClub.value.id
+        tempStaffForm.value.staff_email = usr?.email || ''
+        tempStaffForm.value.staff_name = usr?.name || ''
+        if (usr?.dob) {
+            tempStaffForm.value.staff_dob = usr.dob.slice(0, 10)
+            tempStaffForm.value.staff_age = computeAge(tempStaffForm.value.staff_dob)
+        }
+        tempStaffModalVisible.value = true
+    } else {
+        createStaffModalVisible.value = true;
     }
 };
+
+const userClub = computed(() => {
+    if (!user.value) return null
+    if (Array.isArray(user.value.clubs) && user.value.clubs.length) {
+        const found = user.value.clubs.find(c => String(c.id) === String(user.value.club_id))
+        return found || user.value.clubs[0]
+    }
+    if (user.value.club_id && user.value.club_name) {
+        return { id: user.value.club_id, club_name: user.value.club_name }
+    }
+    return null
+})
 const fetchStaffRecordMethod = async () => {
     try {
         const data = await fetchStaffRecord();
         hasStaffRecord.value = data.hasStaffRecord;
         staff.value = data.staffRecord;
         user.value = data.user;
+        if (userClub.value) {
+            clubs.value = [userClub.value]
+            selectedClub.value = userClub.value
+            await fetchClasses(userClub.value)
+        } else {
+            clubs.value = []
+            selectedClub.value = null
+        }
         if (staff.value?.id) {
             await loadStaffReports(staff.value.id);
         }
-        fetchClubs();
         await loadWorkplan();
     } catch (error) {
         console.error("Failed to fetch staff record:", error);
@@ -111,6 +152,44 @@ watch(createStaffModalVisible, (visible) => {
         fetchStaffRecordMethod();
     }
 })
+
+watch(tempStaffModalVisible, (visible) => {
+    if (!visible) {
+        tempStaffForm.value = {
+            staff_name: user.value?.name || '',
+            staff_dob: user.value?.dob ? user.value.dob.slice(0, 10) : '',
+            staff_age: user.value?.dob ? computeAge(user.value.dob.slice(0, 10)) : '',
+            staff_email: user.value?.email || '',
+            staff_phone: '',
+            club_id: selectedClub.value?.id || ''
+        }
+        fetchStaffRecordMethod();
+    }
+})
+
+watch(() => tempStaffForm.value.staff_dob, (dob) => {
+    if (!dob) {
+        tempStaffForm.value.staff_age = ''
+        return
+    }
+    tempStaffForm.value.staff_age = computeAge(dob)
+})
+
+const submitTempStaff = async () => {
+    try {
+        if (!tempStaffForm.value.club_id) {
+            tempStaffForm.value.club_id = selectedClub.value?.id || ''
+        }
+        await createTempStaffPathfinder(tempStaffForm.value)
+        showToast('Staff profile created')
+        tempStaffModalVisible.value = false
+        // Refresh page to reflect new staff record immediately
+        window.location.reload()
+    } catch (error) {
+        console.error('Failed to create temp staff', error)
+        showToast('Error creating staff', 'error')
+    }
+}
 
 
 const pdfReport = ref(null);
@@ -296,14 +375,10 @@ const savePlan = async () => {
                 </div>
             </div>
 
-            <div v-if="!hasStaffRecord">
-                <label class="block mb-1 font-medium text-gray-700">Select a club</label>
-                <select v-model="selectedClub" class="w-full p-2 border rounded" @change="fetchClasses(selectedClub)">
-                    <option disabled value="">-- Choose a club --</option>
-                    <option v-for="club in clubs" :key="club.id" :value="club">
-                        {{ club.club_name }} ({{ club.club_type }})
-                    </option>
-                </select>
+            <div v-if="!hasStaffRecord && selectedClub" class="mb-4">
+                <div class="text-sm text-gray-700 mb-2">
+                    Club: <strong>{{ selectedClub.club_name }}</strong>
+                </div>
                 <button class="text-green-600 hover:underline mt-2" @click="openStaffForm(user)">
                     Create myself as Staff
                 </button>
@@ -548,6 +623,44 @@ const savePlan = async () => {
         <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
             :club-classes="clubClasses" @close="createStaffModalVisible = false"
             @submitted="showToast('Staff profile created')" />
+
+        <!-- Temp staff modal for pathfinder clubs -->
+        <div v-if="tempStaffModalVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold">Create Staff (Pathfinder)</h2>
+                    <button @click="tempStaffModalVisible = false" class="text-red-500 text-lg font-bold">&times;</button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium">Name</label>
+                        <input v-model="tempStaffForm.staff_name" type="text" class="w-full border rounded p-2" />
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium">DOB</label>
+                            <input v-model="tempStaffForm.staff_dob" type="date" class="w-full border rounded p-2" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Age</label>
+                            <input v-model="tempStaffForm.staff_age" type="number" min="0" class="w-full border rounded p-2" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Email</label>
+                        <input v-model="tempStaffForm.staff_email" type="email" class="w-full border rounded p-2" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Phone</label>
+                        <input v-model="tempStaffForm.staff_phone" type="text" class="w-full border rounded p-2" />
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-5">
+                    <button class="px-4 py-2 border rounded" @click="tempStaffModalVisible = false">Cancel</button>
+                    <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="submitTempStaff">Save</button>
+                </div>
+            </div>
+        </div>
 
         <AssistanceReportPdf v-if="!inlineShow && pdfShow && pdfReport" :report="pdfReport" ref="pdfComponent"
             @pdf-done="pdfReport = null" :disableAutoDownload="inlineShow" />

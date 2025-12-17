@@ -103,7 +103,7 @@ const payeeOptions = computed(() => {
             const classId = scope.class_id || scope.class?.id
             if (!classId) return filteredMembers.value
             return filteredMembers.value.filter(m => {
-                const memberClassId = m.class_id ?? m.current_class.id ?? m.club_class_id
+                const memberClassId = m.class_id ?? m.current_class?.id ?? m.club_class_id
                 return Number(memberClassId) === Number(classId)
             })
 
@@ -118,8 +118,8 @@ const payeeOptions = computed(() => {
 const form = useForm({
     club_id: null,
     payment_concept_id: null,
-    member_adventurer_id: null,
-    staff_adventurer_id: null,
+    member_id: null,
+    staff_id: null,
     amount_paid: '',
     payment_date: new Date().toISOString().slice(0, 10),
     payment_type: 'cash',
@@ -141,16 +141,16 @@ watch(selectedConceptId, (id) => {
 })
 
 watch(selectedMemberId, (id) => {
-    form.member_adventurer_id = id ?? null
+    form.member_id = id ?? null
 })
 
 watch(selectedStaffId, (id) => {
-    form.staff_adventurer_id = id ?? null
+    form.staff_id = id ?? null
 })
 
 watch(selectedScopeId, (id) => {
-    form.member_adventurer_id = null
-    form.staff_adventurer_id = null
+    form.member_id = null
+    form.staff_id = null
     selectedMemberId.value = null
     selectedStaffId.value = null
     const scope = scopesForConcept.value.find(s => s.id === id)
@@ -228,11 +228,11 @@ const submit = async () => {
         return
     }
     if (scopePayerType.value === 'member' && !selectedMemberId.value) {
-        form.setError('member_adventurer_id', 'Select a member for this scope.')
+        form.setError('member_id', 'Select a member for this scope.')
         return
     }
     if (scopePayerType.value === 'staff' && !selectedStaffId.value) {
-        form.setError('staff_adventurer_id', 'Select a staff for this scope.')
+        form.setError('staff_id', 'Select a staff for this scope.')
         return
     }
 
@@ -271,7 +271,7 @@ const filteredPayments = computed(() => {
     })
     if (!q) return clubFiltered
     return clubFiltered.filter(p => {
-        const name = (p.member?.applicant_name ?? p.staff?.name ?? '').toLowerCase()
+        const name = (p.member_display_name ?? p.staff_display_name ?? '').toLowerCase()
         const concept = (p.concept?.concept ?? '').toLowerCase()
         return name.includes(q) || concept.includes(q)
     })
@@ -353,8 +353,8 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 <option :value="null" disabled>Select member…</option>
                                 <option v-for="m in payeeOptions" :key="m.id" :value="m.id">{{ m.applicant_name }}</option>
                             </select>
-                            <div v-if="form.errors.member_adventurer_id" class="mt-1 text-sm text-red-600">
-                                {{ form.errors.member_adventurer_id }}
+                            <div v-if="form.errors.member_id" class="mt-1 text-sm text-red-600">
+                                {{ form.errors.member_id }}
                             </div>
                         </div>
                         <div v-else-if="scopePayerType === 'staff'">
@@ -363,8 +363,8 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 <option :value="null" disabled>Select staff…</option>
                                 <option v-for="s in payeeOptions" :key="s.id" :value="s.id">{{ s.name }}</option>
                             </select>
-                            <div v-if="form.errors.staff_adventurer_id" class="mt-1 text-sm text-red-600">
-                                {{ form.errors.staff_adventurer_id }}
+                            <div v-if="form.errors.staff_id" class="mt-1 text-sm text-red-600">
+                                {{ form.errors.staff_id }}
                             </div>
                         </div>
                         <div v-else class="text-xs text-gray-500 mt-1">Select a concept and scope to choose who pays.</div>
@@ -503,7 +503,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 <div class="flex-1">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <div class="text-sm font-medium text-gray-900">
-                                            {{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}
+                                            {{ p.member_display_name ?? p.staff_display_name ?? '—' }}
                                         </div>
 
                                         <span
