@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import axios from 'axios'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useForm } from '@inertiajs/vue3'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -11,14 +12,65 @@ const props = defineProps({
         default: () => []
     }
 })
-
+console.log(props.children);
 const { showToast } = useGeneral()
 
 const editModalOpen = ref(false)
 const editingChild = ref(null)
 const expanded = ref(new Set())
+const linkModalOpen = ref(false)
+const linkable = ref([])
+const linking = ref(false)
+const lang = ref('en')
+
+const labels = {
+    en: {
+        title: 'My Children',
+        linkBtn: 'Link existing child',
+        editChild: 'Edit Child',
+        name: 'Name',
+        dob: 'Birthdate',
+        age: 'Age',
+        grade: 'Grade',
+        mailing: 'Mailing Address',
+        phone: 'Phone',
+        emergency: 'Emergency Contact',
+        investiture: 'Investiture Classes',
+        allergies: 'Allergies',
+        restrictions: 'Physical Restrictions',
+        health: 'Health History',
+        parentName: 'Parent Name',
+        parentPhone: 'Parent Phone',
+        home: 'Home Address',
+        email: 'Parent Email',
+        signature: 'Signature',
+    },
+    es: {
+        title: 'Mis hijos',
+        linkBtn: 'Vincular hijo existente',
+        editChild: 'Editar hijo',
+        name: 'Nombre',
+        dob: 'Fecha de nacimiento',
+        age: 'Edad',
+        grade: 'Grado',
+        mailing: 'Dirección postal',
+        phone: 'Teléfono',
+        emergency: 'Contacto de emergencia',
+        investiture: 'Clases de investidura',
+        allergies: 'Alergias',
+        restrictions: 'Restricciones físicas',
+        health: 'Historial médico',
+        parentName: 'Nombre del padre/madre',
+        parentPhone: 'Teléfono del padre/madre',
+        home: 'Dirección residencial',
+        email: 'Correo del padre/madre',
+        signature: 'Firma',
+    },
+}
+const t = (key) => labels[lang.value]?.[key] || key
 
 const form = useForm({
+    member_type: 'adventurers',
     applicant_name: '',
     birthdate: '',
     age: '',
@@ -40,6 +92,7 @@ const form = useForm({
 const openEdit = (child) => {
     editingChild.value = child
     form.reset()
+    form.member_type = child.member_type || 'adventurers'
     form.applicant_name = child.applicant_name || ''
     form.birthdate = child.birthdate ? String(child.birthdate).slice(0, 10) : ''
     form.age = child.age || ''
@@ -83,16 +136,62 @@ const submit = () => {
         }
     })
 }
+
+const openLinkModal = async () => {
+    linkModalOpen.value = true
+    linkable.value = []
+    linking.value = true
+    try {
+        const { data } = await axios.get('/parent/children/linkable')
+        linkable.value = data.linkable || []
+    } catch (e) {
+        showToast('Could not load linkable members', 'error')
+    } finally {
+        linking.value = false
+    }
+}
+
+const linkMember = async (candidate) => {
+    linking.value = true
+    try {
+        await axios.post('/parent/children/link', {
+            member_type: candidate.member_type,
+            id_data: candidate.id_data,
+        })
+        showToast('Member linked to your account', 'success')
+        window.location.reload()
+    } catch (e) {
+        showToast('Failed to link member', 'error')
+    } finally {
+        linking.value = false
+    }
+}
 </script>
 
 <template>
     <PathfinderLayout>
-        <template #title>My Children</template>
+        <template #title>{{ t('title') }}</template>
 
         <div class="space-y-4">
             <div class="bg-white border rounded shadow-sm p-4">
-                <h2 class="text-xl font-semibold text-gray-800">Children registered</h2>
-                <p class="text-sm text-gray-600">View and update your children’s application data.</p>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-800">{{ t('title') }}</h2>
+                        <p class="text-sm text-gray-600">View and update your children’s application data.</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <label class="text-sm text-gray-700">Language / Idioma:</label>
+                        <select v-model="lang" class="border rounded p-1 text-sm">
+                            <option value="en">English</option>
+                            <option value="es">Español</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button @click="openLinkModal" class="bg-amber-600 text-white px-3 py-2 rounded hover:bg-amber-700 text-sm">
+                        {{ t('linkBtn') }}
+                    </button>
+                </div>
             </div>
 
             <div class="bg-white border rounded shadow-sm p-4">
@@ -196,7 +295,40 @@ const submit = () => {
                         <button class="text-gray-500" @click="editModalOpen = false">✕</button>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div v-if="form.member_type === 'temp_pathfinder'" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-sm text-gray-700">Name</label>
+                            <input v-model="form.applicant_name" class="w-full border rounded px-3 py-2 text-sm" />
+                            <p v-if="form.errors.applicant_name" class="text-red-600 text-xs mt-1">{{ form.errors.applicant_name }}</p>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-700">DOB</label>
+                            <input type="date" v-model="form.birthdate" class="w-full border rounded px-3 py-2 text-sm" />
+                            <p v-if="form.errors.birthdate" class="text-red-600 text-xs mt-1">{{ form.errors.birthdate }}</p>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-700">Phone</label>
+                            <input v-model="form.cell_number" class="w-full border rounded px-3 py-2 text-sm" />
+                            <p v-if="form.errors.cell_number" class="text-red-600 text-xs mt-1">{{ form.errors.cell_number }}</p>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-700">Parent Email</label>
+                            <input v-model="form.email_address" class="w-full border rounded px-3 py-2 text-sm" />
+                            <p v-if="form.errors.email_address" class="text-red-600 text-xs mt-1">{{ form.errors.email_address }}</p>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-700">Parent Name</label>
+                            <input v-model="form.parent_name" class="w-full border rounded px-3 py-2 text-sm" />
+                            <p v-if="form.errors.parent_name" class="text-red-600 text-xs mt-1">{{ form.errors.parent_name }}</p>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-700">Parent Phone</label>
+                            <input v-model="form.parent_cell" class="w-full border rounded px-3 py-2 text-sm" />
+                            <p v-if="form.errors.parent_cell" class="text-red-600 text-xs mt-1">{{ form.errors.parent_cell }}</p>
+                        </div>
+                    </div>
+
+                    <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                             <label class="text-sm text-gray-700">Name</label>
                             <input v-model="form.applicant_name" class="w-full border rounded px-3 py-2 text-sm" />
@@ -284,6 +416,32 @@ const submit = () => {
                     <div class="flex justify-end gap-2">
                         <button class="px-4 py-2 border rounded" @click="editModalOpen = false" type="button">Cancel</button>
                         <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="submit" type="button">Save</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Link modal -->
+            <div v-if="linkModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6 space-y-4 overflow-y-auto max-h-[90vh]">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-lg font-semibold">Link an existing child</h4>
+                        <button class="text-gray-500" @click="linkModalOpen = false">✕</button>
+                    </div>
+                    <p class="text-sm text-gray-600">If we found children whose parent info matches your account it will be displayed here.</p>
+                    <div v-if="linking" class="text-sm text-gray-600">Loading…</div>
+                    <div v-else>
+                        <div v-if="!linkable.length" class="text-sm text-gray-500">No matching children found.</div>
+                        <div v-else class="space-y-3">
+                            <div v-for="cand in linkable" :key="cand.member_type + '-' + cand.id_data" class="border rounded p-3 flex items-center justify-between">
+                                <div>
+                                    <div class="font-semibold text-gray-900">{{ cand.display_name }}</div>
+                                    <div class="text-xs text-gray-600">{{ cand.detail }} • {{ cand.club_name || 'No club' }}</div>
+                                </div>
+                                <button @click="linkMember(cand)" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                                    Link to my account
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

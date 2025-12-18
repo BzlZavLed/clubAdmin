@@ -23,50 +23,89 @@ class MemberAdventurerController extends Controller
 {
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $request->validate([
             'club_id' => 'required|exists:clubs,id',
-            'club_name' => 'required|string|max:255',
-            'director_name' => 'required|string|max:255',
-            'church_name' => 'required|string|max:255',
-
-            'applicant_name' => 'required|string|max:255',
-            'birthdate' => 'required|date',
-            'age' => 'required|integer|min:1|max:99',
-            'grade' => 'required|string|max:20',
-            'mailing_address' => 'required|string',
-            'cell_number' => 'required|string',
-            'emergency_contact' => 'required|string',
-
-            'investiture_classes' => 'nullable|array',
-
-            'allergies' => 'nullable|string',
-            'physical_restrictions' => 'nullable|string',
-            'health_history' => 'nullable|string',
-
-            'parent_name' => 'required|string|max:255',
-            'parent_cell' => 'required|string|max:255',
-            'home_address' => 'required|string',
-            'email_address' => 'required|email',
-            'signature' => 'required|string|max:255',
         ]);
 
-        $validated['status'] = 'active';
+        $club = Club::findOrFail($request->input('club_id'));
+        $clubType = strtolower($club->club_type ?? '');
+        $parentId = auth()->user()?->profile_type === 'parent' ? auth()->id() : null;
 
-        $member = MemberAdventurer::create($validated);
+        if ($clubType === 'pathfinders') {
+            $validated = $request->validate([
+                'applicant_name' => 'required|string|max:255',
+                'birthdate' => 'required|date',
+                'cell_number' => 'required|string',
+                'email_address' => 'required|email',
+                'parent_name' => 'required|string|max:255',
+                'parent_cell' => 'required|string|max:255',
+            ]);
 
-        // Mirror into members table for adventurer clubs
-        $club = Club::find($validated['club_id']);
-        $isAdventurerClub = $club && strtolower($club->club_type ?? '') === 'adventurers';
-        if ($isAdventurerClub) {
+            $tempMember = TempMemberPathfinder::create([
+                'club_id' => $club->id,
+                'nombre' => $validated['applicant_name'],
+                'dob' => $validated['birthdate'],
+                'phone' => $validated['cell_number'],
+                'email' => $validated['email_address'],
+                'father_name' => $validated['parent_name'],
+                'father_phone' => $validated['parent_cell'],
+            ]);
+
+            $member = Member::create([
+                'type' => 'temp_pathfinder',
+                'id_data' => $tempMember->id,
+                'club_id' => $club->id,
+                'class_id' => null,
+                'parent_id' => $parentId,
+                'assigned_staff_id' => null,
+                'status' => 'active',
+            ]);
+
+            $tempMember->update(['member_id' => $member->id]);
+        } else {
+            $validated = $request->validate([
+                'club_name' => 'required|string|max:255',
+                'director_name' => 'required|string|max:255',
+                'church_name' => 'required|string|max:255',
+
+                'applicant_name' => 'required|string|max:255',
+                'birthdate' => 'required|date',
+                'age' => 'required|integer|min:1|max:99',
+                'grade' => 'required|string|max:20',
+                'mailing_address' => 'required|string',
+                'cell_number' => 'required|string',
+                'emergency_contact' => 'required|string',
+
+                'investiture_classes' => 'nullable|array',
+
+                'allergies' => 'nullable|string',
+                'physical_restrictions' => 'nullable|string',
+                'health_history' => 'nullable|string',
+
+                'parent_name' => 'required|string|max:255',
+                'parent_cell' => 'required|string|max:255',
+                'home_address' => 'required|string',
+                'email_address' => 'required|email',
+                'signature' => 'required|string|max:255',
+            ]);
+
+            $validated['status'] = 'active';
+            $validated['club_id'] = $club->id;
+            $validated['club_name'] = $club->club_name ?? $validated['club_name'];
+            $validated['director_name'] = $club->director_name ?? $validated['director_name'];
+            $validated['church_name'] = $club->church_name ?? $validated['church_name'];
+
+            $member = MemberAdventurer::create($validated);
+
             Member::firstOrCreate(
                 [
                     'type' => 'adventurers',
                     'id_data' => $member->id,
                 ],
                 [
-                    'club_id' => $validated['club_id'],
+                    'club_id' => $club->id,
                     'class_id' => null,
-                    'parent_id' => auth()->id(),
+                    'parent_id' => $parentId,
                     'assigned_staff_id' => null,
                     'status' => 'active',
                 ]

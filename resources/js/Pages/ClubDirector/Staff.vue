@@ -52,6 +52,7 @@ const pendingStaff = ref([])
 const tempStaff = ref([])
 const assignedClassChanges = ref({})
 const isUpdatingClass = ref({})
+const parentAccounts = ref(page.props.parent_accounts || [])
 const tempStaffForm = ref({
     club_id: '',
     staff_name: '',
@@ -88,7 +89,9 @@ const userClubId = computed(() => user.value?.club_id || null)
 const filteredUsers = computed(() =>
     sub_roles.value.filter(user => {
         if (activeTab.value === 'pending') return false
+        if (activeTab.value === 'parents') return false
         const targetStatus = activeTab.value === 'active' ? 'active' : 'deleted'
+        if (user.profile_type === 'parent') return false
         return user.status === targetStatus && (!userClubId.value || String(user.club_id) === String(userClubId.value))
     })
 )
@@ -100,8 +103,30 @@ const filteredPendingStaff = computed(() =>
     pendingStaff.value.filter(u => !userClubId.value || String(u.club_id) === String(userClubId.value))
 )
 
+const displayedStaff = computed(() => {
+    if (selectedClub.value?.club_type === 'pathfinders') {
+        const baseStaff = staff.value.filter(p => p.type !== 'temp_pathfinder')
+        const tempMapped = tempStaff.value.map(ts => ({
+            id: `temp-${ts.id}`,
+            name: ts.staff_name,
+            dob: ts.staff_dob,
+            staff_dob: ts.staff_dob,
+            address: ts.address || '—',
+            cell_phone: ts.staff_phone,
+            email: ts.staff_email,
+            status: 'active',
+            assigned_classes: [],
+            class_names: [],
+            assigned_class: null,
+            club_id: ts.club_id,
+        }))
+        return [...baseStaff, ...tempMapped]
+    }
+    return staff.value
+})
+
 const filteredStaff = computed(() =>
-    staff.value.filter(person => person.status === activeStaffTab.value)
+    displayedStaff.value.filter(person => person.status === activeStaffTab.value)
 )
 const availableClasses = computed(() => {
     if (!selectedClub.value) return []
@@ -115,6 +140,13 @@ const classDisplay = (person) => {
         const match = clubClasses.value.find(c => String(c.id) === String(person.assigned_class))
         if (match) return match.class_name
     }
+    return '—'
+}
+
+const dobDisplay = (person) => {
+    console.log(person);
+    if (person.dob) return String(person.dob).slice(0, 10)
+    if (person.staff_dob) return String(person.staff_dob).slice(0, 10)
     return '—'
 }
 
@@ -381,7 +413,6 @@ const rejectPendingStaff = async (staffRow) => {
 const loadTempStaff = async (clubId) => {
     try {
         tempStaff.value = await fetchTempStaffPathfinder(clubId)
-        console.log('Loaded temp staff:', tempStaff.value)
     } catch (err) {
         console.error('Failed to load temp staff', err)
         tempStaff.value = []
@@ -455,62 +486,7 @@ onMounted(fetchClubs)
 
             </div>
 
-            <div v-if="selectedClub" class="max-w-5xl mx-auto">
-                <div v-if="selectedClub.club_type === 'pathfinders'" class="mb-6 border rounded p-4 bg-amber-50">
-                    <h2 class="font-semibold text-amber-800 mb-2">Temporary Pathfinder Staff</h2>
-                    <div class="grid md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Name</label>
-                            <input v-model="tempStaffForm.staff_name" type="text" class="w-full border rounded p-2" />
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">DOB</label>
-                            <input v-model="tempStaffForm.staff_dob" type="date" class="w-full border rounded p-2" />
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Age</label>
-                            <input v-model="tempStaffForm.staff_age" type="number" min="0" class="w-full border rounded p-2" />
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Email</label>
-                            <input v-model="tempStaffForm.staff_email" type="email" class="w-full border rounded p-2" />
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Phone</label>
-                            <input v-model="tempStaffForm.staff_phone" type="text" class="w-full border rounded p-2" />
-                        </div>
-                    </div>
-                    <div class="mt-3">
-                        <button @click="saveTempStaff" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save temp staff</button>
-                    </div>
-
-                    <div class="mt-4 overflow-x-auto">
-                        <table class="min-w-full text-sm border">
-                            <thead class="bg-amber-100">
-                                <tr>
-                                    <th class="p-2 text-left">Name</th>
-                                    <th class="p-2 text-left">DOB</th>
-                                    <th class="p-2 text-left">Age</th>
-                                    <th class="p-2 text-left">Email</th>
-                                    <th class="p-2 text-left">Phone</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-if="!tempStaff.length">
-                                    <td colspan="5" class="p-3 text-center text-gray-500">No temp staff</td>
-                                </tr>
-                                <tr v-for="ts in tempStaff" :key="ts.id" class="border-t">
-                                    <td class="p-2">{{ ts.staff_name }}</td>
-                                    <td class="p-2">{{ ts.staff_dob || '—' }}</td>
-                                    <td class="p-2">{{ ts.staff_age || '—' }}</td>
-                                    <td class="p-2">{{ ts.staff_email || '—' }}</td>
-                                    <td class="p-2">{{ ts.staff_phone || '—' }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
+                <div v-if="selectedClub" class="max-w-5xl mx-auto">
                 <div v-if="filteredPendingStaff.length" class="mb-6 border rounded p-4 bg-amber-50">
                     <h2 class="font-semibold text-amber-800 mb-2">Pending staff approvals</h2>
                     <div class="space-y-2">
@@ -584,7 +560,7 @@ onMounted(fetchClubs)
                                         @change="() => toggleSelectStaff(person.id)" />
                                 </td>
                                 <td class="p-2 text-xs">{{ person.name }}</td>
-                                <td class="p-2 text-xs">{{ person.dob ? person.dob.slice(0, 10) : '—' }}</td>
+                                <td class="p-2 text-xs">{{ dobDisplay(person) }}</td>
                                 <td class="p-2 text-xs">{{ person.address }}</td>
                                 <!-- <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td> -->
                                 <td class="p-2 text-xs">{{ person.cell_phone }}</td>
@@ -758,6 +734,10 @@ onMounted(fetchClubs)
                             :class="activeTab === 'active' ? 'font-bold border-b-2 border-blue-600' : 'text-gray-500'">
                             Active Accounts
                         </button>
+                        <button @click="activeTab = 'parents'"
+                            :class="activeTab === 'parents' ? 'font-bold border-b-2 border-green-600' : 'text-gray-500'">
+                            Parent Accounts
+                        </button>
                         <button
                             v-if="sub_roles.some(user => user.status === 'deleted') && user.profile_type === 'club_director'"
                             @click="activeTab = 'deleted'"
@@ -771,7 +751,44 @@ onMounted(fetchClubs)
                         </button>
                     </div>
 
-                    <template v-if="activeTab !== 'pending'">
+                    <template v-if="activeTab === 'parents'">
+                        <table class="w-full text-sm border rounded overflow-hidden">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="p-2 text-left">Parent</th>
+                                    <th class="p-2 text-left">Email</th>
+                                    <th class="p-2 text-left">Children</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-if="!parentAccounts.length">
+                                    <td colspan="3" class="p-3 text-center text-gray-500">No parent accounts found.</td>
+                                </tr>
+                                <template v-for="parent in parentAccounts" :key="parent.id">
+                                    <tr class="border-t">
+                                        <td class="p-2 text-xs">{{ parent.name }}</td>
+                                        <td class="p-2 text-xs">{{ parent.email }}</td>
+                                        <td class="p-2 text-xs">
+                                            <div v-if="parent.children?.length" class="space-y-1">
+                                                <div v-for="child in parent.children" :key="child.id"
+                                                    class="border rounded p-2 bg-gray-50">
+                                                    <div class="font-semibold text-xs">{{ child.name || '—' }}</div>
+                                                    <div class="text-[11px] text-gray-600">Club: {{
+                                                        child.club_name || child.club_id || '—' }}</div>
+                                                    <div class="text-[11px] text-gray-600">Type: {{
+                                                        child.member_type }}</div>
+                                                    <div class="text-[11px] text-gray-600">Class ID: {{
+                                                        child.class_id || '—' }}</div>
+                                                </div>
+                                            </div>
+                                            <div v-else class="text-gray-500 text-xs">No children linked.</div>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </template>
+                    <template v-else-if="activeTab !== 'pending'">
                         <table class="w-full text-sm border rounded overflow-hidden">
                             <thead class="bg-gray-100">
                                 <tr>

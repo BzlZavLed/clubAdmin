@@ -667,17 +667,11 @@ class StaffAdventurerController extends Controller
             // Only one class per staff: replace pivot links
             $staff->classes()->sync([$data['class_id']]);
 
-            if ($staff->type === 'adventurers' && $staff->id_data) {
-                StaffAdventurer::where('id', $staff->id_data)->update(['assigned_class' => $data['class_id']]);
-            }
             return response()->json(['message' => 'Assigned class updated']);
         }
 
         // Fallback legacy: staff_adventurer id
         $staffAdv = StaffAdventurer::findOrFail($data['staff_id']);
-        $staffAdv->assigned_class = $data['class_id'];
-        $staffAdv->save();
-
         $staffModel = Staff::updateOrCreate(
             [
                 'type' => Club::where('id', $staffAdv->club_id)->value('club_type') ?? 'adventurers',

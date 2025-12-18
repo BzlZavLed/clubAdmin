@@ -75,6 +75,15 @@ php artisan serve
   php artisan payto:seed --club_id=1
   ```
 
+## Tests
+
+- End-to-end smoke tests:
+  - `tests/Feature/SystemSmokeTest.php` covers church creation, director registration, club setup, classes, staff, workplan, payments, and member assignment.
+  - Run:
+    ```bash
+    php artisan test --testsuite=Feature --filter=SystemSmokeTest
+    ```
+
 ## Environment Variables
 
 Configure your `.env` file:

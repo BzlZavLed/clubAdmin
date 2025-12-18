@@ -380,15 +380,15 @@ onMounted(fetchClubs)
                         <input v-model="tempMemberForm.phone" type="text" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Email</label>
+                        <label class="block text-sm font-medium text-gray-700">Parent Email</label>
                         <input v-model="tempMemberForm.email" type="email" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Father name</label>
+                        <label class="block text-sm font-medium text-gray-700">Parent Name</label>
                         <input v-model="tempMemberForm.father_name" type="text" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Father phone</label>
+                        <label class="block text-sm font-medium text-gray-700">Parent Phone</label>
                         <input v-model="tempMemberForm.father_phone" type="text" class="w-full border rounded p-2" />
                     </div>
                 </div>

@@ -90,7 +90,9 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
 
     Route::post('/parent/apply', [MemberAdventurerController::class, 'store'])->name('parent.apply.submit');
     Route::get('/parent/children', [ParentMemberController::class, 'index'])->name('parent-links.index.parent');
-    Route::put('/parent/children/{id}', [MemberAdventurerController::class, 'updateForParent'])->name('parent.children.update');
+    Route::put('/parent/children/{id}', [ParentMemberController::class, 'update'])->name('parent.children.update');
+    Route::get('/parent/children/linkable', [ParentMemberController::class, 'linkable'])->name('parent.children.linkable');
+    Route::post('/parent/children/link', [ParentMemberController::class, 'link'])->name('parent.children.link');
 
     Route::get('/parent/workplan/data', [WorkplanController::class, 'data'])->name('parent.workplan.data');
     Route::get('/parent/workplan/pdf', [WorkplanController::class, 'pdf'])->name('parent.workplan.pdf');
@@ -138,9 +140,51 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.expenses.upload');
 
     Route::get('/club-director/staff', function () {
+        $authUser = auth()->user();
+        $clubId = $authUser?->club_id;
+
+        // Parents who have children in this club (even if parent.club_id differs)
+        $parentIdsWithKids = \App\Models\Member::when($clubId, fn ($q) => $q->where('club_id', $clubId))
+            ->whereNotNull('parent_id')
+            ->pluck('parent_id')
+            ->unique()
+            ->all();
+
+        $parentAccounts = \App\Models\User::with('clubs')
+            ->where('profile_type', 'parent')
+            ->whereIn('id', $parentIdsWithKids)
+            ->get()
+            ->map(function ($parent) use ($clubId) {
+                $children = \App\Models\Member::with('club')
+                    ->where('parent_id', $parent->id)
+                    ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
+                    ->get()
+                    ->map(function ($member) {
+                        $detail = \App\Support\ClubHelper::memberDetail($member);
+                        return [
+                            'id' => $member->id,
+                            'member_type' => $member->type,
+                            'name' => $detail['name'] ?? null,
+                            'class_id' => $member->class_id,
+                            'club_id' => $member->club_id,
+                            'club_name' => $member->club?->club_name,
+                        ];
+                    })
+                    ->values();
+
+                return [
+                    'id' => $parent->id,
+                    'name' => $parent->name,
+                    'email' => $parent->email,
+                    'club_id' => $parent->club_id,
+                    'children' => $children,
+                ];
+            });
+
         return Inertia::render('ClubDirector/Staff', [
-            'auth_user' => auth()->user(),
+            'auth_user' => $authUser,
             'sub_roles' => SubRole::all(),
+            'parent_accounts' => $parentAccounts,
         ]);
     })->name('club.staff');
 
