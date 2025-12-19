@@ -10,8 +10,11 @@ use Log;
 use App\Services\DocumentExportService;
 class ExportController extends Controller
 {
-    public function exportZip(Request $request, string $type, DocumentExportService $exportService)
+    public function exportZip(Request $request, DocumentExportService $exportService)
     {
+        // Accept type either from route param (if defined) or request payload; default to member
+        $type = $request->route('type') ?? $request->input('type', 'member');
+
         $ids = match ($type) {
             'member' => $request->input('member_ids', []),
             'staff' => $request->input('staff_adventurer_ids', []),
