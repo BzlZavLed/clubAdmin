@@ -10,7 +10,7 @@ class DocumentExportService
 {
     public function generateMemberDoc(MemberAdventurer $member, string $outputDir): string
     {
-        $templatePath = storage_path('app/templates/template_adventurer_new.docx');
+        $templatePath = $this->getTemplatePath('template_adventurer_new.docx');
         $processor = new TemplateProcessor($templatePath);
     
         $processor->setValue('current_date', date('m/d/Y'));
@@ -52,7 +52,7 @@ class DocumentExportService
 
     public function generateStaffDoc(StaffAdventurer $staff, string $outputDir): string
     {
-        $templatePath = storage_path('app/templates/template_staff_new.docx');
+        $templatePath = $this->getTemplatePath('template_staff_new.docx');
         $processor = new TemplateProcessor($templatePath);
 
         // Basic fields
@@ -154,6 +154,22 @@ class DocumentExportService
 
         return $outputPath;
     }
-}
 
+    private function getTemplatePath(string $file): string
+    {
+        $candidates = [
+            storage_path('app/templates/' . $file),
+            resource_path('templates/' . $file),
+            base_path('templates/' . $file),
+        ];
+
+        foreach ($candidates as $path) {
+            if (file_exists($path)) {
+                return $path;
+            }
+        }
+
+        throw new \RuntimeException("Template file {$file} not found. Checked: " . implode(', ', $candidates));
+    }
+}
 
