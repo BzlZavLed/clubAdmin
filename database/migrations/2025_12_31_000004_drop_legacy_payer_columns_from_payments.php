@@ -84,12 +84,23 @@ return new class extends Migration {
         // Avoid dropForeign/dropIndex because names vary across environments.
         if (Schema::hasColumn('payments', 'member_adventurer_id')) {
             Schema::table('payments', function (Blueprint $table) {
+                // Best-effort drop FK if present
+                try {
+                    $table->dropForeign(['member_adventurer_id']);
+                } catch (\Throwable $e) {
+                    // ignore if FK name differs/missing
+                }
                 $table->dropColumn('member_adventurer_id');
             });
         }
 
         if (Schema::hasColumn('payments', 'staff_adventurer_id')) {
             Schema::table('payments', function (Blueprint $table) {
+                try {
+                    $table->dropForeign(['staff_adventurer_id']);
+                } catch (\Throwable $e) {
+                    // ignore if FK name differs/missing
+                }
                 $table->dropColumn('staff_adventurer_id');
             });
         }

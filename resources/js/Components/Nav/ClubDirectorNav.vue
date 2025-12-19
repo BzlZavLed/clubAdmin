@@ -57,7 +57,7 @@ const menuItems = [
         ]
     },
     { name: 'Members', href: '/club-director/members', route: 'club.members', icon: UserGroupIcon },
-    { name: 'Staff', href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
+    { name: 'Staff & Accounts', href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
     {
         name: 'Reports',
         icon: ChartBarIcon,
