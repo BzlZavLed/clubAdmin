@@ -257,43 +257,6 @@ class MemberAdventurerController extends Controller
             'members' => $members,
         ]);
     }
-         $generator = $type === 'member'
-             ? fn($record, $dir) => $exportService->generateMemberDoc($record, $dir)
-             : fn($record, $dir) => $exportService->generateStaffDoc($record, $dir);
-
-         $ids = $request->input($inputKey, []);
-         if (!is_array($ids) || empty($ids)) {
-             return response()->json(['error' => 'No entries selected.'], 400);
-         }
-
-         $records = $modelClass::whereIn('id', $ids)->get();
-         $tempDir = storage_path('app/temp_export_' . Str::uuid());
-         $zipPath = storage_path("app/temp/{$type}_export_" . time() . ".zip");
-
-         if (!file_exists($tempDir)) {
-             mkdir($tempDir, 0775, true);
-         }
-
-         foreach ($records as $record) {
-             $generator($record, $tempDir);
-         }
-
-         $zip = new \ZipArchive;
-         if ($zip->open($zipPath, \ZipArchive::CREATE) === TRUE) {
-             foreach (glob("$tempDir/*.docx") as $file) {
-                 $zip->addFile($file, basename($file));
-             }
-             $zip->close();
-         }
-
-         foreach (glob("$tempDir/*.docx") as $file) {
-             unlink($file);
-         }
-         rmdir($tempDir);
-
-         return response()->download($zipPath)->deleteFileAfterSend(true);
-     } */
-
     public function exportWord($id, DocumentExportService $exportService)
     {
         $member = MemberAdventurer::findOrFail($id);
