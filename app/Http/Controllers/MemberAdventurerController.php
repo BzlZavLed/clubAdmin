@@ -257,17 +257,6 @@ class MemberAdventurerController extends Controller
             'members' => $members,
         ]);
     }
-
-
-    /*  public function exportZip(Request $request, string $type, DocumentExportService $exportService)
-     {
-         $validTypes = ['member', 'staff'];
-         if (!in_array($type, $validTypes)) {
-             return response()->json(['error' => 'Invalid export type.'], 400);
-         }
-
-         $modelClass = $type === 'member' ? MemberAdventurer::class : StaffAdventurer::class;
-         $inputKey = $type === 'member' ? 'member_ids' : 'staff_adventurer_ids';
          $generator = $type === 'member'
              ? fn($record, $dir) => $exportService->generateMemberDoc($record, $dir)
              : fn($record, $dir) => $exportService->generateStaffDoc($record, $dir);

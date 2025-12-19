@@ -250,7 +250,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/clubs/{id}/members', [MemberAdventurerController::class, 'byClub'])->name('clubs.members');
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
-    Route::post('/members/export-zip', [MemberAdventurerController::class, 'exportZip'])->name('members.export-zip');
+    Route::post('/members/export-zip', [ExportController::class, 'exportZip'])->name('members.export-zip');
     Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember'])->name('members.assign');
     Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment'])->name('members.assignment.undo');
 
