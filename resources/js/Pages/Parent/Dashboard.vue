@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import WorkplanCalendar from '@/Components/WorkplanCalendar.vue'
 import { fetchParentWorkplan } from '@/Services/api'
@@ -16,6 +16,25 @@ const selectedClubId = ref(null)
 const workplan = ref(null)
 const events = ref([])
 const memberships = ref([])
+const selectedEvent = ref(null)
+const eventModalOpen = ref(false)
+const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value }) : '#')
+const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value }) : '#')
+
+const cleanDate = (val) => {
+    if (!val) return '—'
+    const str = String(val)
+    if (str.includes('T')) return str.slice(0, 10)
+    return str
+}
+
+const cleanTime = (val) => {
+    if (!val) return ''
+    const str = String(val)
+    const parts = str.split(':')
+    if (parts.length >= 2) return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`
+    return str
+}
 
 const load = async (clubId = null) => {
     try {
@@ -34,6 +53,16 @@ const load = async (clubId = null) => {
 const changeClub = async () => {
     if (!selectedClubId.value) return
     await load(selectedClubId.value)
+}
+
+const openEvent = (ev) => {
+    selectedEvent.value = ev
+    eventModalOpen.value = true
+}
+
+const closeEvent = () => {
+    eventModalOpen.value = false
+    selectedEvent.value = null
 }
 
 onMounted(() => {
@@ -72,9 +101,49 @@ onMounted(() => {
                         :is-read-only="true"
                         :can-add="false"
                         :initial-date="workplan?.start_date || new Date().toISOString().slice(0,10)"
+                        :pdf-href="workplanPdfHref"
+                        :ics-href="workplanIcsHref"
+                        @edit="openEvent"
                     />
                 </div>
                 <div v-else class="text-sm text-gray-600">No workplan found for your clubs.</div>
+            </div>
+        </div>
+
+        <div v-if="eventModalOpen && selectedEvent" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6 space-y-4 overflow-y-auto max-h-[90vh]">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h4 class="text-lg font-semibold text-gray-900">{{ selectedEvent.title }}</h4>
+                        <p class="text-sm text-gray-600">
+                            {{ selectedEvent.meeting_type }} • {{ cleanDate(selectedEvent.date) }}
+                            <span v-if="selectedEvent.start_time || selectedEvent.end_time" class="ml-2 text-xs text-gray-500">
+                                {{ cleanTime(selectedEvent.start_time) }}
+                                <template v-if="selectedEvent.end_time"> - {{ cleanTime(selectedEvent.end_time) }}</template>
+                            </span>
+                        </p>
+                    </div>
+                    <button class="text-gray-500" @click="closeEvent">✕</button>
+                </div>
+                <div class="space-y-2 text-sm text-gray-700">
+                    <div><span class="font-semibold">Description:</span> {{ selectedEvent.description || '—' }}</div>
+                    <div><span class="font-semibold">Location:</span> {{ selectedEvent.location || '—' }}</div>
+                </div>
+                <div v-if="selectedEvent.classPlans?.length" class="border-t pt-3">
+                    <h5 class="font-semibold text-gray-800 text-sm mb-2">Class plans for your children</h5>
+                    <div class="space-y-2">
+                        <div v-for="plan in selectedEvent.classPlans" :key="plan.id" class="border rounded p-3 bg-gray-50">
+                            <div class="flex items-center justify-between text-sm">
+                                <div class="font-semibold">{{ plan.title || 'Class Plan' }}</div>
+                                <span class="text-xs capitalize text-gray-600">{{ plan.type || 'plan' }}</span>
+                            </div>
+                            <div class="text-xs text-gray-700 mt-1">{{ plan.description || '—' }}</div>
+                            <div class="text-[11px] text-gray-600 mt-2">
+                                Class: {{ plan.class?.class_name || '—' }} • Staff: {{ plan.staff?.user?.name || plan.staff?.name || '—' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </PathfinderLayout>

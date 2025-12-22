@@ -51,6 +51,9 @@ const planForm = ref({
     location_override: ''
 })
 const selectedEvent = ref(null)
+const planLocationSuggestions = ref([])
+const planLocationLoading = ref(false)
+let planLocationTimer = null
 const tempStaffForm = ref({
     staff_name: '',
     staff_dob: '',
@@ -297,6 +300,37 @@ const savePlan = async () => {
     }
 }
 
+const searchPlanLocation = (query) => {
+    if (planLocationTimer) clearTimeout(planLocationTimer)
+    if (!query || query.length < 3) {
+        planLocationSuggestions.value = []
+        return
+    }
+    planLocationTimer = setTimeout(async () => {
+        planLocationLoading.value = true
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6`, {
+                headers: { 'Accept-Language': 'en', 'User-Agent': 'club-portal/1.0' }
+            })
+            const data = await resp.json()
+            planLocationSuggestions.value = (data || []).map(item => ({
+                label: item.display_name,
+                value: item.display_name,
+            }))
+        } catch (err) {
+            console.error('Location search failed', err)
+            planLocationSuggestions.value = []
+        } finally {
+            planLocationLoading.value = false
+        }
+    }, 400)
+}
+
+const applyPlanLocation = (item) => {
+    planForm.value.location_override = item.value
+    planLocationSuggestions.value = []
+}
+
 </script>
 
 <template>
@@ -343,6 +377,8 @@ const savePlan = async () => {
                         :is-read-only="true"
                         :can-add="false"
                         :initial-date="workplan?.start_date || new Date().toISOString().slice(0,10)"
+                        :pdf-href="workplanPdfHref"
+                        :ics-href="workplanIcsHref"
                     />
                     
                 </div>

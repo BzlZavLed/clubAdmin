@@ -17,6 +17,14 @@ const props = defineProps({
     initialDate: {
         type: String,
         default: () => new Date().toISOString().slice(0, 10)
+    },
+    pdfHref: {
+        type: String,
+        default: ''
+    },
+    icsHref: {
+        type: String,
+        default: ''
     }
 })
 
@@ -57,6 +65,7 @@ const weekLabel = computed(() => {
 })
 
 const periodLabel = computed(() => isMobile.value ? weekLabel.value : monthLabel.value)
+const hasDownloads = computed(() => Boolean(props.pdfHref || props.icsHref))
 
 const calendarCells = computed(() => {
     const date = new Date(monthCursor.value)
@@ -169,11 +178,31 @@ watch(() => props.events, (newVal) => {
 
 <template>
     <div class="bg-white shadow-sm rounded-lg p-4 border overflow-x-auto">
-        <div class="flex items-center justify-between mb-2">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-2 gap-2">
             <h2 class="font-semibold text-gray-800">Calendar</h2>
-            <div class="flex items-center gap-2">
-                <button class="px-2 py-1 border rounded" @click="isMobile ? shiftWeek(-1) : shiftMonth(-1)">Prev</button>
-                <button class="px-2 py-1 border rounded" @click="isMobile ? shiftWeek(1) : shiftMonth(1)">Next</button>
+            <div class="flex flex-wrap items-center gap-2 justify-end">
+                <div v-if="hasDownloads" class="flex items-center gap-2">
+                    <a
+                        v-if="props.pdfHref"
+                        :href="props.pdfHref"
+                        target="_blank"
+                        class="px-2 py-1 border rounded text-sm text-gray-800 hover:bg-gray-50"
+                    >
+                        PDF
+                    </a>
+                    <a
+                        v-if="props.icsHref"
+                        :href="props.icsHref"
+                        target="_blank"
+                        class="px-2 py-1 border rounded text-sm text-gray-800 hover:bg-gray-50"
+                    >
+                        ICS
+                    </a>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button class="px-2 py-1 border rounded" @click="isMobile ? shiftWeek(-1) : shiftMonth(-1)">Prev</button>
+                    <button class="px-2 py-1 border rounded" @click="isMobile ? shiftWeek(1) : shiftMonth(1)">Next</button>
+                </div>
             </div>
         </div>
         <div class="mb-3 text-sm font-medium text-gray-700">{{ periodLabel }}</div>

@@ -234,8 +234,35 @@ class WorkplanController extends Controller
         return response()->json([
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
-            'workplan' => $workplan,
+            'workplan' => $this->filterPlansForParent($workplan, $user),
+            'memberships' => [],
         ]);
+    }
+
+    private function filterPlansForParent($workplan, $user)
+    {
+        if (!$workplan || $user->profile_type !== 'parent') return $workplan;
+
+        $members = \App\Models\Member::where('parent_id', $user->id)
+            ->where('club_id', $workplan->club_id)
+            ->get(['id', 'class_id']);
+
+        if ($members->isEmpty()) return $workplan;
+
+        $memberIds = $members->pluck('id')->all();
+        $classIds = $members->pluck('class_id')->filter()->all();
+
+        $workplan->events = $workplan->events->map(function ($ev) use ($memberIds, $classIds) {
+            $ev->classPlans = $ev->classPlans->filter(function ($plan) use ($memberIds, $classIds) {
+                if ($plan->member_id && in_array($plan->member_id, $memberIds)) return true;
+                if ($plan->class_id && in_array($plan->class_id, $classIds)) return true;
+                if ($plan->class && in_array($plan->class->id, $classIds)) return true;
+                return false;
+            })->values();
+            return $ev;
+        });
+
+        return $workplan;
     }
 
     public function pdf(Request $request)
@@ -254,19 +281,24 @@ class WorkplanController extends Controller
         $workplan = $workplan->load([
             'club',
             'events' => function ($q) {
-                $q->orderBy('date')->orderBy('start_time');
+                // Include every event (active, pending approval, special, etc.) so the PDF shows the full calendar.
+                $q->with(['classPlans.class', 'classPlans.staff.user'])
+                    ->orderBy('date')
+                    ->orderBy('start_time');
             }
         ]);
 
         $start = Carbon::parse($request->input('start_date', $workplan->start_date))->startOfDay();
         $end = Carbon::parse($request->input('end_date', $workplan->end_date))->endOfDay();
 
-        // Clamp to the workplan range
-        if ($start->lt(Carbon::parse($workplan->start_date))) {
-            $start = Carbon::parse($workplan->start_date)->startOfDay();
+        // Expand to include any single/special events that fall just outside the formal range.
+        $eventMin = $workplan->events->min('date');
+        $eventMax = $workplan->events->max('date');
+        if ($eventMin && Carbon::parse($eventMin)->lt($start)) {
+            $start = Carbon::parse($eventMin)->startOfDay();
         }
-        if ($end->gt(Carbon::parse($workplan->end_date))) {
-            $end = Carbon::parse($workplan->end_date)->endOfDay();
+        if ($eventMax && Carbon::parse($eventMax)->gt($end)) {
+            $end = Carbon::parse($eventMax)->endOfDay();
         }
 
         $months = [];
@@ -287,6 +319,27 @@ class WorkplanController extends Controller
                 continue;
             }
             $eventsByDate[$date][] = $ev;
+        }
+
+        // Debug log to verify which events are going into the PDF export.
+        try {
+            Log::info('Workplan PDF events', [
+                'user_id' => $user->id,
+                'club_id' => $selectedClubId,
+                'range' => [$start->toDateString(), $end->toDateString()],
+                'events' => $workplan->events->map(function ($ev) {
+                    return [
+                        'id' => $ev->id,
+                        'date' => $ev->date instanceof Carbon ? $ev->date->toDateString() : (string) $ev->date,
+                        'meeting_type' => $ev->meeting_type,
+                        'status' => $ev->status,
+                        'title' => $ev->title,
+                        'is_generated' => $ev->is_generated,
+                    ];
+                })->values(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to log workplan PDF events', ['error' => $e->getMessage()]);
         }
 
         $pdf = Pdf::loadView('pdf.workplan', [

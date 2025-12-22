@@ -87,6 +87,12 @@ const eventForm = ref({
     description: '',
     location: ''
 })
+const locationSuggestions = ref([])
+const locationLoading = ref(false)
+let locationTimer = null
+const planLocationSuggestions = ref([])
+const planLocationLoading = ref(false)
+let planLocationTimer = null
 
 const nthOptions = [1, 2, 3, 4, 5]
 
@@ -189,7 +195,7 @@ const planForm = ref({
 
 const planEvents = computed(() => {
     return [...events.value]
-        .filter(ev => ['sabbath', 'sunday'].includes(ev.meeting_type))
+        .filter(ev => ['sabbath', 'sunday', 'special'].includes(ev.meeting_type))
         .sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)))
 })
 
@@ -373,6 +379,7 @@ function openEventModal(ev = null, date = null) {
         description: ev?.description || '',
         location: ev?.location || defaultLocation(ev?.meeting_type || 'special'),
     }
+    locationSuggestions.value = []
     eventModalOpen.value = true
 }
 
@@ -439,6 +446,68 @@ async function saveEvent() {
         console.error(error)
         showToast('Could not save event', 'error')
     }
+}
+
+const searchLocations = (query) => {
+    if (locationTimer) clearTimeout(locationTimer)
+    if (!query || query.length < 3) {
+        locationSuggestions.value = []
+        return
+    }
+    locationTimer = setTimeout(async () => {
+        locationLoading.value = true
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6`, {
+                headers: { 'Accept-Language': 'en', 'User-Agent': 'club-portal/1.0' }
+            })
+            const data = await resp.json()
+            locationSuggestions.value = (data || []).map(item => ({
+                label: item.display_name,
+                value: item.display_name,
+            }))
+        } catch (err) {
+            console.error('Location search failed', err)
+            locationSuggestions.value = []
+        } finally {
+            locationLoading.value = false
+        }
+    }, 400)
+}
+
+const applyLocation = (item) => {
+    eventForm.value.location = item.value
+    locationSuggestions.value = []
+}
+
+const searchPlanLocation = (query) => {
+    if (planLocationTimer) clearTimeout(planLocationTimer)
+    if (!query || query.length < 3) {
+        planLocationSuggestions.value = []
+        return
+    }
+    planLocationTimer = setTimeout(async () => {
+        planLocationLoading.value = true
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6`, {
+                headers: { 'Accept-Language': 'en', 'User-Agent': 'club-portal/1.0' }
+            })
+            const data = await resp.json()
+            planLocationSuggestions.value = (data || []).map(item => ({
+                label: item.display_name,
+                value: item.display_name,
+            }))
+        } catch (err) {
+            console.error('Location search failed', err)
+            planLocationSuggestions.value = []
+        } finally {
+            planLocationLoading.value = false
+        }
+    }, 400)
+}
+
+const applyPlanLocation = (item) => {
+    planForm.value.location_override = item.value
+    planLocationSuggestions.value = []
 }
 
 async function removeEvent(ev) {
@@ -774,7 +843,22 @@ watch(userClassId, (val) => {
                                 </div>
                                 <div>
                                     <label class="block text-sm text-gray-700">Location override (for outings)</label>
-                                    <input v-model="planForm.location_override" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff" placeholder="Optional" />
+                                    <input
+                                        v-model="planForm.location_override"
+                                        class="w-full border rounded px-3 py-2 text-sm"
+                                        :disabled="!isStaff"
+                                        placeholder="Optional"
+                                        @input="searchPlanLocation(planForm.location_override)"
+                                    />
+                                    <div v-if="planLocationSuggestions.length"
+                                        class="mt-1 border rounded bg-white shadow-sm max-h-40 overflow-y-auto text-sm">
+                                        <button v-for="(opt, idx) in planLocationSuggestions" :key="idx" type="button"
+                                            class="w-full text-left px-3 py-2 hover:bg-gray-100"
+                                            @click="applyPlanLocation(opt)">
+                                            {{ opt.label }}
+                                        </button>
+                                        <div v-if="planLocationLoading" class="px-3 py-2 text-xs text-gray-500">Searching…</div>
+                                    </div>
                                 </div>
                                 <div class="flex justify-end">
                                     <button class="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50" :disabled="!isStaff" @click="savePlan">
@@ -1010,7 +1094,21 @@ watch(userClassId, (val) => {
                         </div>
                         <div class="col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">Location</label>
-                            <input type="text" v-model="eventForm.location" class="w-full border rounded px-3 py-2 text-sm">
+                            <div class="relative">
+                                <input type="text" v-model="eventForm.location"
+                                    class="w-full border rounded px-3 py-2 text-sm"
+                                    @input="searchLocations(eventForm.location)" autocomplete="off">
+                                <div v-if="locationLoading" class="absolute right-2 top-2 text-[11px] text-gray-500">…</div>
+                                <div v-if="locationSuggestions.length"
+                                    class="absolute z-30 mt-1 w-full bg-white border rounded shadow text-sm max-h-48 overflow-y-auto">
+                                    <button v-for="(opt, idx) in locationSuggestions" :key="idx" type="button"
+                                        class="w-full text-left px-3 py-2 hover:bg-gray-100"
+                                        @click="applyLocation(opt)">
+                                        {{ opt.label }}
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-[11px] text-gray-500 mt-1">Search powered by OpenStreetMap (1 req/sec).</p>
                         </div>
                         <div class="col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">Description</label>
