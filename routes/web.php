@@ -22,6 +22,7 @@ use App\Models\SubRole;
 use App\Http\Controllers\ReportController;
 use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Controllers\WorkplanController;
+use App\Http\Controllers\ClubSettingsController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -194,12 +195,16 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/club-director/workplan/events', [WorkplanController::class, 'storeEvent'])->name('club.workplan.events.store');
     Route::put('/club-director/workplan/events/{event}', [WorkplanController::class, 'updateEvent'])->name('club.workplan.events.update');
     Route::delete('/club-director/workplan/events/{event}', [WorkplanController::class, 'destroyEvent'])->name('club.workplan.events.destroy');
+    Route::post('/club-director/workplan/export', [WorkplanController::class, 'exportToMyChurchAdmin'])->name('club.workplan.export');
     Route::get('/club-director/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.workplan.pdf');
     Route::get('/club-director/workplan/ics', [WorkplanController::class, 'ics'])->name('club.workplan.ics');
     Route::get('/club-director/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('club.workplan.class-plans.pdf');
     Route::put('/club-director/class-plans/{plan}/status', [\App\Http\Controllers\ClassPlanController::class, 'updateStatus'])->name('club.workplan.class-plans.status');
     Route::get('/club-director/church/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'show'])->name('club.director.church.invite-code');
     Route::post('/club-director/church/invite-code/regenerate', [\App\Http\Controllers\ChurchInviteCodeController::class, 'regenerate'])->name('club.director.church.invite-code.regenerate');
+    Route::get('/club-director/settings', [ClubSettingsController::class, 'index'])->name('club.settings');
+    Route::post('/club-director/settings/catalog', [ClubSettingsController::class, 'fetchCatalog'])->name('club.settings.catalog');
+    Route::post('/club-director/settings/save', [ClubSettingsController::class, 'saveConfig'])->name('club.settings.save');
 
     Route::get('/club-director/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [

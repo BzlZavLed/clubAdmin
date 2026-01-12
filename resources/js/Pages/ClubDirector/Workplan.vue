@@ -11,7 +11,8 @@ import {
     createClassPlan,
     updateClassPlanStatus,
     fetchStaffRecord,
-    updateClassPlan
+    updateClassPlan,
+    exportWorkplanToMyChurchAdmin
 } from '@/Services/api'
 import { ArrowDownTrayIcon, CalendarDaysIcon } from '@heroicons/vue/24/outline'
 import WorkplanCalendar from '@/Components/WorkplanCalendar.vue'
@@ -25,6 +26,10 @@ const props = defineProps({
     },
     selected_club_id: {
         type: [String, Number, null],
+        default: null
+    },
+    integration_config: {
+        type: Object,
         default: null
     }
 })
@@ -85,7 +90,9 @@ const eventForm = ref({
     meeting_type: 'special',
     title: '',
     description: '',
-    location: ''
+    location: '',
+    department_id: null,
+    objective_id: null,
 })
 const locationSuggestions = ref([])
 const locationLoading = ref(false)
@@ -183,6 +190,23 @@ const plansPdfHref = computed(() => {
 const showIcsHelp = ref(false)
 const selectedEvent = ref(null)
 const workplanModalOpen = ref(false)
+const exportModalOpen = ref(false)
+const exportLoading = ref(false)
+const exportResponse = ref(null)
+const exportError = ref(null)
+const exportResponseOpen = ref(false)
+const objectiveModalOpen = ref(false)
+const objectiveAssignments = ref({})
+const bulkObjectiveId = ref('')
+const objectiveSaving = ref(false)
+const objectiveTab = ref('recurrent')
+const exportForm = ref({
+    calendar_year: new Date().getFullYear(),
+    plan_name: '',
+    publish_to_feed: true,
+    church_slug: '',
+    department_id: ''
+})
 const planForm = ref({
     workplan_event_id: null,
     class_id: null,
@@ -240,6 +264,47 @@ const classesOptions = computed(() => {
         }
     })
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+})
+
+const departmentsOptions = computed(() => props.integration_config?.departments || [])
+const objectivesOptions = computed(() => props.integration_config?.objectives || [])
+
+const getEventDepartmentId = (ev) => {
+    return ev.department_id || exportForm.value.department_id || ''
+}
+
+const getDepartmentName = (departmentId) => {
+    const dept = departmentsOptions.value.find(d => String(d.id) === String(departmentId))
+    return dept?.name || '—'
+}
+
+const objectiveMatchesDepartment = (objectiveId, departmentId) => {
+    if (!objectiveId || !departmentId) return false
+    const obj = objectivesOptions.value.find(o => String(o.id) === String(objectiveId))
+    if (!obj) return false
+    return String(obj.department_id) === String(departmentId)
+}
+
+const objectivesForDepartment = (departmentId) => {
+    if (!departmentId) return objectivesOptions.value
+    return objectivesOptions.value.filter(o => String(o.department_id) === String(departmentId))
+}
+
+const missingObjectiveEvents = computed(() => {
+    return events.value.filter(ev => {
+        const deptId = getEventDepartmentId(ev)
+        if (!ev.objective_id) return true
+        if (!deptId) return true
+        return !objectiveMatchesDepartment(ev.objective_id, deptId)
+    })
+})
+
+const missingRecurrentEvents = computed(() => {
+    return missingObjectiveEvents.value.filter(ev => ev.meeting_type !== 'special')
+})
+
+const missingSpecialEvents = computed(() => {
+    return missingObjectiveEvents.value.filter(ev => ev.meeting_type === 'special')
 })
 
 const filteredPlans = computed(() => {
@@ -378,6 +443,8 @@ function openEventModal(ev = null, date = null) {
         title: ev?.title || '',
         description: ev?.description || '',
         location: ev?.location || defaultLocation(ev?.meeting_type || 'special'),
+        department_id: ev?.department_id ?? null,
+        objective_id: ev?.objective_id ?? null,
     }
     locationSuggestions.value = []
     eventModalOpen.value = true
@@ -386,6 +453,134 @@ function openEventModal(ev = null, date = null) {
 function openWorkplanModal() {
     if (!hasClubSelected.value || isReadOnly.value) return
     workplanModalOpen.value = true
+}
+
+function resolveCalendarYear() {
+    const raw = form.value.start_date || todayIso
+    const year = Number(String(raw).slice(0, 4))
+    return Number.isFinite(year) ? year : new Date().getFullYear()
+}
+
+function defaultPlanName(year) {
+    const clubName = props.clubs.find(c => String(c.id) === String(selectedClubId.value))?.club_name || 'Club'
+    return `Plan anual ${clubName} ${year}`
+}
+
+function openExportModal() {
+    if (!hasClubSelected.value || !isDirector.value) return
+    if (!props.workplan?.id) {
+        showToast('Create a workplan before exporting', 'warning')
+        return
+    }
+    const defaultSlug = props.integration_config?.church_slug || props.integration_config?.church?.slug || ''
+    const defaultDepartment = departmentsOptions.value?.[0]?.id || ''
+    const year = resolveCalendarYear()
+    exportForm.value = {
+        calendar_year: year,
+        plan_name: defaultPlanName(year),
+        publish_to_feed: true,
+        church_slug: defaultSlug,
+        department_id: defaultDepartment
+    }
+    exportResponse.value = null
+    exportError.value = null
+    exportResponseOpen.value = false
+    exportModalOpen.value = true
+}
+
+function openObjectiveModal() {
+    objectiveAssignments.value = {}
+    missingObjectiveEvents.value.forEach(ev => {
+        const deptId = getEventDepartmentId(ev)
+        const matches = objectiveMatchesDepartment(ev.objective_id, deptId)
+        objectiveAssignments.value[ev.id] = matches ? ev.objective_id : ''
+    })
+    bulkObjectiveId.value = ''
+    objectiveTab.value = 'recurrent'
+    objectiveModalOpen.value = true
+}
+
+function applyObjectiveToAll(list) {
+    if (!bulkObjectiveId.value) return
+    list.forEach(ev => {
+        const deptId = getEventDepartmentId(ev)
+        if (objectiveMatchesDepartment(bulkObjectiveId.value, deptId)) {
+            objectiveAssignments.value[ev.id] = bulkObjectiveId.value
+        }
+    })
+}
+
+async function saveObjectivesAndExport() {
+    if (objectiveSaving.value) return
+    const missing = missingObjectiveEvents.value
+    const incomplete = missing.find(ev => !objectiveAssignments.value[ev.id])
+    if (incomplete) {
+        showToast('Select an objective for every event', 'warning')
+        return
+    }
+    objectiveSaving.value = true
+    try {
+        for (const ev of missing) {
+            const payload = {
+                date: normalizeDate(ev.date),
+                start_time: trimTime(ev.start_time),
+                end_time: trimTime(ev.end_time),
+                meeting_type: ev.meeting_type,
+                title: ev.title,
+                description: ev.description,
+                location: ev.location,
+                department_id: ev.department_id || null,
+                objective_id: objectiveAssignments.value[ev.id] || null,
+            }
+            const { event } = await updateWorkplanEvent(ev.id, payload)
+            events.value = events.value.map(e => e.id === event.id ? normalizeEvents([event])[0] : e)
+        }
+        objectiveModalOpen.value = false
+        await submitExport()
+    } catch (error) {
+        console.error(error)
+        showToast('Failed to save objectives', 'error')
+    } finally {
+        objectiveSaving.value = false
+    }
+}
+
+async function submitExport() {
+    if (!hasClubSelected.value || !isDirector.value || exportLoading.value) return
+    if (missingRecurrentEvents.value.length) {
+        openObjectiveModal()
+        return
+    }
+    if (missingSpecialEvents.value.length) {
+        openObjectiveModal()
+        return
+    }
+    exportLoading.value = true
+    try {
+        const payload = {
+            calendar_year: exportForm.value.calendar_year,
+            plan_name: exportForm.value.plan_name,
+            publish_to_feed: exportForm.value.publish_to_feed,
+            department_id: exportForm.value.department_id || null,
+        }
+        if (exportForm.value.church_slug) {
+            payload.church_slug = exportForm.value.church_slug
+        }
+        console.log('Export payload', payload)
+        const data = await exportWorkplanToMyChurchAdmin(payload)
+        console.log('Export response', data)
+        exportResponse.value = data
+        exportResponseOpen.value = true
+        showToast(`Exported ${data.sent_events || data.imported || 0} events`)
+    } catch (error) {
+        console.error(error)
+        const message = error?.response?.data?.message || 'Export failed'
+        exportError.value = error?.response?.data || { message }
+        exportResponseOpen.value = true
+        showToast(message, 'error')
+    } finally {
+        exportLoading.value = false
+    }
 }
 
 async function createWorkplanNow() {
@@ -431,12 +626,17 @@ async function saveEvent() {
     if (isReadOnly.value) return
     if (!hasClubSelected.value) return
     try {
+        const payload = {
+            ...eventForm.value,
+            department_id: eventForm.value.department_id || null,
+            objective_id: eventForm.value.objective_id || null,
+        }
         if (editingEvent.value) {
-            const { event } = await updateWorkplanEvent(editingEvent.value.id, eventForm.value)
+            const { event } = await updateWorkplanEvent(editingEvent.value.id, payload)
             events.value = events.value.map(e => e.id === event.id ? normalizeEvents([event])[0] : e)
             showToast('Event updated')
         } else {
-            const { event } = await createWorkplanEvent(eventForm.value)
+            const { event } = await createWorkplanEvent(payload)
             events.value = [...events.value, normalizeEvents([event])[0]]
             showToast('Event added')
         }
@@ -741,6 +941,15 @@ watch(userClassId, (val) => {
                             <CalendarDaysIcon class="w-4 h-4" />
                             <span class="sr-only">Download ICS</span>
                         </a>
+                        <button
+                            v-if="isDirector"
+                            class="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white"
+                            :class="!hasClubSelected && 'opacity-50 pointer-events-none'"
+                            type="button"
+                            @click="openExportModal"
+                        >
+                            Exportar a mychurchadmin.net
+                        </button>
                     </div>
                     <button class="text-sm text-blue-600 hover:underline" @click="showIcsHelp = true" type="button">How to add?</button>
                 </div>
@@ -1110,6 +1319,24 @@ watch(userClassId, (val) => {
                             </div>
                             <p class="text-[11px] text-gray-500 mt-1">Search powered by OpenStreetMap (1 req/sec).</p>
                         </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">Department</label>
+                            <select v-model="eventForm.department_id" class="w-full border rounded px-3 py-2 text-sm">
+                                <option value="">Select</option>
+                                <option v-for="dept in departmentsOptions" :key="`dept-${dept.id}`" :value="dept.id">
+                                    {{ dept.name }}
+                                </option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">Objective</label>
+                            <select v-model="eventForm.objective_id" class="w-full border rounded px-3 py-2 text-sm">
+                                <option value="">Select</option>
+                                <option v-for="obj in objectivesOptions" :key="`obj-${obj.id}`" :value="obj.id">
+                                    {{ obj.name }}
+                                </option>
+                            </select>
+                        </div>
                         <div class="col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">Description</label>
                             <textarea v-model="eventForm.description" rows="3" class="w-full border rounded px-3 py-2 text-sm"></textarea>
@@ -1122,6 +1349,230 @@ watch(userClassId, (val) => {
                 </div>
             </div>
 
+            <!-- Export modal -->
+            <div v-if="exportModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-5 space-y-4">
+                    <div class="flex items-start justify-between gap-2">
+                        <h4 class="text-lg font-semibold">Exportar a mychurchadmin.net</h4>
+                        <button class="text-gray-500" @click="exportModalOpen = false">✕</button>
+                    </div>
+                    <div class="text-sm text-gray-700">
+                        This will send the current workplan events to the external calendar system.
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">Calendar year</label>
+                            <input type="number" min="2000" v-model.number="exportForm.calendar_year" class="w-full border rounded px-3 py-2 text-sm">
+                        </div>
+                        <div class="flex items-end gap-2">
+                            <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                                <input type="checkbox" v-model="exportForm.publish_to_feed">
+                                Publish to feed
+                            </label>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm text-gray-600 mb-1">Department</label>
+                            <select v-model="exportForm.department_id" class="w-full border rounded px-3 py-2 text-sm">
+                                <option value="">Select</option>
+                                <option v-for="dept in departmentsOptions" :key="`export-dept-${dept.id}`" :value="dept.id">
+                                    {{ dept.name }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm text-gray-600 mb-1">Plan name</label>
+                            <input type="text" v-model="exportForm.plan_name" class="w-full border rounded px-3 py-2 text-sm">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm text-gray-600 mb-1">Church slug (optional override)</label>
+                            <input type="text" v-model="exportForm.church_slug" class="w-full border rounded px-3 py-2 text-sm" placeholder="iglesia-x">
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button class="px-4 py-2 border rounded" @click="exportModalOpen = false">Cancel</button>
+                        <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" :disabled="exportLoading" @click="submitExport">
+                            {{ exportLoading ? 'Exporting...' : 'Export' }}
+                        </button>
+                    </div>
+                    <button
+                        v-if="!exportResponseOpen && (exportResponse || exportError)"
+                        class="text-xs text-blue-600 underline"
+                        @click="exportResponseOpen = true"
+                    >
+                        Show export summary
+                    </button>
+                    <div v-if="exportResponseOpen && (exportResponse || exportError)" class="border rounded bg-gray-50 p-3 text-xs text-gray-700 max-h-80 overflow-y-auto">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="font-semibold">Export summary</div>
+                            <button class="text-xs text-gray-500" @click="exportResponseOpen = false">Hide</button>
+                        </div>
+                        <div v-if="exportResponse" class="space-y-3">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                                <div class="bg-white border rounded p-2">
+                                    <div class="text-gray-500">Status</div>
+                                    <div class="font-semibold">{{ exportResponse.status || 'ok' }}</div>
+                                </div>
+                                <div class="bg-white border rounded p-2">
+                                    <div class="text-gray-500">Imported</div>
+                                    <div class="font-semibold">{{ exportResponse.imported ?? exportResponse.sent_events ?? 0 }}</div>
+                                </div>
+                                <div class="bg-white border rounded p-2">
+                                    <div class="text-gray-500">Skipped</div>
+                                    <div class="font-semibold">{{ exportResponse.skipped ?? 0 }}</div>
+                                </div>
+                                <div class="bg-white border rounded p-2">
+                                    <div class="text-gray-500">Conflicts</div>
+                                    <div class="font-semibold">{{ exportResponse.conflicts?.length || 0 }}</div>
+                                </div>
+                            </div>
+                            <div v-if="exportResponse.conflicts?.length" class="border rounded bg-white">
+                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Conflicts</div>
+                                <div class="max-h-48 overflow-y-auto">
+                                    <table class="min-w-full text-[11px]">
+                                        <thead class="text-left text-gray-500">
+                                            <tr>
+                                                <th class="py-1 px-2">Event</th>
+                                                <th class="py-1 px-2">Issue</th>
+                                                <th class="py-1 px-2">Type</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="(conflict, idx) in exportResponse.conflicts" :key="`conflict-${idx}`" class="border-t">
+                                                <td class="py-1 px-2">{{ conflict.incoming_title }}</td>
+                                                <td class="py-1 px-2">{{ conflict.message }}</td>
+                                                <td class="py-1 px-2">{{ conflict.conflict_type }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div v-if="exportResponse.successes?.length" class="border rounded bg-white">
+                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Imported events</div>
+                                <div class="max-h-32 overflow-y-auto">
+                                    <table class="min-w-full text-[11px]">
+                                        <thead class="text-left text-gray-500">
+                                            <tr>
+                                                <th class="py-1 px-2">Title</th>
+                                                <th class="py-1 px-2">Start</th>
+                                                <th class="py-1 px-2">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="row in exportResponse.successes" :key="`success-${row.external_id}`" class="border-t">
+                                                <td class="py-1 px-2">{{ row.title }}</td>
+                                                <td class="py-1 px-2">{{ row.start_at }}</td>
+                                                <td class="py-1 px-2">{{ row.review_status || 'pending' }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else-if="exportError" class="text-[11px] text-red-700">
+                            <div class="font-semibold mb-1">Export error</div>
+                            <div>{{ exportError.message || 'Export failed' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Objective check modal (recurrent) -->
+            <div v-if="objectiveModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-5 space-y-4">
+                    <div class="flex items-start justify-between gap-2">
+                        <h4 class="text-lg font-semibold">Assign objectives before export</h4>
+                        <button class="text-gray-500" @click="objectiveModalOpen = false">✕</button>
+                    </div>
+                    <div class="text-sm text-gray-700">
+                        These recurrent events are missing an objective or have a mismatched one. Assign one to each event or apply a general objective to all.
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+                        <div class="flex-1">
+                            <label class="block text-sm text-gray-600 mb-1">General objective</label>
+                            <select v-model="bulkObjectiveId" class="w-full border rounded px-3 py-2 text-sm">
+                                <option value="">Select</option>
+                                <option v-for="obj in objectivesOptions" :key="`bulk-obj-${obj.id}`" :value="obj.id">
+                                    {{ obj.name }}
+                                </option>
+                            </select>
+                        </div>
+                        <button
+                            class="px-3 py-2 border rounded text-sm"
+                            type="button"
+                            @click="applyObjectiveToAll(objectiveTab === 'special' ? missingSpecialEvents : missingRecurrentEvents)"
+                        >
+                            Aplicar a todos
+                        </button>
+                    </div>
+                    <div class="border rounded">
+                        <div class="border-b bg-gray-50 flex text-sm">
+                            <button
+                                class="px-3 py-2"
+                                :class="objectiveTab === 'recurrent' ? 'font-semibold text-gray-900' : 'text-gray-600'"
+                                type="button"
+                                @click="objectiveTab = 'recurrent'"
+                            >
+                                Recurrent events ({{ missingRecurrentEvents.length }})
+                            </button>
+                            <button
+                                class="px-3 py-2"
+                                :class="objectiveTab === 'special' ? 'font-semibold text-gray-900' : 'text-gray-600'"
+                                type="button"
+                                @click="objectiveTab = 'special'"
+                            >
+                                Special events ({{ missingSpecialEvents.length }})
+                            </button>
+                        </div>
+                        <div class="max-h-[320px] overflow-y-auto">
+                            <table class="min-w-full text-sm">
+                                <thead class="text-left text-gray-500">
+                                    <tr>
+                                        <th class="py-2 px-3">Event</th>
+                                        <th class="py-2 px-3">Date</th>
+                                        <th class="py-2 px-3">Department</th>
+                                        <th class="py-2 px-3">Objective</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="ev in (objectiveTab === 'special' ? missingSpecialEvents : missingRecurrentEvents)"
+                                        :key="`obj-ev-${ev.id}`"
+                                        class="border-t"
+                                    >
+                                        <td class="py-2 px-3">{{ ev.title }}</td>
+                                        <td class="py-2 px-3">{{ normalizeDate(ev.date) }}</td>
+                                        <td class="py-2 px-3">{{ getDepartmentName(getEventDepartmentId(ev)) }}</td>
+                                        <td class="py-2 px-3">
+                                            <select v-model="objectiveAssignments[ev.id]" class="w-full border rounded px-2 py-1 text-sm">
+                                                <option value="">Select</option>
+                                                <option
+                                                    v-for="obj in objectivesForDepartment(getEventDepartmentId(ev))"
+                                                    :key="`obj-${ev.id}-${obj.id}`"
+                                                    :value="obj.id"
+                                                >
+                                                    {{ obj.name }}
+                                                </option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="objectiveTab === 'recurrent' && missingRecurrentEvents.length === 0">
+                                        <td colspan="4" class="py-3 text-center text-gray-500">No missing objectives.</td>
+                                    </tr>
+                                    <tr v-else-if="objectiveTab === 'special' && missingSpecialEvents.length === 0">
+                                        <td colspan="4" class="py-3 text-center text-gray-500">No missing objectives.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button class="px-4 py-2 border rounded" @click="objectiveModalOpen = false">Cancel</button>
+                        <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" :disabled="objectiveSaving" @click="saveObjectivesAndExport">
+                            {{ objectiveSaving ? 'Saving...' : 'Save and export' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
             <!-- Plan detail modal -->
             <div v-if="planDetailOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">

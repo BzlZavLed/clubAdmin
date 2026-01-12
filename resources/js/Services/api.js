@@ -414,6 +414,21 @@ export const deleteWorkplanEvent = async (id) => {
     return data
 }
 
+export const exportWorkplanToMyChurchAdmin = async (payload) => {
+    const { data } = await axios.post(route('club.workplan.export'), payload)
+    return data
+}
+
+export const fetchMyChurchAdminCatalog = async (payload) => {
+    const { data } = await axios.post(route('club.settings.catalog'), payload)
+    return data
+}
+
+export const saveMyChurchAdminConfig = async (payload) => {
+    const { data } = await axios.post(route('club.settings.save'), payload)
+    return data
+}
+
 // Pathfinder temp data
 export const fetchTempMembersPathfinder = async (clubId) => {
     const { data } = await axios.get(route('clubs.temp-members.index', clubId))

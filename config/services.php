@@ -34,5 +34,9 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'mychurchadmin' => [
+        'base_url' => env('MYCHURCHADMIN_BASE_URL', 'http://localhost:800'),
+        'token' => env('MYCHURCHADMIN_INTEGRATION_TOKEN'),
+    ],
 
 ];

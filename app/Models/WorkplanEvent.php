@@ -16,6 +16,8 @@ class WorkplanEvent extends Model
         'title',
         'description',
         'location',
+        'department_id',
+        'objective_id',
         'is_generated',
         'is_edited',
         'status',

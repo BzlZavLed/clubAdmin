@@ -8,6 +8,7 @@ use App\Models\Staff;
 use App\Models\Workplan;
 use App\Models\WorkplanEvent;
 use App\Models\WorkplanRule;
+use App\Models\ClubIntegrationConfig;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -15,6 +16,8 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Inertia\Inertia;
 use Log;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use App\Support\ClubHelper;
 
 class WorkplanController extends Controller
@@ -54,6 +57,9 @@ class WorkplanController extends Controller
             'workplan' => $workplan,
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
+            'integration_config' => $selectedClubId
+                ? ClubIntegrationConfig::where('club_id', $selectedClubId)->first()
+                : null,
         ]);
     }
 
@@ -158,6 +164,8 @@ class WorkplanController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'location' => ['nullable', 'string', 'max:255'],
+            'department_id' => ['nullable', 'integer', 'min:0'],
+            'objective_id' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $workplan = $this->getWorkplanForUser($request->user());
@@ -186,6 +194,8 @@ class WorkplanController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'location' => ['nullable', 'string', 'max:255'],
+            'department_id' => ['nullable', 'integer', 'min:0'],
+            'objective_id' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $event->fill($payload);
@@ -236,6 +246,9 @@ class WorkplanController extends Controller
             'selected_club_id' => $selectedClubId,
             'workplan' => $this->filterPlansForParent($workplan, $user),
             'memberships' => [],
+            'integration_config' => $selectedClubId
+                ? ClubIntegrationConfig::where('club_id', $selectedClubId)->first()
+                : null,
         ]);
     }
 
@@ -418,6 +431,103 @@ class WorkplanController extends Controller
         return response($content, 200, [
             'Content-Type' => 'text/calendar; charset=utf-8',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function exportToMyChurchAdmin(Request $request)
+    {
+        $user = $request->user();
+        $clubId = $request->input('club_id') ?: $user->club_id;
+        $allowedClubIds = ClubHelper::clubIdsForUser($user)->all();
+        if ($clubId && !in_array($clubId, $allowedClubIds)) {
+            abort(403, 'Not allowed to export this club workplan.');
+        }
+
+        $workplan = $this->getWorkplanForUser($user, $clubId, false);
+        if (!$workplan) {
+            abort(404, 'No workplan found for this club.');
+        }
+
+        $workplan->load([
+            'club.church',
+            'events' => function ($q) {
+                $q->where('status', 'active')->orderBy('date')->orderBy('start_time');
+            }
+        ]);
+
+        $club = $workplan->club;
+        $churchName = $club?->church?->church_name ?: $club?->church_name ?: '';
+        $churchSlug = $request->input('church_slug') ?: ($churchName ? Str::slug($churchName) : null);
+        if (!$churchSlug) {
+            abort(422, 'Missing church slug.');
+        }
+
+        $calendarYear = (int) ($request->input('calendar_year') ?: Carbon::parse($workplan->start_date)->year);
+        $clubType = $club?->club_type ?: 'club';
+        $planName = $request->input('plan_name') ?: ('Plan anual ' . ucfirst($clubType) . ' ' . $calendarYear);
+        $timezone = $workplan->timezone ?: config('app.timezone');
+
+        $defaultDepartmentId = $request->input('department_id');
+        $events = $workplan->events->map(function ($ev) use ($clubType, $planName, $defaultDepartmentId) {
+            $date = $ev->date instanceof Carbon ? $ev->date->toDateString() : (string) $ev->date;
+            $startTime = $ev->start_time ? substr($ev->start_time, 0, 5) . ':00' : '00:00:00';
+            $endTime = $ev->end_time ? substr($ev->end_time, 0, 5) . ':00' : $startTime;
+            $departmentId = $ev->department_id ?? $defaultDepartmentId;
+
+            return [
+                'external_id' => 'workplan-event-' . $ev->id,
+                'title' => $ev->title ?: ucfirst($ev->meeting_type) . ' Meeting',
+                'description' => $ev->description,
+                'location' => $ev->location,
+                'start_at' => $date . 'T' . $startTime,
+                'end_at' => $date . 'T' . $endTime,
+                'department_id' => (int) ($departmentId ?? 0),
+                'objective_id' => (int) ($ev->objective_id ?? 0),
+                'is_special' => $ev->meeting_type === 'special',
+                'club_type' => $clubType,
+                'plan_name' => $planName,
+            ];
+        })->values();
+
+        $payload = [
+            'church_slug' => $churchSlug,
+            'calendar_year' => $calendarYear,
+            'timezone' => $timezone,
+            'club_type' => $clubType,
+            'plan_name' => $planName,
+            'publish_to_feed' => $request->boolean('publish_to_feed', true),
+            'events' => $events,
+        ];
+
+        $baseUrl = rtrim(config('services.mychurchadmin.base_url'), '/');
+        $token = config('services.mychurchadmin.token');
+        if (!$baseUrl) {
+            abort(422, 'Missing mychurchadmin base URL.');
+        }
+        if (!$token) {
+            abort(422, 'Missing integration token.');
+        }
+        $url = $baseUrl . '/api/integrations/clubs/calendar';
+
+        try {
+            $response = Http::withToken($token)->acceptJson()->timeout(20)->post($url, $payload);
+        } catch (\Throwable $e) {
+            Log::warning('Workplan export failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Export request failed.'], 502);
+        }
+
+        if (!$response->successful()) {
+            return response()->json([
+                'message' => 'Export failed.',
+                'status' => $response->status(),
+                'error' => $response->json() ?? $response->body(),
+            ], $response->status());
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'sent_events' => $events->count(),
+            'response' => $response->json(),
         ]);
     }
 
