@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        $middleware->validateCsrfTokens(except: [
+            'setup/superadmin',
+        ]);
+
         // All aliases together
         $middleware->alias([
             'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
