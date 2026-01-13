@@ -53,6 +53,8 @@ Route::get('/force-logout', function () {
 
 Route::get('/churches', [ChurchController::class, 'index']);
 Route::post('/churches', [ChurchController::class, 'store']);
+Route::put('/churches/{church}', [ChurchController::class, 'update']);
+Route::delete('/churches/{church}', [ChurchController::class, 'destroy']);
 
 Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('church.form');
 

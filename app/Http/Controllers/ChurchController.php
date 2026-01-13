@@ -68,7 +68,25 @@ class ChurchController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        //
+        $church = Church::findOrFail($id);
+
+        $validated = $request->validate([
+            'church_name' => 'required|string|max:255',
+            'address' => 'nullable|string',
+            'ethnicity' => 'nullable|string',
+            'phone_number' => 'nullable|string|max:20',
+            'email' => 'required|email|max:255',
+            'pastor_name' => 'nullable|string',
+            'pastor_email' => 'nullable|email|max:255',
+            'conference' => 'nullable|string',
+        ]);
+
+        $church->update($validated);
+
+        return response()->json([
+            'message' => 'Church updated successfully.',
+            'church' => $church,
+        ]);
     }
 
     /**
@@ -76,6 +94,11 @@ class ChurchController extends Controller
      */
     public function destroy(string $id)
     {
-        //
+        $church = Church::findOrFail($id);
+        $church->delete();
+
+        return response()->json([
+            'message' => 'Church deleted successfully.',
+        ]);
     }
 }
