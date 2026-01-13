@@ -16,6 +16,30 @@ class ChurchController extends Controller
         return Church::all();
     }
 
+    public function indexWithInviteCodes()
+    {
+        return Church::with('inviteCode')
+            ->orderBy('church_name')
+            ->get()
+            ->map(function ($church) {
+                return [
+                    'id' => $church->id,
+                    'church_name' => $church->church_name,
+                    'email' => $church->email,
+                    'phone_number' => $church->phone_number,
+                    'conference' => $church->conference,
+                    'address' => $church->address,
+                    'ethnicity' => $church->ethnicity,
+                    'pastor_name' => $church->pastor_name,
+                    'pastor_email' => $church->pastor_email,
+                    'invite_code' => $church->inviteCode?->code,
+                    'invite_status' => $church->inviteCode?->status,
+                    'invite_uses_left' => $church->inviteCode?->uses_left,
+                    'invite_expires_at' => $church->inviteCode?->expires_at,
+                ];
+            });
+    }
+
     /**
      * Store a newly created resource in storage.
      */

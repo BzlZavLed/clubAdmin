@@ -117,6 +117,10 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::get('/super-admin/dashboard', fn() => Inertia::render('SuperAdmin/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('superadmin.dashboard');
+    Route::get('/super-admin/churches', [ChurchController::class, 'indexWithInviteCodes'])
+        ->name('superadmin.churches.index');
+    Route::post('/super-admin/churches/{church}/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'regenerateForChurch'])
+        ->name('superadmin.churches.invite-code');
 });
 
 // ---------------------------------

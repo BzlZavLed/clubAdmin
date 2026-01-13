@@ -55,15 +55,16 @@
                             <th class="text-left px-4 py-2">Email</th>
                             <th class="text-left px-4 py-2">Phone</th>
                             <th class="text-left px-4 py-2">Conference</th>
+                            <th class="text-left px-4 py-2">Invite Code</th>
                             <th class="text-right px-4 py-2">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="loadingChurches">
-                            <td colspan="5" class="px-4 py-3 text-gray-500">Loading churches...</td>
+                            <td colspan="6" class="px-4 py-3 text-gray-500">Loading churches...</td>
                         </tr>
                         <tr v-else-if="churches.length === 0">
-                            <td colspan="5" class="px-4 py-3 text-gray-500">No churches found.</td>
+                            <td colspan="6" class="px-4 py-3 text-gray-500">No churches found.</td>
                         </tr>
                         <tr v-for="church in churches" :key="church.id" class="border-t">
                             <td class="px-4 py-2">
@@ -86,7 +87,17 @@
                                     class="border p-1 w-full" />
                                 <span v-else>{{ church.conference || '-' }}</span>
                             </td>
+                            <td class="px-4 py-2">
+                                <span v-if="church.invite_code" class="font-mono text-xs">
+                                    {{ church.invite_code }}
+                                </span>
+                                <span v-else class="text-gray-400 text-xs">No code</span>
+                            </td>
                             <td class="px-4 py-2 text-right space-x-2">
+                                <button type="button" class="text-indigo-600 hover:underline"
+                                    @click="regenerateInviteCode(church.id)">
+                                    {{ church.invite_code ? 'Regenerate' : 'Generate' }}
+                                </button>
                                 <button v-if="editingId !== church.id" type="button"
                                     class="text-blue-600 hover:underline" @click="startEdit(church)">
                                     Edit
@@ -145,7 +156,7 @@ const editForm = reactive({
 const fetchChurches = async () => {
     loadingChurches.value = true
     try {
-        const response = await axios.get('/churches')
+        const response = await axios.get('/super-admin/churches')
         churches.value = response.data
     } catch (err) {
         console.error(err)
@@ -222,6 +233,21 @@ const deleteChurch = async (churchId) => {
         alert('Church deleted successfully!')
     } catch (err) {
         alert('Error deleting church.')
+        console.error(err)
+    }
+}
+
+const regenerateInviteCode = async (churchId) => {
+    try {
+        const response = await axios.post(`/super-admin/churches/${churchId}/invite-code`)
+        const updated = response.data.code
+        const idx = churches.value.findIndex((church) => church.id === churchId)
+        if (idx !== -1) {
+            churches.value[idx].invite_code = updated
+        }
+        alert('Invite code updated.')
+    } catch (err) {
+        alert('Error generating invite code.')
         console.error(err)
     }
 }

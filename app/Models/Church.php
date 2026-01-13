@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\ChurchInviteCode;
 
 class Church extends Model
 {
@@ -23,5 +24,10 @@ class Church extends Model
     public function users()
     {
         return $this->hasMany(User::class);
+    }
+
+    public function inviteCode()
+    {
+        return $this->hasOne(ChurchInviteCode::class);
     }
 }
