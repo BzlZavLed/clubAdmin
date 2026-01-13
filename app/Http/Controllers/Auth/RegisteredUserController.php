@@ -44,6 +44,35 @@ class RegisteredUserController extends Controller
         ]);
     }
 
+    public function storeSuperadmin(Request $request)
+    {
+        if ($this->superadminExists()) {
+            abort(403, 'Superadmin already exists.');
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'profile_type' => 'superadmin',
+            'sub_role' => null,
+            'church_id' => null,
+            'church_name' => null,
+            'club_id' => null,
+            'status' => 'active',
+        ]);
+
+        auth()->login($user);
+
+        return redirect(RouteServiceProvider::HOME);
+    }
+
     /**
      * Handle an incoming registration request.
      *
@@ -143,7 +172,13 @@ class RegisteredUserController extends Controller
             'regional_manager' => '/regional/dashboard',
             'union_manager' => '/union/dashboard',
             'nad_manager' => '/nad/dashboard',
+            'superadmin' => RouteServiceProvider::HOME,
             default => RouteServiceProvider::HOME,
         };
+    }
+
+    private function superadminExists(): bool
+    {
+        return User::where('profile_type', 'superadmin')->exists();
     }
 }

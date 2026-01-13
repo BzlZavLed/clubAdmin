@@ -56,10 +56,17 @@ Route::post('/churches', [ChurchController::class, 'store']);
 
 Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('church.form');
 
+Route::middleware(['auth'])->group(function () {
+    Route::get('/dashboard', fn() => Inertia::render('Dashboard', [
+        'auth_user' => auth()->user(),
+    ]))->name('dashboard');
+});
+
 // ---------------------------------
 // 🔐 Guest Routes (Parent Self-Registration)
 // ---------------------------------
 Route::middleware(['guest'])->group(function () {
+Route::post('/setup/superadmin', [RegisteredUserController::class, 'storeSuperadmin'])->name('superadmin.setup.store');
 Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
 Route::post('/register-parent', [ParentAuthController::class, 'register']);
 Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);

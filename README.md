@@ -84,6 +84,33 @@ php artisan serve
     php artisan test --testsuite=Feature --filter=SystemSmokeTest
     ```
 
+## Superadmin Bootstrap (Postman only)
+
+There is no UI for creating the initial superadmin. Use a direct POST request once to bootstrap the system.
+
+- Endpoint: `POST /setup/superadmin`
+- Constraints:
+  - Only works when no `superadmin` user exists yet.
+  - Returns `403` if a superadmin already exists.
+- Required fields:
+  - `name`
+  - `email`
+  - `password`
+  - `password_confirmation`
+
+Example (curl):
+
+```bash
+curl -X POST http://localhost:8000/setup/superadmin \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "System Admin",
+    "email": "admin@example.com",
+    "password": "your-password",
+    "password_confirmation": "your-password"
+  }'
+```
+
 ## Environment Variables
 
 Configure your `.env` file:

@@ -35,6 +35,7 @@ class RedirectIfAuthenticated
             'union_manager' => '/union/dashboard',
             'nad_manager' => '/nad/dashboard',
             'parent' => '/parent/dashboard',
+            'superadmin' => RouteServiceProvider::HOME,
             default => RouteServiceProvider::HOME,
         };
     }
