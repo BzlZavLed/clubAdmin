@@ -172,7 +172,7 @@ class RegisteredUserController extends Controller
             'regional_manager' => '/regional/dashboard',
             'union_manager' => '/union/dashboard',
             'nad_manager' => '/nad/dashboard',
-            'superadmin' => RouteServiceProvider::HOME,
+            'superadmin' => '/super-admin/dashboard',
             default => RouteServiceProvider::HOME,
         };
     }

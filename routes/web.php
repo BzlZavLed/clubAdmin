@@ -109,6 +109,15 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
 });
 
 // ---------------------------------
+// 🟥 Superadmin Protected Routes
+// ---------------------------------
+Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function () {
+    Route::get('/super-admin/dashboard', fn() => Inertia::render('SuperAdmin/Dashboard', [
+        'auth_user' => auth()->user(),
+    ]))->name('superadmin.dashboard');
+});
+
+// ---------------------------------
 // 🔵 Club Director Protected Routes
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function () {
