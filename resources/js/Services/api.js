@@ -414,6 +414,13 @@ export const deleteWorkplanEvent = async (id) => {
     return data
 }
 
+export const deleteWorkplan = async (clubId) => {
+    const { data } = await axios.delete(route('club.workplan.destroy'), {
+        params: clubId ? { club_id: clubId } : {}
+    })
+    return data
+}
+
 export const exportWorkplanToMyChurchAdmin = async (payload) => {
     const { data } = await axios.post(route('club.workplan.export'), payload)
     return data

@@ -217,6 +217,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/club-director/workplan/events', [WorkplanController::class, 'storeEvent'])->name('club.workplan.events.store');
     Route::put('/club-director/workplan/events/{event}', [WorkplanController::class, 'updateEvent'])->name('club.workplan.events.update');
     Route::delete('/club-director/workplan/events/{event}', [WorkplanController::class, 'destroyEvent'])->name('club.workplan.events.destroy');
+    Route::delete('/club-director/workplan', [WorkplanController::class, 'destroy'])->name('club.workplan.destroy');
     Route::post('/club-director/workplan/export', [WorkplanController::class, 'exportToMyChurchAdmin'])->name('club.workplan.export');
     Route::get('/club-director/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.workplan.pdf');
     Route::get('/club-director/workplan/ics', [WorkplanController::class, 'ics'])->name('club.workplan.ics');

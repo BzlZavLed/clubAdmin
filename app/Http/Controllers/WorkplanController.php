@@ -217,6 +217,27 @@ class WorkplanController extends Controller
         return response()->json(['status' => 'deleted']);
     }
 
+    public function destroy(Request $request)
+    {
+        $user = $request->user();
+        $clubId = $request->input('club_id') ?: $user->club_id;
+        $allowedClubIds = ClubHelper::clubIdsForUser($user)->all();
+        if ($clubId && !in_array($clubId, $allowedClubIds)) {
+            abort(403, 'Not allowed to delete this club workplan.');
+        }
+
+        $workplan = $this->getWorkplanForUser($user, $clubId, false);
+        if (!$workplan) {
+            abort(404, 'No workplan found for this club.');
+        }
+
+        $workplan->events()->delete();
+        $workplan->rules()->delete();
+        $workplan->delete();
+
+        return response()->json(['status' => 'deleted']);
+    }
+
     public function data(Request $request)
     {
         $user = $request->user();

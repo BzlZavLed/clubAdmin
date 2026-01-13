@@ -12,7 +12,8 @@ import {
     updateClassPlanStatus,
     fetchStaffRecord,
     updateClassPlan,
-    exportWorkplanToMyChurchAdmin
+    exportWorkplanToMyChurchAdmin,
+    deleteWorkplan
 } from '@/Services/api'
 import { ArrowDownTrayIcon, CalendarDaysIcon } from '@heroicons/vue/24/outline'
 import WorkplanCalendar from '@/Components/WorkplanCalendar.vue'
@@ -34,6 +35,7 @@ const props = defineProps({
     }
 })
 const { showToast } = useGeneral()
+console.log('Workplan props', props)
 
 const isDirector = computed(() => props.auth_user?.profile_type === 'club_director')
 const isStaff = computed(() => props.auth_user?.profile_type === 'club_personal')
@@ -192,6 +194,7 @@ const selectedEvent = ref(null)
 const workplanModalOpen = ref(false)
 const exportModalOpen = ref(false)
 const exportLoading = ref(false)
+const deletingWorkplan = ref(false)
 const exportResponse = ref(null)
 const exportError = ref(null)
 const exportResponseOpen = ref(false)
@@ -615,6 +618,24 @@ async function createWorkplanNow() {
     }
 }
 
+async function handleDeleteWorkplan() {
+    if (!hasClubSelected.value || !props.workplan?.id) return
+    const confirmDelete = confirm('Delete the current workplan? This will remove all scheduled events for the club.')
+    if (!confirmDelete) return
+    deletingWorkplan.value = true
+    try {
+        await deleteWorkplan(selectedClubId.value)
+        showToast('Workplan deleted')
+        const redirect = safeRoute('club.workplan', { club_id: selectedClubId.value }, '/club-director/workplan')
+        window.location.assign(redirect)
+    } catch (error) {
+        console.error(error)
+        showToast('Failed to delete workplan', 'error')
+    } finally {
+        deletingWorkplan.value = false
+    }
+}
+
 
 function defaultLocation(type) {
     if (type === 'sabbath') return form.value.default_sabbath_location || ''
@@ -942,13 +963,22 @@ watch(userClassId, (val) => {
                             <span class="sr-only">Download ICS</span>
                         </a>
                         <button
-                            v-if="isDirector"
+                            v-if="isDirector && props.workplan?.id"
                             class="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white"
                             :class="!hasClubSelected && 'opacity-50 pointer-events-none'"
                             type="button"
                             @click="openExportModal"
                         >
                             Exportar a mychurchadmin.net
+                        </button>
+                        <button
+                            v-if="isDirector && props.workplan?.id"
+                            class="px-3 py-2 text-sm rounded-md bg-red-600 text-white"
+                            :class="(!hasClubSelected || deletingWorkplan) && 'opacity-50 pointer-events-none'"
+                            type="button"
+                            @click="handleDeleteWorkplan"
+                        >
+                            Eliminar calendario
                         </button>
                     </div>
                     <button class="text-sm text-blue-600 hover:underline" @click="showIcsHelp = true" type="button">How to add?</button>
