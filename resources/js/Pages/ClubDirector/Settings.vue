@@ -61,6 +61,7 @@ async function fetchCatalog() {
             invite_code: inviteCode.value,
             club_id: selectedClubId.value,
         })
+        console.log(data);
         catalog.value = data
         showToast('Catalogo obtenido')
     } catch (error) {
