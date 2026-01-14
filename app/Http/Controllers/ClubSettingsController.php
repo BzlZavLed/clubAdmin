@@ -58,19 +58,6 @@ class ClubSettingsController extends Controller
         }
 
         $url = $baseUrl . '/api/integrations/clubs/catalog';
-        Log::info('MyChurchAdmin catalog request', [
-            'url' => $url,
-            'base_url' => $baseUrl,
-            'token_present' => (bool) $token,
-            'token_last4' => $token ? substr($token, -4) : null,
-            'club_id' => $clubId,
-            'user_id' => $user->id,
-            'query' => ['invite_code' => $payload['invite_code']],
-            'headers' => [
-                'X-Integration-Token' => $token ? '****' . substr($token, -4) : null,
-                'Accept' => 'application/json',
-            ],
-        ]);
         try {
             $response = Http::withHeaders([
                     'X-Integration-Token' => $token,
