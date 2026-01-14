@@ -538,6 +538,18 @@ class WorkplanController extends Controller
             Log::warning('Workplan export failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Export request failed.'], 502);
         }
+        Log::info('Workplan export payload', [
+            'club_id' => $clubId,
+            'user_id' => $user->id,
+            'url' => $url,
+            'payload' => $payload,
+        ]);
+        Log::info('Workplan export response', [
+            'club_id' => $clubId,
+            'user_id' => $user->id,
+            'status' => $response->status(),
+            'body' => $response->json() ?? $response->body(),
+        ]);
 
         if (!$response->successful()) {
             return response()->json([
