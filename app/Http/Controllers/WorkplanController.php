@@ -570,7 +570,7 @@ class WorkplanController extends Controller
         return response()->json([
             'status' => 'ok',
             'sent_events' => $events->count(),
-            'response' => $responseData,
+            'response' => $response,
         ]);
     }
 
