@@ -508,7 +508,7 @@ class WorkplanController extends Controller
                 'club_type' => $clubType,
                 'plan_name' => $planName,
             ];
-        })->values();
+        })->values()->all();
 
         $payload = [
             'church_slug' => $churchSlug,
