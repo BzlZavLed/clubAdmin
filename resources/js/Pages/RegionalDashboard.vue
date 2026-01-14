@@ -4,11 +4,11 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 
 <template>
     <PathfinderLayout>
-        <template #title>Regional Dashboard</template>
+        <template #title>Panel Regional</template>
 
         <div class="space-y-4 text-gray-800">
-            <p class="text-lg">Welcome to the Pathfinder Club Admin Panel.</p>
-            <p>This is a static placeholder. Replace with dynamic content later.</p>
+            <p class="text-lg">Bienvenido al panel administrativo del Club de Conquistadores.</p>
+            <p>Este es un contenido de ejemplo. Reemplázalo con contenido dinámico.</p>
         </div>
     </PathfinderLayout>
 </template>

@@ -32,9 +32,9 @@ const submit = () => {
 <template>
     <PathfinderLayout>
 
-        <Head title="Log in" />
+        <Head title="Iniciar sesión" />
 
-        <template #title>Sign In to Pathfinder Portal</template>
+        <template #title>Iniciar sesión en el Portal de Conquistadores</template>
 
         <div v-if="status" class="mb-4 text-sm font-medium text-green-600">
             {{ status }}
@@ -42,7 +42,7 @@ const submit = () => {
 
         <form @submit.prevent="submit" class="space-y-6">
             <div>
-                <InputLabel for="email" value="Email" />
+                <InputLabel for="email" value="Correo electrónico" />
                 <TextInput id="email" type="email"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.email" required autofocus autocomplete="username" />
@@ -50,7 +50,7 @@ const submit = () => {
             </div>
 
             <div>
-                <InputLabel for="password" value="Password" />
+                <InputLabel for="password" value="Contraseña" />
                 <TextInput id="password" type="password"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.password" required autocomplete="current-password" />
@@ -60,30 +60,30 @@ const submit = () => {
             <div class="block">
                 <label class="flex items-center">
                     <Checkbox name="remember" :checked="form.remember" @change="form.remember = $event.target.checked" />
-                    <span class="ms-2 text-sm text-gray-600">Remember me</span>
+                    <span class="ms-2 text-sm text-gray-600">Recordarme</span>
                 </label>
             </div>
 
             <div class="flex items-center justify-between pt-2">
                 <Link v-if="canResetPassword" :href="route('password.request')"
                     class="text-sm text-yellow-600 hover:underline">
-                Forgot your password?
+                ¿Olvidaste tu contraseña?
                 </Link>
 
                 <PrimaryButton class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md"
                     :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-                    Log in
+                    Iniciar sesión
                 </PrimaryButton>
             </div>
         </form>
 
         <div class="mt-6 text-sm text-gray-700 space-y-1">
             <div>
-                <Link href="/register" class="text-blue-600 hover:underline">Create an account</Link>
-                <span class="text-gray-500"> (staff/director)</span>
+                <Link href="/register" class="text-blue-600 hover:underline">Crear una cuenta</Link>
+                <span class="text-gray-500"> (personal/director)</span>
             </div>
             <div>
-                <Link href="/register-parent" class="text-blue-600 hover:underline">Register as parent</Link>
+                <Link href="/register-parent" class="text-blue-600 hover:underline">Registrarse como padre</Link>
             </div>
         </div>
     </PathfinderLayout>

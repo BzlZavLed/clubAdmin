@@ -401,7 +401,7 @@ async function handlePreview() {
         showDiffModal.value = true
     } catch (error) {
         console.error(error)
-        showToast('Failed to preview changes', 'error')
+        showToast('No se pudo previsualizar los cambios', 'error')
     }
 }
 
@@ -428,10 +428,10 @@ async function applyChanges() {
             sunday: (workplan.rules || []).filter(r => r.meeting_type === 'sunday').map(r => r.nth_week),
         }
         showDiffModal.value = false
-        showToast('Workplan updated')
+        showToast('Plan de trabajo actualizado')
     } catch (error) {
         console.error(error)
-        showToast('Failed to apply changes', 'error')
+        showToast('No se pudieron aplicar los cambios', 'error')
     }
 }
 
@@ -472,7 +472,7 @@ function defaultPlanName(year) {
 function openExportModal() {
     if (!hasClubSelected.value || !isDirector.value) return
     if (!props.workplan?.id) {
-        showToast('Create a workplan before exporting', 'warning')
+    showToast('Crea un plan de trabajo antes de exportar', 'warning')
         return
     }
     const defaultSlug = props.integration_config?.church_slug || props.integration_config?.church?.slug || ''
@@ -518,7 +518,7 @@ async function saveObjectivesAndExport() {
     const missing = missingObjectiveEvents.value
     const incomplete = missing.find(ev => !objectiveAssignments.value[ev.id])
     if (incomplete) {
-        showToast('Select an objective for every event', 'warning')
+        showToast('Selecciona un objetivo para cada evento', 'warning')
         return
     }
     objectiveSaving.value = true
@@ -542,7 +542,7 @@ async function saveObjectivesAndExport() {
         await submitExport()
     } catch (error) {
         console.error(error)
-        showToast('Failed to save objectives', 'error')
+        showToast('No se pudieron guardar los objetivos', 'error')
     } finally {
         objectiveSaving.value = false
     }
@@ -577,7 +577,7 @@ async function submitExport() {
         showToast(`Exported ${data.sent_events || data.imported || 0} events`)
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'Export failed'
+        const message = error?.response?.data?.message || 'Fallo la exportacion'
         exportError.value = error?.response?.data || { message }
         exportResponseOpen.value = true
         showToast(message, 'error')
@@ -609,28 +609,28 @@ async function createWorkplanNow() {
             sunday: (workplan.rules || []).filter(r => r.meeting_type === 'sunday').map(r => r.nth_week),
         }
         workplanModalOpen.value = false
-        showToast('Workplan created')
+        showToast('Plan de trabajo creado')
         // Refresh to sync props and state (ensures no stale defaults)
         window.location.reload()
     } catch (error) {
         console.error(error)
-        showToast('Failed to create workplan', 'error')
+        showToast('No se pudo crear el plan de trabajo', 'error')
     }
 }
 
 async function handleDeleteWorkplan() {
     if (!hasClubSelected.value || !props.workplan?.id) return
-    const confirmDelete = confirm('Delete the current workplan? This will remove all scheduled events for the club.')
+    const confirmDelete = confirm('¿Eliminar el plan de trabajo actual? Esto borrara todos los eventos programados del club.')
     if (!confirmDelete) return
     deletingWorkplan.value = true
     try {
         await deleteWorkplan(selectedClubId.value)
-        showToast('Workplan deleted')
+        showToast('Plan de trabajo eliminado')
         const redirect = safeRoute('club.workplan', { club_id: selectedClubId.value }, '/club-director/workplan')
         window.location.assign(redirect)
     } catch (error) {
         console.error(error)
-        showToast('Failed to delete workplan', 'error')
+        showToast('No se pudo eliminar el plan de trabajo', 'error')
     } finally {
         deletingWorkplan.value = false
     }
@@ -655,17 +655,17 @@ async function saveEvent() {
         if (editingEvent.value) {
             const { event } = await updateWorkplanEvent(editingEvent.value.id, payload)
             events.value = events.value.map(e => e.id === event.id ? normalizeEvents([event])[0] : e)
-            showToast('Event updated')
+            showToast('Evento actualizado')
         } else {
             const { event } = await createWorkplanEvent(payload)
             events.value = [...events.value, normalizeEvents([event])[0]]
-            showToast('Event added')
+            showToast('Evento agregado')
         }
         eventModalOpen.value = false
         editingEvent.value = null
     } catch (error) {
         console.error(error)
-        showToast('Could not save event', 'error')
+        showToast('No se pudo guardar el evento', 'error')
     }
 }
 
@@ -687,7 +687,7 @@ const searchLocations = (query) => {
                 value: item.display_name,
             }))
         } catch (err) {
-            console.error('Location search failed', err)
+            console.error('Fallo la busqueda de ubicacion', err)
             locationSuggestions.value = []
         } finally {
             locationLoading.value = false
@@ -718,7 +718,7 @@ const searchPlanLocation = (query) => {
                 value: item.display_name,
             }))
         } catch (err) {
-            console.error('Location search failed', err)
+            console.error('Fallo la busqueda de ubicacion', err)
             planLocationSuggestions.value = []
         } finally {
             planLocationLoading.value = false
@@ -734,14 +734,14 @@ const applyPlanLocation = (item) => {
 async function removeEvent(ev) {
     if (isReadOnly.value) return
     if (!hasClubSelected.value) return
-    if (!confirm('Delete this event?')) return
+    if (!confirm('¿Eliminar este evento?')) return
     try {
         await deleteWorkplanEvent(ev.id)
         events.value = events.value.filter(e => e.id !== ev.id)
-        showToast('Event deleted')
+        showToast('Evento eliminado')
     } catch (error) {
         console.error(error)
-        showToast('Failed to delete event', 'error')
+        showToast('No se pudo eliminar el evento', 'error')
     }
 }
 
@@ -787,7 +787,7 @@ function selectMeeting(ev) {
 async function savePlan() {
     if (!isStaff.value) return
     if (!selectedEvent.value) {
-        showToast('Select a meeting first', 'warning')
+        showToast('Selecciona una reunion primero', 'warning')
         return
     }
     if (!planForm.value.class_id && userClassId.value) {
@@ -803,7 +803,7 @@ async function savePlan() {
             class: plan.class || (staffProfile.value?.assigned_class_name ? { class_name: staffProfile.value.assigned_class_name } : undefined)
         }
         addOrUpdatePlanInEvents(enriched)
-        showToast(editingPlanId.value ? 'Class plan updated' : 'Class plan submitted')
+        showToast(editingPlanId.value ? 'Plan de clase actualizado' : 'Plan de clase enviado')
         editingPlanId.value = null
         planForm.value = {
             workplan_event_id: selectedEvent.value.id,
@@ -816,7 +816,7 @@ async function savePlan() {
         }
     } catch (e) {
         console.error(e)
-        showToast('Failed to save class plan', 'error')
+        showToast('No se pudo guardar el plan de clase', 'error')
     }
 }
 
@@ -832,7 +832,7 @@ async function updatePlanStatus(plan, status) {
         showToast(`Plan ${payload.status}`)
     } catch (e) {
         console.error(e)
-        showToast('Failed to update status', 'error')
+        showToast('No se pudo actualizar el estado', 'error')
     }
 }
 
@@ -879,7 +879,7 @@ function editPlan(plan) {
         requested_date: normalizeDate(plan.requested_date || ev?.date),
         location_override: plan.location_override || ''
     }
-    showToast('Edit the plan on the right and save.')
+    showToast('Edita el plan a la derecha y guarda.')
 }
 
 function openRequestModal(plan) {
@@ -905,7 +905,7 @@ onMounted(() => {
     if (isStaff.value) {
         fetchStaffRecord().then(data => {
             staffProfile.value = data.staffRecord || null
-        }).catch(err => console.error('Failed to load staff profile', err))
+        }).catch(err => console.error('No se pudo cargar el perfil del personal', err))
     }
 })
 
@@ -931,17 +931,17 @@ watch(userClassId, (val) => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Workplan</template>
+        <template #title>Plan de trabajo</template>
         <div class="px-6 py-4 space-y-6">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div class="space-y-2">
-                    <h1 class="text-2xl font-semibold text-gray-900">Club Workplan</h1>
-                    <p class="text-sm text-gray-600">Calendar of club-wide Sabbath and Sunday meetings with special events.</p>
+                    <h1 class="text-2xl font-semibold text-gray-900">Plan de trabajo del club</h1>
+                    <p class="text-sm text-gray-600">Calendario de reuniones sabaticas y dominicales del club con eventos especiales.</p>
                     <div class="flex items-center gap-2">
                         <label class="text-sm text-gray-700">Club</label>
                         <template v-if="isDirector">
                             <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm">
-                                <option value="">Select a club</option>
+                                <option value="">Selecciona un club</option>
                                 <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                             </select>
                         </template>
@@ -956,11 +956,11 @@ watch(userClassId, (val) => {
                     <div class="flex flex-wrap gap-2 items-center">
                         <a :href="hasClubSelected ? pdfHref : '#'" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
                             <ArrowDownTrayIcon class="w-4 h-4" />
-                            <span class="sr-only">Download PDF</span>
+                            <span class="sr-only">Descargar PDF</span>
                         </a>
                         <a :href="hasClubSelected ? icsHref : '#'" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
                             <CalendarDaysIcon class="w-4 h-4" />
-                            <span class="sr-only">Download ICS</span>
+                            <span class="sr-only">Descargar ICS</span>
                         </a>
                         <button
                             v-if="isDirector && props.workplan?.id"
@@ -981,17 +981,17 @@ watch(userClassId, (val) => {
                             Eliminar calendario
                         </button>
                     </div>
-                    <button class="text-sm text-blue-600 hover:underline" @click="showIcsHelp = true" type="button">How to add?</button>
+                    <button class="text-sm text-blue-600 hover:underline" @click="showIcsHelp = true" type="button">¿Como agregar?</button>
                 </div>
             </div>
 
             <div v-if="hasClubSelected" class="space-y-6">
                 <div v-if="!props.workplan?.id" class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded flex items-center justify-between">
                     <div>
-                        <p class="font-semibold">No workplan created for this club.</p>
-                        <p class="text-sm">Set the date range and defaults to start planning.</p>
+                        <p class="font-semibold">No hay plan de trabajo para este club.</p>
+                        <p class="text-sm">Define el rango de fechas y valores predeterminados para comenzar.</p>
                     </div>
-                    <button class="px-3 py-2 bg-amber-600 text-white rounded text-sm" @click="openWorkplanModal">Create workplan</button>
+                    <button class="px-3 py-2 bg-amber-600 text-white rounded text-sm" @click="openWorkplanModal">Crear plan de trabajo</button>
                 </div>
 
                 <div class="bg-white shadow-sm rounded-lg p-4 border">
@@ -1009,15 +1009,15 @@ watch(userClassId, (val) => {
                 <div v-if="isStaff" class="space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                         <div>
-                            <h3 class="font-semibold text-gray-800">Class plans on meeting days</h3>
-                            <p class="text-sm text-gray-600">Pick a scheduled Sabbath/Sunday meeting, then add your class plan or outing.</p>
+                            <h3 class="font-semibold text-gray-800">Planes de clase en dias de reunion</h3>
+                            <p class="text-sm text-gray-600">Elige una reunion sabatica/dominical y agrega tu plan de clase o salida.</p>
                         </div>
-                        <div class="text-xs text-gray-500">Select a meeting to start planning.</div>
+                        <div class="text-xs text-gray-500">Selecciona una reunion para comenzar.</div>
                     </div>
 
                     <div class="grid md:grid-cols-2 gap-4">
                         <div class="rounded-lg p-3 border bg-white space-y-2">
-                            <h4 class="font-semibold text-gray-800 text-sm">Meeting dates</h4>
+                            <h4 class="font-semibold text-gray-800 text-sm">Fechas de reunion</h4>
                             <div v-if="planEvents.length" class="space-y-2 max-h-[360px] overflow-y-auto pr-1">
                                 <button
                                     v-for="ev in planEvents"
@@ -1031,62 +1031,62 @@ watch(userClassId, (val) => {
                                             <div class="text-xs text-gray-500">{{ normalizeDate(ev.date) }}</div>
                                             <div class="font-semibold text-gray-900 truncate">{{ ev.title }}</div>
                                             <div class="text-xs text-gray-600 capitalize">{{ ev.meeting_type }}</div>
-                                            <div class="text-[11px] text-gray-600">{{ formatTimeRange(ev) || 'All day' }}</div>
-                                            <div class="text-[11px] text-gray-600">Location: {{ ev.location || '—' }}</div>
+                                            <div class="text-[11px] text-gray-600">{{ formatTimeRange(ev) || 'Todo el dia' }}</div>
+                                            <div class="text-[11px] text-gray-600">Ubicacion: {{ ev.location || '—' }}</div>
                                         </div>
                                         <span v-if="ev.is_generated" class="text-[10px] px-2 py-0.5 rounded-full border border-black text-black bg-white inline-flex items-center justify-center">A</span>
                                     </div>
                                 </button>
                             </div>
                             <div v-else class="text-sm text-gray-600 space-y-2">
-                                <div>No scheduled meetings in range.</div>
+                                <div>No hay reuniones programadas en el rango.</div>
                                 <button
                                     class="px-3 py-1 border rounded text-sm text-blue-600 inline-flex items-center gap-1"
                                     type="button"
                                     @click="openEventModal()"
                                 >
-                                    Create a meeting
+                                    Crear una reunion
                                 </button>
                             </div>
                         </div>
 
                         <div class="rounded-lg p-4 border bg-gray-50 border-gray-200">
                             <div class="flex items-center justify-between mb-2">
-                                <h4 class="font-semibold text-gray-800 text-sm">Create class plan</h4>
-                                <span v-if="editingPlanId" class="text-xs text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded">Editing</span>
+                                <h4 class="font-semibold text-gray-800 text-sm">Crear plan de clase</h4>
+                                <span v-if="editingPlanId" class="text-xs text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded">Editando</span>
                             </div>
                             <div v-if="selectedEvent" class="space-y-3">
                                 <div class="text-xs text-gray-600 bg-white border rounded p-2">
-                                    Meeting: {{ normalizeDate(selectedEvent.date) }} · {{ selectedEvent.title }} ({{ selectedEvent.meeting_type }})
+                                    Reunion: {{ normalizeDate(selectedEvent.date) }} · {{ selectedEvent.title }} ({{ selectedEvent.meeting_type }})
                                 </div>
                                 <div>
-                                    <label class="block text-sm text-gray-700">Title</label>
+                                    <label class="block text-sm text-gray-700">Titulo</label>
                                     <input v-model="planForm.title" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff" />
                                 </div>
                                 <div>
-                                    <label class="block text-sm text-gray-700">Objective / Description</label>
+                                    <label class="block text-sm text-gray-700">Objetivo / Descripcion</label>
                                     <textarea v-model="planForm.description" rows="3" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff"></textarea>
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label class="block text-sm text-gray-700">Type</label>
+                                        <label class="block text-sm text-gray-700">Tipo</label>
                                         <select v-model="planForm.type" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff">
-                                            <option value="plan">Plan (on-site)</option>
-                                            <option value="outing">Outing (needs approval)</option>
+                                            <option value="plan">Plan (en sitio)</option>
+                                            <option value="outing">Salida (requiere aprobacion)</option>
                                         </select>
                                     </div>
                                     <div>
-                                        <label class="block text-sm text-gray-700">Date</label>
+                                        <label class="block text-sm text-gray-700">Fecha</label>
                                         <input type="date" v-model="planForm.requested_date" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff" />
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm text-gray-700">Location override (for outings)</label>
+                                    <label class="block text-sm text-gray-700">Ubicacion alternativa (para salidas)</label>
                                     <input
                                         v-model="planForm.location_override"
                                         class="w-full border rounded px-3 py-2 text-sm"
                                         :disabled="!isStaff"
-                                        placeholder="Optional"
+                                        placeholder="Opcional"
                                         @input="searchPlanLocation(planForm.location_override)"
                                     />
                                     <div v-if="planLocationSuggestions.length"
@@ -1096,16 +1096,16 @@ watch(userClassId, (val) => {
                                             @click="applyPlanLocation(opt)">
                                             {{ opt.label }}
                                         </button>
-                                        <div v-if="planLocationLoading" class="px-3 py-2 text-xs text-gray-500">Searching…</div>
+                                        <div v-if="planLocationLoading" class="px-3 py-2 text-xs text-gray-500">Buscando…</div>
                                     </div>
                                 </div>
                                 <div class="flex justify-end">
                                     <button class="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50" :disabled="!isStaff" @click="savePlan">
-                                        Save plan
+                                        Guardar plan
                                     </button>
                                 </div>
                             </div>
-                            <div v-else class="text-sm text-gray-600">Select a meeting to create a plan.</div>
+                            <div v-else class="text-sm text-gray-600">Selecciona una reunion para crear un plan.</div>
                         </div>
                     </div>
                 </div>
@@ -1113,31 +1113,31 @@ watch(userClassId, (val) => {
                 <div class="border-t pt-4">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
-                            <h4 class="font-semibold text-gray-800">Plans summary</h4>
-                            <span class="text-xs text-gray-500">Status updates shown in real-time.</span>
+                            <h4 class="font-semibold text-gray-800">Planes por clases</h4>
+                            <span class="text-xs text-gray-500">Actualizaciones de estado en tiempo real.</span>
                         </div>
                         <div class="flex flex-wrap gap-2 items-center">
                             <template v-if="isDirector">
-                                <label class="text-sm text-gray-700">Class</label>
+                                <label class="text-sm text-gray-700">Clase</label>
                                 <select v-model="classFilter" class="border rounded px-3 py-1 text-sm">
-                                    <option value="">All</option>
+                                    <option value="">Todas</option>
                                     <option v-for="opt in classesOptions" :key="opt.id" :value="opt.id">{{ opt.name }}</option>
                                 </select>
-                                <label class="text-sm text-gray-700">Needs approval</label>
+                                <label class="text-sm text-gray-700">Requiere aprobacion</label>
                                 <input type="checkbox" v-model="needsApprovalOnly" class="mr-2">
-                                <label class="text-sm text-gray-700">Status</label>
+                                <label class="text-sm text-gray-700">Estado</label>
                                 <select v-model="statusFilter" class="border rounded px-3 py-1 text-sm">
-                                    <option value="all">All</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="approved">Approved</option>
-                                    <option value="rejected">Rejected</option>
+                                    <option value="all">Todos</option>
+                                    <option value="pending">Pendiente</option>
+                                    <option value="approved">Aprobado</option>
+                                    <option value="rejected">Rechazado</option>
                                 </select>
                             </template>
                             <template v-else>
-                                <span class="text-sm text-gray-700">Class: {{ classDisplayName }}</span>
+                                <span class="text-sm text-gray-700">Clase: {{ classDisplayName }}</span>
                             </template>
                             <a :href="plansPdfHref" target="_blank" class="px-3 py-1 text-sm bg-white border rounded inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
-                                Export PDF
+                                Exportar PDF
                             </a>
                         </div>
                     </div>
@@ -1145,11 +1145,11 @@ watch(userClassId, (val) => {
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-gray-500">
                                 <tr>
-                                    <th class="py-2 pr-4">Date</th>
-                                    <th class="py-2 pr-4">Class</th>
-                                    <th class="py-2 pr-4">Type</th>
-                                    <th class="py-2 pr-4">Staff</th>
-                                    <th class="py-2 pr-4">Status</th>
+                                    <th class="py-2 pr-4">Fecha</th>
+                                    <th class="py-2 pr-4">Clase</th>
+                                    <th class="py-2 pr-4">Tipo</th>
+                                    <th class="py-2 pr-4">Personal</th>
+                                    <th class="py-2 pr-4">Estado</th>
                                     <th class="py-2 pr-4"></th>
                                 </tr>
                             </thead>
@@ -1166,26 +1166,26 @@ watch(userClassId, (val) => {
                                     </td>
                                     <td class="py-2 pr-4 text-right">
                                         <div class="flex justify-end gap-2">
-                                            <button class="text-blue-600 text-sm" @click="openPlanDetail(plan)">Open</button>
+                                            <button class="text-blue-600 text-sm" @click="openPlanDetail(plan)">Ver</button>
                                             <button
                                                 v-if="isStaff && (plan.status === 'rejected' || plan.status === 'changes_requested')"
                                                 class="text-amber-700 text-sm"
                                                 @click="editPlan(plan)"
                                             >
-                                                Update
+                                                Actualizar
                                             </button>
                                             <template v-if="isDirector">
-                                                <button class="text-amber-700 text-sm" @click="openRequestModal(plan)">Request update</button>
-                                                <button v-if="plan.status === 'submitted' || plan.status === 'changes_requested'" class="text-red-600 text-sm" @click="updatePlanStatus(plan, 'rejected')">Reject</button>
+                                                <button class="text-amber-700 text-sm" @click="openRequestModal(plan)">Solicitar actualizacion</button>
+                                                <button v-if="plan.status === 'submitted' || plan.status === 'changes_requested'" class="text-red-600 text-sm" @click="updatePlanStatus(plan, 'rejected')">Rechazar</button>
                                             </template>
                                         </div>
                                         <div v-if="plan.request_note" class="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded mt-2 p-2 text-left">
-                                            Note: {{ plan.request_note }}
+                                            Nota: {{ plan.request_note }}
                                         </div>
                                     </td>
                                 </tr>
                                 <tr v-if="filteredPlans.length === 0">
-                                    <td colspan="6" class="py-3 text-center text-gray-500">No plans submitted yet.</td>
+                                    <td colspan="6" class="py-3 text-center text-gray-500">No hay planes enviados.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1196,16 +1196,16 @@ watch(userClassId, (val) => {
             <div v-if="hasClubSelected" class="bg-white shadow-sm rounded-lg p-4 border space-y-4">
                     <div class="flex items-start justify-between gap-2">
                         <div>
-                            <h3 class="font-semibold text-gray-800">Current workplan</h3>
-                            <p class="text-sm text-gray-600">{{ form.start_date }} → {{ form.end_date }} ({{ form.timezone || 'No TZ set' }})</p>
-                            <p class="text-xs text-gray-500">Defaults: Sabbath {{ form.default_sabbath_start_time || '—' }}-{{ form.default_sabbath_end_time || '—' }}, Sunday {{ form.default_sunday_start_time || '—' }}-{{ form.default_sunday_end_time || '—' }}</p>
-                            <p v-if="isExpired" class="text-xs text-red-600 font-semibold mt-1">Current range has finished. Calendar is view-only; configure the next plan.</p>
+                            <h3 class="font-semibold text-gray-800">Plan de trabajo actual</h3>
+                            <p class="text-sm text-gray-600">{{ form.start_date }} → {{ form.end_date }} ({{ form.timezone || 'Sin zona horaria' }})</p>
+                            <p class="text-xs text-gray-500">Predeterminados: Sabado {{ form.default_sabbath_start_time || '—' }}-{{ form.default_sabbath_end_time || '—' }}, Domingo {{ form.default_sunday_start_time || '—' }}-{{ form.default_sunday_end_time || '—' }}</p>
+                            <p v-if="isExpired" class="text-xs text-red-600 font-semibold mt-1">El rango actual ha finalizado. El calendario es solo lectura; configura el siguiente plan.</p>
                         </div>
                     </div>
 
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="font-semibold text-gray-800">Events list</h3>
-                    <button v-if="!isReadOnly" class="px-3 py-2 text-sm rounded-md bg-amber-100 text-amber-800 border border-amber-200" @click="openEventModal()">Add special event</button>
+                    <h3 class="font-semibold text-gray-800">Lista de eventos</h3>
+                    <button v-if="!isReadOnly" class="px-3 py-2 text-sm rounded-md bg-amber-100 text-amber-800 border border-amber-200" @click="openEventModal()">Agregar evento especial</button>
                 </div>
                 <div v-if="isMobile" class="space-y-3">
                     <div v-for="ev in pagedEvents" :key="ev.id" class="border rounded-lg p-3 bg-white shadow-sm">
@@ -1215,31 +1215,31 @@ watch(userClassId, (val) => {
                         </div>
                         <div class="text-sm text-gray-700 mt-1">{{ formatDateTime(ev) }}</div>
                         <div class="text-xs text-gray-600">{{ formatTimeRange(ev) }}</div>
-                        <div class="text-xs text-gray-600">Location: {{ ev.location || '—' }}</div>
+                        <div class="text-xs text-gray-600">Ubicacion: {{ ev.location || '—' }}</div>
                         <div class="flex items-center justify-between mt-2">
                             <span v-if="ev.is_generated" class="text-[10px] px-2 py-0.5 rounded-full border border-black text-black bg-white">A</span>
                             <div class="flex gap-3" v-if="!isReadOnly">
-                                <button class="text-blue-600 text-sm" @click="openEventModal(ev)">Edit</button>
-                                <button class="text-red-600 text-sm" @click="removeEvent(ev)">Delete</button>
+                                <button class="text-blue-600 text-sm" @click="openEventModal(ev)">Editar</button>
+                                <button class="text-red-600 text-sm" @click="removeEvent(ev)">Eliminar</button>
                             </div>
                         </div>
                     </div>
-                    <div v-if="events.length === 0" class="text-sm text-gray-500 text-center py-4">No events yet.</div>
+                    <div v-if="events.length === 0" class="text-sm text-gray-500 text-center py-4">No hay eventos.</div>
                     <div v-else class="flex items-center justify-between text-sm text-gray-700">
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">Prev</button>
-                        <span>Page {{ currentPage }} / {{ totalPages }}</span>
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">Next</button>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">Anterior</button>
+                        <span>Pagina {{ currentPage }} / {{ totalPages }}</span>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">Siguiente</button>
                     </div>
                 </div>
                 <div v-else class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
                             <tr class="text-left text-gray-500">
-                                <th class="py-2 pr-4">Date</th>
-                                <th class="py-2 pr-4">Type</th>
-                                <th class="py-2 pr-4">Title</th>
-                                <th class="py-2 pr-4">Time</th>
-                                <th class="py-2 pr-4">Location</th>
+                                <th class="py-2 pr-4">Fecha</th>
+                                <th class="py-2 pr-4">Tipo</th>
+                                <th class="py-2 pr-4">Titulo</th>
+                                <th class="py-2 pr-4">Hora</th>
+                                <th class="py-2 pr-4">Ubicacion</th>
                                 <th class="py-2 pr-4"></th>
                             </tr>
                         </thead>
@@ -1254,50 +1254,50 @@ watch(userClassId, (val) => {
                                 </td>
                                 <td class="py-2 pr-4">{{ ev.location || '—' }}</td>
                                 <td class="py-2 pr-4 text-right">
-                                    <button v-if="!isReadOnly" class="text-blue-600 text-sm mr-2" @click="openEventModal(ev)">Edit</button>
-                                    <button v-if="!isReadOnly" class="text-red-600 text-sm" @click="removeEvent(ev)">Delete</button>
+                                    <button v-if="!isReadOnly" class="text-blue-600 text-sm mr-2" @click="openEventModal(ev)">Editar</button>
+                                    <button v-if="!isReadOnly" class="text-red-600 text-sm" @click="removeEvent(ev)">Eliminar</button>
                                 </td>
                             </tr>
                             <tr v-if="events.length === 0">
-                                <td colspan="6" class="py-4 text-center text-gray-500">No events yet.</td>
+                                <td colspan="6" class="py-4 text-center text-gray-500">No hay eventos.</td>
                             </tr>
                         </tbody>
                     </table>
                     <div v-if="events.length" class="flex items-center justify-between text-sm text-gray-700 mt-3">
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">Prev</button>
-                        <span>Page {{ currentPage }} / {{ totalPages }}</span>
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">Next</button>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">Anterior</button>
+                        <span>Pagina {{ currentPage }} / {{ totalPages }}</span>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">Siguiente</button>
                     </div>
                 </div>
             </div>
 
             <div v-else class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded">
-                Select a club to view or manage its workplan.
+                Selecciona un club para ver o administrar su plan de trabajo.
             </div>
 
             <!-- Diff modal -->
             <div v-if="showDiffModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg max-w-xl w-full p-5">
-                    <h4 class="text-lg font-semibold mb-3">Preview changes</h4>
+                    <h4 class="text-lg font-semibold mb-3">Previsualizar cambios</h4>
                     <div class="space-y-3 max-h-[60vh] overflow-y-auto">
                         <div>
-                            <h5 class="font-medium text-gray-800 mb-1">To add</h5>
+                            <h5 class="font-medium text-gray-800 mb-1">Para agregar</h5>
                             <ul class="space-y-1 text-sm text-gray-700">
                                 <li v-for="(item, idx) in previewDiff.adds" :key="`add-${idx}`">
                                     {{ item.date }} — {{ item.meeting_type }} ({{ item.title }})
                                 </li>
-                                <li v-if="previewDiff.adds.length === 0" class="text-gray-400">No additions</li>
+                                <li v-if="previewDiff.adds.length === 0" class="text-gray-400">Sin adiciones</li>
                             </ul>
                         </div>
                         <div>
-                            <h5 class="font-medium text-gray-800 mb-1">To remove</h5>
-                            <p class="text-sm text-gray-700" v-if="previewDiff.removals.length">{{ previewDiff.removals.length }} generated meeting(s) will be removed (manual edits stay safe).</p>
-                            <p class="text-sm text-gray-400" v-else>No removals</p>
+                            <h5 class="font-medium text-gray-800 mb-1">Para eliminar</h5>
+                            <p class="text-sm text-gray-700" v-if="previewDiff.removals.length">{{ previewDiff.removals.length }} reuniones generadas se eliminaran (las ediciones manuales se mantienen).</p>
+                            <p class="text-sm text-gray-400" v-else>Sin eliminaciones</p>
                         </div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="showDiffModal = false">Cancel</button>
-                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="applyChanges">Apply</button>
+                        <button class="px-4 py-2 border rounded" @click="showDiffModal = false">Cancelar</button>
+                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="applyChanges">Aplicar</button>
                     </div>
                 </div>
             </div>
@@ -1305,34 +1305,34 @@ watch(userClassId, (val) => {
             <!-- Event modal -->
             <div v-if="eventModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5">
-                    <h4 class="text-lg font-semibold mb-3">{{ editingEvent ? 'Edit event' : 'Add event' }}</h4>
+                    <h4 class="text-lg font-semibold mb-3">{{ editingEvent ? 'Editar evento' : 'Agregar evento' }}</h4>
                     <div class="grid grid-cols-2 gap-3">
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Title</label>
+                            <label class="block text-sm text-gray-600 mb-1">Titulo</label>
                             <input type="text" v-model="eventForm.title" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Date</label>
+                            <label class="block text-sm text-gray-600 mb-1">Fecha</label>
                             <input type="date" v-model="eventForm.date" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Type</label>
+                            <label class="block text-sm text-gray-600 mb-1">Tipo</label>
                             <select v-model="eventForm.meeting_type" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="sabbath">Sabbath</option>
-                                <option value="sunday">Sunday</option>
-                                <option value="special">Special</option>
+                                <option value="sabbath">Sabado</option>
+                                <option value="sunday">Domingo</option>
+                                <option value="special">Especial</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Start time</label>
+                            <label class="block text-sm text-gray-600 mb-1">Hora de inicio</label>
                             <input type="time" v-model="eventForm.start_time" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">End time</label>
+                            <label class="block text-sm text-gray-600 mb-1">Hora de fin</label>
                             <input type="time" v-model="eventForm.end_time" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Location</label>
+                            <label class="block text-sm text-gray-600 mb-1">Ubicacion</label>
                             <div class="relative">
                                 <input type="text" v-model="eventForm.location"
                                     class="w-full border rounded px-3 py-2 text-sm"
@@ -1347,34 +1347,34 @@ watch(userClassId, (val) => {
                                     </button>
                                 </div>
                             </div>
-                            <p class="text-[11px] text-gray-500 mt-1">Search powered by OpenStreetMap (1 req/sec).</p>
+                            <p class="text-[11px] text-gray-500 mt-1">Busqueda con OpenStreetMap (1 req/seg).</p>
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Department</label>
+                            <label class="block text-sm text-gray-600 mb-1">Departamento</label>
                             <select v-model="eventForm.department_id" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Select</option>
+                                <option value="">Seleccionar</option>
                                 <option v-for="dept in departmentsOptions" :key="`dept-${dept.id}`" :value="dept.id">
                                     {{ dept.name }}
                                 </option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Objective</label>
+                            <label class="block text-sm text-gray-600 mb-1">Objetivo</label>
                             <select v-model="eventForm.objective_id" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Select</option>
+                                <option value="">Seleccionar</option>
                                 <option v-for="obj in objectivesOptions" :key="`obj-${obj.id}`" :value="obj.id">
                                     {{ obj.name }}
                                 </option>
                             </select>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Description</label>
+                            <label class="block text-sm text-gray-600 mb-1">Descripcion</label>
                             <textarea v-model="eventForm.description" rows="3" class="w-full border rounded px-3 py-2 text-sm"></textarea>
                         </div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="eventModalOpen = false">Cancel</button>
-                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="saveEvent">{{ editingEvent ? 'Save changes' : 'Add event' }}</button>
+                        <button class="px-4 py-2 border rounded" @click="eventModalOpen = false">Cancelar</button>
+                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="saveEvent">{{ editingEvent ? 'Guardar cambios' : 'Agregar evento' }}</button>
                     </div>
                 </div>
             </div>
@@ -1387,41 +1387,41 @@ watch(userClassId, (val) => {
                         <button class="text-gray-500" @click="exportModalOpen = false">✕</button>
                     </div>
                     <div class="text-sm text-gray-700">
-                        This will send the current workplan events to the external calendar system.
+                        Esto enviara los eventos del plan de trabajo al sistema de calendario externo.
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Calendar year</label>
+                            <label class="block text-sm text-gray-600 mb-1">Ano del calendario</label>
                             <input type="number" min="2000" v-model.number="exportForm.calendar_year" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div class="flex items-end gap-2">
                             <label class="inline-flex items-center gap-2 text-sm text-gray-700">
                                 <input type="checkbox" v-model="exportForm.publish_to_feed">
-                                Publish to feed
+                                Publicar en el feed
                             </label>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Department</label>
+                            <label class="block text-sm text-gray-600 mb-1">Departamento</label>
                             <select v-model="exportForm.department_id" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Select</option>
+                                <option value="">Seleccionar</option>
                                 <option v-for="dept in departmentsOptions" :key="`export-dept-${dept.id}`" :value="dept.id">
                                     {{ dept.name }}
                                 </option>
                             </select>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Plan name</label>
+                            <label class="block text-sm text-gray-600 mb-1">Nombre del plan</label>
                             <input type="text" v-model="exportForm.plan_name" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Church slug (optional override)</label>
+                            <label class="block text-sm text-gray-600 mb-1">Slug de iglesia (opcional)</label>
                             <input type="text" v-model="exportForm.church_slug" class="w-full border rounded px-3 py-2 text-sm" placeholder="iglesia-x">
                         </div>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="exportModalOpen = false">Cancel</button>
+                        <button class="px-4 py-2 border rounded" @click="exportModalOpen = false">Cancelar</button>
                         <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" :disabled="exportLoading" @click="submitExport">
-                            {{ exportLoading ? 'Exporting...' : 'Export' }}
+                            {{ exportLoading ? 'Exportando...' : 'Exportar' }}
                         </button>
                     </div>
                     <button
@@ -1429,41 +1429,41 @@ watch(userClassId, (val) => {
                         class="text-xs text-blue-600 underline"
                         @click="exportResponseOpen = true"
                     >
-                        Show export summary
+                        Mostrar resumen de exportacion
                     </button>
                     <div v-if="exportResponseOpen && (exportResponse || exportError)" class="border rounded bg-gray-50 p-3 text-xs text-gray-700 max-h-80 overflow-y-auto">
                         <div class="flex items-center justify-between mb-2">
-                            <div class="font-semibold">Export summary</div>
-                            <button class="text-xs text-gray-500" @click="exportResponseOpen = false">Hide</button>
+                            <div class="font-semibold">Resumen de exportacion</div>
+                            <button class="text-xs text-gray-500" @click="exportResponseOpen = false">Ocultar</button>
                         </div>
                         <div v-if="exportResponse" class="space-y-3">
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Status</div>
+                                    <div class="text-gray-500">Estado</div>
                                     <div class="font-semibold">{{ exportResponse.status || 'ok' }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Imported</div>
+                                    <div class="text-gray-500">Importados</div>
                                     <div class="font-semibold">{{ exportResponse.imported ?? exportResponse.sent_events ?? 0 }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Skipped</div>
+                                    <div class="text-gray-500">Omitidos</div>
                                     <div class="font-semibold">{{ exportResponse.skipped ?? 0 }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Conflicts</div>
+                                    <div class="text-gray-500">Conflictos</div>
                                     <div class="font-semibold">{{ exportResponse.conflicts?.length || 0 }}</div>
                                 </div>
                             </div>
                             <div v-if="exportResponse.conflicts?.length" class="border rounded bg-white">
-                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Conflicts</div>
+                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Conflictos</div>
                                 <div class="max-h-48 overflow-y-auto">
                                     <table class="min-w-full text-[11px]">
                                         <thead class="text-left text-gray-500">
                                             <tr>
-                                                <th class="py-1 px-2">Event</th>
-                                                <th class="py-1 px-2">Issue</th>
-                                                <th class="py-1 px-2">Type</th>
+                                                <th class="py-1 px-2">Evento</th>
+                                                <th class="py-1 px-2">Problema</th>
+                                                <th class="py-1 px-2">Tipo</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1477,21 +1477,21 @@ watch(userClassId, (val) => {
                                 </div>
                             </div>
                             <div v-if="exportResponse.successes?.length" class="border rounded bg-white">
-                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Imported events</div>
+                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Eventos importados</div>
                                 <div class="max-h-32 overflow-y-auto">
                                     <table class="min-w-full text-[11px]">
                                         <thead class="text-left text-gray-500">
                                             <tr>
-                                                <th class="py-1 px-2">Title</th>
-                                                <th class="py-1 px-2">Start</th>
-                                                <th class="py-1 px-2">Status</th>
+                                                <th class="py-1 px-2">Titulo</th>
+                                                <th class="py-1 px-2">Inicio</th>
+                                                <th class="py-1 px-2">Estado</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr v-for="row in exportResponse.successes" :key="`success-${row.external_id}`" class="border-t">
                                                 <td class="py-1 px-2">{{ row.title }}</td>
                                                 <td class="py-1 px-2">{{ row.start_at }}</td>
-                                                <td class="py-1 px-2">{{ row.review_status || 'pending' }}</td>
+                                                <td class="py-1 px-2">{{ row.review_status || 'pendiente' }}</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -1499,8 +1499,8 @@ watch(userClassId, (val) => {
                             </div>
                         </div>
                         <div v-else-if="exportError" class="text-[11px] text-red-700">
-                            <div class="font-semibold mb-1">Export error</div>
-                            <div>{{ exportError.message || 'Export failed' }}</div>
+                            <div class="font-semibold mb-1">Error de exportacion</div>
+                            <div>{{ exportError.message || 'Fallo la exportacion' }}</div>
                         </div>
                     </div>
                 </div>
@@ -1510,17 +1510,17 @@ watch(userClassId, (val) => {
             <div v-if="objectiveModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-5 space-y-4">
                     <div class="flex items-start justify-between gap-2">
-                        <h4 class="text-lg font-semibold">Assign objectives before export</h4>
+                        <h4 class="text-lg font-semibold">Asignar objetivos antes de exportar</h4>
                         <button class="text-gray-500" @click="objectiveModalOpen = false">✕</button>
                     </div>
                     <div class="text-sm text-gray-700">
-                        These recurrent events are missing an objective or have a mismatched one. Assign one to each event or apply a general objective to all.
+                        Estos eventos recurrentes no tienen objetivo o tienen uno incorrecto. Asigna uno a cada evento o aplica un objetivo general a todos.
                     </div>
                     <div class="flex flex-col sm:flex-row sm:items-end gap-3">
                         <div class="flex-1">
-                            <label class="block text-sm text-gray-600 mb-1">General objective</label>
+                            <label class="block text-sm text-gray-600 mb-1">Objetivo general</label>
                             <select v-model="bulkObjectiveId" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Select</option>
+                                <option value="">Seleccionar</option>
                                 <option v-for="obj in objectivesOptions" :key="`bulk-obj-${obj.id}`" :value="obj.id">
                                     {{ obj.name }}
                                 </option>
@@ -1542,7 +1542,7 @@ watch(userClassId, (val) => {
                                 type="button"
                                 @click="objectiveTab = 'recurrent'"
                             >
-                                Recurrent events ({{ missingRecurrentEvents.length }})
+                                Eventos recurrentes ({{ missingRecurrentEvents.length }})
                             </button>
                             <button
                                 class="px-3 py-2"
@@ -1550,17 +1550,17 @@ watch(userClassId, (val) => {
                                 type="button"
                                 @click="objectiveTab = 'special'"
                             >
-                                Special events ({{ missingSpecialEvents.length }})
+                                Eventos especiales ({{ missingSpecialEvents.length }})
                             </button>
                         </div>
                         <div class="max-h-[320px] overflow-y-auto">
                             <table class="min-w-full text-sm">
                                 <thead class="text-left text-gray-500">
                                     <tr>
-                                        <th class="py-2 px-3">Event</th>
-                                        <th class="py-2 px-3">Date</th>
-                                        <th class="py-2 px-3">Department</th>
-                                        <th class="py-2 px-3">Objective</th>
+                                        <th class="py-2 px-3">Evento</th>
+                                        <th class="py-2 px-3">Fecha</th>
+                                        <th class="py-2 px-3">Departamento</th>
+                                        <th class="py-2 px-3">Objetivo</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1574,7 +1574,7 @@ watch(userClassId, (val) => {
                                         <td class="py-2 px-3">{{ getDepartmentName(getEventDepartmentId(ev)) }}</td>
                                         <td class="py-2 px-3">
                                             <select v-model="objectiveAssignments[ev.id]" class="w-full border rounded px-2 py-1 text-sm">
-                                                <option value="">Select</option>
+                                                <option value="">Seleccionar</option>
                                                 <option
                                                     v-for="obj in objectivesForDepartment(getEventDepartmentId(ev))"
                                                     :key="`obj-${ev.id}-${obj.id}`"
@@ -1586,19 +1586,19 @@ watch(userClassId, (val) => {
                                         </td>
                                     </tr>
                                     <tr v-if="objectiveTab === 'recurrent' && missingRecurrentEvents.length === 0">
-                                        <td colspan="4" class="py-3 text-center text-gray-500">No missing objectives.</td>
+                                        <td colspan="4" class="py-3 text-center text-gray-500">No hay objetivos pendientes.</td>
                                     </tr>
                                     <tr v-else-if="objectiveTab === 'special' && missingSpecialEvents.length === 0">
-                                        <td colspan="4" class="py-3 text-center text-gray-500">No missing objectives.</td>
+                                        <td colspan="4" class="py-3 text-center text-gray-500">No hay objetivos pendientes.</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="objectiveModalOpen = false">Cancel</button>
+                        <button class="px-4 py-2 border rounded" @click="objectiveModalOpen = false">Cancelar</button>
                         <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" :disabled="objectiveSaving" @click="saveObjectivesAndExport">
-                            {{ objectiveSaving ? 'Saving...' : 'Save and export' }}
+                            {{ objectiveSaving ? 'Guardando...' : 'Guardar y exportar' }}
                         </button>
                     </div>
                 </div>
@@ -1607,35 +1607,35 @@ watch(userClassId, (val) => {
             <div v-if="planDetailOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
                     <div class="flex items-center justify-between">
-                        <h4 class="text-lg font-semibold">Plan details</h4>
+                        <h4 class="text-lg font-semibold">Detalles del plan</h4>
                         <button class="text-gray-500" @click="planDetailOpen = false">✕</button>
                     </div>
                     <div v-if="planDetail" class="space-y-2 text-sm text-gray-700">
                         <div class="text-xs text-gray-600">
-                            Meeting: {{ normalizeDate(planDetail._event?.date) }} · {{ planDetail._event?.title }} ({{ planDetail._event?.meeting_type }})
+                            Reunion: {{ normalizeDate(planDetail._event?.date) }} · {{ planDetail._event?.title }} ({{ planDetail._event?.meeting_type }})
                         </div>
-                        <div><span class="font-semibold">Title:</span> {{ planDetail.title }}</div>
-                        <div><span class="font-semibold">Type:</span> {{ planDetail.type }}</div>
-                        <div v-if="planDetail.description"><span class="font-semibold">Description:</span> {{ planDetail.description }}</div>
-                        <div><span class="font-semibold">Requested date:</span> {{ normalizeDate(planDetail.requested_date) || '—' }}</div>
-                        <div><span class="font-semibold">Location override:</span> {{ planDetail.location_override || '—' }}</div>
-                        <div><span class="font-semibold">Class:</span> {{ planDetail.class?.class_name || '—' }}</div>
-                        <div><span class="font-semibold">Staff:</span> {{ planDetail.staff?.name || planDetail.staff?.user?.name || '—' }}</div>
+                        <div><span class="font-semibold">Titulo:</span> {{ planDetail.title }}</div>
+                        <div><span class="font-semibold">Tipo:</span> {{ planDetail.type }}</div>
+                        <div v-if="planDetail.description"><span class="font-semibold">Descripcion:</span> {{ planDetail.description }}</div>
+                        <div><span class="font-semibold">Fecha solicitada:</span> {{ normalizeDate(planDetail.requested_date) || '—' }}</div>
+                        <div><span class="font-semibold">Ubicacion alternativa:</span> {{ planDetail.location_override || '—' }}</div>
+                        <div><span class="font-semibold">Clase:</span> {{ planDetail.class?.class_name || '—' }}</div>
+                        <div><span class="font-semibold">Personal:</span> {{ planDetail.staff?.name || planDetail.staff?.user?.name || '—' }}</div>
                         <div>
-                            <span class="font-semibold">Status:</span>
+                            <span class="font-semibold">Estado:</span>
                             <span class="text-[11px] px-2 py-0.5 rounded-full inline-block" :class="planStatusClass(planDetail.status)">{{ planDetail.status }}</span>
-                            <span class="ml-2 text-xs text-gray-500" v-if="planDetail.requires_approval">(Requires approval)</span>
+                            <span class="ml-2 text-xs text-gray-500" v-if="planDetail.requires_approval">(Requiere aprobacion)</span>
                         </div>
                         <div v-if="planDetail.request_note" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
-                            <span class="font-semibold">Director note:</span> {{ planDetail.request_note }}
+                            <span class="font-semibold">Nota del director:</span> {{ planDetail.request_note }}
                         </div>
                     </div>
                     <div class="flex justify-end gap-2" v-if="isDirector && planDetail?.requires_approval && planDetail.status === 'submitted'">
-                        <button class="px-3 py-2 border rounded text-red-700 border-red-500" @click="updatePlanStatus(planDetail, 'rejected')">Reject</button>
-                        <button class="px-3 py-2 border rounded text-green-700 border-green-500" @click="updatePlanStatus(planDetail, 'approved')">Approve</button>
+                        <button class="px-3 py-2 border rounded text-red-700 border-red-500" @click="updatePlanStatus(planDetail, 'rejected')">Rechazar</button>
+                        <button class="px-3 py-2 border rounded text-green-700 border-green-500" @click="updatePlanStatus(planDetail, 'approved')">Aprobar</button>
                     </div>
                     <div class="flex justify-end" v-else>
-                        <button class="px-4 py-2 border rounded" @click="planDetailOpen = false">Close</button>
+                        <button class="px-4 py-2 border rounded" @click="planDetailOpen = false">Cerrar</button>
                     </div>
                 </div>
             </div>
@@ -1643,23 +1643,23 @@ watch(userClassId, (val) => {
             <!-- ICS Help Modal -->
             <div v-if="showIcsHelp" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
-                    <h4 class="text-lg font-semibold">Add ICS to your calendar</h4>
+                    <h4 class="text-lg font-semibold">Agregar ICS a tu calendario</h4>
                     <div class="space-y-2 text-sm text-gray-700">
                         <p class="font-medium text-gray-800">iOS (iPhone/iPad)</p>
                         <ol class="list-decimal list-inside space-y-1">
-                            <li>Tap the “Download ICS” link.</li>
-                            <li>Choose “Open in Calendar” (or share to Calendar).</li>
-                            <li>Tap “Add All” or select events to import.</li>
+                            <li>Toca el enlace “Descargar ICS”.</li>
+                            <li>Elige “Abrir en Calendario” (o compartir a Calendario).</li>
+                            <li>Toca “Agregar todos” o selecciona los eventos a importar.</li>
                         </ol>
                         <p class="font-medium text-gray-800 pt-2">Google Calendar (web)</p>
                         <ol class="list-decimal list-inside space-y-1">
-                            <li>Download the .ics file.</li>
-                            <li>Go to calendar.google.com → “Other calendars” → “Import”.</li>
-                            <li>Upload the .ics file and pick the calendar to add to.</li>
+                            <li>Descarga el archivo .ics.</li>
+                            <li>Ve a calendar.google.com → “Otros calendarios” → “Importar”.</li>
+                            <li>Sube el archivo .ics y elige el calendario.</li>
                         </ol>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="showIcsHelp = false">Close</button>
+                        <button class="px-4 py-2 border rounded" @click="showIcsHelp = false">Cerrar</button>
                     </div>
                 </div>
             </div>
@@ -1668,19 +1668,19 @@ watch(userClassId, (val) => {
             <div v-if="requestModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
                     <div class="flex items-start justify-between gap-2">
-                        <h4 class="text-lg font-semibold">Request update</h4>
+                        <h4 class="text-lg font-semibold">Solicitar actualizacion</h4>
                         <button class="text-gray-500" @click="requestModalOpen = false">✕</button>
                     </div>
                     <div class="text-sm text-gray-700">
-                        Add a note to send back to the staff member. The plan status will change to "changes requested".
+                        Agrega una nota para enviar al personal. El estado cambiara a "cambios solicitados".
                     </div>
                     <div>
-                        <label class="block text-sm text-gray-700 mb-1">Reason / requested changes</label>
+                        <label class="block text-sm text-gray-700 mb-1">Motivo / cambios solicitados</label>
                         <textarea v-model="requestNote" rows="4" class="w-full border rounded px-3 py-2 text-sm"></textarea>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="requestModalOpen = false">Cancel</button>
-                        <button class="px-4 py-2 bg-amber-600 text-white rounded" @click="submitRequestNote">Send request</button>
+                        <button class="px-4 py-2 border rounded" @click="requestModalOpen = false">Cancelar</button>
+                        <button class="px-4 py-2 bg-amber-600 text-white rounded" @click="submitRequestNote">Enviar solicitud</button>
                     </div>
                 </div>
             </div>
@@ -1688,37 +1688,37 @@ watch(userClassId, (val) => {
             <!-- Create workplan modal -->
             <div v-if="workplanModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 space-y-4">
-                    <h4 class="text-lg font-semibold">Create workplan</h4>
+                    <h4 class="text-lg font-semibold">Crear plan de trabajo</h4>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-sm text-gray-700">Start date</label>
+                            <label class="block text-sm text-gray-700">Fecha de inicio</label>
                             <input type="date" v-model="form.start_date" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">End date</label>
+                            <label class="block text-sm text-gray-700">Fecha de fin</label>
                             <input type="date" v-model="form.end_date" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Timezone</label>
+                            <label class="block text-sm text-gray-700">Zona horaria</label>
                             <input v-model="form.timezone" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Sabbath location</label>
+                            <label class="block text-sm text-gray-700">Ubicacion sabatica</label>
                             <input v-model="form.default_sabbath_location" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Sabbath start/end</label>
+                            <label class="block text-sm text-gray-700">Sabado inicio/fin</label>
                             <div class="flex gap-2">
                                 <input type="time" v-model="form.default_sabbath_start_time" class="w-full border rounded px-3 py-2 text-sm" />
                                 <input type="time" v-model="form.default_sabbath_end_time" class="w-full border rounded px-3 py-2 text-sm" />
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Sunday location</label>
+                            <label class="block text-sm text-gray-700">Ubicacion dominical</label>
                             <input v-model="form.default_sunday_location" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Sunday start/end</label>
+                            <label class="block text-sm text-gray-700">Domingo inicio/fin</label>
                             <div class="flex gap-2">
                                 <input type="time" v-model="form.default_sunday_start_time" class="w-full border rounded px-3 py-2 text-sm" />
                                 <input type="time" v-model="form.default_sunday_end_time" class="w-full border rounded px-3 py-2 text-sm" />
@@ -1726,7 +1726,7 @@ watch(userClassId, (val) => {
                         </div>
                         <div class="sm:col-span-2 space-y-3">
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-1">Sabbath recurrence (nth in month)</label>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Recurrencia sabatica (n en el mes)</label>
                                 <div class="flex flex-wrap gap-2">
                                     <button
                                         v-for="n in nthOptions"
@@ -1736,12 +1736,12 @@ watch(userClassId, (val) => {
                                         :class="recurrence.sabbath.includes(n) ? 'bg-amber-600 text-white border-amber-700' : 'bg-white text-gray-700'"
                                         @click="toggleNth('sabbath', n)"
                                     >
-                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sabbath
+                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sabado
                                     </button>
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-1">Sunday recurrence (nth in month)</label>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Recurrencia dominical (n en el mes)</label>
                                 <div class="flex flex-wrap gap-2">
                                     <button
                                         v-for="n in nthOptions"
@@ -1751,15 +1751,15 @@ watch(userClassId, (val) => {
                                         :class="recurrence.sunday.includes(n) ? 'bg-teal-600 text-white border-teal-700' : 'bg-white text-gray-700'"
                                         @click="toggleNth('sunday', n)"
                                     >
-                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sunday
+                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Domingo
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="workplanModalOpen = false">Cancel</button>
-                        <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="createWorkplanNow">Save</button>
+                        <button class="px-4 py-2 border rounded" @click="workplanModalOpen = false">Cancelar</button>
+                        <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="createWorkplanNow">Guardar</button>
                     </div>
                 </div>
             </div>

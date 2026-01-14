@@ -42,7 +42,7 @@ const dashboardActive = computed(() =>
                                     :href="dashboardHref"
                                     :active="dashboardActive"
                                 >
-                                    Dashboard
+                                    Panel
                                 </NavLink>
                             </div>
                         </div>
@@ -86,7 +86,7 @@ const dashboardActive = computed(() =>
                                             method="post"
                                             as="button"
                                         >
-                                            Log Out
+                                            Cerrar sesión
                                         </DropdownLink>
                                     </template>
                                 </Dropdown>
@@ -149,7 +149,7 @@ const dashboardActive = computed(() =>
                             :href="dashboardHref"
                             :active="dashboardActive"
                         >
-                            Dashboard
+                            Panel
                         </ResponsiveNavLink>
                     </div>
 
@@ -170,14 +170,14 @@ const dashboardActive = computed(() =>
 
                         <div class="mt-3 space-y-1">
                             <!-- <ResponsiveNavLink :href="route('profile.edit')">
-                                Profile
+                                Perfil
                             </ResponsiveNavLink> -->
                             <ResponsiveNavLink
                                 :href="route('logout')"
                                 method="post"
                                 as="button"
                             >
-                                Log Out
+                                Cerrar sesión
                             </ResponsiveNavLink>
                         </div>
                     </div>

@@ -40,10 +40,10 @@ const filteredClubs = computed(() => {
 const profileTypeOptions = computed(() => {
     const hasDirector = props.clubs.some(c => Number(c.id) === Number(form.club_id) && c.director_exists)
     return hasDirector
-        ? [{ value: 'club_personal', label: 'Club Personal' }]
+        ? [{ value: 'club_personal', label: 'Personal del club' }]
         : [
-            { value: 'club_director', label: 'Club Director' },
-            { value: 'club_personal', label: 'Club Personal' },
+            { value: 'club_director', label: 'Director de club' },
+            { value: 'club_personal', label: 'Personal del club' },
         ]
 })
 
@@ -67,17 +67,17 @@ watch(
 <template>
     <PathfinderLayout>
 
-        <Head title="Register" />
+        <Head title="Registro" />
 
-        <template #title>Join the Pathfinder Portal</template>
+        <template #title>Únete al Portal de Conquistadores</template>
 
         <form @submit.prevent="submit" class="space-y-6">
             <div>
-                <InputLabel for="church_name" value="Church" />
+                <InputLabel for="church_name" value="Iglesia" />
                 <select id="church_id" v-model="form.church_id"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     required>
-                    <option disabled value="">Select a church</option>
+                    <option disabled value="">Selecciona una iglesia</option>
                     <option v-for="church in churches" :key="church.id" :value="church.id">
                         {{ church.church_name }}
                     </option>
@@ -89,20 +89,20 @@ watch(
                 <select id="club_id" v-model="form.club_id"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     required>
-                    <option disabled value="">Select a club</option>
+                    <option disabled value="">Selecciona un club</option>
                     <option v-for="club in filteredClubs" :key="club.id" :value="club.id">
                         {{ club.club_name }}
                     </option>
-                    <option value="new">Create new club (same church)</option>
+                    <option value="new">Crear nuevo club (misma iglesia)</option>
                 </select>
                 <InputError class="mt-2" :message="form.errors.club_id" />
             </div>
             <div>
-                <label for="profile_type" class="block text-sm font-medium text-gray-700">Profile Type</label>
+                <label for="profile_type" class="block text-sm font-medium text-gray-700">Tipo de perfil</label>
                 <select v-model="form.profile_type" id="profile_type"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-yellow-500 focus:border-yellow-500"
                     required>
-                    <option value="">Select Role</option>
+                    <option value="">Selecciona un rol</option>
                     <option v-for="opt in profileTypeOptions" :key="opt.value" :value="opt.value">
                         {{ opt.label }}
                     </option>
@@ -110,15 +110,15 @@ watch(
                 <InputError class="mt-2" :message="form.errors.profile_type" />
                 <p v-if="profileTypeOptions.length === 1 && profileTypeOptions[0].value === 'club_personal'"
                     class="text-xs text-gray-600 mt-1">
-                    A club director already exists for this club. Only staff can register.
+                    Ya existe un director para este club. Solo el personal puede registrarse.
                 </p>
             </div>
 
             <div v-if="form.profile_type === 'club_personal'">
-                <label for="sub_role" class="block text-sm font-medium text-gray-700">Sub Role</label>
+                <label for="sub_role" class="block text-sm font-medium text-gray-700">Subrol</label>
                 <select v-model="form.sub_role"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
-                    <option value="">Select Sub Role</option>
+                    <option value="">Selecciona un subrol</option>
                     <option v-for="role in subRoles" :key="role.id" :value="role.key">
                         {{ role.label }}
                     </option>
@@ -129,14 +129,14 @@ watch(
 
 
             <div>
-                <InputLabel for="invite_code" value="Church invite code" />
+                <InputLabel for="invite_code" value="Código de invitación de la iglesia" />
                 <TextInput id="invite_code" type="text"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.invite_code" required />
                 <InputError class="mt-2" :message="form.errors.invite_code" />
             </div>
             <div>
-                <InputLabel for="name" value="Name" />
+                <InputLabel for="name" value="Nombre" />
                 <TextInput id="name" type="text"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.name" required autofocus autocomplete="name" />
@@ -144,7 +144,7 @@ watch(
             </div>
 
             <div>
-                <InputLabel for="email" value="Email" />
+                <InputLabel for="email" value="Correo electrónico" />
                 <TextInput id="email" type="email"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.email" required autocomplete="username" />
@@ -152,7 +152,7 @@ watch(
             </div>
 
             <div>
-                <InputLabel for="password" value="Password" />
+                <InputLabel for="password" value="Contraseña" />
                 <TextInput id="password" type="password"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.password" required autocomplete="new-password" />
@@ -160,7 +160,7 @@ watch(
             </div>
 
             <div>
-                <InputLabel for="password_confirmation" value="Confirm Password" />
+                <InputLabel for="password_confirmation" value="Confirmar contraseña" />
                 <TextInput id="password_confirmation" type="password"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.password_confirmation" required autocomplete="new-password" />
@@ -173,16 +173,16 @@ watch(
             <div class="flex items-center justify-between pt-2">
                 <Link :href="route('church.form')" class="text-sm text-yellow-600 hover:underline"
                     v-if="churches.length == 0">
-                Create new church
+                Crear nueva iglesia
                 </Link>
 
                 <Link :href="route('login')" class="text-sm text-yellow-600 hover:underline">
-                Already registered?
+                ¿Ya estás registrado?
                 </Link>
 
                 <PrimaryButton class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md"
                     :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-                    Register
+                    Registrarse
                 </PrimaryButton>
             </div>
         </form>

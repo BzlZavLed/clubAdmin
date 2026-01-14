@@ -56,28 +56,28 @@ const pcForm = useForm({
 
 // Small helpers for labels
 const scopeTypeOptions = [
-    { value: 'club_wide', label: 'Club wide' },
-    { value: 'class', label: 'Specific class' },
-    { value: 'member', label: 'Specific member' },
-    { value: 'staff_wide', label: 'Staff wide' },
-    { value: 'staff', label: 'Specific staff' }
+    { value: 'club_wide', label: 'Todo el club' },
+    { value: 'class', label: 'Clase especifica' },
+    { value: 'member', label: 'Miembro especifico' },
+    { value: 'staff_wide', label: 'Todo el personal' },
+    { value: 'staff', label: 'Personal especifico' }
 ]
 
 const payToOptions = [
-    { value: 'church_budget', label: 'Church budget' },
-    { value: 'club_budget', label: 'Club budget' },
-    { value: 'conference', label: 'Conference' },
-    { value: 'reimbursement_to', label: 'Reimbursement to…' }
+    { value: 'church_budget', label: 'Presupuesto de iglesia' },
+    { value: 'club_budget', label: 'Presupuesto del club' },
+    { value: 'conference', label: 'Conferencia' },
+    { value: 'reimbursement_to', label: 'Reembolso a…' }
 ]
 
 const typeOptions = [
-    { value: 'mandatory', label: 'Mandatory' },
-    { value: 'optional', label: 'Optional' }
+    { value: 'mandatory', label: 'Obligatorio' },
+    { value: 'optional', label: 'Opcional' }
 ]
 
 const statusOptions = [
-    { value: 'active', label: 'Active' },
-    { value: 'inactive', label: 'Inactive' }
+    { value: 'active', label: 'Activo' },
+    { value: 'inactive', label: 'Inactivo' }
 ]
 
 // derive current club name (for sanity)
@@ -126,20 +126,20 @@ function scopeOf(pc) {
 }
 
 function scopeLabel(sc) {
-    if (!sc) return 'No scope'
+    if (!sc) return 'Sin alcance'
     switch (sc.scope_type) {
         case 'club_wide':
-            return `Club wide (${sc.club?.club_name ?? sc.club_id})`
+            return `Todo el club (${sc.club?.club_name ?? sc.club_id})`
         case 'staff_wide':
-            return `Staff wide (${sc.club?.club_name ?? sc.club_id})`
+            return `Todo el personal (${sc.club?.club_name ?? sc.club_id})`
         case 'class':
-            return `Class: ${sc.class?.class_name ?? sc.class_id}`
+            return `Clase: ${sc.class?.class_name ?? sc.class_id}`
         case 'member':
-            return `Member: ${sc.member?.applicant_name ?? sc.member_id}`
+            return `Miembro: ${sc.member?.applicant_name ?? sc.member_id}`
         case 'staff':
-            return `Staff: ${sc.staff?.name ?? sc.staff_id}`
+            return `Personal: ${sc.staff?.name ?? sc.staff_id}`
         default:
-            return 'Unknown scope'
+            return 'Alcance desconocido'
     }
 }
 
@@ -154,14 +154,14 @@ async function loadPaymentConcepts() {
 //DELETE PAYMENT CONCEPT
 async function deleteConcept(id) {
     if (!conceptClubId.value) return
-    if (!confirm('Delete this concept?')) return
+    if (!confirm('¿Eliminar este concepto?')) return
     try {
         await deletePaymentConcept(conceptClubId.value, id)
-        showToast('Concept deleted', 'success')
+        showToast('Concepto eliminado', 'success')
         await loadPaymentConcepts()
     } catch (e) {
         console.error(e)
-        showToast('Failed to delete concept', 'error')
+        showToast('No se pudo eliminar el concepto', 'error')
     }
 }
 
@@ -170,7 +170,7 @@ async function deleteConcept(id) {
     const editingConceptId = ref(null)
 
     const saveBtnLabel = computed(() =>
-    isEditingConcept.value ? 'Save Changes' : 'Save Concept'
+    isEditingConcept.value ? 'Guardar cambios' : 'Guardar concepto'
     )
 
     function resetConceptForm(keepClub = true) {
@@ -229,8 +229,8 @@ async function deleteConcept(id) {
 
     // Save (create or update)
     async function savePaymentConcept() {
-    if (!pcForm.club_id) return showToast('Please choose the concept’s club', 'error')
-    if (pcForm.scopes.length === 0) return showToast('Please add at least one scope', 'error')
+    if (!pcForm.club_id) return showToast('Selecciona el club del concepto', 'error')
+    if (pcForm.scopes.length === 0) return showToast('Agrega al menos un alcance', 'error')
 
     if (pcForm.pay_to !== 'reimbursement_to') {
         pcForm.payee_type = null
@@ -251,11 +251,11 @@ async function deleteConcept(id) {
         if (isEditingConcept.value && editingConceptId.value) {
         // UPDATE
         await updatePaymentConcept(conceptClubId.value, editingConceptId.value, payload)
-        showToast('Payment concept updated', 'success')
+        showToast('Concepto de pago actualizado', 'success')
         } else {
         // CREATE
         await createPaymentConcept(conceptClubId.value, payload)
-        showToast('Payment concept created', 'success')
+        showToast('Concepto de pago creado', 'success')
         }
         resetConceptForm(true)
         await loadPaymentConcepts()
@@ -268,7 +268,7 @@ async function deleteConcept(id) {
                 pcForm.setError(field, Array.isArray(messages) ? messages[0] : messages)
             })
         }
-        showToast(msg || 'Failed to save concept', 'error')
+        showToast(msg || 'No se pudo guardar el concepto', 'error')
     }
     }
 
@@ -283,10 +283,10 @@ const fetchStaff = async (clubId) => {
         const response = await axios.get(`/clubs/${clubId}/staff`)
         staffList.value = response.data.staff
         if(staffList.value.length === 0) {
-            showToast('Create staff first, none found','error')
+            showToast('Crea personal primero, no se encontro ninguno','error')
             return
         }
-        showToast('Staff loaded','success');
+        showToast('Personal cargado','success');
     } catch (error) {
         console.error('Failed to fetch staff:', error)
     }
@@ -298,14 +298,14 @@ const fetchMembers = async (clubId) => {
         const data = await fetchMembersByClub(clubId)
         if (Array.isArray(data) && data.length > 0) {
             members.value = data
-            showToast('Members loaded', 'success')
+            showToast('Miembros cargados', 'success')
         } else {
             members.value = []
-            alert('No members found for this club.')
+            alert('No se encontraron miembros para este club.')
         }
     } catch (error) {
         console.error('Failed to fetch members:', error)
-        showToast('Error fetching members', 'error')
+        showToast('Error al obtener miembros', 'error')
     }
 };
 
@@ -320,10 +320,10 @@ const fetchClubs = async () => {
             conceptClubId.value = filtered[0].id
             pcForm.club_id = filtered[0].id
         }
-        showToast('Clubs fetched successfully!')
+        showToast('Clubes cargados correctamente')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error loading clubs', 'error')
+        showToast('Error al cargar clubes', 'error')
     }
 }
 
@@ -382,34 +382,34 @@ onMounted(async () => {
 
 <template>
     <PathfinderLayout>
-        <template #title>My Club Finances</template>
+        <template #title>Finanzas del club</template>
         <details class="border rounded">
             <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">
-                Payment Concepts
+                Conceptos de pago
             </summary>
 
             <div class="p-4 space-y-6">
                 <!-- Form -->
                 <div class="space-y-4">
-                    <h3 class="text-lg font-bold">Create Payment Concept</h3>
+                    <h3 class="text-lg font-bold">Crear concepto de pago</h3>
 
                     <!-- Choose club -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Applies to Club</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Aplica al club</label>
                         <select v-model="conceptClubId" class="w-full mt-1 p-2 border rounded" :disabled="isEditingConcept">
-                            <option value="">Select a club</option>
+                            <option value="">Selecciona un club</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
                     </div>
 
                     <div class="grid md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Concept</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
                             <input v-model="pcForm.concept" type="text" class="w-full mt-1 p-2 border rounded"
-                                placeholder="e.g., Registration Fee" />
+                                placeholder="Ej. cuota de inscripcion" />
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Monto</label>
                             <input
                                 v-model.number="pcForm.amount"
                                 type="number"
@@ -420,13 +420,13 @@ onMounted(async () => {
                             />
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Payment Expected By</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Pago esperado para</label>
                             <input v-model="pcForm.payment_expected_by" type="date"
                                 class="w-full mt-1 p-2 border rounded" />
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
                             <select v-model="pcForm.type" class="w-full mt-1 p-2 border rounded">
                                 <option v-for="o in typeOptions" :key="o.value" :value="o.value">{{ o.label }}
                                 </option>
@@ -434,7 +434,7 @@ onMounted(async () => {
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
                             <select v-model="pcForm.status" class="w-full mt-1 p-2 border rounded">
                                 <option v-for="o in statusOptions" :key="o.value" :value="o.value">{{ o.label }}
                                 </option>
@@ -442,12 +442,12 @@ onMounted(async () => {
                         </div>
 
                         <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Pay To</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Pagar a</label>
                             <select v-model="pcForm.pay_to" class="w-full mt-1 p-2 border rounded">
                                 <option v-for="o in payToOptions" :key="o.value" :value="o.value">{{ o.label }}
                                 </option>
                             </select>
-                            <p class="text-xs text-gray-500 mt-1">Created by: {{ user.name }}</p>
+                            <p class="text-xs text-gray-500 mt-1">Creado por: {{ user.name }}</p>
                         </div>
                     </div>
 
@@ -455,54 +455,54 @@ onMounted(async () => {
                     <!-- Conditional payee -->
                     <div v-if="pcForm.pay_to === 'reimbursement_to'" class="grid md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Reimburse To (Type)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Reembolsar a (tipo)</label>
                             <select v-model="pcForm.payee_type" class="w-full mt-1 p-2 border rounded">
-                                <option :value="null">Select…</option>
-                                <option value="StaffAdventurer">Staff</option>
-                                <option value="MemberAdventurer">Member</option>
+                                <option :value="null">Seleccionar…</option>
+                                <option value="StaffAdventurer">Personal</option>
+                                <option value="MemberAdventurer">Miembro</option>
                             </select>
-                            <p class="text-xs text-gray-500 mt-1" v-if="!conceptClubId">Select a club above to load
-                                staff/members</p>
+                            <p class="text-xs text-gray-500 mt-1" v-if="!conceptClubId">Selecciona un club arriba para cargar
+                                personal/miembros</p>
                         </div>
 
                         <!-- Staff dropdown -->
         <div v-if="pcForm.payee_type === 'StaffAdventurer'">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Select Staff</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar personal</label>
             <select v-model="pcForm.payee_id" :disabled="!conceptClubId || staffList.length === 0"
                 class="w-full mt-1 p-2 border rounded">
-                <option :value="null">Select staff</option>
+                <option :value="null">Seleccionar personal</option>
                 <option v-for="s in staffList" :key="s.staff_id || s.id" :value="s.staff_id || s.id">
                     {{ s.name }}
                 </option>
             </select>
             <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && staffList.length === 0">
-                No staff found for this club.
+                No se encontro personal para este club.
             </p>
                         </div>
 
                         <!-- Member dropdown -->
         <div v-else-if="pcForm.payee_type === 'MemberAdventurer'">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Select Member</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar miembro</label>
             <select v-model="pcForm.payee_id" :disabled="!conceptClubId || members.length === 0"
                 class="w-full mt-1 p-2 border rounded">
-                <option :value="null">Select member</option>
+                <option :value="null">Seleccionar miembro</option>
                 <option v-for="m in members" :key="m.member_id || m.id" :value="m.member_id || m.id">
                     {{ m.applicant_name }}
                 </option>
             </select>
             <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && members.length === 0">
-                No members found for this club.
+                No se encontraron miembros para este club.
             </p>
                         </div>
                     </div>
 
                     <!-- Scope -->
                     <div class="mt-6">
-                        <h4 class="font-semibold mb-2">Scope</h4>
+                        <h4 class="font-semibold mb-2">Alcance</h4>
                         <div class="border rounded p-3" v-if="pcForm.scopes.length">
                             <div class="grid md:grid-cols-3 gap-3">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Scope Type</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de alcance</label>
                                     <select v-model="pcForm.scopes[0].scope_type" @change="onScopeTypeChange(pcForm.scopes[0])"
                                         class="w-full p-2 border rounded">
                                         <option v-for="o in scopeTypeOptions" :key="o.value" :value="o.value">{{
@@ -513,34 +513,34 @@ onMounted(async () => {
                                 <div v-if="pcForm.scopes[0].scope_type === 'club_wide' || pcForm.scopes[0].scope_type === 'staff_wide'">
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Club</label>
                                     <select v-model="pcForm.scopes[0].club_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Select club</option>
+                                        <option :value="null">Seleccionar club</option>
                                         <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}
                                         </option>
                                     </select>
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'class'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Class</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Clase</label>
                                     <select v-model="pcForm.scopes[0].class_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Select class</option>
+                                        <option :value="null">Seleccionar clase</option>
                                         <option v-for="c in conceptClasses" :key="c.id" :value="c.id">{{
                                             c.class_name }}</option>
                                     </select>
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'member'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Member</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Miembro</label>
                                     <select v-model="pcForm.scopes[0].member_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Select member</option>
+                                        <option :value="null">Seleccionar miembro</option>
                                         <option v-for="m in conceptMembers" :key="m.id" :value="m.id">{{
                                             m.applicant_name }}</option>
                                     </select>
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'staff'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Staff</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Personal</label>
                                     <select v-model="pcForm.scopes[0].staff_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Select staff</option>
+                                        <option :value="null">Seleccionar personal</option>
                                         <option v-for="st in conceptStaff" :key="st.id" :value="st.id">{{ st.name }}
                                         </option>
                                     </select>
@@ -556,7 +556,7 @@ onMounted(async () => {
                         </button>
                         <button v-if="isEditingConcept" type="button" @click="cancelEditConcept"
                                 class="text-sm text-gray-600 hover:underline">
-                            Cancel
+                            Cancelar
                         </button>
                     </div>
                 </div>
@@ -564,30 +564,30 @@ onMounted(async () => {
                 <!-- List -->
                 <div class="pt-6">
                     <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-lg font-bold">Existing Payment Concepts</h3>
+                        <h3 class="text-lg font-bold">Conceptos de pago existentes</h3>
                         <button type="button" @click="loadPaymentConcepts"
                             class="px-3 py-1 bg-gray-700 text-white rounded text-sm hover:bg-gray-800">
-                            Refresh
+                            Actualizar
                         </button>
                     </div>
 
                     <div v-if="paymentConcepts.length === 0" class="text-sm text-gray-500">
-                        No payment concepts created.
+                        No hay conceptos de pago creados.
                     </div>
 
                     <div v-else class="overflow-x-auto">
                         <table class="min-w-full border rounded text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">Concept</th>
-                                    <th class="p-2 text-left">Amount</th>
+                                    <th class="p-2 text-left">Concepto</th>
+                                    <th class="p-2 text-left">Monto</th>
                                     <th class="p-2 text-left">Club</th>
-                                    <th class="p-2 text-left">Due</th>
-                                    <th class="p-2 text-left">Type</th>
-                                    <th class="p-2 text-left">Pay To</th>
-                                    <th class="p-2 text-left">Status</th>
-                                    <th class="p-2 text-left">Scopes</th>
-                                    <th class="p-2 text-left">Actions</th>
+                                    <th class="p-2 text-left">Vence</th>
+                                    <th class="p-2 text-left">Tipo</th>
+                                    <th class="p-2 text-left">Pagar a</th>
+                                    <th class="p-2 text-left">Estado</th>
+                                    <th class="p-2 text-left">Alcances</th>
+                                    <th class="p-2 text-left">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -604,29 +604,29 @@ onMounted(async () => {
                                     <td class="p-2 capitalize">{{ pc.status }}</td>
                                     <td class="p-2">
                                         <span v-if="scopeOf(pc)">{{ scopeLabel(scopeOf(pc)) }}</span>
-                                        <span v-else class="text-gray-500 italic">No scope</span>
+                                        <span v-else class="text-gray-500 italic">Sin alcance</span>
                                     </td>
                                     <td>
                                         <button
                                             type="button"
                                             class="p-1 rounded hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
                                             @click.prevent="editConcept(pc)"
-                                            aria-label="Edit"
-                                            title="Edit"
+                                            aria-label="Editar"
+                                            title="Editar"
                                         >
                                             <PencilSquareIcon class="h-5 w-5 text-blue-600" />
-                                            <span class="sr-only">Edit</span>
+                                            <span class="sr-only">Editar</span>
                                         </button>
 
                                         <button
                                             type="button"
                                             class="p-1 rounded hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
                                             @click="deleteConcept(pc.id)"
-                                            aria-label="Delete"
-                                            title="Delete"
+                                            aria-label="Eliminar"
+                                            title="Eliminar"
                                         >
                                             <TrashIcon class="h-5 w-5 text-red-600" />
-                                            <span class="sr-only">Delete</span>
+                                            <span class="sr-only">Eliminar</span>
                                         </button>
                                     </td>
                                 </tr>

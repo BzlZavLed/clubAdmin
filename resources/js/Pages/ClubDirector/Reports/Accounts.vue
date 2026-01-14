@@ -18,7 +18,7 @@ const selectedClubId = ref(null)
 
 const payToLabel = (val) => {
     const match = (payTo.value || []).find(p => p.value === val)
-    return match?.label || (val ?? 'Unassigned')
+    return match?.label || (val ?? 'Sin asignar')
 }
 
 const loadBootstrap = async (clubId = null) => {
@@ -34,7 +34,7 @@ const loadBootstrap = async (clubId = null) => {
         await loadBalances(selectedClubId.value)
     } catch (e) {
         console.error(e)
-        loadError.value = e?.response?.data?.message || 'Failed to load account data.'
+        loadError.value = e?.response?.data?.message || 'No se pudo cargar la informacion de cuentas.'
     } finally {
         loading.value = false
     }
@@ -58,7 +58,7 @@ const loadBalances = async (clubId = null) => {
         if (!clubs.value.length && data?.clubs) clubs.value = data.clubs
     } catch (e) {
         console.error(e)
-        balancesError.value = e?.response?.data?.message || 'Failed to load balances.'
+        balancesError.value = e?.response?.data?.message || 'No se pudieron cargar los saldos.'
     } finally {
         balancesLoading.value = false
     }
@@ -83,16 +83,16 @@ watch(selectedClubId, async (id, old) => {
                     <span class="text-blue-700 text-xs font-semibold">$</span>
                 </div>
                 <div>
-                    <h1 class="text-lg font-semibold text-gray-900">Account Balances</h1>
-                    <p class="text-sm text-gray-600">Entries, expenses, and balance by account (pay_to).</p>
+                    <h1 class="text-lg font-semibold text-gray-900">Saldos de cuentas</h1>
+                    <p class="text-sm text-gray-600">Entradas, gastos y saldo por cuenta (pay_to).</p>
                 </div>
             </header>
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                        <h2 class="text-base font-semibold text-gray-900">Accounts</h2>
-                        <p class="text-sm text-gray-600">Auto-loaded from payment concepts.</p>
+                        <h2 class="text-base font-semibold text-gray-900">Cuentas</h2>
+                        <p class="text-sm text-gray-600">Cargado automaticamente desde conceptos de pago.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <div class="flex items-center gap-2 text-sm">
@@ -105,16 +105,16 @@ watch(selectedClubId, async (id, old) => {
                         <button @click="() => loadBootstrap(selectedClubId)" :disabled="loading"
                             class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
                             <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />
-                            <span>{{ loading ? 'Reloading…' : 'Reload accounts' }}</span>
+                            <span>{{ loading ? 'Recargando…' : 'Recargar cuentas' }}</span>
                         </button>
                         <button @click="() => loadBalances(selectedClubId)" :disabled="balancesLoading"
                             class="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60">
                             <ArrowPathIcon v-if="balancesLoading" class="h-4 w-4 animate-spin" />
-                            <span>{{ balancesLoading ? 'Refreshing…' : 'Refresh balances' }}</span>
+                            <span>{{ balancesLoading ? 'Actualizando…' : 'Actualizar saldos' }}</span>
                         </button>
                         <a :href="route('financial.accounts.pdf', { club_id: selectedClubId })" target="_blank" rel="noopener"
                             class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                            <span>Download PDF</span>
+                            <span>Descargar PDF</span>
                         </a>
                     </div>
                 </div>
@@ -123,17 +123,17 @@ watch(selectedClubId, async (id, old) => {
                 <div v-if="balancesError" class="mt-2 text-sm text-red-600">{{ balancesError }}</div>
 
                 <div v-if="!accountBalances.length && !balancesLoading" class="mt-3 text-sm text-gray-500">
-                    No account data yet.
+                    Aun no hay datos de cuentas.
                 </div>
 
                 <div v-else class="mt-3 overflow-x-auto">
                     <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-2 text-left font-semibold">Account</th>
-                                <th class="px-4 py-2 text-left font-semibold">Entries</th>
-                                <th class="px-4 py-2 text-left font-semibold">Expenses</th>
-                                <th class="px-4 py-2 text-left font-semibold">Balance</th>
+                                <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
+                                <th class="px-4 py-2 text-left font-semibold">Entradas</th>
+                                <th class="px-4 py-2 text-left font-semibold">Gastos</th>
+                                <th class="px-4 py-2 text-left font-semibold">Saldo</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -154,24 +154,24 @@ watch(selectedClubId, async (id, old) => {
             <section class="mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex items-center justify-between gap-2">
                     <div>
-                        <h2 class="text-base font-semibold text-gray-900">Income entries</h2>
-                        <p class="text-sm text-gray-600">Recorded payments with their account (pay_to).</p>
+                        <h2 class="text-base font-semibold text-gray-900">Entradas de ingresos</h2>
+                        <p class="text-sm text-gray-600">Pagos registrados con su cuenta (pay_to).</p>
                     </div>
                 </div>
 
-                <div v-if="balancesLoading" class="mt-2 text-sm text-gray-500">Loading…</div>
-                <div v-else-if="!accountPayments.length" class="mt-2 text-sm text-gray-500">No payments found.</div>
+                <div v-if="balancesLoading" class="mt-2 text-sm text-gray-500">Cargando…</div>
+                <div v-else-if="!accountPayments.length" class="mt-2 text-sm text-gray-500">No se encontraron pagos.</div>
                 <div v-else class="mt-3 overflow-x-auto">
                     <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-2 text-left font-semibold">Date</th>
-                                <th class="px-4 py-2 text-left font-semibold">Account</th>
-                                <th class="px-4 py-2 text-left font-semibold">Concept</th>
-                                <th class="px-4 py-2 text-left font-semibold">Payer</th>
-                                <th class="px-4 py-2 text-left font-semibold">Amount</th>
-                                <th class="px-4 py-2 text-left font-semibold">Type</th>
-                                <th class="px-4 py-2 text-left font-semibold">Receipt</th>
+                                <th class="px-4 py-2 text-left font-semibold">Fecha</th>
+                                <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
+                                <th class="px-4 py-2 text-left font-semibold">Concepto</th>
+                                <th class="px-4 py-2 text-left font-semibold">Pagador</th>
+                                <th class="px-4 py-2 text-left font-semibold">Monto</th>
+                                <th class="px-4 py-2 text-left font-semibold">Tipo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Recibo</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -189,11 +189,11 @@ watch(selectedClubId, async (id, old) => {
                                             :href="p.receipt_url"
                                             target="_blank" rel="noopener"
                                             class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                            View receipt
+                                            Ver recibo
                                         </a>
                                         <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
                                             <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
-                                            No receipt
+                                            Sin recibo
                                         </span>
                                     </div>
                                 </td>
@@ -206,24 +206,24 @@ watch(selectedClubId, async (id, old) => {
             <section class="mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex items-center justify-between gap-2">
                     <div>
-                        <h2 class="text-base font-semibold text-gray-900">Expenses</h2>
-                        <p class="text-sm text-gray-600">Outgoing amounts recorded against accounts.</p>
+                        <h2 class="text-base font-semibold text-gray-900">Gastos</h2>
+                        <p class="text-sm text-gray-600">Egresos registrados contra cuentas.</p>
                     </div>
                 </div>
 
-                <div v-if="balancesLoading" class="mt-2 text-sm text-gray-500">Loading…</div>
-                <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No expenses found.</div>
+                <div v-if="balancesLoading" class="mt-2 text-sm text-gray-500">Cargando…</div>
+                <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No se encontraron gastos.</div>
                 <div v-else class="mt-3 overflow-x-auto">
                     <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-2 text-left font-semibold">Date</th>
-                                <th class="px-4 py-2 text-left font-semibold">Account</th>
-                                <th class="px-4 py-2 text-left font-semibold">Amount</th>
-                                <th class="px-4 py-2 text-left font-semibold">Status</th>
-                                <th class="px-4 py-2 text-left font-semibold">Receipt</th>
-                                <th class="px-4 py-2 text-left font-semibold">Reimbursed to</th>
-                                <th class="px-4 py-2 text-left font-semibold">Description</th>
+                                <th class="px-4 py-2 text-left font-semibold">Fecha</th>
+                                <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
+                                <th class="px-4 py-2 text-left font-semibold">Monto</th>
+                                <th class="px-4 py-2 text-left font-semibold">Estado</th>
+                                <th class="px-4 py-2 text-left font-semibold">Recibo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Reembolsado a</th>
+                                <th class="px-4 py-2 text-left font-semibold">Descripcion</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -239,7 +239,7 @@ watch(selectedClubId, async (id, old) => {
                             ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
                             : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
                     ]">
-                                        {{ e.status === 'completed' ? 'Completed' : 'Working on' }}
+                                        {{ e.status === 'completed' ? 'Completado' : 'En proceso' }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-2">
@@ -249,11 +249,11 @@ watch(selectedClubId, async (id, old) => {
                                             :href="e.receipt_url"
                                             target="_blank" rel="noopener"
                                             class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                            View receipt
+                                            Ver recibo
                                         </a>
                                         <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
                                             <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
-                                            No receipt
+                                            Sin recibo
                                         </span>
                                     </div>
                                 </td>

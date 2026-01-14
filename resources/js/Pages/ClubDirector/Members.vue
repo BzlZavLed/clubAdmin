@@ -92,7 +92,7 @@ const fetchClubs = async () => {
         clubs.value = await fetchClubsByIds(user.value.clubs.map(club => club.id))
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error loading clubs', 'error')
+        showToast('Error al cargar clubes', 'error')
     }
 }
 
@@ -102,14 +102,14 @@ const fetchMembers = async (clubId) => {
         const data = await fetchMembersByClub(clubId)
         if (Array.isArray(data) && data.length > 0) {
             members.value = data
-            showToast('Members loaded', 'success')
+            showToast('Miembros cargados', 'success')
         } else {
             members.value = []
-            alert('No members found for this club.')
+            alert('No se encontraron miembros para este club.')
         }
     } catch (error) {
         console.error('Failed to fetch members:', error)
-        showToast('Error fetching members', 'error')
+        showToast('Error al cargar miembros', 'error')
     }
 }
 
@@ -155,11 +155,11 @@ const saveTempMember = async () => {
     try {
         tempMemberForm.value.club_id = selectedClub.value?.id || ''
         if (!tempMemberForm.value.club_id) {
-            showToast('Select a club first', 'error')
+            showToast('Selecciona un club primero', 'error')
             return
         }
         await createTempMemberPathfinder(tempMemberForm.value)
-        showToast('Temp member saved', 'success')
+        showToast('Miembro temporal guardado', 'success')
         await loadTempMembers(tempMemberForm.value.club_id)
         tempMemberForm.value = {
             club_id: selectedClub.value?.id || '',
@@ -172,7 +172,7 @@ const saveTempMember = async () => {
         }
     } catch (err) {
         console.error('Failed to save temp member', err)
-        showToast('Failed to save temp member', 'error')
+        showToast('No se pudo guardar el miembro temporal', 'error')
     }
 }
 
@@ -186,26 +186,26 @@ const handleMemberDelete = async ({ id, notes }) => {
     try {
         await deleteMemberById(id, notes)
         await fetchMembers(selectedClub.value.id)
-        showToast('Member deleted successfully.', 'success')
+        showToast('Miembro eliminado correctamente.', 'success')
         showDeleteModal.value = false
         deletingMember.value = null
     } catch (err) {
         console.error('Failed to delete:', err)
-        showToast('Error deleting member.', 'error')
+        showToast('Error al eliminar el miembro.', 'error')
     }
 }
 
 // Bulk delete or download
 const handleBulkAction = async (action, type = null) => {
     if (selectedMemberIds.value.size === 0) {
-        alert('No members selected.')
+        alert('No hay miembros seleccionados.')
         return
     }
 
     const ids = Array.from(selectedMemberIds.value)
 
     if (action === 'delete') {
-        const confirmed = window.confirm('Are you sure you want to delete the selected members?')
+        const confirmed = window.confirm('¿Seguro que deseas eliminar los miembros seleccionados?')
         if (!confirmed) return
 
         try {
@@ -213,10 +213,10 @@ const handleBulkAction = async (action, type = null) => {
             await fetchMembers(selectedClub.value.id)
             selectedMemberIds.value.clear()
             selectAll.value = false
-            showToast('Selected members deleted.', 'success')
+            showToast('Miembros seleccionados eliminados.', 'success')
         } catch (error) {
             console.error('Bulk deletion failed:', error)
-            showToast('Error deleting selected members.', 'error')
+            showToast('Error al eliminar miembros seleccionados.', 'error')
         }
     }
 
@@ -235,11 +235,11 @@ const assignToClass = async (member) => {
     try {
         const memberId = member.member_id || member.id
         await assignMemberToClass({ memberId, classId: member.assigned_class })
-        showToast(`Assigned ${member.applicant_name} to class`, 'success')
+        showToast(`${member.applicant_name} asignado a la clase`, 'success')
         await fetchMembers(selectedClub.value.id)
     } catch (error) {
         console.error('Assignment failed:', error)
-        showToast(`Failed to assign ${member.applicant_name}`, 'error')
+        showToast(`No se pudo asignar a ${member.applicant_name}`, 'error')
     }
 }
 
@@ -247,11 +247,11 @@ const undoAssignment = async (member) => {
     try {
         const memberId = member.member_id || member.id
         var resp = await undoClassAssignment(memberId)
-        showToast(`Undid last assignment for ${member.applicant_name}`, 'success')
+        showToast(`Se deshizo la ultima asignacion de ${member.applicant_name}`, 'success')
         await fetchMembers(selectedClub.value.id)
     } catch (error) {
         console.error('Undo failed:', error)
-        showToast(`Failed to undo assignment for ${member.applicant_name}`, 'error')
+        showToast(`No se pudo deshacer la asignacion de ${member.applicant_name}`, 'error')
     }
 }
 
@@ -312,7 +312,7 @@ const membersInClass = (classId) => {
 const classOptionsExcluding = (currentClassOrder) => {
     const filtered = clubClasses.value.filter(c => c.class_order > currentClassOrder);
     if (filtered.length === 0) {
-        return [{ id: '', class_name: 'No class available' }];
+        return [{ id: '', class_name: 'Sin clases disponibles' }];
     }
     return filtered;
 };
@@ -336,27 +336,27 @@ onMounted(fetchClubs)
 <template>
     <PathfinderLayout>
         <div class="p-8">
-            <h1 class="text-xl font-bold mb-4">Members</h1>
+            <h1 class="text-xl font-bold mb-4">Miembros</h1>
 
             <!-- Tabs -->
             <div class="mb-4 border-b">
                 <nav class="-mb-px flex space-x-6">
                     <button :class="selectedTab === 'members' ? activeTabClass : inactiveTabClass"
                         @click="selectedTab = 'members'">
-                        Members
+                        Miembros
                     </button>
                     <button :class="selectedTab === 'classes' ? activeTabClass : inactiveTabClass"
                         @click="selectedTab = 'classes'">
-                        Classes Overview
+                        Resumen de clases
                     </button>
                 </nav>
             </div>
 
             <!-- Club Selector -->
             <div class="max-w-xl mb-6">
-                <label class="block mb-1 font-medium text-gray-700">Select a club</label>
+                <label class="block mb-1 font-medium text-gray-700">Selecciona un club</label>
                 <select v-model="selectedClub" @change="onClubChange" class="w-full p-2 border rounded">
-                    <option disabled value="">-- Choose a club --</option>
+                    <option disabled value="">-- Selecciona un club --</option>
                     <option v-for="club in clubs" :key="club.id" :value="club">
                         {{ club.club_name }} ({{ club.club_type }})
                     </option>
@@ -365,35 +365,35 @@ onMounted(fetchClubs)
 
             <!-- Pathfinder temp members -->
             <div v-if="selectedTab === 'members' && selectedClub && selectedClub.club_type === 'pathfinders'" class="mb-8 border rounded p-4 bg-amber-50">
-                <h2 class="font-semibold text-amber-800 mb-3">Temporary Pathfinder Members</h2>
+                <h2 class="font-semibold text-amber-800 mb-3">Miembros temporales de Conquistadores</h2>
                 <div class="grid md:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Nombre</label>
                         <input v-model="tempMemberForm.nombre" type="text" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">DOB</label>
+                        <label class="block text-sm font-medium text-gray-700">Fecha de nacimiento</label>
                         <input v-model="tempMemberForm.dob" type="date" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Phone</label>
+                        <label class="block text-sm font-medium text-gray-700">Telefono</label>
                         <input v-model="tempMemberForm.phone" type="text" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Parent Email</label>
+                        <label class="block text-sm font-medium text-gray-700">Correo del padre/madre</label>
                         <input v-model="tempMemberForm.email" type="email" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Parent Name</label>
+                        <label class="block text-sm font-medium text-gray-700">Nombre del padre/madre</label>
                         <input v-model="tempMemberForm.father_name" type="text" class="w-full border rounded p-2" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Parent Phone</label>
+                        <label class="block text-sm font-medium text-gray-700">Telefono del padre/madre</label>
                         <input v-model="tempMemberForm.father_phone" type="text" class="w-full border rounded p-2" />
                     </div>
                 </div>
                 <div class="mt-3">
-                    <button @click="saveTempMember" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save temp member</button>
+                    <button @click="saveTempMember" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar miembro temporal</button>
                 </div>
 
                 <div class="mt-4 overflow-x-auto">
@@ -402,15 +402,15 @@ onMounted(fetchClubs)
                             <tr>
                                 <th class="p-2 text-left">Nombre</th>
                                 <th class="p-2 text-left">DOB</th>
-                                <th class="p-2 text-left">Phone</th>
+                                <th class="p-2 text-left">Telefono</th>
                                 <th class="p-2 text-left">Email</th>
-                                <th class="p-2 text-left">Father</th>
-                                <th class="p-2 text-left">Father phone</th>
+                                <th class="p-2 text-left">Padre/madre</th>
+                                <th class="p-2 text-left">Telefono padre/madre</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-if="!tempMembers.length">
-                                <td colspan="6" class="p-3 text-center text-gray-500">No temp members</td>
+                                <td colspan="6" class="p-3 text-center text-gray-500">No hay miembros temporales</td>
                             </tr>
                             <tr v-for="tm in tempMembers" :key="tm.id" class="border-t">
                                 <td class="p-2">{{ tm.nombre }}</td>
@@ -431,27 +431,27 @@ onMounted(fetchClubs)
                     <div class="flex items-center gap-4">
                         <label class="inline-flex items-center">
                             <input type="checkbox" v-model="selectAll" @change="toggleSelectAll" class="mr-2" />
-                            <span>Select All</span>
+                            <span>Seleccionar todo</span>
                         </label>
                         <select v-if="selectedMemberIds.size > 0"
                             @change="e => handleBulkAction(e.target.value, 'member')"
                             class="border p-2 px-4 rounded w-60 text-sm">
-                            <option value="" disabled selected>Bulk Actions</option>
-                            <option value="delete">Delete Selected</option>
-                            <option value="download">Download Forms</option>
+                            <option value="" disabled selected>Acciones masivas</option>
+                            <option value="delete">Eliminar seleccionados</option>
+                            <option value="download">Descargar formularios</option>
                         </select>
                     </div>
-                    <span class="text-sm text-gray-600">{{ selectedMemberIds.size }} selected</span>
+                    <span class="text-sm text-gray-600">{{ selectedMemberIds.size }} seleccionados</span>
                 </div>
                 <table class="w-full text-sm border rounded overflow-hidden">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
-                            <th class="p-2 text-left">Name</th>
-                            <th class="p-2 text-left">Home Address</th>
-                            <th class="p-2 text-left">Last completed</th>
-                            <th class="p-2 text-left">Parent Cell</th>
-                            <th class="p-2 text-left">Actions</th>
+                            <th class="p-2 text-left">Nombre</th>
+                            <th class="p-2 text-left">Direccion</th>
+                            <th class="p-2 text-left">Ultima completada</th>
+                            <th class="p-2 text-left">Celular del padre</th>
+                            <th class="p-2 text-left">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -496,19 +496,19 @@ onMounted(fetchClubs)
                             <tr v-if="expandedRows.has(member.id)" class="bg-gray-50 border-t">
                                 <td colspan="6" class="p-4">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
-                                        <div><strong>Birthdate:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
-                                        <div><strong>Age:</strong> {{ member.age ?? '—' }}</div>
-                                        <div><strong>Grade:</strong> {{ member.grade ?? '—' }}</div>
-                                        <div><strong>Mailing Address:</strong> {{ member.mailing_address }}</div>
-                                        <div><strong>Cell Number:</strong> {{ member.cell_number }}</div>
-                                        <div><strong>Emergency Contact:</strong> {{ member.emergency_contact }}</div>
-                                        <div><strong>Allergies:</strong> {{ member.allergies }}</div>
-                                        <div><strong>Physical Restrictions:</strong> {{ member.physical_restrictions }}
+                                        <div><strong>Fecha de nacimiento:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
+                                        <div><strong>Edad:</strong> {{ member.age ?? '—' }}</div>
+                                        <div><strong>Grado:</strong> {{ member.grade ?? '—' }}</div>
+                                        <div><strong>Direccion postal:</strong> {{ member.mailing_address }}</div>
+                                        <div><strong>Numero celular:</strong> {{ member.cell_number }}</div>
+                                        <div><strong>Contacto de emergencia:</strong> {{ member.emergency_contact }}</div>
+                                        <div><strong>Alergias:</strong> {{ member.allergies }}</div>
+                                        <div><strong>Restricciones fisicas:</strong> {{ member.physical_restrictions }}
                                         </div>
-                                        <div><strong>Health History:</strong> {{ member.health_history }}</div>
-                                        <div><strong>Parent Name:</strong> {{ member.parent_name }}</div>
-                                        <div><strong>Email Address:</strong> {{ member.email_address }}</div>
-                                        <div><strong>Signature:</strong> {{ member.signature }}</div>
+                                        <div><strong>Historial de salud:</strong> {{ member.health_history }}</div>
+                                        <div><strong>Nombre del padre/madre:</strong> {{ member.parent_name }}</div>
+                                        <div><strong>Correo electronico:</strong> {{ member.email_address }}</div>
+                                        <div><strong>Firma:</strong> {{ member.signature }}</div>
                                     </div>
                                 </td>
                             </tr>
@@ -518,29 +518,29 @@ onMounted(fetchClubs)
                 <div class="mt-6 text-center">
                     <button @click="toggleRegistrationForm"
                         class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                        {{ showRegistrationForm ? 'Hide Form' : 'Register New Member' }}
+                        {{ showRegistrationForm ? 'Ocultar formulario' : 'Registrar nuevo miembro' }}
                     </button>
                 </div>
             </div>
 
             <!-- Tab 2: Class Overview -->
             <div v-if="selectedTab === 'classes' && selectedClub">
-                <h2 class="text-lg font-semibold mb-4">Class Overview</h2>
+                <h2 class="text-lg font-semibold mb-4">Resumen de clases</h2>
                 <div v-if="clubClasses.length === 0" class="text-gray-600">
-                    No classes found for this club.
+                    No se encontraron clases para este club.
                 </div>
                 <div v-else class="space-y-6">
-                    <h2 class="text-lg font-semibold mb-4">Unassigned Members</h2>
+                    <h2 class="text-lg font-semibold mb-4">Miembros sin asignar</h2>
                     <div v-if="unassignedMembers.length === 0" class="text-gray-600">
-                        No members to assign
+                        No hay miembros para asignar
                     </div>
                     <div v-else class="border rounded p-4 bg-gray-100">
                         <table class="w-full border text-sm">
                             <thead class="bg-gray-200">
                                 <tr>
-                                    <th class="p-2">Name</th>
-                                    <th class="p-2">Age</th>
-                                    <th class="p-2">Assign to Class</th>
+                                    <th class="p-2">Nombre</th>
+                                    <th class="p-2">Edad</th>
+                                    <th class="p-2">Asignar a clase</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -549,7 +549,7 @@ onMounted(fetchClubs)
                                     <td class="p-2 text-center">{{ displayAge(member.age) }}</td>
                                     <td class="p-2 text-center">
                                         <select v-model="member.assigned_class" class="border p-2 rounded">
-                                            <option value="" disabled selected>Select class</option>
+                                            <option value="" disabled selected>Seleccionar clase</option>
                                             <option v-for="targetClass in clubClasses"
                                                 :key="targetClass.id" :value="targetClass.id">
                                                 {{ targetClass.class_name }} - {{ targetClass.class_order }}
@@ -559,7 +559,7 @@ onMounted(fetchClubs)
                                         <button @click="() => assignToClass(member)"
                                             :disabled="!member.assigned_class"
                                             class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                                            Assign
+                                            Asignar
                                         </button>
                                     </td>
                                 </tr>
@@ -568,21 +568,21 @@ onMounted(fetchClubs)
                     </div>
                     <div v-for="clubClass in clubClasses" :key="clubClass.id" class="border rounded p-4 bg-gray-50">
                         <h3 class="text-md font-bold">
-                            {{ clubClass.class_name }} (Order: {{ clubClass.class_order }})
+                            {{ clubClass.class_name }} (Orden: {{ clubClass.class_order }})
                         </h3>
                         <p class="text-sm text-gray-700 mb-2" v-if="selectedClub.club_type === 'adventurers'">
-                            Assigned Staff: {{ clubClass.assigned_staff?.name }}
+                            Personal asignado: {{ clubClass.assigned_staff?.name }}
                         </p>
                         <div v-if="membersInClass(clubClass.id).length === 0" class="text-gray-600">
-                            No members assigned to this class.
+                            No hay miembros asignados a esta clase.
                         </div>
 
                         <table v-else class="w-full border text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2">Name</th>
-                                    <th class="p-2">Age</th>
-                                    <th class="p-2">Move to Class</th>
+                                    <th class="p-2">Nombre</th>
+                                    <th class="p-2">Edad</th>
+                                    <th class="p-2">Mover a clase</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -600,11 +600,11 @@ onMounted(fetchClubs)
                                         <button @click="() => assignToClass(member)"
                                             :disabled="!member.assigned_class"
                                             class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                                            Assign
+                                            Asignar
                                         </button>
                                         <button @click="() => undoAssignment(member)"
                                             class="ml-2 px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600">
-                                            Undo last
+                                            Deshacer ultimo
                                         </button>
                                     </td>
                                 </tr>

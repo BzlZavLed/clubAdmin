@@ -57,14 +57,14 @@ const fetchMembers = async (clubId) => {
         const data = await fetchMembersByClub(clubId);
         if (Array.isArray(data) && data.length > 0) {
             members.value = data;
-            showToast("Members loaded", "success");
+            showToast("Miembros cargados", "success");
         } else {
             members.value = [];
-            alert("No members found for this club.");
+            alert("No se encontraron miembros para este club.");
         }
     } catch (error) {
         console.error("Failed to fetch members:", error);
-        showToast("Error fetching members", "error");
+        showToast("Error al obtener miembros", "error");
     }
 };
 
@@ -85,13 +85,13 @@ const fetchClubs = async () => {
         );
     } catch (error) {
         console.error("Failed to fetch clubs:", error);
-        showToast("Error loading clubs", "error");
+        showToast("Error al cargar clubes", "error");
     }
 };
 
 const submitReport = async () => {
     if (!selectedClub.value) {
-        showToast("Please select a club first", "error");
+        showToast("Selecciona un club primero", "error");
         return;
     }
 
@@ -103,7 +103,7 @@ const submitReport = async () => {
     switch (reportType.value) {
         case "date":
             if (!selectedDate.value) {
-                showToast("Please select a date.", "error");
+                showToast("Selecciona una fecha.", "error");
                 return;
             }
             payload.date = selectedDate.value;
@@ -111,7 +111,7 @@ const submitReport = async () => {
 
         case "range":
             if (!startDate.value || !endDate.value) {
-                showToast("Please select both start and end dates.", "error");
+                showToast("Selecciona fecha inicial y final.", "error");
                 return;
             }
             payload.start_date = startDate.value;
@@ -120,7 +120,7 @@ const submitReport = async () => {
 
         case "class":
             if (!selectedClassId.value) {
-                showToast("Please select a class.", "error");
+                showToast("Selecciona una clase.", "error");
                 return;
             }
             payload.class_id = selectedClassId.value;
@@ -128,14 +128,14 @@ const submitReport = async () => {
 
         case "member":
             if (!selectedMemberId.value) {
-                showToast("Please select a member.", "error");
+                showToast("Selecciona un miembro.", "error");
                 return;
             }
             payload.member_id = selectedMemberId.value;
             break;
 
         default:
-            showToast("Please choose a report type.", "error");
+            showToast("Selecciona un tipo de reporte.", "error");
             return;
     }
 
@@ -144,13 +144,13 @@ const submitReport = async () => {
         reports.value = response.data.reports;
         console.log(response);
         if (reports.value.length === 0) {
-            showToast("No reports found for the selected criteria.", "info");
+            showToast("No se encontraron reportes para el criterio seleccionado.", "info");
             return;
         }
-        showToast("Report generated successfully", "success");
+        showToast("Reporte generado correctamente", "success");
     } catch (error) {
         console.error("Error fetching report:", error);
-        showToast("Failed to generate report", "error");
+        showToast("No se pudo generar el reporte", "error");
     }
 };
 
@@ -239,10 +239,10 @@ const selectedMemberName = computed(() => {
 
 const reportKindLabel = computed(() => {
     switch (reportType.value) {
-        case 'date': return 'Assistance Report by Date';
-        case 'range': return 'Assistance Report by Date Range';
-        case 'class': return 'Assistance Report by Class';
-        case 'member': return 'Assistance Report by Member';
+        case 'date': return 'Reporte de asistencia por fecha';
+        case 'range': return 'Reporte de asistencia por rango de fechas';
+        case 'class': return 'Reporte de asistencia por clase';
+        case 'member': return 'Reporte de asistencia por miembro';
         default: return '';
     }
 });
@@ -267,8 +267,8 @@ const reportHeader = computed(() => {
     const club = selectedClub.value ? selectedClub.value.club_name : '';
     const kind = reportKindLabel.value;
     const filter = reportFilterDetail.value;
-    const merged = mergeReports.value ? ' (Merged)' : '';
-    // Example: "NAD Eagles — Assistance Report by Class (Rangers) (Merged)"
+    const merged = mergeReports.value ? ' (Combinado)' : '';
+    // Example: "NAD Eagles — Reporte de asistencia por clase (Rangers) (Combinado)"
     return [club, '—', kind, filter ? `(${filter})` : '', merged].filter(Boolean).join(' ');
 });
 
@@ -282,15 +282,15 @@ onMounted(() => {
         <div
             class="bg-yellow-100 text-yellow-800 text-sm px-4 py-2 text-center font-medium shadow-md lg:hidden"
         >
-            For best experience, view this report on a desktop or in landscape
-            mode.
+            Para mejor experiencia, ve este reporte en escritorio o en modo
+            horizontal.
         </div>
         <div class="px-4 sm:px-6 lg:px-8 py-6">
             <!-- Heading -->
             <h1
                 class="text-lg sm:text-xl font-semibold text-gray-800 mb-6 text-center sm:text-left"
             >
-                Assistance Report
+                Reporte de asistencia
             </h1>
 
             <!-- Form Container -->
@@ -298,14 +298,14 @@ onMounted(() => {
                 <!-- Select Club -->
                 <div class="col-span-full sm:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Select a Club</label
+                        >Selecciona un club</label
                     >
                     <select
                         v-model="selectedClub"
                         @change="onClubChange"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-yellow-400 focus:border-yellow-400"
                     >
-                        <option disabled value="">-- Choose a club --</option>
+                        <option disabled value="">-- Elige un club --</option>
                         <option
                             v-for="club in clubs"
                             :key="club.id"
@@ -321,18 +321,18 @@ onMounted(() => {
                     <label
                         for="reportType"
                         class="block text-sm font-medium text-gray-700 mb-1"
-                        >Report Type</label
+                        >Tipo de reporte</label
                     >
                     <select
                         id="reportType"
                         v-model="reportType"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-yellow-400 focus:border-yellow-400"
                     >
-                        <option value="" disabled>Select a report type</option>
-                        <option value="date">By Date</option>
-                        <option value="range">By Date Range</option>
-                        <option value="class">By Class</option>
-                        <option value="member">By Member</option>
+                        <option value="" disabled>Selecciona un tipo de reporte</option>
+                        <option value="date">Por fecha</option>
+                        <option value="range">Por rango de fechas</option>
+                        <option value="class">Por clase</option>
+                        <option value="member">Por miembro</option>
                     </select>
                 </div>
 
@@ -342,7 +342,7 @@ onMounted(() => {
                     v-if="reportType === 'date'"
                 >
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Select Date</label
+                        >Selecciona fecha</label
                     >
                     <input
                         type="date"
@@ -359,7 +359,7 @@ onMounted(() => {
                     <div>
                         <label
                             class="block text-sm font-medium text-gray-700 mb-1"
-                            >Start Date</label
+                            >Fecha inicio</label
                         >
                         <input
                             type="date"
@@ -370,7 +370,7 @@ onMounted(() => {
                     <div>
                         <label
                             class="block text-sm font-medium text-gray-700 mb-1"
-                            >End Date</label
+                            >Fecha fin</label
                         >
                         <input
                             type="date"
@@ -386,13 +386,13 @@ onMounted(() => {
                     v-if="reportType === 'class'"
                 >
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Select Class</label
+                        >Selecciona clase</label
                     >
                     <select
                         v-model="selectedClassId"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm"
                     >
-                        <option disabled value="">Choose a class</option>
+                        <option disabled value="">Elige una clase</option>
                         <option
                             v-for="c in clubClasses"
                             :key="c.id"
@@ -409,13 +409,13 @@ onMounted(() => {
                     v-if="reportType === 'member'"
                 >
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Select Member</label
+                        >Selecciona miembro</label
                     >
                     <select
                         v-model="selectedMemberId"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm"
                     >
-                        <option disabled value="">Choose a member</option>
+                        <option disabled value="">Elige un miembro</option>
                         <option v-for="m in members" :key="m.id" :value="m.id">
                             {{ m.applicant_name }}
                         </option>
@@ -428,14 +428,14 @@ onMounted(() => {
                         @click="submitReport"
                         class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
                     >
-                        Generate Report
+                        Generar reporte
                     </button>
                     &nbsp;
                     <button
                         @click="exportPdf"
                         class="px-2 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700"
                     >
-                        Export PDF
+                        Exportar PDF
                     </button>
                     <label class="inline-flex items-center">
                         <input
@@ -444,7 +444,7 @@ onMounted(() => {
                             class="form-checkbox"
                         />
                         <span class="ml-2 text-sm"
-                            >Merge all reports into one table</span
+                            >Combinar todos los reportes en una tabla</span
                         >
                     </label>
                 </div>
@@ -455,17 +455,17 @@ onMounted(() => {
                             {{ reportHeader }}
                         </h2>
                         <p class="text-xs text-gray-500">
-                            Generated on {{ new Date().toLocaleString() }}
+                            Generado el {{ new Date().toLocaleString() }}
                         </p>
                 </div>
                 <div v-if="mergeReports" class="overflow-x-auto">
                     <table class="w-full min-w-max border text-sm">
                         <thead>
                             <tr class="bg-gray-100">
-                                <th class="border p-1">Date</th>
-                                <th class="border p-1">Month</th>
-                                <th class="border p-1">Year</th>
-                                <th class="border p-1">Member</th>
+                                <th class="border p-1">Fecha</th>
+                                <th class="border p-1">Mes</th>
+                                <th class="border p-1">Ano</th>
+                                <th class="border p-1">Miembro</th>
                                 <th class="border p-1">Asistencia</th>
                                 <th class="border p-1">Puntualidad</th>
                                 <th class="border p-1">Uniforme</th>
@@ -520,7 +520,7 @@ onMounted(() => {
                             <summary
                                 class="cursor-pointer p-2 bg-gray-100 font-medium"
                             >
-                                Report: {{ report.date }} —
+                                Reporte: {{ report.date }} —
                                 {{ report.class_name }} | {{ report.staff_name }} ({{ report.month }}
                                 {{ report.year }} )
                             </summary>
@@ -528,7 +528,7 @@ onMounted(() => {
                                 <table class="w-full text-sm border mt-2">
                                     <thead class="bg-gray-50">
                                         <tr>
-                                            <th class="border p-1">Member</th>
+                                            <th class="border p-1">Miembro</th>
                                             <th class="border p-1">
                                                 Asistencia
                                             </th>

@@ -174,10 +174,10 @@ const fetchClubs = async () => {
     try {
         const data = await fetchClubsByUserId(user.value.id)
         clubs.value = Array.isArray(data) ? data : []
-        showToast('Clubs loaded')
+        showToast('Clubes cargados')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error loading clubs', 'error')
+        showToast('Error al cargar clubes', 'error')
     }
 }
 
@@ -213,10 +213,10 @@ const fetchStaff = async (clubId, churchId = null) => {
         } else {
             tempStaff.value = []
         }
-        showToast('Staff loaded')
+        showToast('Personal cargado')
     } catch (error) {
         console.error('Failed to fetch staff:', error)
-        showToast('Error loading staff', 'error')
+        showToast('Error al cargar personal', 'error')
     }
 }
 const saveAssignedClass = async (person) => {
@@ -225,11 +225,11 @@ const saveAssignedClass = async (person) => {
     try {
         isUpdatingClass.value[person.id] = true
         await updateStaffAssignedClass(person.id, newClassId)
-        showToast('Class updated!')
+        showToast('Clase actualizada')
         await fetchStaff(person.club_id)
     } catch (err) {
         console.error('Failed to update class', err)
-        showToast('Error updating class', 'error')
+        showToast('Error al actualizar la clase', 'error')
     } finally {
         isUpdatingClass.value[person.id] = false
     }
@@ -244,30 +244,30 @@ const openStaffForm = (user) => {
 
 // ✅ Account management
 const updateStaffAccount = async (staff, status_code) => {
-    const action = status_code === 301 ? 'deactivate' : 'reactivate'
-    if (!confirm(`Are you sure you want to ${action} the staff member ${staff.name}?`)) return
+    const action = status_code === 301 ? 'desactivar' : 'reactivar'
+    if (!confirm(`¿Seguro que deseas ${action} al personal ${staff.name}?`)) return
 
     try {
         await updateStaffStatus(staff.id, status_code)
-        showToast(`Staff ${action}d`)
+        showToast(`Personal ${action === 'desactivar' ? 'desactivado' : 'reactivado'}`)
         fetchStaff(staff.club_id)
     } catch (error) {
         console.error('Failed to update staff status:', error)
-        showToast(`Failed to ${action} staff`, 'error')
+        showToast(`No se pudo ${action} el personal`, 'error')
     }
 }
 
 const updateStaffUserAccount = async (user, status_code) => {
-    const action = status_code === 301 ? 'deactivate' : 'reactivate'
-    if (!confirm(`Are you sure you want to ${action} the user account for ${user.name}?`)) return
+    const action = status_code === 301 ? 'desactivar' : 'reactivar'
+    if (!confirm(`¿Seguro que deseas ${action} la cuenta de ${user.name}?`)) return
 
     try {
         await updateUserStatus(user.id, status_code)
-        showToast(`User ${action}d`)
+        showToast(`Usuario ${action === 'desactivar' ? 'desactivado' : 'reactivado'}`)
         fetchStaff(user.club_id)
     } catch (error) {
         console.error('Failed to update user status:', error)
-        showToast(`Failed to ${action} user`, 'error')
+        showToast(`No se pudo ${action} el usuario`, 'error')
     }
 }
 
@@ -280,34 +280,34 @@ const createUser = async (person) => {
             church_id: person.church_id,
             club_id: person.club_id
         })
-        showToast('User created successfully')
+        showToast('Usuario creado correctamente')
         person.create_user = false
         fetchStaff(person.club_id,churchId.value)
     } catch (err) {
         console.error('Create user error:', err)
-        showToast('Failed to create user', 'error')
+        showToast('No se pudo crear el usuario', 'error')
     }
 }
 
 const linkToClubUsers = async (person) => {
     if (!person.user_id) {
-        showToast('No user linked to this staff (by email).', 'error')
+        showToast('No hay usuario vinculado a este personal (por correo).', 'error')
         return
     }
     try {
         await linkStaffToClubUser(person.id)
         clubUserIds.value.add(person.user_id)
-        showToast('Staff linked to club access')
+        showToast('Personal vinculado al acceso del club')
     } catch (err) {
         console.error('Failed to link staff to club users', err)
-        showToast('Failed to link staff', 'error')
+        showToast('No se pudo vincular el personal', 'error')
     }
 }
 
 // ✅ Bulk actions
 const handleBulkAction = async (action) => {
     if (selectedStaffIds.value.size === 0) {
-        showToast('No staff selected.')
+        showToast('No hay personal seleccionado.')
         return
     }
 
@@ -315,8 +315,8 @@ const handleBulkAction = async (action) => {
     const isReactivate = action === 'reactivate'
     const statusCode = isReactivate ? 423 : 301
     const confirmText = isReactivate
-        ? 'Are you sure you want to reactivate the selected staff?'
-        : 'Are you sure you want to deactivate the selected staff?'
+        ? '¿Seguro que deseas reactivar el personal seleccionado?'
+        : '¿Seguro que deseas desactivar el personal seleccionado?'
 
     if (!confirm(confirmText)) return
 
@@ -324,13 +324,13 @@ const handleBulkAction = async (action) => {
         for (const id of ids) {
             await updateStaffStatus(id, statusCode)
         }
-        showToast(`Staff ${isReactivate ? 'reactivated' : 'deactivated'}`)
+        showToast(`Personal ${isReactivate ? 'reactivado' : 'desactivado'}`)
         await fetchStaff(selectedClub.value.id)
         selectedStaffIds.value.clear()
         selectAll.value = false
     } catch (error) {
         console.error('Bulk action failed:', error)
-        toast.error('Bulk update failed')
+        toast.error('Actualizacion masiva fallida')
     }
 }
 
@@ -342,22 +342,22 @@ const downloadWord = (staffId) => {
 const approvePending = async (userId) => {
     try {
         await axios.post(route('club.users.approve', userId))
-        showToast('User approved')
+        showToast('Usuario aprobado')
         fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
         console.error('Approve failed', err)
-        showToast('Failed to approve user', 'error')
+        showToast('No se pudo aprobar el usuario', 'error')
     }
 }
 
 const rejectPending = async (userId) => {
     try {
         await updateUserStatus(userId, 301)
-        showToast('User rejected')
+        showToast('Usuario rechazado')
         fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
         console.error('Reject failed', err)
-        showToast('Failed to reject user', 'error')
+        showToast('No se pudo rechazar el usuario', 'error')
     }
 }
 
@@ -391,22 +391,22 @@ const closeModal = () => {
 const approvePendingStaff = async (staffRow) => {
     try {
         await approveStaff(staffRow.id)
-        showToast('Staff approved')
+        showToast('Personal aprobado')
         fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
         console.error('Approve staff failed', err)
-        showToast('Failed to approve staff', 'error')
+        showToast('No se pudo aprobar el personal', 'error')
     }
 }
 
 const rejectPendingStaff = async (staffRow) => {
     try {
         await rejectStaff(staffRow.id)
-        showToast('Staff rejected')
+        showToast('Personal rechazado')
         fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
         console.error('Reject staff failed', err)
-        showToast('Failed to reject staff', 'error')
+        showToast('No se pudo rechazar el personal', 'error')
     }
 }
 
@@ -423,11 +423,11 @@ const saveTempStaff = async () => {
     try {
         tempStaffForm.value.club_id = selectedClub.value?.id || ''
         if (!tempStaffForm.value.club_id) {
-            showToast('Select a club first', 'error')
+            showToast('Selecciona un club primero', 'error')
             return
         }
         await createTempStaffPathfinder(tempStaffForm.value)
-        showToast('Temp staff saved', 'success')
+        showToast('Personal temporal guardado', 'success')
         await loadTempStaff(tempStaffForm.value.club_id)
         tempStaffForm.value = {
             club_id: selectedClub.value?.id || '',
@@ -441,7 +441,7 @@ const saveTempStaff = async () => {
         await fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
         console.error('Failed to save temp staff', err)
-        showToast('Failed to save temp staff', 'error')
+        showToast('No se pudo guardar el personal temporal', 'error')
     }
 }
 
@@ -466,38 +466,38 @@ onMounted(fetchClubs)
 <template>
     <PathfinderLayout>
         <div class="p-8">
-            <h1 class="text-xl font-bold mb-4">Staff</h1>
+            <h1 class="text-xl font-bold mb-4">Personal</h1>
             <div class="max-w-xl mb-6">
-                <label class="block mb-1 font-medium text-gray-700">Select a club</label>
+                <label class="block mb-1 font-medium text-gray-700">Selecciona un club</label>
                 <select v-model="selectedClub"
                     @change="() => { if (selectedClub) { fetchStaff(selectedClub.id, churchId) } }"
                     class="w-full p-2 border rounded">
-                    <option disabled value="">-- Choose a club --</option>
+                    <option disabled value="">-- Selecciona un club --</option>
                     <option v-for="club in clubs" :key="club.id" :value="club">
                         {{ club.club_name }} ({{ club.club_type }})
                     </option>
                 </select><br><br>
                 <button v-if="selectedClub && selectedClub.club_type === 'adventurers'"
                     class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700" @click="openStaffForm(user)">
-                    Create Staff</button>
+                    Crear personal</button>
                 <p v-else-if="selectedClub" class="text-sm text-gray-600">
-                    Staff module is currently available for Adventurers clubs only.
+                    El modulo de personal solo esta disponible para clubes de Aventureros.
                 </p>
 
             </div>
 
                 <div v-if="selectedClub" class="max-w-5xl mx-auto">
                 <div v-if="filteredPendingStaff.length" class="mb-6 border rounded p-4 bg-amber-50">
-                    <h2 class="font-semibold text-amber-800 mb-2">Pending staff approvals</h2>
+                    <h2 class="font-semibold text-amber-800 mb-2">Aprobaciones de personal pendientes</h2>
                     <div class="space-y-2">
                         <div v-for="person in filteredPendingStaff" :key="person.id" class="flex items-center justify-between bg-white border rounded px-3 py-2">
                             <div>
-                                <div class="font-medium text-gray-900">{{ person.name || 'Unnamed' }}</div>
-                                <div class="text-sm text-gray-600">{{ person.email || 'No email' }}</div>
+                                <div class="font-medium text-gray-900">{{ person.name || 'Sin nombre' }}</div>
+                                <div class="text-sm text-gray-600">{{ person.email || 'Sin correo' }}</div>
                             </div>
                             <div class="flex gap-2">
-                                <button @click="approvePendingStaff(person)" class="px-3 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700">Approve</button>
-                                <button @click="rejectPendingStaff(person)" class="px-3 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700">Reject</button>
+                                <button @click="approvePendingStaff(person)" class="px-3 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700">Aprobar</button>
+                                <button @click="rejectPendingStaff(person)" class="px-3 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700">Rechazar</button>
                             </div>
                         </div>
                     </div>
@@ -506,49 +506,49 @@ onMounted(fetchClubs)
                 <div class="mb-4 flex space-x-4 border-b pb-2">
                     <button @click="activeStaffTab = 'active'"
                         :class="activeStaffTab === 'active' ? 'font-bold border-b-2 border-blue-600' : 'text-gray-500'">
-                        Active Staff
+                        Personal activo
                     </button>
                     <button
                         v-if="staff.some(person => person.status === 'deleted') && user.profile_type === 'club_director'"
                         @click="activeStaffTab = 'deleted'"
                         :class="activeStaffTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
-                        Inactive Staff
+                        Personal inactivo
                     </button>
                 </div>
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-4">
                         <label class="inline-flex items-center">
                             <input type="checkbox" v-model="selectAll" @change="toggleSelectAll" class="mr-2" />
-                            <span>Select All</span>
+                            <span>Seleccionar todo</span>
                         </label>
                         <select v-if="selectedStaffIds.size > 0"
                             @change="e => handleBulkAction(e.target.value, 'staff')"
                             class="border p-2 px-4 rounded w-60 text-sm">
-                            <option value="" disabled selected>Bulk Actions</option>
+                            <option value="" disabled selected>Acciones masivas</option>
 
                             <option :value="activeStaffTab === 'deleted' ? 'reactivate' : 'delete'">
-                                {{ activeStaffTab === 'deleted' ? 'Reactivate Selected' : 'Deactivate Selected' }}
+                                {{ activeStaffTab === 'deleted' ? 'Reactivar seleccionados' : 'Desactivar seleccionados' }}
                             </option>
 
-                            <option value="download">Download Forms</option>
+                            <option value="download">Descargar formularios</option>
                         </select>
                     </div>
-                    <span class="text-sm text-gray-600">{{ selectedStaffIds.size }} selected</span>
+                    <span class="text-sm text-gray-600">{{ selectedStaffIds.size }} seleccionados</span>
                 </div>
 
                 <table class="w-full border rounded overflow-hidden text-sm">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
-                            <th class="p-2 text-left">Name</th>
-                            <th class="p-2 text-left">DOB</th>
-                            <th class="p-2 text-left">Address</th>
+                            <th class="p-2 text-left">Nombre</th>
+                            <th class="p-2 text-left">Fecha de nacimiento</th>
+                            <th class="p-2 text-left">Direccion</th>
                             <!-- <th class="p-2 text-left">Class</th> -->
-                            <th class="p-2 text-left">Cell</th>
+                            <th class="p-2 text-left">Celular</th>
                             <th class="p-2 text-left w-16">Email</th>
-                            <th class="p-2 text-left">Status</th>
-                            <th class="p-2 text-left">Actions</th>
-                            <th class="p-2 text-left">Assigned Classes</th>
+                            <th class="p-2 text-left">Estado</th>
+                            <th class="p-2 text-left">Acciones</th>
+                            <th class="p-2 text-left">Clases asignadas</th>
 
                         </tr>
                     </thead>
@@ -573,21 +573,21 @@ onMounted(fetchClubs)
                                 <td class="p-2 space-x-1 text-xs">
                                     <!-- Toggle Details -->
                                     <button @click="toggleExpanded(person.id)" class="text-green-600"
-                                        title="Toggle details">
+                                        title="Ver detalles">
                                         <component :is="expandedRows.has(person.id) ? MinusIcon : PlusIcon"
                                             class="w-4 h-4 inline" />
                                     </button>
 
                                     <!-- Create User -->
                                 <button v-if="person.create_user" @click="createUser(person)"
-                                    class="text-orange-600" title="Create user">
+                                    class="text-orange-600" title="Crear usuario">
                                     <UserPlusIcon class="w-4 h-4 inline" />
                                 </button>
                                 <button
                                     v-else-if="person.user_id && !clubUserIds.has(person.user_id)"
                                     @click="linkToClubUsers(person)"
                                     class="text-amber-600"
-                                    title="Link to club access"
+                                    title="Vincular acceso al club"
                                 >
                                     <UserPlusIcon class="w-4 h-4 inline" />
                                 </button>
@@ -597,17 +597,17 @@ onMounted(fetchClubs)
                                     v-if="person.type !== 'temp_pathfinder'"
                                     @click="downloadWord(person.id)"
                                     class="text-blue-600"
-                                    title="Download Word form">
+                                    title="Descargar formulario Word">
                                         <DocumentArrowDownIcon class="w-4 h-4 inline" />
                                     </button>
 
                                     <!-- Delete or Reactivate -->
                                     <button v-if="person.status === 'active'" @click="updateStaffAccount(person, 301)"
-                                        class="text-red-600" title="Delete staff">
+                                        class="text-red-600" title="Eliminar personal">
                                         <TrashIcon class="w-4 h-4 inline" />
                                     </button>
                                     <button v-else @click="() => updateStaffAccount(person, 423)" class="text-gray-600"
-                                        title="Reactivate staff">
+                                        title="Reactivar personal">
                                         <ArrowPathIcon class="w-4 h-4 inline" />
                                     </button>
                                     <button
@@ -624,7 +624,7 @@ onMounted(fetchClubs)
                                             v-model="assignedClassChanges[person.id]"
                                             class="border p-1 rounded text-xs"
                                         >
-                                            <option disabled value="">Select class</option>
+                                            <option disabled value="">Seleccionar clase</option>
                                             <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
                                                 {{ cls.class_name }}
                                             </option>
@@ -634,7 +634,7 @@ onMounted(fetchClubs)
                                             :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
                                             class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
                                         >
-                                            {{ isUpdatingClass[person.id] ? 'Saving...' : 'Save' }}
+                                            {{ isUpdatingClass[person.id] ? 'Guardando...' : 'Guardar' }}
                                         </button>
                                     </div>
                                 </td>
@@ -643,82 +643,81 @@ onMounted(fetchClubs)
                             <tr v-if="expandedRows.has(person.id)" class="bg-gray-50 border-t">
                                 <td colspan="10" class="p-4 text-gray-700">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div><strong>City/State/ZIP:</strong> {{ person.city }}, {{ person.state }} {{
+                                        <div><strong>Ciudad/Estado/Codigo postal:</strong> {{ person.city }}, {{ person.state }} {{
                                             person.zip }}</div>
-                                        <div><strong>Club Name:</strong> {{ person.club_name }}</div>
-                                        <div><strong>Church Name:</strong> {{ person.church_name }}</div>
+                                        <div><strong>Nombre del club:</strong> {{ person.club_name }}</div>
+                                        <div><strong>Nombre de la iglesia:</strong> {{ person.church_name }}</div>
 
-                                        <div><strong>Health Limitation:</strong> {{ person.has_health_limitation ? 'Yes'
+                                        <div><strong>Limitacion de salud:</strong> {{ person.has_health_limitation ? 'Si'
                                             : 'No' }}</div>
-                                        <div v-if="person.has_health_limitation"><strong>Limitation Details:</strong> {{
+                                        <div v-if="person.has_health_limitation"><strong>Detalles de la limitacion:</strong> {{
                                             person.health_limitation_description }}</div>
 
                                         <!-- Experience -->
                                         <div>
-                                            <strong>Experience:</strong>
+                                            <strong>Experiencia:</strong>
                                             <ul class="list-disc list-inside ml-4" v-if="person.experiences?.length">
                                                 <li v-for="(exp, idx) in person.experiences" :key="idx">
-                                                    {{ exp.position }} at {{ exp.organization }} ({{ exp.date }})
+                                                    {{ exp.position }} en {{ exp.organization }} ({{ exp.date }})
                                                 </li>
                                             </ul>
-                                            <div v-else>No experience listed.</div>
+                                            <div v-else>No hay experiencia registrada.</div>
                                         </div>
 
                                         <!-- Awards -->
                                         <div>
-                                            <strong>Awards/Instruction:</strong>
+                                            <strong>Premios/Instruccion:</strong>
                                             <ul class="list-disc list-inside ml-4"
                                                 v-if="person.award_instruction_abilities?.length">
                                                 <li v-for="(award, index) in person.award_instruction_abilities"
                                                     :key="index">
                                                     {{ award.name }} —
-                                                    <span v-if="award.level === 'T'">Capable of Teaching</span>
-                                                    <span v-else-if="award.level === 'A'">Able to Assist</span>
-                                                    <span v-else-if="award.level === 'I'">Interested in Learning</span>
+                                                    <span v-if="award.level === 'T'">Capaz de ensenar</span>
+                                                    <span v-else-if="award.level === 'A'">Puede asistir</span>
+                                                    <span v-else-if="award.level === 'I'">Interesado en aprender</span>
                                                     <span v-else>{{ award.level }}</span>
                                                 </li>
                                             </ul>
-                                            <div v-else>No awards listed.</div>
+                                            <div v-else>No hay premios registrados.</div>
                                         </div>
 
                                         <!-- Unlawful Conduct -->
-                                        <div><strong>Unlawful Conduct:</strong> {{ person.unlawful_sexual_conduct ===
-                                            'yes' ? 'Yes' : 'No' }}</div>
+                                        <div><strong>Conducta ilegal:</strong> {{ person.unlawful_sexual_conduct ===
+                                            'yes' ? 'Si' : 'No' }}</div>
                                         <div v-if="person.unlawful_sexual_conduct === 'yes'">
-                                            <strong>Conduct Records:</strong>
+                                            <strong>Registros de conducta:</strong>
                                             <ul class="list-disc list-inside ml-4"
                                                 v-if="person.unlawful_sexual_conduct_records?.length">
                                                 <li v-for="(record, idx) in person.unlawful_sexual_conduct_records"
                                                     :key="idx">
-                                                    {{ record.type || 'N/A' }} — {{ record.date_place || 'Unknown Date/Place' }}<br />
-                                                    <span class="text-gray-600">Reference: {{ record.reference || 'N/A'
+                                                    {{ record.type || 'N/A' }} — {{ record.date_place || 'Fecha/Lugar desconocidos' }}<br />
+                                                    <span class="text-gray-600">Referencia: {{ record.reference || 'N/A'
                                                         }}</span>
                                                 </li>
                                             </ul>
                                         </div>
 
-                                        <div><strong>Sterling Volunteer Completed:</strong> {{
-                                            person.sterling_volunteer_completed ? 'Yes' : 'No' }}
+                                        <div><strong>Sterling Volunteer completado:</strong> {{
+                                            person.sterling_volunteer_completed ? 'Si' : 'No' }}
                                         </div>
 
                                         <!-- References -->
                                         <div>
-                                            <strong>References:</strong>
+                                            <strong>Referencias:</strong>
                                             <ul class="list-disc pl-5">
                                                 <li v-if="person.reference_pastor">Pastor: {{ person.reference_pastor }}
                                                 </li>
-                                                <li v-if="person.reference_elder">Elder: {{ person.reference_elder }}
+                                                <li v-if="person.reference_elder">Anciano: {{ person.reference_elder }}
                                                 </li>
-                                                <li v-if="person.reference_other">Other: {{ person.reference_other }}
+                                                <li v-if="person.reference_other">Otro: {{ person.reference_other }}
                                                 </li>
                                                 <li
                                                     v-if="!person.reference_pastor && !person.reference_elder && !person.reference_other">
-                                                    No
-                                                    references provided.</li>
+                                                    No se proporcionaron referencias.</li>
                                             </ul>
                                         </div>
 
-                                        <div><strong>Signed:</strong> {{ person.applicant_signature }} on {{
+                                        <div><strong>Firmado:</strong> {{ person.applicant_signature }} el {{
                                             person.application_signed_date.slice(0,
                                                 10) }}</div>
                                     </div>
@@ -732,22 +731,22 @@ onMounted(fetchClubs)
                     <div class="mb-4 flex space-x-4 border-b pb-2">
                         <button @click="activeTab = 'active'"
                             :class="activeTab === 'active' ? 'font-bold border-b-2 border-blue-600' : 'text-gray-500'">
-                            Active Accounts
+                            Cuentas activas
                         </button>
                         <button @click="activeTab = 'parents'"
                             :class="activeTab === 'parents' ? 'font-bold border-b-2 border-green-600' : 'text-gray-500'">
-                            Parent Accounts
+                            Cuentas de padres
                         </button>
                         <button
                             v-if="sub_roles.some(user => user.status === 'deleted') && user.profile_type === 'club_director'"
                             @click="activeTab = 'deleted'"
                             :class="activeTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
-                            Inactive Accounts
+                            Cuentas inactivas
                         </button>
                         <button v-if="filteredPendingUsers.length"
                             @click="activeTab = 'pending'"
                             :class="activeTab === 'pending' ? 'font-bold border-b-2 border-amber-600' : 'text-gray-500'">
-                            Pending Requests
+                            Solicitudes pendientes
                         </button>
                     </div>
 
@@ -755,14 +754,14 @@ onMounted(fetchClubs)
                         <table class="w-full text-sm border rounded overflow-hidden">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">Parent</th>
+                                    <th class="p-2 text-left">Padre/Madre</th>
                                     <th class="p-2 text-left">Email</th>
-                                    <th class="p-2 text-left">Children</th>
+                                    <th class="p-2 text-left">Hijos</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-if="!parentAccounts.length">
-                                    <td colspan="3" class="p-3 text-center text-gray-500">No parent accounts found.</td>
+                                    <td colspan="3" class="p-3 text-center text-gray-500">No se encontraron cuentas de padres.</td>
                                 </tr>
                                 <template v-for="parent in parentAccounts" :key="parent.id">
                                     <tr class="border-t">
@@ -775,13 +774,13 @@ onMounted(fetchClubs)
                                                     <div class="font-semibold text-xs">{{ child.name || '—' }}</div>
                                                     <div class="text-[11px] text-gray-600">Club: {{
                                                         child.club_name || child.club_id || '—' }}</div>
-                                                    <div class="text-[11px] text-gray-600">Type: {{
+                                                    <div class="text-[11px] text-gray-600">Tipo: {{
                                                         child.member_type }}</div>
-                                                    <div class="text-[11px] text-gray-600">Class ID: {{
+                                                    <div class="text-[11px] text-gray-600">ID de clase: {{
                                                         child.class_id || '—' }}</div>
                                                 </div>
                                             </div>
-                                            <div v-else class="text-gray-500 text-xs">No children linked.</div>
+                                            <div v-else class="text-gray-500 text-xs">No hay hijos vinculados.</div>
                                         </td>
                                     </tr>
                                 </template>
@@ -792,13 +791,13 @@ onMounted(fetchClubs)
                         <table class="w-full text-sm border rounded overflow-hidden">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">Name</th>
+                                    <th class="p-2 text-left">Nombre</th>
                                     <th class="p-2 text-left">Email</th>
-                                    <th class="p-2 text-left">Role</th>
-                                    <th class="p-2 text-left">Sub Role</th>
-                                    <th class="p-2 text-left">Church</th>
-                                    <th class="p-2 text-left">Status</th>
-                                    <th class="p-2 text-left">Actions</th>
+                                    <th class="p-2 text-left">Rol</th>
+                                    <th class="p-2 text-left">Subrol</th>
+                                    <th class="p-2 text-left">Iglesia</th>
+                                    <th class="p-2 text-left">Estado</th>
+                                    <th class="p-2 text-left">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -810,7 +809,7 @@ onMounted(fetchClubs)
 
                                     <td class="p-2 capitalize text-xs">
                                         <select id="sub_role" class="border p-1 rounded text-xs" v-model="user.sub_role">
-                                            <option value="">-- Select Sub Role --</option>
+                                            <option value="">-- Seleccionar subrol --</option>
                                             <option v-for="role in subRoles" :key="role.id" :value="role.key">
                                                 {{ role.label }}
                                             </option>
@@ -825,17 +824,17 @@ onMounted(fetchClubs)
                                         <template v-if="user.status === 'active'">
                                             <div class="flex items-center space-x-2">
                                                 <button @click="changePassword(user)"class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
-                                                    Change Password
+                                                    Cambiar contraseña
                                                 </button>
 
                                                 <button @click="updateStaffUserAccount(user, 301)"
-                                                    class="text-red-600 hover:underline" title="Delete record">
+                                                    class="text-red-600 hover:underline" title="Eliminar registro">
                                                     <TrashIcon class="w-4 h-4 inline" />
                                                 </button>
 
                                             <button v-if="createStaffMap[user.id] && selectedClub?.club_type === 'adventurers'"
                                                 class="text-green-600 hover:underline" @click="openStaffForm(user)"
-                                                title="Click to add user as staff">
+                                                title="Agregar usuario como personal">
                                                 <UserPlusIcon class="w-5 h-5 text-green-600" />
                                             </button>
                                             </div>
@@ -843,11 +842,11 @@ onMounted(fetchClubs)
                                         <template v-else-if="user.status !== 'active'">
                                             <button @click="updateStaffUserAccount(user, 423)"
                                                 class="text-blue-600 hover:underline">
-                                                Reactivate Account
+                                                Reactivar cuenta
                                             </button>
                                         </template>
                                         <template v-else>
-                                            <span class="text-gray-400 italic">No actions</span>
+                                            <span class="text-gray-400 italic">Sin acciones</span>
                                         </template>
                                     </td>
                                 </tr>
@@ -858,10 +857,10 @@ onMounted(fetchClubs)
                         <table class="w-full text-sm border rounded overflow-hidden">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">Name</th>
+                                    <th class="p-2 text-left">Nombre</th>
                                     <th class="p-2 text-left">Email</th>
-                                    <th class="p-2 text-left">Role</th>
-                                    <th class="p-2 text-left">Actions</th>
+                                    <th class="p-2 text-left">Rol</th>
+                                    <th class="p-2 text-left">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -870,12 +869,12 @@ onMounted(fetchClubs)
                                     <td class="p-2 text-xs">{{ u.email }}</td>
                                     <td class="p-2 text-xs capitalize">{{ u.profile_type.replace('_',' ') }}</td>
                                     <td class="p-2 text-xs space-x-2">
-                                        <button class="text-green-700" @click="approvePending(u.id)">Approve</button>
-                                        <button class="text-red-600" @click="rejectPending(u.id)">Reject</button>
+                                        <button class="text-green-700" @click="approvePending(u.id)">Aprobar</button>
+                                        <button class="text-red-600" @click="rejectPending(u.id)">Rechazar</button>
                                     </td>
                                 </tr>
                                 <tr v-if="filteredPendingUsers.length === 0">
-                                    <td colspan="4" class="p-3 text-center text-gray-500">No pending requests.</td>
+                                    <td colspan="4" class="p-3 text-center text-gray-500">No hay solicitudes pendientes.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -889,7 +888,7 @@ onMounted(fetchClubs)
             :show="showPasswordModal"
             :user-id="changePasswordUserId"
             @close="showPasswordModal = false"
-            @updated="showToast('Password updated successfully')"
+            @updated="showToast('Contrasena actualizada correctamente')"
         />
 
         <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"

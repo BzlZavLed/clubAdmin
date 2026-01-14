@@ -19,71 +19,71 @@ const routeName = usePage().component
 const openDropdown = ref(null)
 
 const menuItems = [
-    { name: 'Dashboard', href: '/super-admin/dashboard', route: 'superadmin.dashboard', icon: HomeIcon },
-    { name: 'Create Church', href: '/church-form', route: 'church.form', icon: BuildingOffice2Icon },
+    { name: 'Panel', href: '/super-admin/dashboard', route: 'superadmin.dashboard', icon: HomeIcon },
+    { name: 'Crear iglesia', href: '/church-form', route: 'church.form', icon: BuildingOffice2Icon },
     {
-        name: 'My Club',
+        name: 'Mi club',
         icon: UsersIcon,
         children: [
             {
-                name: 'Admin',
+                name: 'Administración',
                 href: '/club-director/my-club',
                 route: 'club.my-club',
                 icon: DocumentTextIcon
             },
             {
-                name: 'Finances',
+                name: 'Finanzas',
                 href: '/club-director/my-club-finances',
                 route: 'club.my-club-finances',
                 icon: CurrencyDollarIcon
             },
             {
-                name: 'Payments',
+                name: 'Pagos',
                 href: '/club-director/payments',
                 route: 'club.director.payments',
                 icon: BanknotesIcon
             },
             {
-                name: 'Expenses',
+                name: 'Gastos',
                 href: '/club-director/expenses',
                 route: 'club.director.expenses',
                 icon: CurrencyDollarIcon
             },
             {
-                name: 'Workplan',
+                name: 'Plan de trabajo',
                 href: '/club-director/workplan',
                 route: 'club.workplan',
                 icon: CalendarDaysIcon
             }
         ]
     },
-    { name: 'Members', href: '/club-director/members', route: 'club.members', icon: UserGroupIcon },
-    { name: 'Staff & Accounts', href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
+    { name: 'Miembros', href: '/club-director/members', route: 'club.members', icon: UserGroupIcon },
+    { name: 'Personal y cuentas', href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
     {
-        name: 'Reports',
+        name: 'Reportes',
         icon: ChartBarIcon,
         children: [
             {
-                name: 'Assistance Reports',
+                name: 'Reportes de asistencia',
                 href: '/club-director/reports/assistance',
                 route: 'club.reports.assistance',
                 icon: DocumentTextIcon
             },
             {
-                name: 'Finances Reports',
+                name: 'Reportes financieros',
                 href: '/club-director/reports/finances',
                 route: 'club.reports.finances',
                 icon: BanknotesIcon
             },
             {
-                name: 'Account Balances',
+                name: 'Saldos de cuentas',
                 href: '/club-director/reports/accounts',
                 route: 'club.reports.accounts',
                 icon: CurrencyDollarIcon
             }
         ]
     },
-    { name: 'Settings', href: '/club-director/settings', route: 'club.settings', icon: CogIcon },
+    { name: 'Configuración', href: '/club-director/settings', route: 'club.settings', icon: CogIcon },
 ]
 
 defineProps({

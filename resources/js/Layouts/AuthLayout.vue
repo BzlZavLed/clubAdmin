@@ -7,7 +7,7 @@
                     <slot name="title" />
                 </h2>
                 <p class="text-sm text-gray-600">
-                    <slot name="subtitle">Prepared. Fit. Loyal. Pure.</slot>
+                    <slot name="subtitle">Preparados. Aptos. Leales. Puros.</slot>
                 </p>
             </div>
 

@@ -55,7 +55,7 @@ const toggleSidebar = () => {
         <!-- Logout -->
         <div class="px-4 py-4 border-t mt-auto">
             <button @click="logout" class="w-full text-left text-sm text-red-600 hover:underline" :class="{ 'text-center': isCollapsed }">
-                <span v-if="!isCollapsed">Logout</span>
+                <span v-if="!isCollapsed">Cerrar sesión</span>
                 <span v-else>🚪</span>
             </button>
         </div>

@@ -11,9 +11,9 @@ defineProps({
 })
 
 const menuItems = [
-    { name: 'Dashboard', href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
-    { name: 'Apply', href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
-    { name: 'Children', href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
+    { name: 'Panel', href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
+    { name: 'Solicitud', href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
+    { name: 'Hijos', href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
 ]
 </script>
 

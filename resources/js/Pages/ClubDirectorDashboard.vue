@@ -18,7 +18,7 @@ async function openInviteModal() {
     inviteCode.value = data.code
   } catch (e) {
     console.error(e)
-    showToast('Failed to load invite code', 'error')
+    showToast('No se pudo cargar el código de invitación', 'error')
   } finally {
     inviteLoading.value = false
   }
@@ -29,10 +29,10 @@ async function regenerateCode() {
   try {
     const data = await regenerateInviteCode()
     inviteCode.value = data.code
-    showToast('Invite code regenerated')
+    showToast('Código de invitación regenerado')
   } catch (e) {
     console.error(e)
-    showToast('Failed to regenerate code', 'error')
+    showToast('No se pudo regenerar el código', 'error')
   } finally {
     inviteLoading.value = false
   }
@@ -41,20 +41,20 @@ async function regenerateCode() {
 
 <template>
   <PathfinderLayout>
-    <template #title>Club Director Dashboard</template>
+    <template #title>Panel del Director de Club</template>
 
     <div class="space-y-6 text-gray-800">
       <div class="bg-white border rounded-lg shadow-sm p-4 flex items-center justify-between">
         <div>
-          <p class="text-lg font-semibold">Church invite code</p>
-          <p class="text-sm text-gray-600">Share with allowed users so they can register.</p>
+          <p class="text-lg font-semibold">Código de invitación de la iglesia</p>
+          <p class="text-sm text-gray-600">Compártelo con usuarios autorizados para que puedan registrarse.</p>
         </div>
         <button
           class="px-4 py-2 bg-blue-600 text-white rounded text-sm"
           type="button"
           @click="openInviteModal"
         >
-          View / Regenerate
+          Ver / Regenerar
         </button>
       </div>
     </div>
@@ -63,19 +63,19 @@ async function regenerateCode() {
     <div v-if="inviteModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-5 space-y-3">
         <div class="flex items-start justify-between">
-          <h4 class="text-lg font-semibold">Church invite code</h4>
+          <h4 class="text-lg font-semibold">Código de invitación de la iglesia</h4>
           <button class="text-gray-500" @click="inviteModalOpen = false">✕</button>
         </div>
         <div class="text-sm text-gray-700">
-          Share this code with allowed users so they can register.
+          Comparte este código con usuarios autorizados para que puedan registrarse.
         </div>
         <div class="p-3 border rounded bg-gray-50 text-center text-xl font-mono tracking-wide">
-          <span v-if="inviteLoading" class="text-sm text-gray-500">Loading…</span>
+          <span v-if="inviteLoading" class="text-sm text-gray-500">Cargando…</span>
           <span v-else>{{ inviteCode || '—' }}</span>
         </div>
         <div class="flex justify-end gap-2">
-          <button class="px-3 py-2 border rounded" @click="inviteModalOpen = false">Close</button>
-          <button class="px-3 py-2 bg-blue-600 text-white rounded" :disabled="inviteLoading" @click="regenerateCode">Regenerate</button>
+          <button class="px-3 py-2 border rounded" @click="inviteModalOpen = false">Cerrar</button>
+          <button class="px-3 py-2 bg-blue-600 text-white rounded" :disabled="inviteLoading" @click="regenerateCode">Regenerar</button>
         </div>
       </div>
     </div>

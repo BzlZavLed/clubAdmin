@@ -21,13 +21,13 @@ const page = usePage()
 const showDropdown = ref(false)
 
 const menuItems = [
-    { name: 'Dashboard', href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
+    { name: 'Panel', href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
 ]
 
 const clubSubItems = [
-    { name: 'Assistance Report', href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
-    { name: 'Payments', href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
-    { name: 'Workplan', href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
+    { name: 'Reporte de asistencia', href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
+    { name: 'Pagos', href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
+    { name: 'Plan de trabajo', href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
 ]
 
 const props = defineProps({
@@ -60,7 +60,7 @@ watch(
             <button @click="showDropdown = !showDropdown"
                 class="flex items-center w-full px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100">
                 <UserGroupIcon class="w-5 h-5" />
-                <span v-if="!isCollapsed" class="ml-2">My Class</span>
+                <span v-if="!isCollapsed" class="ml-2">Mi clase</span>
                 <span class="ml-auto" v-if="!isCollapsed">
                     <component :is="showDropdown ? ChevronDownIcon : ChevronRightIcon" class="w-4 h-4" />
                 </span>

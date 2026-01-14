@@ -46,7 +46,7 @@ const load = async (clubId = null) => {
         memberships.value = m || []
     } catch (e) {
         console.error(e)
-        showToast('Failed to load workplan', 'error')
+        showToast('No se pudo cargar el plan de trabajo', 'error')
     }
 }
 
@@ -72,24 +72,24 @@ onMounted(() => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Parent Dashboard</template>
+        <template #title>Panel de padres</template>
 
         <div class="space-y-4">
             <div class="bg-white border rounded shadow-sm p-4">
-                <h2 class="text-xl font-semibold text-gray-800">Welcome, {{ props.auth_user?.name }}</h2>
-                <p class="text-gray-600 text-sm mt-1">View workplans for your children’s clubs.</p>
+                <h2 class="text-xl font-semibold text-gray-800">Bienvenido, {{ props.auth_user?.name }}</h2>
+                <p class="text-gray-600 text-sm mt-1">Consulta los planes de trabajo de los clubes de tus hijos.</p>
             </div>
 
             <div class="bg-white border rounded shadow-sm p-4 space-y-3">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div class="space-y-1">
-                        <h3 class="text-lg font-semibold text-gray-800">Club Workplan</h3>
-                        <p class="text-sm text-gray-600">Select a club to view its schedule.</p>
+                        <h3 class="text-lg font-semibold text-gray-800">Plan de trabajo del club</h3>
+                        <p class="text-sm text-gray-600">Selecciona un club para ver su calendario.</p>
                     </div>
                     <div class="flex items-center gap-2">
                         <label class="text-sm text-gray-700">Club</label>
                         <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm" @change="changeClub">
-                            <option value="">Select a club</option>
+                            <option value="">Selecciona un club</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
                     </div>
@@ -106,7 +106,7 @@ onMounted(() => {
                         @edit="openEvent"
                     />
                 </div>
-                <div v-else class="text-sm text-gray-600">No workplan found for your clubs.</div>
+                <div v-else class="text-sm text-gray-600">No se encontró plan de trabajo para tus clubes.</div>
             </div>
         </div>
 
@@ -126,20 +126,20 @@ onMounted(() => {
                     <button class="text-gray-500" @click="closeEvent">✕</button>
                 </div>
                 <div class="space-y-2 text-sm text-gray-700">
-                    <div><span class="font-semibold">Description:</span> {{ selectedEvent.description || '—' }}</div>
-                    <div><span class="font-semibold">Location:</span> {{ selectedEvent.location || '—' }}</div>
+                    <div><span class="font-semibold">Descripción:</span> {{ selectedEvent.description || '—' }}</div>
+                    <div><span class="font-semibold">Ubicación:</span> {{ selectedEvent.location || '—' }}</div>
                 </div>
                 <div v-if="selectedEvent.classPlans?.length" class="border-t pt-3">
-                    <h5 class="font-semibold text-gray-800 text-sm mb-2">Class plans for your children</h5>
+                    <h5 class="font-semibold text-gray-800 text-sm mb-2">Planes de clase para tus hijos</h5>
                     <div class="space-y-2">
                         <div v-for="plan in selectedEvent.classPlans" :key="plan.id" class="border rounded p-3 bg-gray-50">
                             <div class="flex items-center justify-between text-sm">
-                                <div class="font-semibold">{{ plan.title || 'Class Plan' }}</div>
+                                <div class="font-semibold">{{ plan.title || 'Plan de clase' }}</div>
                                 <span class="text-xs capitalize text-gray-600">{{ plan.type || 'plan' }}</span>
                             </div>
                             <div class="text-xs text-gray-700 mt-1">{{ plan.description || '—' }}</div>
                             <div class="text-[11px] text-gray-600 mt-2">
-                                Class: {{ plan.class?.class_name || '—' }} • Staff: {{ plan.staff?.user?.name || plan.staff?.name || '—' }}
+                                Clase: {{ plan.class?.class_name || '—' }} • Personal: {{ plan.staff?.user?.name || plan.staff?.name || '—' }}
                             </div>
                         </div>
                     </div>

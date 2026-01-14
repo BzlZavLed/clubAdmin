@@ -33,14 +33,14 @@ const classToEdit = ref(null)
 const hasClub = ref(false)
 
 // 🧠 Derived data
-const church_name = user.value.church_name || 'Unknown Church'
+const church_name = user.value.church_name || 'Iglesia desconocida'
 const clubId = ref(user.value.club_id || null)
 
 const clubStaff = computed(() => {
     return clubs.value[0]?.staff_adventurers ?? []
 })
 if (!user.value.pastor_name) {
-    showToast('Create church first', 'error')
+    showToast('Primero crea la iglesia', 'error')
 }
 
 // 🧠 Club form
@@ -50,8 +50,8 @@ const clubForm = useForm({
     church_name: user.value.church_name,
     director_name: user.value.name,
     creation_date: today,
-    pastor_name: user.value.pastor_name || 'No church created',
-    conference_name: user.value.conference_name || 'No church created',
+    pastor_name: user.value.pastor_name || 'Iglesia no creada',
+    conference_name: user.value.conference_name || 'Iglesia no creada',
     conference_region: '',
     club_type: ''
 })
@@ -76,10 +76,10 @@ const fetchClubs = async () => {
         if (!selectedClubId.value && clubId.value) {
             selectedClubId.value = clubId.value
         }
-        showToast('Clubs fetched successfully!')
+        showToast('Clubes cargados correctamente')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error loading clubs', 'error')
+        showToast('Error al cargar clubes', 'error')
     }
 }
 
@@ -87,25 +87,25 @@ const fetchClubs = async () => {
 const submitClub = async () => {
     try {
         await createClub(clubForm)
-        showToast('Club created successfully!')
+        showToast('Club creado correctamente')
         addClub.value = false
         fetchClubs()
     } catch (error) {
         console.error(error)
-        showToast('Failed to create club', 'error')
+        showToast('No se pudo crear el club', 'error')
     }
 }
 
 const updateClub = async () => {
     try {
         await updateClubApi(clubForm)
-        showToast('Club updated successfully!')
+        showToast('Club actualizado correctamente')
         isEditing.value = false
         editingClubId.value = null
         fetchClubs()
     } catch (error) {
         console.error(error)
-        showToast('Failed to update club', 'error')
+        showToast('No se pudo actualizar el club', 'error')
     }
 }
 
@@ -119,26 +119,26 @@ const editClub = (club) => {
 
 // 🧠 Delete club or class
 const deleteClub = async (clubId) => {
-    if (!confirm('Are you sure you want to delete this club?')) return
+    if (!confirm('¿Seguro que deseas eliminar este club?')) return
     try {
         await deleteClubById(clubId)
-        showToast('Club deleted successfully!')
+        showToast('Club eliminado correctamente')
         fetchClubs()
     } catch (error) {
         console.error('Failed to delete club:', error)
-        showToast('Error deleting club', 'error')
+        showToast('Error al eliminar el club', 'error')
     }
 }
 
 const deleteCls = async (classID) => {
-    if (!confirm('Are you sure you want to delete this class?')) return
+    if (!confirm('¿Seguro que deseas eliminar esta clase?')) return
     try {
         await deleteClassById(classID)
-        showToast('Class deleted successfully!')
+        showToast('Clase eliminada correctamente')
         fetchClubs()
     } catch (error) {
         console.error('Failed to delete class:', error)
-        showToast('Error deleting class', 'error')
+        showToast('Error al eliminar la clase', 'error')
     }
 }
 
@@ -146,7 +146,7 @@ const deleteCls = async (classID) => {
 const selectClub = async (clubId) => {
     try {
         await selectUserClub(clubId, user.value.id)
-        showToast('Club selected successfully!')
+        showToast('Club seleccionado correctamente')
         await router.reload({ only: ['auth'] })
         refreshPage()
     } catch (error) {
@@ -231,28 +231,28 @@ const pcForm = useForm({
 
 // Small helpers for labels
 const scopeTypeOptions = [
-    { value: 'club_wide', label: 'Club wide' },
-    { value: 'class', label: 'Specific class' },
-    { value: 'member', label: 'Specific member' },
-    { value: 'staff_wide', label: 'Staff wide' },
-    { value: 'staff', label: 'Specific staff' }
+    { value: 'club_wide', label: 'Todo el club' },
+    { value: 'class', label: 'Clase especifica' },
+    { value: 'member', label: 'Miembro especifico' },
+    { value: 'staff_wide', label: 'Todo el personal' },
+    { value: 'staff', label: 'Personal especifico' }
 ]
 
 const payToOptions = [
-    { value: 'church_budget', label: 'Church budget' },
-    { value: 'club_budget', label: 'Club budget' },
-    { value: 'conference', label: 'Conference' },
-    { value: 'reimbursement_to', label: 'Reimbursement to…' }
+    { value: 'church_budget', label: 'Presupuesto de iglesia' },
+    { value: 'club_budget', label: 'Presupuesto de club' },
+    { value: 'conference', label: 'Conferencia' },
+    { value: 'reimbursement_to', label: 'Reembolso a…' }
 ]
 
 const typeOptions = [
-    { value: 'mandatory', label: 'Mandatory' },
-    { value: 'optional', label: 'Optional' }
+    { value: 'mandatory', label: 'Obligatorio' },
+    { value: 'optional', label: 'Opcional' }
 ]
 
 const statusOptions = [
-    { value: 'active', label: 'Active' },
-    { value: 'inactive', label: 'Inactive' }
+    { value: 'active', label: 'Activo' },
+    { value: 'inactive', label: 'Inactivo' }
 ]
 
 // derive current club name (for sanity)
@@ -264,7 +264,7 @@ const conceptClubName = computed(() => {
 // scope builder actions
 function addScope() {
     if (!conceptClubId.value) {
-        showToast('Select a club for this concept first', 'error')
+        showToast('Selecciona un club para este concepto primero', 'error')
         return
     }
     pcForm.scopes.push({ scope_type: 'club_wide', club_id: conceptClubId.value })
@@ -311,11 +311,11 @@ async function loadPaymentConcepts() {
 
 async function savePaymentConcept() {
     if (!pcForm.club_id) {
-        showToast('Please choose the concept’s club', 'error')
+        showToast('Selecciona el club del concepto', 'error')
         return
     }
     if (pcForm.scopes.length === 0) {
-        showToast('Please add at least one scope', 'error')
+        showToast('Agrega al menos un alcance', 'error')
         return
     }
 
@@ -327,7 +327,7 @@ async function savePaymentConcept() {
 
     try {
         // await createPaymentConcept(pcForm) // when backend ready
-        showToast('Payment concept saved (stub)', 'success')
+        showToast('Concepto de pago guardado (stub)', 'success')
         pcForm.reset()
         pcForm.type = 'mandatory'
         pcForm.pay_to = 'club_budget'
@@ -336,17 +336,17 @@ async function savePaymentConcept() {
         pcForm.scopes = []
         await loadPaymentConcepts()
     } catch (e) {
-        showToast('Failed to save concept', 'error')
+        showToast('No se pudo guardar el concepto', 'error')
     }
 }
 
 async function deleteConcept(id) {
     try {
         // await deletePaymentConcept(id)
-        showToast('Concept deleted (stub)', 'success')
+        showToast('Concepto eliminado (stub)', 'success')
         await loadPaymentConcepts()
     } catch (e) {
-        showToast('Failed to delete concept', 'error')
+        showToast('No se pudo eliminar el concepto', 'error')
     }
 }
 
@@ -357,10 +357,10 @@ const fetchStaff = async (clubId) => {
         const response = await axios.get(`/clubs/${clubId}/staff`)
         staffList.value = response.data.staff
         if(staffList.value.length === 0) {
-            showToast('Create staff first, none found','error')
+            showToast('Crea personal primero, no se encontro ninguno','error')
             return
         }
-        showToast('Staff loaded','success');
+        showToast('Personal cargado','success');
         console.log(staffList.value);
     } catch (error) {
         console.error('Failed to fetch staff:', error)
@@ -373,14 +373,14 @@ const fetchMembers = async (clubId) => {
         const data = await fetchMembersByClub(clubId)
         if (Array.isArray(data) && data.length > 0) {
             members.value = data
-            showToast('Members loaded', 'success')
+            showToast('Miembros cargados', 'success')
         } else {
             members.value = []
-            alert('No members found for this club.')
+            alert('No se encontraron miembros para este club.')
         }
     } catch (error) {
         console.error('Failed to fetch members:', error)
-        showToast('Error fetching members', 'error')
+        showToast('Error al obtener miembros', 'error')
     }
 };
 
@@ -407,22 +407,22 @@ onMounted(fetchClubs);
 
 <template>
     <PathfinderLayout>
-        <template #title>My Club</template>
+        <template #title>Mi club</template>
 
         <div v-if="isEditing || addClub || (clubs.length === 0 && !clubId)" class="space-y-6">
             <p class="text-gray-700">
-                {{ isEditing ? 'Edit your club below:' : 'Create your club below.' }}
+                {{ isEditing ? 'Edita tu club a continuacion:' : 'Crea tu club a continuacion.' }}
             </p>
 
             <form class="space-y-4" @submit.prevent="isEditing ? updateClub() : submitClub()">
                 <div v-for="field in [
-                    { key: 'club_name', label: 'Club Name' },
-                    { key: 'church_name', label: 'Church Name' , readonly: true },
-                    { key: 'director_name', label: 'Director Name', readonly: true },
-                    { key: 'creation_date', label: 'Date of Creation', type: 'date' },
-                    { key: 'pastor_name', label: 'Pastor Name', readonly: true },
-                    { key: 'conference_name', label: 'Conference Name', readonly: true },
-                    { key: 'conference_region', label: 'Conference Region' }
+                    { key: 'club_name', label: 'Nombre del club' },
+                    { key: 'church_name', label: 'Nombre de la iglesia' , readonly: true },
+                    { key: 'director_name', label: 'Nombre del director', readonly: true },
+                    { key: 'creation_date', label: 'Fecha de creacion', type: 'date' },
+                    { key: 'pastor_name', label: 'Nombre del pastor', readonly: true },
+                    { key: 'conference_name', label: 'Nombre de la conferencia', readonly: true },
+                    { key: 'conference_region', label: 'Region de la conferencia' }
                 ]" :key="field.key">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
                     <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
@@ -430,37 +430,37 @@ onMounted(fetchClubs);
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Club Type</label>
+                    <label class="block text-sm font-medium text-gray-700">Tipo de club</label>
                     <select v-model="clubForm.club_type" class="w-full mt-1 p-2 border rounded">
-                        <option value="">Select Type</option>
-                        <option value="adventurers">Adventurers</option>
-                        <option value="pathfinders">Pathfinders</option>
-                        <option value="master_guide">Master Guide</option>
+                        <option value="">Seleccionar tipo</option>
+                        <option value="adventurers">Aventureros</option>
+                        <option value="pathfinders">Conquistadores</option>
+                        <option value="master_guide">Guia Mayor</option>
                     </select>
                 </div>
 
                 <div class="flex items-center space-x-4">
                     <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
-                        {{ isEditing ? 'Update Club' : 'Save Club' }}
+                        {{ isEditing ? 'Actualizar club' : 'Guardar club' }}
                     </button>
                     <button v-if="isEditing || addClub" type="button" @click="() => {
                         isEditing = false;
                         addClub = false;
                         editingClubId = null
                     }" class="text-sm text-gray-600 hover:underline">
-                        Cancel Edit
+                        Cancelar edicion
                     </button>
                 </div>
             </form>
         </div>
         <div v-else-if="!clubId && clubs.length > 0" class="space-y-6">
-            <p class="text-gray-700">Select an existing club from your church: {{ church_name || 'Unknown Church' }}</p>
+            <p class="text-gray-700">Selecciona un club existente de tu iglesia: {{ church_name || 'Iglesia desconocida' }}</p>
             <table class="min-w-full border rounded text-sm">
                 <thead class="bg-gray-100">
                     <tr>
-                        <th class="p-2 text-left">Name</th>
-                        <th class="p-2 text-left">Type</th>
-                        <th class="p-2 text-left">Actions</th>
+                        <th class="p-2 text-left">Nombre</th>
+                        <th class="p-2 text-left">Tipo</th>
+                        <th class="p-2 text-left">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -468,7 +468,7 @@ onMounted(fetchClubs);
                         <td class="p-2">{{ club.club_name }}</td>
                         <td class="p-2 capitalize">{{ club.club_type }}</td>
                         <td class="p-2 space-x-2">
-                            <button @click="selectClub(club.id)" class="text-blue-600 hover:underline">Select</button>
+                            <button @click="selectClub(club.id)" class="text-blue-600 hover:underline">Seleccionar</button>
                         </td>
                     </tr>
                 </tbody>
@@ -476,16 +476,16 @@ onMounted(fetchClubs);
         </div>
         <div v-else class="space-y-4">
             <details open class="border rounded">
-                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Club Information</summary>
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Informacion del club</summary>
                 <div class="p-4">
                     <table class="min-w-full border rounded text-sm">
                         <thead class="bg-gray-100">
                             <tr>
-                                <th class="p-2 text-left">Name</th>
-                                <th class="p-2 text-left">Church</th>
-                                <th class="p-2 text-left">Type</th>
-                                <th class="p-2 text-left">Created</th>
-                                <th class="p-2 text-left">Actions</th>
+                                <th class="p-2 text-left">Nombre</th>
+                                <th class="p-2 text-left">Iglesia</th>
+                                <th class="p-2 text-left">Tipo</th>
+                                <th class="p-2 text-left">Creado</th>
+                                <th class="p-2 text-left">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -495,9 +495,9 @@ onMounted(fetchClubs);
                                 <td class="p-2 capitalize">{{ club.club_type }}</td>
                                 <td class="p-2">{{ club.creation_date }}</td>
                                 <td class="p-2 space-x-2">
-                                    <button @click="editClub(club)" class="text-blue-600 hover:underline">Edit</button>
+                                    <button @click="editClub(club)" class="text-blue-600 hover:underline">Editar</button>
                                     <button @click="deleteClub(club.id)"
-                                        class="text-red-600 hover:underline">Delete</button>
+                                        class="text-red-600 hover:underline">Eliminar</button>
                                 </td>
                             </tr>
                         </tbody>
@@ -505,24 +505,24 @@ onMounted(fetchClubs);
                     <div class="mt-4">
                         <button @click="startCreatingClub"
                             class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                            + Create Club
+                            + Crear club
                         </button>
                     </div>
                 </div>
             </details>
 
             <details class="border rounded">
-                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Classes</summary>
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Clases</summary>
                 <div class="p-4">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-bold">Club Classes</h3>
+                        <h3 class="text-lg font-bold">Clases del club</h3>
                         <button @click="openNewClassModal"
                             class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                            + Add Class
+                            + Agregar clase
                         </button>
                     </div>
                     <select v-model="selectedClubId" class="border rounded mb-6">
-                        <option value="">All Clubs</option>
+                        <option value="">Todos los clubes</option>
                         <option v-for="club in clubs" :key="club.id" :value="club.id">
                             {{ club.club_name }}
                         </option>
@@ -532,9 +532,9 @@ onMounted(fetchClubs);
                         <thead class="bg-gray-100">
                             <tr>
                                 <th class="border-b px-4 py-2">Club</th>
-                                <th class="border-b px-4 py-2">Order</th>
-                                <th class="border-b px-4 py-2">Name</th>
-                                <th class="border-b px-4 py-2">Actions</th>
+                                <th class="border-b px-4 py-2">Orden</th>
+                                <th class="border-b px-4 py-2">Nombre</th>
+                                <th class="border-b px-4 py-2">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -548,9 +548,9 @@ onMounted(fetchClubs);
                                         <td class="px-4 py-2">{{ cls.class_name }}</td>
                                         <td class="p-2 space-x-2">
                                             <button @click="editCls(cls)"
-                                                class="text-blue-600 hover:underline">Edit</button>
+                                                class="text-blue-600 hover:underline">Editar</button>
                                             <button @click="deleteCls(cls)"
-                                                class="text-red-600 hover:underline">Delete</button>
+                                                class="text-red-600 hover:underline">Eliminar</button>
                                         </td>
                                     </tr>
                                 </template>

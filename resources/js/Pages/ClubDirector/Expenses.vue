@@ -32,7 +32,7 @@ const newReceiptInput = ref(null)
 
 const payToLabel = (val) => {
     const m = payToOptions.value.find(p => p.value === val)
-    return m?.label || (val ?? 'Unassigned')
+    return m?.label || (val ?? 'Sin asignar')
 }
 
 const fmtMoney = (n) => `$${Number(n ?? 0).toFixed(2)}`
@@ -93,7 +93,7 @@ const loadData = async (clubId = null) => {
         }
     } catch (e) {
         console.error(e)
-        loadError.value = e?.response?.data?.message || 'Failed to load expenses.'
+        loadError.value = e?.response?.data?.message || 'No se pudieron cargar los gastos.'
     } finally {
         loading.value = false
     }
@@ -104,25 +104,25 @@ const submit = async () => {
     form.clearErrors()
     if (!form.club_id && clubs.value.length) form.club_id = clubs.value[0].id
     if (!form.club_id) {
-        form.setError('club_id', 'Select a club')
+        form.setError('club_id', 'Selecciona un club')
         saving.value = false
         return
     }
     if (form.pay_to === 'reimbursement_to') {
         if (!form.payment_concept_id) {
-            form.setError('payment_concept_id', 'Select a reimbursement concept')
+            form.setError('payment_concept_id', 'Selecciona un concepto de reembolso')
             saving.value = false
             return
         }
         if (amountExceedsReimbursement.value) {
-            form.setError('amount', 'Amount exceeds available reimbursement balance.')
+            form.setError('amount', 'El monto excede el saldo disponible para reembolso.')
             saving.value = false
             return
         }
     }
     const bal = selectedBalance.value
     if (bal !== null && Number(form.amount || 0) > Number(bal)) {
-        form.setError('amount', 'Amount exceeds current account balance.')
+        form.setError('amount', 'El monto excede el saldo actual de la cuenta.')
         saving.value = false
         return
     }
@@ -201,7 +201,7 @@ const handleReceiptSelected = async (expenseId, event) => {
     } catch (e) {
         rowErrors.value = {
             ...rowErrors.value,
-            [expenseId]: e?.response?.data?.message || 'Failed to upload receipt.',
+                [expenseId]: e?.response?.data?.message || 'No se pudo subir el recibo.',
         }
         console.error(e)
     } finally {
@@ -229,18 +229,18 @@ const syncReimbursementDetails = () => {
             <header class="pt-5 pb-3 flex items-center gap-3">
                 <BanknotesIcon class="h-6 w-6 text-gray-700" />
                 <div>
-                    <h1 class="text-lg font-semibold text-gray-900">Expenses</h1>
-                    <p class="text-sm text-gray-600">Record outgoing money against pay_to accounts.</p>
+                    <h1 class="text-lg font-semibold text-gray-900">Gastos</h1>
+                    <p class="text-sm text-gray-600">Registra egresos contra cuentas pay_to.</p>
                 </div>
             </header>
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex items-center justify-between gap-3">
-                    <h2 class="text-base font-semibold text-gray-900">New expense</h2>
+                    <h2 class="text-base font-semibold text-gray-900">Nuevo gasto</h2>
                     <button @click="loadData" :disabled="loading"
                         class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
                         <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />
-                        <span>{{ loading ? 'Reloading…' : 'Reload' }}</span>
+                        <span>{{ loading ? 'Recargando…' : 'Recargar' }}</span>
                     </button>
                 </div>
 
@@ -256,66 +256,66 @@ const syncReimbursementDetails = () => {
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Account</label>
+                        <label class="block text-sm font-medium text-gray-700">Cuenta</label>
                         <select v-model="form.pay_to" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="p in payToOptions" :key="p.value" :value="p.value">{{ p.label }}</option>
                         </select>
-                        <p v-if="selectedBalance !== null" class="text-xs text-gray-500 mt-1">Current balance: {{ fmtMoney(selectedBalance) }}</p>
+                        <p v-if="selectedBalance !== null" class="text-xs text-gray-500 mt-1">Saldo actual: {{ fmtMoney(selectedBalance) }}</p>
                         <div v-if="form.errors.pay_to" class="mt-1 text-sm text-red-600">{{ form.errors.pay_to }}</div>
                     </div>
 
                     <div v-if="form.pay_to === 'reimbursement_to'">
-                        <label class="block text-sm font-medium text-gray-700">Reimbursement source</label>
+                        <label class="block text-sm font-medium text-gray-700">Fuente de reembolso</label>
                         <select v-model="form.payment_concept_id" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null">Select a reimbursement</option>
+                            <option :value="null">Selecciona un reembolso</option>
                             <option v-for="r in reimbursementOptions" :key="r.id" :value="r.id">
-                                {{ r.concept }} — {{ r.payee_name || 'Unknown payee' }} — available {{ fmtMoney(r.available) }}
+                                {{ r.concept }} — {{ r.payee_name || 'Beneficiario desconocido' }} — disponible {{ fmtMoney(r.available) }}
                             </option>
                         </select>
-                        <p class="text-xs text-gray-500 mt-1" v-if="selectedReimbursement">Paid {{ fmtMoney(selectedReimbursement.paid) }} · Spent {{ fmtMoney(selectedReimbursement.spent) }}</p>
+                        <p class="text-xs text-gray-500 mt-1" v-if="selectedReimbursement">Pagado {{ fmtMoney(selectedReimbursement.paid) }} · Gastado {{ fmtMoney(selectedReimbursement.spent) }}</p>
                         <div v-if="form.errors.payment_concept_id" class="mt-1 text-sm text-red-600">{{ form.errors.payment_concept_id }}</div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Amount</label>
+                        <label class="block text-sm font-medium text-gray-700">Monto</label>
                         <input type="number" step="0.01" min="0" :max="form.pay_to === 'reimbursement_to' && selectedReimbursement ? selectedReimbursement.available : null" v-model="form.amount"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
                         <div v-if="form.errors.amount" class="mt-1 text-sm text-red-600">{{ form.errors.amount }}</div>
                         <div v-else-if="amountExceedsReimbursement" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
-                            Amount exceeds the available reimbursement balance.
+                            El monto excede el saldo disponible de reembolso.
                         </div>
                         <div v-else-if="amountExceedsBalance" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
-                            Amount is greater than the current account balance. Please adjust before saving.
+                            El monto es mayor al saldo actual de la cuenta. Ajusta antes de guardar.
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Date</label>
+                        <label class="block text-sm font-medium text-gray-700">Fecha</label>
                         <input type="date" v-model="form.expense_date"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
                         <div v-if="form.errors.expense_date" class="mt-1 text-sm text-red-600">{{ form.errors.expense_date }}</div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Description</label>
+                        <label class="block text-sm font-medium text-gray-700">Descripcion</label>
                         <textarea rows="2" v-model="form.description"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
                         <div v-if="form.errors.description" class="mt-1 text-sm text-red-600">{{ form.errors.description }}</div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Receipt image (optional now)</label>
+                        <label class="block text-sm font-medium text-gray-700">Imagen del recibo (opcional)</label>
                         <input type="file" accept="image/*" @change="onNewReceiptChange" ref="newReceiptInput"
                             class="mt-1 block w-full text-sm text-gray-700" />
-                        <p class="mt-1 text-xs text-gray-500">Attach now to mark as completed, or add it later from the table.</p>
+                        <p class="mt-1 text-xs text-gray-500">Adjunta ahora para marcar como completado, o agrega luego desde la tabla.</p>
                         <div v-if="form.errors.receipt_image" class="mt-1 text-sm text-red-600">{{ form.errors.receipt_image }}</div>
                     </div>
 
                     <div v-if="form.pay_to === 'reimbursement_to'">
-                        <label class="block text-sm font-medium text-gray-700">Reimbursed to</label>
+                        <label class="block text-sm font-medium text-gray-700">Reembolsado a</label>
                         <input type="text" v-model="form.reimbursed_to"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="Name of payee" />
+                            placeholder="Nombre del beneficiario" />
                         <div v-if="form.errors.reimbursed_to" class="mt-1 text-sm text-red-600">{{ form.errors.reimbursed_to }}</div>
                     </div>
                 </div>
@@ -324,26 +324,26 @@ const syncReimbursementDetails = () => {
                     <button @click="submit" :disabled="disableSave"
                         class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
                         <ArrowPathIcon v-if="saving" class="h-4 w-4 animate-spin" />
-                        <span>{{ saving ? 'Saving…' : 'Save expense' }}</span>
+                        <span>{{ saving ? 'Guardando…' : 'Guardar gasto' }}</span>
                     </button>
                 </div>
             </section>
 
             <section class="mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <h2 class="text-base font-semibold text-gray-900">Recent expenses</h2>
-                <div v-if="loading" class="mt-2 text-sm text-gray-500">Loading…</div>
-                <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No expenses yet.</div>
+                <h2 class="text-base font-semibold text-gray-900">Gastos recientes</h2>
+                <div v-if="loading" class="mt-2 text-sm text-gray-500">Cargando…</div>
+                <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No hay gastos aun.</div>
                 <div v-else class="mt-3 overflow-x-auto">
                     <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-2 text-left font-semibold">Date</th>
-                                <th class="px-4 py-2 text-left font-semibold">Account</th>
-                                <th class="px-4 py-2 text-left font-semibold">Amount</th>
-                                <th class="px-4 py-2 text-left font-semibold">Status</th>
-                                <th class="px-4 py-2 text-left font-semibold">Receipt</th>
-                                <th class="px-4 py-2 text-left font-semibold">Reimbursed to</th>
-                                <th class="px-4 py-2 text-left font-semibold">Description</th>
+                                <th class="px-4 py-2 text-left font-semibold">Fecha</th>
+                                <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
+                                <th class="px-4 py-2 text-left font-semibold">Monto</th>
+                                <th class="px-4 py-2 text-left font-semibold">Estado</th>
+                                <th class="px-4 py-2 text-left font-semibold">Recibo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Reembolsado a</th>
+                                <th class="px-4 py-2 text-left font-semibold">Descripcion</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -359,7 +359,7 @@ const syncReimbursementDetails = () => {
                                                 ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
                                                 : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
                                         ]">
-                                        {{ e.status === 'completed' ? 'Completed' : 'Working on' }}
+                                        {{ e.status === 'completed' ? 'Completado' : 'En proceso' }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-2">
@@ -367,11 +367,11 @@ const syncReimbursementDetails = () => {
                                         <div class="flex items-center gap-2">
                                             <a v-if="receiptHref(e)" :href="receiptHref(e)" target="_blank" rel="noreferrer"
                                                 class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                                View receipt
+                                                Ver recibo
                                             </a>
                                             <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
                                                 <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
-                                                No receipt
+                                                Sin recibo
                                             </span>
 
                                             <button
@@ -380,7 +380,7 @@ const syncReimbursementDetails = () => {
                                                 :disabled="uploadingId === e.id"
                                                 class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
                                                 <ArrowPathIcon v-if="uploadingId === e.id" class="h-3.5 w-3.5 animate-spin" />
-                                                <span>{{ uploadingId === e.id ? 'Uploading…' : 'Load image' }}</span>
+                                                <span>{{ uploadingId === e.id ? 'Subiendo…' : 'Cargar imagen' }}</span>
                                             </button>
                                             <input type="file" accept="image/*" class="hidden"
                                                 :ref="el => { if (el) receiptInputs[e.id] = el }"

@@ -4,12 +4,12 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 
 <template>
   <PathfinderLayout>
-    <template #title>Super Admin Dashboard</template>
+    <template #title>Panel de Superadministrador</template>
 
     <div class="space-y-4 text-gray-800">
       <div class="bg-white border rounded-lg shadow-sm p-4">
-        <p class="text-lg font-semibold">Welcome, Super Admin</p>
-        <p class="text-sm text-gray-600">Manage churches and invite codes from the Create Church page.</p>
+        <p class="text-lg font-semibold">Bienvenido, Superadministrador</p>
+        <p class="text-sm text-gray-600">Administra iglesias y códigos de invitación desde la página de Crear iglesia.</p>
       </div>
     </div>
   </PathfinderLayout>

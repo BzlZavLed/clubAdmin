@@ -52,7 +52,7 @@ watch(selectedClubId, (val) => {
 async function fetchCatalog() {
     if (!hasClubSelected.value) return
     if (!inviteCode.value) {
-        showToast('Enter an invite code first', 'warning')
+        showToast('Ingresa un codigo de invitacion primero', 'warning')
         return
     }
     catalogLoading.value = true
@@ -62,10 +62,10 @@ async function fetchCatalog() {
             club_id: selectedClubId.value,
         })
         catalog.value = data
-        showToast('Catalog fetched')
+        showToast('Catalogo obtenido')
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'Failed to fetch catalog'
+        const message = error?.response?.data?.message || 'No se pudo obtener el catalogo'
         showToast(message, 'error')
     } finally {
         catalogLoading.value = false
@@ -75,11 +75,11 @@ async function fetchCatalog() {
 async function saveConfig() {
     if (!hasClubSelected.value) return
     if (!inviteCode.value) {
-        showToast('Invite code is required', 'warning')
+        showToast('El codigo de invitacion es requerido', 'warning')
         return
     }
     if (!catalog.value) {
-        showToast('Fetch the catalog before saving', 'warning')
+        showToast('Obtiene el catalogo antes de guardar', 'warning')
         return
     }
     saving.value = true
@@ -100,10 +100,10 @@ async function saveConfig() {
             departments: data.config.departments || [],
             objectives: data.config.objectives || [],
         }
-        showToast('Configuration saved')
+        showToast('Configuracion guardada')
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'Failed to save configuration'
+        const message = error?.response?.data?.message || 'No se pudo guardar la configuracion'
         showToast(message, 'error')
     } finally {
         saving.value = false
@@ -113,19 +113,19 @@ async function saveConfig() {
 
 <template>
     <PathfinderLayout>
-        <template #title>Settings</template>
+        <template #title>Configuracion</template>
 
         <div class="space-y-6">
             <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-800">mychurchadmin.net integration</h2>
-                        <p class="text-sm text-gray-600">Use an invitation code to fetch the catalog and save it for your club.</p>
+                        <h2 class="text-lg font-semibold text-gray-800">Integracion con mychurchadmin.net</h2>
+                        <p class="text-sm text-gray-600">Usa un codigo de invitacion para obtener el catalogo y guardarlo para tu club.</p>
                     </div>
                     <div class="flex items-center gap-2">
                         <label class="text-sm text-gray-700">Club</label>
                         <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm">
-                            <option value="">Select a club</option>
+                            <option value="">Selecciona un club</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
                     </div>
@@ -133,7 +133,7 @@ async function saveConfig() {
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div class="md:col-span-2">
-                        <label class="block text-sm text-gray-700 mb-1">Invitation code</label>
+                        <label class="block text-sm text-gray-700 mb-1">Codigo de invitacion</label>
                         <input
                             v-model="inviteCode"
                             type="text"
@@ -165,43 +165,43 @@ async function saveConfig() {
             <div v-if="catalog" class="bg-white shadow-sm rounded-lg p-5 border space-y-6">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                        <h3 class="font-semibold text-gray-800">Catalog details</h3>
-                        <p class="text-sm text-gray-600">Review the church, departments, and objectives.</p>
+                        <h3 class="font-semibold text-gray-800">Detalles del catalogo</h3>
+                        <p class="text-sm text-gray-600">Revisa la iglesia, departamentos y objetivos.</p>
                     </div>
                     <div class="text-sm text-gray-600">
-                        Status: <span class="font-semibold">{{ catalog.status || '—' }}</span>
+                        Estado: <span class="font-semibold">{{ catalog.status || '—' }}</span>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="border rounded p-3 bg-gray-50">
-                        <h4 class="text-sm font-semibold text-gray-800 mb-2">Church</h4>
+                        <h4 class="text-sm font-semibold text-gray-800 mb-2">Iglesia</h4>
                         <div class="text-sm text-gray-700 space-y-1">
-                            <div><span class="font-medium">Name:</span> {{ catalog.church?.name || '—' }}</div>
+                            <div><span class="font-medium">Nombre:</span> {{ catalog.church?.name || '—' }}</div>
                             <div><span class="font-medium">Slug:</span> {{ catalog.church_slug || catalog.church?.slug || '—' }}</div>
                             <div><span class="font-medium">ID:</span> {{ catalog.church?.id || '—' }}</div>
                         </div>
                     </div>
                     <div class="border rounded p-3 bg-gray-50">
-                        <h4 class="text-sm font-semibold text-gray-800 mb-2">Summary</h4>
+                        <h4 class="text-sm font-semibold text-gray-800 mb-2">Resumen</h4>
                         <div class="text-sm text-gray-700 space-y-1">
-                            <div><span class="font-medium">Departments:</span> {{ catalog.departments?.length || 0 }}</div>
-                            <div><span class="font-medium">Objectives:</span> {{ catalog.objectives?.length || 0 }}</div>
+                            <div><span class="font-medium">Departamentos:</span> {{ catalog.departments?.length || 0 }}</div>
+                            <div><span class="font-medium">Objetivos:</span> {{ catalog.objectives?.length || 0 }}</div>
                         </div>
                     </div>
                 </div>
 
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-800 mb-2">Departments</h4>
+                    <h4 class="text-sm font-semibold text-gray-800 mb-2">Departamentos</h4>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-gray-500">
                                 <tr>
                                     <th class="py-2 pr-4">ID</th>
-                                    <th class="py-2 pr-4">Name</th>
-                                    <th class="py-2 pr-4">User name</th>
+                                    <th class="py-2 pr-4">Nombre</th>
+                                    <th class="py-2 pr-4">Usuario</th>
                                     <th class="py-2 pr-4">Color</th>
-                                    <th class="py-2 pr-4">Is club</th>
+                                    <th class="py-2 pr-4">Es club</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -210,10 +210,10 @@ async function saveConfig() {
                                     <td class="py-2 pr-4">{{ dept.name }}</td>
                                     <td class="py-2 pr-4">{{ dept.user_name }}</td>
                                     <td class="py-2 pr-4">{{ dept.color }}</td>
-                                    <td class="py-2 pr-4">{{ dept.is_club ? 'Yes' : 'No' }}</td>
+                                    <td class="py-2 pr-4">{{ dept.is_club ? 'Si' : 'No' }}</td>
                                 </tr>
                                 <tr v-if="(catalog.departments || []).length === 0">
-                                    <td colspan="5" class="py-3 text-center text-gray-500">No departments available.</td>
+                                    <td colspan="5" class="py-3 text-center text-gray-500">No hay departamentos disponibles.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -221,16 +221,16 @@ async function saveConfig() {
                 </div>
 
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-800 mb-2">Objectives</h4>
+                    <h4 class="text-sm font-semibold text-gray-800 mb-2">Objetivos</h4>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-gray-500">
                                 <tr>
                                     <th class="py-2 pr-4">ID</th>
-                                    <th class="py-2 pr-4">Department</th>
-                                    <th class="py-2 pr-4">Name</th>
-                                    <th class="py-2 pr-4">Description</th>
-                                    <th class="py-2 pr-4">Metrics</th>
+                                    <th class="py-2 pr-4">Departamento</th>
+                                    <th class="py-2 pr-4">Nombre</th>
+                                    <th class="py-2 pr-4">Descripcion</th>
+                                    <th class="py-2 pr-4">Metricas</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -242,7 +242,7 @@ async function saveConfig() {
                                     <td class="py-2 pr-4">{{ obj.evaluation_metrics }}</td>
                                 </tr>
                                 <tr v-if="(catalog.objectives || []).length === 0">
-                                    <td colspan="5" class="py-3 text-center text-gray-500">No objectives available.</td>
+                                    <td colspan="5" class="py-3 text-center text-gray-500">No hay objetivos disponibles.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -251,7 +251,7 @@ async function saveConfig() {
             </div>
 
             <div v-else class="bg-white shadow-sm rounded-lg p-5 border text-sm text-gray-600">
-                Fetch a catalog to view the integration details.
+                Obtiene un catalogo para ver los detalles de integracion.
             </div>
         </div>
     </PathfinderLayout>

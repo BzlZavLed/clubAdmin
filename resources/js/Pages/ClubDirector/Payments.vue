@@ -39,14 +39,14 @@ const allowedClubs = computed(() => {
     return filtered.length ? filtered : baseClubs
 })
 const scopeLabel = (sc) => {
-    if (!sc) return 'No scope'
+    if (!sc) return 'Sin alcance'
     switch (sc.scope_type) {
-        case 'club_wide': return `Club wide (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'class': return `Class: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
-        case 'staff_wide': return `Staff wide (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'member': return `Member: ${sc.member?.applicant_name ?? sc.member_id ?? '—'}`
-        case 'staff': return `Staff: ${sc.staff?.name ?? sc.staff_id ?? '—'}`
-        default: return 'Unknown scope'
+        case 'club_wide': return `Todo el club (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'class': return `Clase: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
+        case 'staff_wide': return `Todo el personal (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'member': return `Miembro: ${sc.member?.applicant_name ?? sc.member_id ?? '—'}`
+        case 'staff': return `Personal: ${sc.staff?.name ?? sc.staff_id ?? '—'}`
+        default: return 'Alcance desconocido'
     }
 }
 
@@ -220,19 +220,19 @@ const submit = async () => {
         form.club_id = props.clubs[0].id
     }
     if (!form.club_id) {
-        form.setError('club_id', 'Select a club.')
+        form.setError('club_id', 'Selecciona un club.')
         return
     }
     if (!selectedScope.value) {
-        form.setError('payment_concept_id', 'Select a scope before saving.')
+        form.setError('payment_concept_id', 'Selecciona un alcance antes de guardar.')
         return
     }
     if (scopePayerType.value === 'member' && !selectedMemberId.value) {
-        form.setError('member_id', 'Select a member for this scope.')
+        form.setError('member_id', 'Selecciona un miembro para este alcance.')
         return
     }
     if (scopePayerType.value === 'staff' && !selectedStaffId.value) {
-        form.setError('staff_id', 'Select a staff for this scope.')
+        form.setError('staff_id', 'Selecciona un miembro del personal para este alcance.')
         return
     }
 
@@ -251,7 +251,7 @@ const submit = async () => {
             })
         } else {
             console.error(err)
-            form.setError('form', 'Unexpected error. Please try again.')
+            form.setError('form', 'Error inesperado. Intenta de nuevo.')
         }
     } finally {
         submitting.value = false
@@ -295,11 +295,11 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
             <header class="px-4 pt-5 pb-3 sm:px-6">
                 <div class="flex items-center gap-3">
                     <CreditCardIcon class="h-6 w-6 text-gray-700" />
-                    <h1 class="text-lg font-semibold text-gray-900">Director Payments</h1>
+                    <h1 class="text-lg font-semibold text-gray-900">Pagos del director</h1>
                 </div>
                 <div class="mt-2 flex flex-col sm:flex-row sm:items-center sm:gap-4">
                     <p class="text-sm text-gray-600">
-                        Signed in as <strong>{{ auth_user?.name }}</strong>
+                        Sesion iniciada como <strong>{{ auth_user?.name }}</strong>
                     </p>
                     <div class="flex items-center gap-2 text-sm">
                         <label class="text-gray-700">Club:</label>
@@ -314,26 +314,26 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
             <main class="px-4 pb-24 sm:px-6">
                 <!-- Form card -->
                 <section class="rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-sm">
-                    <h2 class="text-base font-semibold text-gray-900">Record a payment</h2>
-                    <p class="mt-0.5 text-sm text-gray-600">Select the payer (member or staff) and concept.</p>
+                    <h2 class="text-base font-semibold text-gray-900">Registrar un pago</h2>
+                    <p class="mt-0.5 text-sm text-gray-600">Selecciona el pagador (miembro o personal) y el concepto.</p>
 
                     <!-- Concept -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Payment concept</label>
+                        <label class="block text-sm font-medium text-gray-700">Concepto de pago</label>
                         <select v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Select a concept…</option>
+                            <option :value="null" disabled>Selecciona un concepto…</option>
                             <option v-for="c in filteredConcepts" :key="c.id" :value="c.id">
                                 {{ c.concept }} • {{ c.amount ?? '—' }}
                             </option>
                         </select>
                         <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept">
-                            <span class="font-medium">Scope:</span>
-                            <span>{{ selectedConcept.scopes?.[0] ? scopeLabel(selectedConcept.scopes[0]) : 'No scope' }}</span>
+                            <span class="font-medium">Alcance:</span>
+                            <span>{{ selectedConcept.scopes?.[0] ? scopeLabel(selectedConcept.scopes[0]) : 'Sin alcance' }}</span>
                             <span class="ml-2">•</span>
-                            <span class="ml-2"><span class="font-medium">Expected:</span> {{ selectedConceptExpected || '—' }}</span>
+                            <span class="ml-2"><span class="font-medium">Esperado:</span> {{ selectedConceptExpected || '—' }}</span>
                             <span class="ml-2">•</span>
-                            <span class="ml-2"><span class="font-medium">Due by:</span> {{ formatISODateLocal(selectedConcept.payment_expected_by) }}</span>
+                            <span class="ml-2"><span class="font-medium">Vence:</span> {{ formatISODateLocal(selectedConcept.payment_expected_by) }}</span>
                         </div>
                         <div v-if="form.errors.payment_concept_id" class="mt-1 text-sm text-red-600">
                             {{ form.errors.payment_concept_id }}
@@ -342,15 +342,15 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Payee -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Payee</label>
+                        <label class="block text-sm font-medium text-gray-700">Pagador</label>
                         <div class="text-xs text-gray-600 mb-1" v-if="selectedScope">
-                            Scope: {{ scopeLabel(selectedScope) }}
+                            Alcance: {{ scopeLabel(selectedScope) }}
                         </div>
-                        <div v-else-if="selectedConcept" class="text-xs text-amber-700 mb-1">No scopes for this concept.</div>
+                        <div v-else-if="selectedConcept" class="text-xs text-amber-700 mb-1">No hay alcances para este concepto.</div>
                         <div v-if="scopePayerType === 'member'">
                             <select v-model="selectedMemberId" :disabled="!selectedScope"
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50">
-                                <option :value="null" disabled>Select member…</option>
+                                <option :value="null" disabled>Selecciona un miembro…</option>
                                 <option v-for="m in payeeOptions" :key="m.id" :value="m.id">{{ m.applicant_name }}</option>
                             </select>
                             <div v-if="form.errors.member_id" class="mt-1 text-sm text-red-600">
@@ -360,20 +360,20 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         <div v-else-if="scopePayerType === 'staff'">
                             <select v-model="selectedStaffId" :disabled="!selectedScope"
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50">
-                                <option :value="null" disabled>Select staff…</option>
+                                <option :value="null" disabled>Selecciona personal…</option>
                                 <option v-for="s in payeeOptions" :key="s.id" :value="s.id">{{ s.name }}</option>
                             </select>
                             <div v-if="form.errors.staff_id" class="mt-1 text-sm text-red-600">
                                 {{ form.errors.staff_id }}
                             </div>
                         </div>
-                        <div v-else class="text-xs text-gray-500 mt-1">Select a concept and scope to choose who pays.</div>
+                        <div v-else class="text-xs text-gray-500 mt-1">Selecciona concepto y alcance para elegir quien paga.</div>
                     </div>
 
                     <!-- Amount / Date -->
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Amount paid</label>
+                            <label class="block text-sm font-medium text-gray-700">Monto pagado</label>
                             <div class="mt-1 relative">
                                 <input v-model="form.amount_paid" type="number" step="0.01" min="0"
                                     class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -387,7 +387,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Payment date</label>
+                            <label class="block text-sm font-medium text-gray-700">Fecha de pago</label>
                             <div class="mt-1 relative">
                                 <input v-model="form.payment_date" type="date"
                                     class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
@@ -402,7 +402,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Payment Type -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Payment type</label>
+                        <label class="block text-sm font-medium text-gray-700">Tipo de pago</label>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                             <label v-for="t in payment_types" :key="t" class="inline-flex items-center gap-2">
                                 <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t" v-model="form.payment_type" />
@@ -416,7 +416,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Conditional fields -->
                     <div v-if="form.payment_type === 'zelle'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Zelle phone</label>
+                        <label class="block text-sm font-medium text-gray-700">Telefono Zelle</label>
                         <input v-model="form.zelle_phone" type="text" inputmode="tel"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                             placeholder="(555) 555-5555" />
@@ -426,7 +426,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     </div>
 
                     <div v-if="form.payment_type === 'check'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Check photo</label>
+                        <label class="block text-sm font-medium text-gray-700">Foto del cheque</label>
                         <div class="mt-1 flex items-center gap-3">
                             <input type="file" accept="image/*" @change="onCheckFileChange"
                                 class="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-50" />
@@ -438,10 +438,10 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Notes -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Notes (optional)</label>
+                        <label class="block text-sm font-medium text-gray-700">Notas (opcional)</label>
                         <textarea v-model="form.notes" rows="2"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="Any remarks about this payment…"></textarea>
+                            placeholder="Observaciones sobre este pago…"></textarea>
                     </div>
 
                     <!-- Submit -->
@@ -449,7 +449,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         <button type="button" @click="submit" :disabled="submitting"
                             class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
                             <ArrowPathIcon v-if="submitting" class="h-4 w-4 animate-spin" />
-                            <span>{{ submitting ? 'Saving…' : 'Save payment' }}</span>
+                            <span>{{ submitting ? 'Guardando…' : 'Guardar pago' }}</span>
                         </button>
                     </div>
 
@@ -466,11 +466,11 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
                             <UserGroupIcon class="h-5 w-5 text-gray-500" />
-                            <h3 class="text-sm font-semibold text-gray-900">Recent payments</h3>
+                            <h3 class="text-sm font-semibold text-gray-900">Pagos recientes</h3>
                         </div>
 
                         <div class="relative w-64">
-                            <input v-model="searchTerm" type="text" placeholder="Search by name or concept"
+                            <input v-model="searchTerm" type="text" placeholder="Buscar por nombre o concepto"
                                 class="w-full rounded-lg border border-gray-300 py-1.5 pl-3 pr-8 text-sm focus:border-blue-500 focus:ring-blue-500" />
                             <svg class="pointer-events-none absolute right-2 top-2.5 h-4 w-4 text-gray-400" fill="none"
                                 viewBox="0 0 24 24" stroke="currentColor">
@@ -482,9 +482,9 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <div v-if="(props.payments || []).length"
                         class="mt-2 flex items-center justify-between text-xs text-gray-600">
-                        <div>Showing {{ filteredPayments.length ? startIdx + 1 : 0 }}–{{ endIdx }} of {{ filteredPayments.length }}</div>
+                        <div>Mostrando {{ filteredPayments.length ? startIdx + 1 : 0 }}–{{ endIdx }} de {{ filteredPayments.length }}</div>
                         <div class="flex items-center gap-2">
-                            <label class="hidden sm:block">Per page</label>
+                            <label class="hidden sm:block">Por pagina</label>
                             <select v-model.number="pageSize"
                                 class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
                                 <option :value="5">5</option>
@@ -495,7 +495,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
                     </div>
 
-                    <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">No payments yet.</div>
+                    <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">No hay pagos aun.</div>
 
                     <ul v-else class="mt-2 divide-y divide-gray-200 rounded-2xl border border-gray-200">
                         <li v-for="p in pagedPayments" :key="p.id" class="p-3 sm:p-4">
@@ -513,30 +513,30 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                                         <span v-if="Number(p.balance_due_after ?? 0) > 0"
                                             class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                                            title="Remaining balance after this payment">
-                                            Pending ${{ Number(p.balance_due_after).toFixed(2) }}
+                                            title="Saldo restante despues de este pago">
+                                            Pendiente ${{ Number(p.balance_due_after).toFixed(2) }}
                                         </span>
                                         <span v-else
                                             class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                                            Paid in full
+                                            Pagado completo
                                         </span>
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
                                         <b>{{ p.concept?.concept ?? '—' }}</b>
-                                        • Expected: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
-                                        • Paid: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
-                                        • Date: {{ formatISODateLocal(p.payment_date) }}
+                                        • Esperado: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
+                                        • Pagado: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
+                                        • Fecha: {{ formatISODateLocal(p.payment_date) }}
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
-                                        Received by: {{ p.received_by?.name ?? '—' }}
+                                        Recibido por: {{ p.received_by?.name ?? '—' }}
                                         <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • Zelle: {{ p.zelle_phone }}</span>
                                     </div>
 
                                     <div v-if="p.payment_type === 'check' && p.check_image_path" class="mt-2">
-                                        <a :href="`/storage/${p.check_image_path}`" target="_blank" rel="noopener" class="inline-block" title="Open check image">
-                                            <img :src="`/storage/${p.check_image_path}`" alt="Check image"
+                                        <a :href="`/storage/${p.check_image_path}`" target="_blank" rel="noopener" class="inline-block" title="Abrir imagen del cheque">
+                                            <img :src="`/storage/${p.check_image_path}`" alt="Imagen del cheque"
                                                 class="h-24 w-auto rounded border object-cover" />
                                         </a>
                                     </div>
@@ -557,14 +557,14 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <div v-if="filteredPayments.length > pageSize" class="mt-3 flex items-center justify-between">
                         <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="page <= 1" @click="go(page - 1)">
-                            Prev
+                            Anterior
                         </button>
 
-                        <div class="text-xs text-gray-600">Page {{ page }} of {{ totalPages }}</div>
+                        <div class="text-xs text-gray-600">Pagina {{ page }} de {{ totalPages }}</div>
 
                         <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="page >= totalPages" @click="go(page + 1)">
-                            Next
+                            Siguiente
                         </button>
                     </div>
                 </section>
