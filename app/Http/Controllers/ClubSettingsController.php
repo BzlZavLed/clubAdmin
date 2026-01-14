@@ -67,12 +67,14 @@ class ClubSettingsController extends Controller
             'user_id' => $user->id,
             'query' => ['invite_code' => $payload['invite_code']],
             'headers' => [
-                'Authorization' => $token ? 'Bearer ****' . substr($token, -4) : null,
+                'X-Integration-Token' => $token ? '****' . substr($token, -4) : null,
                 'Accept' => 'application/json',
             ],
         ]);
         try {
-            $response = Http::withToken($token)
+            $response = Http::withHeaders([
+                    'X-Integration-Token' => $token,
+                ])
                 ->acceptJson()
                 ->timeout(20)
                 ->get($url, ['invite_code' => $payload['invite_code']]);
