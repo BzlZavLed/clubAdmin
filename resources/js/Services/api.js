@@ -427,6 +427,7 @@ export const exportWorkplanToMyChurchAdmin = async (payload) => {
 }
 
 export const fetchMyChurchAdminCatalog = async (payload) => {
+    console.log(payload);
     const { data } = await axios.post(route('club.settings.catalog'), payload)
     return data
 }

@@ -36,7 +36,7 @@ return [
     ],
     'mychurchadmin' => [
         'base_url' => env('MYCHURCHADMIN_BASE_URL', 'http://localhost:800'),
-        'token' => env('MYCHURCHADMIN_INTEGRATION_TOKEN'),
+        'token' => env('MYCHURCHADMIN_INTEGRATION_TOKEN', default: '5d42105b775991c063d1c1760b7f5bd43c034f9a8a5ac162db4d3136c875a7ec'),
     ],
 
 ];
