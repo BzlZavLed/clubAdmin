@@ -549,7 +549,7 @@ async function saveObjectivesAndExport() {
 }
 
 async function submitExport() {
-    if (!hasClubSelected.value || !isDirector.value || exportLoading.value) return
+    if (!hasClubSelected.value || !isDirector.value) return
     if (missingRecurrentEvents.value.length) {
         openObjectiveModal()
         return
@@ -558,6 +558,9 @@ async function submitExport() {
         openObjectiveModal()
         return
     }
+    exportResponse.value = null
+    exportError.value = null
+    exportResponseOpen.value = false
     exportLoading.value = true
     try {
         const payload = {
@@ -1420,7 +1423,7 @@ watch(userClassId, (val) => {
                     </div>
                     <div class="flex justify-end gap-2">
                         <button class="px-4 py-2 border rounded" @click="exportModalOpen = false">Cancelar</button>
-                        <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" :disabled="exportLoading" @click="submitExport">
+                        <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" @click="submitExport">
                             {{ exportLoading ? 'Exportando...' : 'Exportar' }}
                         </button>
                     </div>

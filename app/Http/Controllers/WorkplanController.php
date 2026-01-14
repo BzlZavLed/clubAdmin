@@ -531,7 +531,9 @@ class WorkplanController extends Controller
         $url = $baseUrl . '/api/integrations/clubs/calendar';
 
         try {
-            $response = Http::withToken($token)->acceptJson()->timeout(20)->post($url, $payload);
+            $response = Http::withHeaders([
+                    'X-Integration-Token' => $token,
+                ])->acceptJson()->timeout(20)->post($url, $payload);
         } catch (\Throwable $e) {
             Log::warning('Workplan export failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Export request failed.'], 502);
@@ -545,10 +547,30 @@ class WorkplanController extends Controller
             ], $response->status());
         }
 
+        $responseData = $response->json();
+        $upstreamStatus = data_get($responseData, 'status');
+        $upstreamImported = data_get($responseData, 'imported');
+
+        if ($upstreamStatus && !in_array($upstreamStatus, ['ok', 'success'], true)) {
+            return response()->json([
+                'message' => 'Export failed.',
+                'status' => $response->status(),
+                'error' => $responseData,
+            ], 422);
+        }
+
+        if ($upstreamImported === 0 && $events->count() > 0) {
+            return response()->json([
+                'message' => 'Export failed.',
+                'status' => $response->status(),
+                'error' => $responseData,
+            ], 422);
+        }
+
         return response()->json([
             'status' => 'ok',
             'sent_events' => $events->count(),
-            'response' => $response->json(),
+            'response' => $responseData,
         ]);
     }
 
