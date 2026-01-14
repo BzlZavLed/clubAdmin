@@ -571,7 +571,7 @@ class WorkplanController extends Controller
             ], 422);
         }
 
-        if ($upstreamImported === 0 && $events->count() > 0) {
+        if ($upstreamImported === 0 && count($events) > 0) {
             return response()->json([
                 'message' => 'Export failed.',
                 'status' => $response->status(),
@@ -581,7 +581,7 @@ class WorkplanController extends Controller
 
         return response()->json([
             'status' => 'ok',
-            'sent_events' => $events->count(),
+            'sent_events' => count($events),
             'response' => $response,
         ]);
     }
