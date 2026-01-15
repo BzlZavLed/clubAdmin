@@ -35,7 +35,6 @@ const props = defineProps({
     }
 })
 const { showToast } = useGeneral()
-console.log('Workplan props', props)
 
 const isDirector = computed(() => props.auth_user?.profile_type === 'club_director')
 const isStaff = computed(() => props.auth_user?.profile_type === 'club_personal')
@@ -572,9 +571,7 @@ async function submitExport() {
         if (exportForm.value.church_slug) {
             payload.church_slug = exportForm.value.church_slug
         }
-        console.log('Export payload', payload)
         const data = await exportWorkplanToMyChurchAdmin(payload)
-        console.log('Export response', data)
         exportResponse.value = data
         exportResponseOpen.value = true
         showToast(`Exported ${data.sent_events || data.imported || 0} events`)
