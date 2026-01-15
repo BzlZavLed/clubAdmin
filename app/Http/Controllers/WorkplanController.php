@@ -530,6 +530,13 @@ class WorkplanController extends Controller
         }
         $url = $baseUrl . '/api/integrations/clubs/calendar';
 
+        Log::info('Workplan export request', [
+            'url' => $url,
+            'club_id' => $clubId,
+            'user_id' => $user->id,
+            'payload' => $payload,
+        ]);
+
         try {
             $response = Http::withHeaders([
                     'X-Integration-Token' => $token,
