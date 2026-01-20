@@ -86,6 +86,7 @@ const eventModalOpen = ref(false)
 const editingEvent = ref(null)
 const eventForm = ref({
     date: todayIso,
+    end_date: '',
     start_time: '',
     end_time: '',
     meeting_type: 'special',
@@ -142,6 +143,23 @@ function prevPage() {
 
 watch(sortedEvents, () => {
     if (currentPage.value > totalPages.value) currentPage.value = totalPages.value
+})
+
+watch(() => eventForm.value.meeting_type, (val) => {
+    if (val !== 'special') {
+        eventForm.value.end_date = ''
+        return
+    }
+    if (!eventForm.value.end_date) {
+        eventForm.value.end_date = eventForm.value.date
+    }
+})
+
+watch(() => eventForm.value.date, (val) => {
+    if (!val || eventForm.value.meeting_type !== 'special') return
+    if (!eventForm.value.end_date || eventForm.value.end_date < val) {
+        eventForm.value.end_date = val
+    }
 })
 
 const pdfHref = computed(() => {
@@ -367,6 +385,11 @@ function formatDateTime(ev) {
     if (!ev?.date) return ''
     const raw = String(ev.date)
     const datePart = raw.includes('T') ? raw.slice(0, 10) : raw
+    const endRaw = ev?.end_date ? String(ev.end_date) : ''
+    const endDatePart = endRaw.includes('T') ? endRaw.slice(0, 10) : endRaw
+    if (endDatePart && endDatePart !== datePart) {
+        return `${datePart} → ${endDatePart}`
+    }
     const time = ev?.start_time ? ev.start_time.slice(0, 5) : ''
     return time ? `${datePart} ${time}` : datePart
 }
@@ -443,8 +466,10 @@ async function applyChanges() {
 function openEventModal(ev = null, date = null) {
     if (isReadOnly.value || !hasClubSelected.value) return
     editingEvent.value = ev
+    const baseDate = normalizeDate(ev?.date) || date || todayIso
     eventForm.value = {
-        date: normalizeDate(ev?.date) || date || todayIso,
+        date: baseDate,
+        end_date: normalizeDate(ev?.end_date) || '',
         start_time: trimTime(ev?.start_time),
         end_time: trimTime(ev?.end_time),
         meeting_type: ev?.meeting_type || 'special',
@@ -653,8 +678,13 @@ async function saveEvent() {
     if (isReadOnly.value) return
     if (!hasClubSelected.value) return
     try {
+        if (eventForm.value.end_date && eventForm.value.end_date < eventForm.value.date) {
+            showToast('La fecha final no puede ser anterior a la fecha inicial', 'warning')
+            return
+        }
         const payload = {
             ...eventForm.value,
+            end_date: eventForm.value.meeting_type === 'special' ? (eventForm.value.end_date || null) : null,
             department_id: eventForm.value.department_id || null,
             objective_id: eventForm.value.objective_id || null,
         }
@@ -1322,7 +1352,7 @@ watch(userClassId, (val) => {
                             <input type="text" v-model="eventForm.title" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Fecha</label>
+                            <label class="block text-sm text-gray-600 mb-1">Fecha inicio</label>
                             <input type="date" v-model="eventForm.date" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
@@ -1332,6 +1362,10 @@ watch(userClassId, (val) => {
                                 <option value="sunday">Domingo</option>
                                 <option value="special">Especial</option>
                             </select>
+                        </div>
+                        <div v-if="eventForm.meeting_type === 'special'" class="col-span-2">
+                            <label class="block text-sm text-gray-600 mb-1">Fecha fin</label>
+                            <input type="date" v-model="eventForm.end_date" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">Hora de inicio</label>

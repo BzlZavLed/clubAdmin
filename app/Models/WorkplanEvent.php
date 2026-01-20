@@ -10,6 +10,7 @@ class WorkplanEvent extends Model
         'workplan_id',
         'generated_from_rule_id',
         'date',
+        'end_date',
         'start_time',
         'end_time',
         'meeting_type',
@@ -26,6 +27,7 @@ class WorkplanEvent extends Model
 
     protected $casts = [
         'date' => 'date',
+        'end_date' => 'date',
         'is_generated' => 'boolean',
         'is_edited' => 'boolean',
     ];

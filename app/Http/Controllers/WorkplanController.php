@@ -158,6 +158,7 @@ class WorkplanController extends Controller
     {
         $payload = $request->validate([
             'date' => ['required', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:date'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_time' => ['nullable', 'date_format:H:i'],
             'meeting_type' => ['required', 'in:sabbath,sunday,special'],
@@ -188,6 +189,7 @@ class WorkplanController extends Controller
 
         $payload = $request->validate([
             'date' => ['required', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:date'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_time' => ['nullable', 'date_format:H:i'],
             'meeting_type' => ['required', 'in:sabbath,sunday,special'],
