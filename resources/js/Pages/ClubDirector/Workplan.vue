@@ -736,6 +736,16 @@ const applyLocation = (item) => {
     locationSuggestions.value = []
 }
 
+const closeLocationSuggestions = () => {
+    locationSuggestions.value = []
+}
+
+const handleLocationBlur = () => {
+    setTimeout(() => {
+        locationSuggestions.value = []
+    }, 150)
+}
+
 const searchPlanLocation = (query) => {
     if (planLocationTimer) clearTimeout(planLocationTimer)
     if (!query || query.length < 3) {
@@ -1380,13 +1390,21 @@ watch(userClassId, (val) => {
                             <div class="relative">
                                 <input type="text" v-model="eventForm.location"
                                     class="w-full border rounded px-3 py-2 text-sm"
-                                    @input="searchLocations(eventForm.location)" autocomplete="off">
+                                    @input="searchLocations(eventForm.location)"
+                                    @blur="handleLocationBlur"
+                                    @keydown.esc="closeLocationSuggestions"
+                                    autocomplete="off">
                                 <div v-if="locationLoading" class="absolute right-2 top-2 text-[11px] text-gray-500">…</div>
                                 <div v-if="locationSuggestions.length"
                                     class="absolute z-30 mt-1 w-full bg-white border rounded shadow text-sm max-h-48 overflow-y-auto">
+                                    <button type="button"
+                                        class="w-full text-left px-3 py-2 text-gray-700 hover:bg-gray-100"
+                                        @mousedown.prevent="closeLocationSuggestions">
+                                        Usar direccion escrita
+                                    </button>
                                     <button v-for="(opt, idx) in locationSuggestions" :key="idx" type="button"
                                         class="w-full text-left px-3 py-2 hover:bg-gray-100"
-                                        @click="applyLocation(opt)">
+                                        @mousedown.prevent="applyLocation(opt)">
                                         {{ opt.label }}
                                     </button>
                                 </div>
