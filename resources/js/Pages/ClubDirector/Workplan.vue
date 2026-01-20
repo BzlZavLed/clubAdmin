@@ -604,6 +604,38 @@ async function submitExport() {
     exportResponseOpen.value = false
     exportLoading.value = true
     try {
+        const invalidEvents = events.value.filter((ev) => {
+            const startDate = normalizeDate(ev.date)
+            const endDate = normalizeDate(ev.end_date || ev.date)
+            if (!startDate || !endDate) return false
+            if (endDate !== startDate) return false
+            const startTime = ev.start_time ? ev.start_time.slice(0, 5) : ''
+            const endTime = ev.end_time ? ev.end_time.slice(0, 5) : ''
+            if (!endTime) return false
+            if (!startTime) return true
+            return endTime <= startTime
+        }).map((ev) => ({
+            incoming_external_id: `workplan-event-${ev.id}`,
+            incoming_title: ev.title,
+            incoming_start_at: `${normalizeDate(ev.date)}T${ev.start_time ? ev.start_time.slice(0, 5) : '00:00'}`,
+            incoming_end_at: `${normalizeDate(ev.end_date || ev.date)}T${ev.end_time ? ev.end_time.slice(0, 5) : '00:00'}`,
+            conflict_type: 'invalid_range',
+            message: 'End time must be after start time.',
+            conflicts: [],
+        }))
+        if (invalidEvents.length) {
+            exportError.value = {
+                message: 'Hay eventos con hora final invalida. Corrige la hora o usa un rango de fechas.',
+                conflicts: invalidEvents,
+                imported: 0,
+                skipped: invalidEvents.length,
+                successes: [],
+                overrides: [],
+            }
+            exportResponseOpen.value = true
+            exportLoading.value = false
+            return
+        }
         const payload = {
             calendar_year: exportForm.value.calendar_year,
             plan_name: exportForm.value.plan_name,

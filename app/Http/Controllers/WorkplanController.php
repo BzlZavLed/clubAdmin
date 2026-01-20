@@ -535,11 +535,29 @@ class WorkplanController extends Controller
         $timezone = $workplan->timezone ?: config('app.timezone');
 
         $defaultDepartmentId = $request->input('department_id');
-        $events = $workplan->events->map(function ($ev) use ($clubType, $planName, $defaultDepartmentId) {
+        $invalidEvents = [];
+        $events = $workplan->events->map(function ($ev) use ($clubType, $planName, $defaultDepartmentId, &$invalidEvents) {
             $date = $ev->date instanceof Carbon ? $ev->date->toDateString() : (string) $ev->date;
+            $endDate = $ev->end_date instanceof Carbon ? $ev->end_date->toDateString() : ($ev->end_date ? (string) $ev->end_date : $date);
             $startTime = $ev->start_time ? substr($ev->start_time, 0, 5) . ':00' : '00:00:00';
             $endTime = $ev->end_time ? substr($ev->end_time, 0, 5) . ':00' : $startTime;
             $departmentId = $ev->department_id ?? $defaultDepartmentId;
+
+            if ($endDate === $date) {
+                $startComparable = $ev->start_time ? substr($ev->start_time, 0, 5) : '';
+                $endComparable = $ev->end_time ? substr($ev->end_time, 0, 5) : '';
+                if ($endComparable && (!$startComparable || $endComparable <= $startComparable)) {
+                    $invalidEvents[] = [
+                        'incoming_external_id' => 'workplan-event-' . $ev->id,
+                        'incoming_title' => $ev->title ?: ucfirst($ev->meeting_type) . ' Meeting',
+                        'incoming_start_at' => $date . 'T' . ($startComparable ?: '00:00'),
+                        'incoming_end_at' => $endDate . 'T' . ($endComparable ?: '00:00'),
+                        'conflict_type' => 'invalid_range',
+                        'message' => 'End time must be after start time.',
+                        'conflicts' => [],
+                    ];
+                }
+            }
 
             return [
                 'external_id' => 'workplan-event-' . $ev->id,
@@ -547,7 +565,7 @@ class WorkplanController extends Controller
                 'description' => $ev->description,
                 'location' => $ev->location,
                 'start_at' => $date . 'T' . $startTime,
-                'end_at' => $date . 'T' . $endTime,
+                'end_at' => $endDate . 'T' . $endTime,
                 'department_id' => (int) ($departmentId ?? 0),
                 'objective_id' => (int) ($ev->objective_id ?? 0),
                 'is_special' => $ev->meeting_type === 'special',
@@ -555,6 +573,21 @@ class WorkplanController extends Controller
                 'plan_name' => $planName,
             ];
         })->values()->all();
+
+        if (count($invalidEvents)) {
+            return response()->json([
+                'message' => 'Export failed.',
+                'status' => 422,
+                'error' => [
+                    'status' => 'invalid_events',
+                    'imported' => 0,
+                    'skipped' => count($invalidEvents),
+                    'successes' => [],
+                    'conflicts' => $invalidEvents,
+                    'overrides' => [],
+                ],
+            ], 422);
+        }
 
         $payload = [
             'church_slug' => $churchSlug,
