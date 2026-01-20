@@ -15,7 +15,7 @@ import {
     exportWorkplanToMyChurchAdmin,
     deleteWorkplan
 } from '@/Services/api'
-import { ArrowDownTrayIcon, CalendarDaysIcon } from '@heroicons/vue/24/outline'
+import { ArrowDownTrayIcon, CalendarDaysIcon, TableCellsIcon } from '@heroicons/vue/24/outline'
 import WorkplanCalendar from '@/Components/WorkplanCalendar.vue'
 
 const props = defineProps({
@@ -154,6 +154,12 @@ const icsHref = computed(() => {
     if (!hasClubSelected.value) return '#'
     const params = { club_id: selectedClubId.value }
     return isDirector.value ? route('club.workplan.ics', params) : route('club.personal.workplan.ics', params)
+})
+
+const tablePdfHref = computed(() => {
+    if (!hasClubSelected.value || !isDirector.value) return '#'
+    const params = { club_id: selectedClubId.value }
+    return safeRoute('club.workplan.table.pdf', params, '/club-director/workplan/table-pdf')
 })
 
 const needsApprovalOnly = ref(false)
@@ -957,6 +963,10 @@ watch(userClassId, (val) => {
                         <a :href="hasClubSelected ? pdfHref : '#'" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
                             <ArrowDownTrayIcon class="w-4 h-4" />
                             <span class="sr-only">Descargar PDF</span>
+                        </a>
+                        <a :href="tablePdfHref" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="(!hasClubSelected || !isDirector) && 'opacity-50 pointer-events-none'">
+                            <TableCellsIcon class="w-4 h-4" />
+                            <span>Tabla</span>
                         </a>
                         <a :href="hasClubSelected ? icsHref : '#'" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
                             <CalendarDaysIcon class="w-4 h-4" />

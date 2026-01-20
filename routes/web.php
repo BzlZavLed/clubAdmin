@@ -220,6 +220,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::delete('/club-director/workplan', [WorkplanController::class, 'destroy'])->name('club.workplan.destroy');
     Route::post('/club-director/workplan/export', [WorkplanController::class, 'exportToMyChurchAdmin'])->name('club.workplan.export');
     Route::get('/club-director/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.workplan.pdf');
+    Route::get('/club-director/workplan/table-pdf', [WorkplanController::class, 'tablePdf'])->name('club.workplan.table.pdf');
     Route::get('/club-director/workplan/ics', [WorkplanController::class, 'ics'])->name('club.workplan.ics');
     Route::get('/club-director/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('club.workplan.class-plans.pdf');
     Route::put('/club-director/class-plans/{plan}/status', [\App\Http\Controllers\ClassPlanController::class, 'updateStatus'])->name('club.workplan.class-plans.status');

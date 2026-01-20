@@ -388,6 +388,50 @@ class WorkplanController extends Controller
         return $pdf->download($filename);
     }
 
+    public function tablePdf(Request $request)
+    {
+        $user = $request->user();
+        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
+        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
+            abort(403, 'Not allowed to view this club workplan.');
+        }
+
+        $workplan = $this->getWorkplanForUser($user, $selectedClubId, false);
+        if (!$workplan) {
+            abort(404, 'No workplan found for this club.');
+        }
+        $workplan = $workplan->load([
+            'club',
+            'events' => function ($q) {
+                $q->orderBy('date')->orderBy('start_time');
+            },
+        ]);
+
+        $integrationConfig = ClubIntegrationConfig::where('club_id', $selectedClubId)->first();
+        $departments = collect($integrationConfig?->departments ?? [])
+            ->mapWithKeys(function ($dept) {
+                $id = data_get($dept, 'id');
+                if ($id === null) return [];
+                return [(string) $id => (string) data_get($dept, 'name', '')];
+            });
+        $objectives = collect($integrationConfig?->objectives ?? [])
+            ->mapWithKeys(function ($obj) {
+                $id = data_get($obj, 'id');
+                if ($id === null) return [];
+                return [(string) $id => (string) data_get($obj, 'name', '')];
+            });
+
+        $pdf = Pdf::loadView('pdf.workplan_table', [
+            'workplan' => $workplan,
+            'departments' => $departments,
+            'objectives' => $objectives,
+        ])->setPaper('a4', 'landscape');
+
+        $filename = 'workplan-table-' . ($workplan->club->club_name ?? 'club') . '.pdf';
+        return $pdf->download($filename);
+    }
+
     public function ics(Request $request)
     {
         $user = $request->user();
