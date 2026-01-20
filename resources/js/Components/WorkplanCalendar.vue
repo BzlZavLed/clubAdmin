@@ -43,12 +43,16 @@ const eventsByDate = computed(() => {
         const end = normalizeDate(ev.end_date || ev.date)
         if (!start) continue
         const occurrences = expandDateRange(start, end)
+        const isMultiDay = Boolean(end && start && end !== start)
         occurrences.forEach((dateStr) => {
             if (!grouped[dateStr]) grouped[dateStr] = []
             grouped[dateStr].push({
                 ...ev,
                 _occurrence_key: `${ev.id || 'event'}-${dateStr}`,
                 _occurrence_date: dateStr,
+                _range_start: dateStr === start,
+                _range_end: dateStr === end,
+                _is_multi_day: isMultiDay,
             })
         })
     }
@@ -163,6 +167,25 @@ function formatTimeRange(ev) {
     return start || end || ''
 }
 
+function formatRangeLabel(ev) {
+    if (!ev?._is_multi_day || !ev?._range_start) return ''
+    const end = normalizeDate(ev.end_date || ev.date)
+    if (!end || end === normalizeDate(ev.date)) return ''
+    return `→ ${end}`
+}
+
+function rangePillClass(ev) {
+    if (!ev?._is_multi_day) return 'rounded'
+    if (ev._range_start && ev._range_end) return 'rounded'
+    if (ev._range_start) return 'rounded-l'
+    if (ev._range_end) return 'rounded-r'
+    return 'rounded-none'
+}
+
+function rangeBarClass(ev) {
+    return `${badgeColor(ev.meeting_type)} ${rangePillClass(ev)}`
+}
+
 function isToday(dateStr) {
     return normalizeDate(dateStr) === todayIso
 }
@@ -264,23 +287,26 @@ watch(() => props.events, (newVal) => {
                         <div
                             v-for="ev in cell.events"
                             :key="ev._occurrence_key || ev.id"
-                            class="text-[11px] rounded px-2 py-1 border cursor-pointer"
-                            :class="badgeColor(ev.meeting_type)"
+                            class="text-[11px] px-2 py-1 border cursor-pointer"
+                            :class="rangeBarClass(ev)"
                             data-calendar-action
                             @click="emit('edit', ev)"
                         >
-                            <div class="flex items-center justify-between gap-2">
-                                <span class="font-semibold truncate">{{ ev.title }}</span>
-                                <span
-                                    v-if="ev.is_generated"
-                                    class="inline-flex items-center justify-center text-[10px] font-semibold w-5 h-5 rounded-full border border-black text-black bg-white"
-                                >
-                                    A
-                                </span>
+                            <div v-if="!ev._is_multi_day || ev._range_start">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="font-semibold truncate">{{ ev.title }}</span>
+                                    <span
+                                        v-if="ev.is_generated"
+                                        class="inline-flex items-center justify-center text-[10px] font-semibold w-5 h-5 rounded-full border border-black text-black bg-white"
+                                    >
+                                        A
+                                    </span>
+                                </div>
+                                <div class="text-[10px] text-gray-700 leading-tight truncate min-w-0">
+                                    {{ formatTimeRange(ev) }} <span v-if="formatRangeLabel(ev)">{{ formatRangeLabel(ev) }}</span>
+                                </div>
                             </div>
-                            <div class="text-[10px] text-gray-700 leading-tight truncate min-w-0">
-                                {{ formatTimeRange(ev) }}
-                            </div>
+                            <div v-else class="h-2"></div>
                         </div>
                         <div v-if="cell.events.length === 0" class="text-[11px] text-gray-500">No events</div>
                     </div>
@@ -319,23 +345,26 @@ watch(() => props.events, (newVal) => {
                             <div
                                 v-for="ev in cell.events"
                                 :key="ev._occurrence_key || ev.id"
-                                class="text-[11px] sm:text-xs rounded px-2 py-1 border cursor-pointer"
-                                :class="badgeColor(ev.meeting_type)"
+                                class="text-[11px] sm:text-xs px-2 py-1 border cursor-pointer"
+                                :class="rangeBarClass(ev)"
                                 data-calendar-action
                                 @click="emit('edit', ev)"
                             >
-                                <div class="flex items-center justify-between gap-2">
-                                    <span class="font-semibold truncate">{{ ev.title }}</span>
-                                    <span
-                                        v-if="ev.is_generated"
-                                        class="inline-flex items-center justify-center text-[10px] font-semibold w-5 h-5 rounded-full border border-black text-black bg-white"
-                                    >
-                                        A
-                                    </span>
+                                <div v-if="!ev._is_multi_day || ev._range_start">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="font-semibold truncate">{{ ev.title }}</span>
+                                        <span
+                                            v-if="ev.is_generated"
+                                            class="inline-flex items-center justify-center text-[10px] font-semibold w-5 h-5 rounded-full border border-black text-black bg-white"
+                                        >
+                                            A
+                                        </span>
+                                    </div>
+                                    <div class="text-[10px] sm:text-[11px] text-gray-700 leading-tight truncate min-w-0">
+                                        {{ formatTimeRange(ev) }} <span v-if="formatRangeLabel(ev)">{{ formatRangeLabel(ev) }}</span>
+                                    </div>
                                 </div>
-                                <div class="text-[10px] sm:text-[11px] text-gray-700 leading-tight truncate min-w-0">
-                                    {{ formatTimeRange(ev) }}
-                                </div>
+                                <div v-else class="h-2"></div>
                             </div>
                         </div>
                     </div>
