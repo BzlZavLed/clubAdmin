@@ -233,6 +233,17 @@ const exportForm = ref({
     church_slug: '',
     department_id: ''
 })
+
+const exportSummary = computed(() => {
+    const data = exportResponse.value || exportError.value
+    if (!data) return null
+    return data.error || data
+})
+
+const exportMessage = computed(() => {
+    const data = exportResponse.value || exportError.value
+    return data?.message || ''
+})
 const planForm = ref({
     workplan_event_id: null,
     class_id: null,
@@ -1498,26 +1509,30 @@ watch(userClassId, (val) => {
                             <div class="font-semibold">Resumen de exportacion</div>
                             <button class="text-xs text-gray-500" @click="exportResponseOpen = false">Ocultar</button>
                         </div>
-                        <div v-if="exportResponse" class="space-y-3">
+                        <div v-if="exportError" class="text-[11px] text-red-700 mb-2">
+                            <div class="font-semibold mb-1">Error de exportacion</div>
+                            <div>{{ exportMessage || 'Fallo la exportacion' }}</div>
+                        </div>
+                        <div v-if="exportSummary" class="space-y-3">
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                                 <div class="bg-white border rounded p-2">
                                     <div class="text-gray-500">Estado</div>
-                                    <div class="font-semibold">{{ exportResponse.status || 'ok' }}</div>
+                                    <div class="font-semibold">{{ exportSummary.status || 'ok' }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
                                     <div class="text-gray-500">Importados</div>
-                                    <div class="font-semibold">{{ exportResponse.imported ?? exportResponse.sent_events ?? 0 }}</div>
+                                    <div class="font-semibold">{{ exportSummary.imported ?? exportSummary.sent_events ?? 0 }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
                                     <div class="text-gray-500">Omitidos</div>
-                                    <div class="font-semibold">{{ exportResponse.skipped ?? 0 }}</div>
+                                    <div class="font-semibold">{{ exportSummary.skipped ?? 0 }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
                                     <div class="text-gray-500">Conflictos</div>
-                                    <div class="font-semibold">{{ exportResponse.conflicts?.length || 0 }}</div>
+                                    <div class="font-semibold">{{ exportSummary.conflicts?.length || 0 }}</div>
                                 </div>
                             </div>
-                            <div v-if="exportResponse.conflicts?.length" class="border rounded bg-white">
+                            <div v-if="exportSummary.conflicts?.length" class="border rounded bg-white">
                                 <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Conflictos</div>
                                 <div class="max-h-48 overflow-y-auto">
                                     <table class="min-w-full text-[11px]">
@@ -1529,7 +1544,7 @@ watch(userClassId, (val) => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-for="(conflict, idx) in exportResponse.conflicts" :key="`conflict-${idx}`" class="border-t">
+                                            <tr v-for="(conflict, idx) in exportSummary.conflicts" :key="`conflict-${idx}`" class="border-t">
                                                 <td class="py-1 px-2">{{ conflict.incoming_title }}</td>
                                                 <td class="py-1 px-2">{{ conflict.message }}</td>
                                                 <td class="py-1 px-2">{{ conflict.conflict_type }}</td>
@@ -1538,7 +1553,7 @@ watch(userClassId, (val) => {
                                     </table>
                                 </div>
                             </div>
-                            <div v-if="exportResponse.successes?.length" class="border rounded bg-white">
+                            <div v-if="exportSummary.successes?.length" class="border rounded bg-white">
                                 <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Eventos importados</div>
                                 <div class="max-h-32 overflow-y-auto">
                                     <table class="min-w-full text-[11px]">
@@ -1550,7 +1565,7 @@ watch(userClassId, (val) => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-for="row in exportResponse.successes" :key="`success-${row.external_id}`" class="border-t">
+                                            <tr v-for="row in exportSummary.successes" :key="`success-${row.external_id}`" class="border-t">
                                                 <td class="py-1 px-2">{{ row.title }}</td>
                                                 <td class="py-1 px-2">{{ row.start_at }}</td>
                                                 <td class="py-1 px-2">{{ row.review_status || 'pendiente' }}</td>
@@ -1559,10 +1574,6 @@ watch(userClassId, (val) => {
                                     </table>
                                 </div>
                             </div>
-                        </div>
-                        <div v-else-if="exportError" class="text-[11px] text-red-700">
-                            <div class="font-semibold mb-1">Error de exportacion</div>
-                            <div>{{ exportError.message || 'Fallo la exportacion' }}</div>
                         </div>
                     </div>
                 </div>
