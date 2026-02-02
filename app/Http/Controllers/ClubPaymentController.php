@@ -109,6 +109,7 @@ class ClubPaymentController extends Controller
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
                 'concept:id,concept,amount',
+                'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
             ])
             ->get()
@@ -119,6 +120,9 @@ class ClubPaymentController extends Controller
                     'id' => $p->id,
                     'club_id' => $p->club_id,
                     'payment_concept_id' => $p->payment_concept_id,
+                    'concept_text' => $p->concept_text,
+                    'pay_to' => $p->pay_to,
+                    'account_label' => $p->account?->label,
                     'member_id' => $p->member_id,
                     'staff_id' => $p->staff_id,
                     'amount_paid' => $p->amount_paid,
@@ -229,6 +233,11 @@ class ClubPaymentController extends Controller
             ->orderByDesc('created_at')
             ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id']);
 
+        $accounts = Account::query()
+            ->whereIn('club_id', $clubIds)
+            ->orderBy('label')
+            ->get(['id', 'club_id', 'pay_to', 'label', 'balance']);
+
         $recent = Payment::query()
             ->whereIn('club_id', $clubIds)
             ->latest()
@@ -238,6 +247,7 @@ class ClubPaymentController extends Controller
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
                 'concept:id,concept,amount',
+                'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
             ])
             ->get()
@@ -248,6 +258,9 @@ class ClubPaymentController extends Controller
                     'id' => $p->id,
                     'club_id' => $p->club_id,
                     'payment_concept_id' => $p->payment_concept_id,
+                    'concept_text' => $p->concept_text,
+                    'pay_to' => $p->pay_to,
+                    'account_label' => $p->account?->label,
                     'member_id' => $p->member_id,
                     'staff_id' => $p->staff_id,
                     'amount_paid' => $p->amount_paid,
@@ -283,6 +296,7 @@ class ClubPaymentController extends Controller
                     'members' => $members,
                     'staff' => $staff,
                     'concepts' => $concepts,
+                    'accounts' => $accounts,
                     'payments' => $recent,
                     'payment_types' => ['zelle', 'cash', 'check'],
                 ]
@@ -297,6 +311,7 @@ class ClubPaymentController extends Controller
             'members' => $members,
             'staff' => $staff,
             'concepts' => $concepts,
+            'accounts' => $accounts,
             'payments' => $recent,
             'payment_types' => ['zelle', 'cash', 'check'],
         ]);
@@ -312,7 +327,10 @@ class ClubPaymentController extends Controller
         $user = $request->user();
 
         $validated = $request->validate([
-            'payment_concept_id' => ['required', 'integer', 'exists:payment_concepts,id'],
+            'payment_concept_id' => ['nullable', 'integer', 'exists:payment_concepts,id'],
+            'concept_text' => ['nullable', 'string', 'max:255', 'required_without:payment_concept_id'],
+            'pay_to' => ['nullable', 'string', 'max:255'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
             'member_id' => ['nullable', 'integer', 'exists:members,id'],
             'staff_id' => ['nullable', 'integer', 'exists:staff,id'],
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
@@ -330,27 +348,53 @@ class ClubPaymentController extends Controller
             return response()->json(['message' => 'Provide exactly one payer: member OR staff.'], 422);
         }
 
-        // Load concept (must belong to a club this user owns)
-        $concept = PaymentConcept::query()
-            ->where('id', $validated['payment_concept_id'])
-            ->where('status', 'active')
-            ->firstOrFail();
-
-        // Club-personal users may record payments only for clubs they can access (pivot/explicit/owned)
         $allowedClubIds = ClubHelper::clubIdsForUser($user);
-        if (!$allowedClubIds->contains((int) $concept->club_id)) {
-            abort(403, 'You cannot record payments for this club.');
+
+        $concept = null;
+        $clubId = null;
+        $expected = null;
+        $payTo = null;
+        $conceptText = $validated['concept_text'] ?? null;
+
+        if (!empty($validated['payment_concept_id'])) {
+            $concept = PaymentConcept::query()
+                ->where('id', $validated['payment_concept_id'])
+                ->where('status', 'active')
+                ->firstOrFail();
+
+            if (!$allowedClubIds->contains((int) $concept->club_id)) {
+                abort(403, 'You cannot record payments for this club.');
+            }
+
+            $clubId = $concept->club_id;
+            $expected = $concept->amount !== null ? (float) $concept->amount : 0.0;
+            $payTo = $concept->pay_to ?? 'club_budget';
+            $conceptText = null;
+        } else {
+            $clubId = (int) ($validated['club_id'] ?? 0);
+            if (!$clubId || !$allowedClubIds->contains($clubId)) {
+                abort(403, 'You cannot record payments for this club.');
+            }
+            $payTo = $validated['pay_to'] ?? 'club_budget';
         }
 
-        $clubId = $concept->club_id;
-
-        $expected = $concept->amount !== null ? (float) $concept->amount : 0.0;
-        $payTo = $concept->pay_to ?? 'unassigned';
+        $account = Account::query()
+            ->where('club_id', $clubId)
+            ->where('pay_to', $payTo)
+            ->first();
+        if (!$account) {
+            $account = Account::create([
+                'club_id' => $clubId,
+                'pay_to' => $payTo,
+                'label' => \Illuminate\Support\Str::title(str_replace('_', ' ', $payTo)),
+                'balance' => 0,
+            ]);
+        }
 
         // Sum prior paid for this (concept, payer) pair (exclude soft-deleted)
         $priorPaidQuery = Payment::query()
             ->where('club_id', $clubId)
-            ->where('payment_concept_id', $concept->id);
+            ->when($concept, fn($q) => $q->where('payment_concept_id', $concept->id));
 
         if ($isMember) {
             $priorPaidQuery->where('member_id', $validated['member_id']);
@@ -360,17 +404,14 @@ class ClubPaymentController extends Controller
 
         $priorPaid = (float) ($priorPaidQuery->sum('amount_paid'));
 
-        // Remaining before this payment
-        $remainingBefore = max($expected - $priorPaid, 0.0);
+        $remainingBefore = $expected !== null ? max($expected - $priorPaid, 0.0) : null;
 
-        // Cap the current amount so it never goes over remaining (or enforce error)
         $amountPaid = (float) $validated['amount_paid'];
-        if ($expected > 0 && $amountPaid > $remainingBefore) {
-            // You can either clamp or return an error; here we clamp:
+        if ($expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
             $amountPaid = $remainingBefore;
         }
 
-        $balanceAfter = max($expected - ($priorPaid + $amountPaid), 0.0);
+        $balanceAfter = $expected !== null ? max($expected - ($priorPaid + $amountPaid), 0.0) : null;
 
         if ($validated['payment_type'] === 'zelle' && empty($validated['zelle_phone'])) {
             return response()->json(['message' => 'Zelle payments require a phone number.'], 422);
@@ -383,10 +424,13 @@ class ClubPaymentController extends Controller
         }
 
         $payment = null;
-        DB::transaction(function () use ($clubId, $concept, $validated, $expected, $amountPaid, $balanceAfter, $zellePhone, $checkImagePath, $payTo, &$payment) {
+        DB::transaction(function () use ($clubId, $concept, $validated, $expected, $amountPaid, $balanceAfter, $zellePhone, $checkImagePath, $payTo, $conceptText, $account, &$payment) {
             $payment = Payment::create([
                 'club_id' => $clubId,
-                'payment_concept_id' => $concept->id,
+                'payment_concept_id' => $concept?->id,
+                'concept_text' => $conceptText,
+                'pay_to' => $payTo,
+                'account_id' => $account?->id,
                 'member_id' => $validated['member_id'] ?? null,
                 'staff_id' => $validated['staff_id'] ?? null,
                 'amount_paid' => $amountPaid,

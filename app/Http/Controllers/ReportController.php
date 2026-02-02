@@ -12,7 +12,6 @@ use App\Models\MemberAdventurer;
 use App\Models\StaffAdventurer;
 use App\Models\ClubClass;
 use App\Models\ScopeType;
-use App\Models\PayToOption;
 use App\Models\Payment;
 use App\Models\Expense;
 use App\Models\Account;
@@ -127,19 +126,12 @@ class ReportController extends Controller
 
         $scopeTypes = $clubScopeTypes->concat($globalScopeTypes)->values();
 
-        // --- Catalogs: Pay-To Options ---
-        $clubPayTo = PayToOption::active()
+        // --- Catalogs: Pay-To Options (from accounts) ---
+        $payToOptions = Account::query()
             ->where('club_id', $club->id)
             ->orderBy('label')
-            ->get(['id', 'value', 'label', 'club_id', 'status']);
-
-        $globalPayTo = PayToOption::active()
-            ->whereNull('club_id')
-            ->whereNotIn('value', $clubPayTo->pluck('value'))
-            ->orderBy('label')
-            ->get(['id', 'value', 'label', 'club_id', 'status']);
-
-        $payToOptions = $clubPayTo->concat($globalPayTo)->values();
+            ->get(['id', 'pay_to as value', 'label', 'club_id'])
+            ->values();
 
 
 
@@ -269,7 +261,7 @@ class ReportController extends Controller
 
         // Base validation (shared)
         $validated = $request->validate([
-            'mode' => ['required', Rule::in(['concept', 'scope', 'date', 'member'])],
+            'mode' => ['required', Rule::in(['concept', 'scope', 'account', 'date', 'member'])],
             'concept_id' => ['nullable', 'integer', Rule::exists('payment_concepts', 'id')->where(fn($q) => $q->where('club_id', $clubId))],
             'scope_type' => ['nullable', 'string'],
             'scope_id' => ['nullable', 'integer'],
@@ -278,6 +270,7 @@ class ReportController extends Controller
             'date' => ['nullable', 'date'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'pay_to' => ['nullable', 'string', 'max:255'],
             'paginate' => ['sometimes', 'boolean'],   // optional: to enable pagination
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
@@ -286,6 +279,16 @@ class ReportController extends Controller
         $mode = $validated['mode'];
         $paginate = (bool) ($validated['paginate'] ?? false);
         $perPage = (int) ($validated['per_page'] ?? 100);
+        $payTo = $validated['pay_to'] ?? null;
+        if ($payTo) {
+            $exists = Account::query()
+                ->where('club_id', $club->id)
+                ->where('pay_to', $payTo)
+                ->exists();
+            if (!$exists) {
+                return response()->json(['message' => 'Cuenta invalida.'], 422);
+            }
+        }
 
 
         switch ($mode) {
@@ -309,6 +312,9 @@ class ReportController extends Controller
                         'receivedBy:id,name',
                     ])
                     ->orderBy('payment_date')->orderBy('id');
+                if ($payTo) {
+                    $q->where('pay_to', $payTo);
+                }
 
                 if (!empty($validated['date_from']) || !empty($validated['date_to'])) {
                     $from = $validated['date_from'] ?? '1900-01-01';
@@ -335,6 +341,121 @@ class ReportController extends Controller
                         'concept' => ['id' => $concept->id, 'concept' => $concept->concept, 'amount' => $concept->amount, 'payment_expected_by' => $concept->payment_expected_by],
                         'payments' => $paginate ? $page : $rows,
                         'summary' => $summary,
+                    ]
+                ]);
+            }
+
+            case 'account': {
+                $conceptId = $validated['concept_id'] ?? null;
+
+                $paymentsQ = Payment::query()
+                    ->where('club_id', $club->id)
+                    ->with([
+                        'member:id,type,id_data',
+                        'staff:id,type,id_data,user_id',
+                        'staff.user:id,name',
+                        'concept:id,concept,amount',
+                        'receivedBy:id,name',
+                    ]);
+
+                if ($payTo) {
+                    $paymentsQ->where('pay_to', $payTo);
+                }
+                if ($conceptId) {
+                    $paymentsQ->where('payment_concept_id', $conceptId);
+                }
+
+                if (!empty($validated['date_from']) || !empty($validated['date_to'])) {
+                    $from = $validated['date_from'] ?? '1900-01-01';
+                    $to = $validated['date_to'] ?? '2999-12-31';
+                    $paymentsQ->whereBetween('payment_date', [$from, $to]);
+                } elseif (!empty($validated['date'])) {
+                    $paymentsQ->whereDate('payment_date', $validated['date']);
+                }
+
+                $payments = $this->attachPaymentPayerNames($paymentsQ->get());
+
+                $expensesQ = Expense::query()
+                    ->where('club_id', $club->id);
+
+                if ($payTo) {
+                    $expensesQ->where('pay_to', $payTo);
+                }
+                if (!empty($validated['date_from']) || !empty($validated['date_to'])) {
+                    $from = $validated['date_from'] ?? '1900-01-01';
+                    $to = $validated['date_to'] ?? '2999-12-31';
+                    $expensesQ->whereBetween('expense_date', [$from, $to]);
+                } elseif (!empty($validated['date'])) {
+                    $expensesQ->whereDate('expense_date', $validated['date']);
+                }
+
+                $expenses = $expensesQ->get([
+                    'id',
+                    'pay_to',
+                    'amount',
+                    'expense_date',
+                    'description',
+                    'status',
+                    'reimbursed_to',
+                ]);
+
+                $accountLabels = Account::query()
+                    ->where('club_id', $club->id)
+                    ->get(['pay_to', 'label'])
+                    ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
+                    ->all();
+
+                $entriesByAccount = [];
+
+                foreach ($payments as $p) {
+                    $key = $p->pay_to ?? 'unknown';
+                    $entriesByAccount[$key][] = [
+                        'entry_type' => 'payment',
+                        'id' => $p->id,
+                        'date' => $p->payment_date,
+                        'amount' => (float) $p->amount_paid,
+                        'payment_type' => $p->payment_type,
+                        'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
+                        'member' => $p->member?->applicant_name ?? null,
+                        'staff' => $p->staff?->name ?? null,
+                    ];
+                }
+
+                foreach ($expenses as $e) {
+                    $key = $e->pay_to ?? 'unknown';
+                    $entriesByAccount[$key][] = [
+                        'entry_type' => 'expense',
+                        'id' => $e->id,
+                        'date' => $e->expense_date,
+                        'amount' => (float) $e->amount,
+                        'payment_type' => null,
+                        'concept' => $e->description ?? '—',
+                        'member' => null,
+                        'staff' => $e->reimbursed_to,
+                    ];
+                }
+
+                $accountsReport = collect($entriesByAccount)->map(function ($entries, $payToKey) use ($accountLabels) {
+                    usort($entries, fn($a, $b) => strcmp($a['date'], $b['date']));
+                    $paid = array_sum(array_map(fn($e) => $e['entry_type'] === 'payment' ? $e['amount'] : 0, $entries));
+                    $spent = array_sum(array_map(fn($e) => $e['entry_type'] === 'expense' ? $e['amount'] : 0, $entries));
+                    return [
+                        'pay_to' => $payToKey,
+                        'label' => $accountLabels[$payToKey] ?? $payToKey,
+                        'totals' => [
+                            'paid' => $paid,
+                            'spent' => $spent,
+                            'net' => $paid - $spent,
+                        ],
+                        'entries' => $entries,
+                    ];
+                })->values();
+
+                return response()->json([
+                    'data' => [
+                        'mode' => 'account',
+                        'account' => $payTo ? ['pay_to' => $payTo] : null,
+                        'accounts' => $accountsReport,
                     ]
                 ]);
             }
@@ -456,6 +577,9 @@ class ReportController extends Controller
                         'receivedBy:id,name',
                     ])
                     ->orderBy('payment_date')->orderBy('id');
+                if ($payTo) {
+                    $paymentsQ->where('pay_to', $payTo);
+                }
 
                 if ($from || $to) {
                     $paymentsQ->whereBetween('payment_date', [$from ?? '1900-01-01', $to ?? '2999-12-31']);
@@ -630,20 +754,11 @@ class ReportController extends Controller
 
     protected function buildAccountReportData(Club $club): array
     {
-        // Fetch label map for pay_to (club overrides global)
-        $clubPayTo = PayToOption::active()
+        // Fetch label map for pay_to from accounts
+        $payToLabelMap = Account::query()
             ->where('club_id', $club->id)
-            ->orderBy('label')
-            ->get(['value', 'label']);
-
-        $globalPayTo = PayToOption::active()
-            ->whereNull('club_id')
-            ->whereNotIn('value', $clubPayTo->pluck('value'))
-            ->orderBy('label')
-            ->get(['value', 'label']);
-
-        $payToLabelMap = $clubPayTo->concat($globalPayTo)
-            ->mapWithKeys(fn($p) => [$p->value => $p->label])
+            ->get(['pay_to', 'label'])
+            ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
             ->all();
 
         // Sum payments by pay_to via the concept

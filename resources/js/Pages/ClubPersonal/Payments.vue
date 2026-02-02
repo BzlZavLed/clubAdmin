@@ -66,12 +66,17 @@ const formatISODateLocal = (val) => {
 // ----- Selection State -----
 const selectedMemberId = ref(null)
 const selectedConceptId = ref(null)
+const customConceptMode = ref(false)
+const customConceptText = ref('')
 const selectedConcept = computed(() => props.concepts.find(c => c.id === selectedConceptId.value) || null)
 const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? '')
 
 // ----- Form -----
 const form = useForm({
+    club_id: props.club?.id ?? null,
     payment_concept_id: null,
+    concept_text: '',
+    pay_to: null,
     member_id: null,
     staff_id: null, // reserved for later
     amount_paid: '',
@@ -83,10 +88,21 @@ const form = useForm({
 })
 
 watch(selectedConceptId, (id) => {
+    if (customConceptMode.value) return
     form.payment_concept_id = id ?? null
     // Pre-fill expected amount into amount_paid as a convenience (user can change)
     if (selectedConceptExpected.value && !form.amount_paid) {
         form.amount_paid = String(selectedConceptExpected.value)
+    }
+})
+
+watch(customConceptMode, (val) => {
+    if (val) {
+        selectedConceptId.value = null
+        form.payment_concept_id = null
+        customConceptText.value = ''
+        form.concept_text = ''
+        form.pay_to = 'club_budget'
     }
 })
 
@@ -112,9 +128,22 @@ const submitting = ref(false)
 const submit = async () => {
     submitting.value = true
     form.clearErrors()
+    if (customConceptMode.value && !customConceptText.value) {
+        form.setError('payment_concept_id', 'Ingresa un concepto personalizado.')
+        submitting.value = false
+        return
+    }
     try {
+        if (customConceptMode.value) {
+            form.payment_concept_id = null
+            form.concept_text = customConceptText.value
+            form.pay_to = 'club_budget'
+        }
         await createClubPayment(form.data())
         form.reset('amount_paid', 'notes', 'check_image', 'zelle_phone')
+        if (customConceptMode.value) {
+            customConceptText.value = ''
+        }
         router.reload({ only: ['payments'] })
     } catch (err) {
         if (err?.response?.status === 422) {
@@ -142,7 +171,7 @@ const filteredPayments = computed(() => {
     if (!q) return props.payments || []
     return (props.payments || []).filter(p => {
         const name = (p.member_display_name ?? p.staff_display_name ?? '').toLowerCase()
-        const concept = (p.concept?.concept ?? '').toLowerCase()
+        const concept = (p.concept?.concept ?? p.concept_text ?? '').toLowerCase()
         return name.includes(q) || concept.includes(q)
     })
 })
@@ -201,16 +230,28 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
                     </div>
 
+                    <!-- Concept mode -->
+                    <div class="mt-4 flex items-center gap-2 text-sm">
+                        <label class="inline-flex items-center gap-2">
+                            <input type="checkbox" v-model="customConceptMode" class="text-blue-600 focus:ring-blue-500" />
+                            <span>Custom concept</span>
+                        </label>
+                        <span v-if="customConceptMode" class="text-xs text-gray-500">Posts to club_budget</span>
+                    </div>
+
                     <!-- Concept -->
                     <div class="mt-4">
                         <label class="block text-sm font-medium text-gray-700">Payment concept</label>
-                        <select v-model="selectedConceptId"
+                        <select v-if="!customConceptMode" v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option :value="null" disabled>Select a concept…</option>
                             <option v-for="c in concepts" :key="c.id" :value="c.id">
                                 {{ c.concept }} • {{ c.amount ?? '—' }}
                             </option>
                         </select>
+                        <input v-else v-model="customConceptText" type="text"
+                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="E.g. special class activity" />
                         <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept">
                             <span class="font-medium">Scope:</span>
                             <span>
@@ -386,8 +427,9 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
-                                        <b>{{ p.concept?.concept ?? '—' }}</b>
+                                        <b>{{ p.concept?.concept ?? p.concept_text ?? '—' }}</b>
                                         • Expected: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
+                                        <span v-if="p.account_label || p.pay_to"> • Account: {{ p.account_label ?? p.pay_to }}</span>
                                         • Paid: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
                                         • Date: {{ formatISODateLocal(p.payment_date) }}
                                     </div>

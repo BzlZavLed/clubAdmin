@@ -21,6 +21,7 @@ const props = defineProps({
     members: { type: Array, required: true },
     staff: { type: Array, required: true },
     concepts: { type: Array, required: true },
+    accounts: { type: Array, default: () => [] },
     payments: { type: Array, required: true },
     payment_types: { type: Array, required: true },
 })
@@ -77,11 +78,19 @@ const filteredStaff = computed(() => {
     if (!form.club_id) return props.staff || []
     return (props.staff || []).filter(s => Number(s.club_id) === Number(form.club_id))
 })
+const filteredAccounts = computed(() => {
+    if (!form.club_id) return props.accounts || []
+    return (props.accounts || []).filter(a => Number(a.club_id) === Number(form.club_id))
+})
 
 const selectedConcept = computed(() => filteredConcepts.value.find(c => c.id === selectedConceptId.value) || null)
 const scopesForConcept = computed(() => selectedConcept.value?.scopes ?? [])
 const selectedScope = computed(() => scopesForConcept.value.find(s => s.id === selectedScopeId.value) || null)
 const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? '')
+const customConceptMode = ref(false)
+const customConceptText = ref('')
+const customPayTo = ref(null)
+const customPayerType = ref('member')
 
 const scopePayerType = computed(() => {
     const st = selectedScope.value?.scope_type
@@ -90,6 +99,9 @@ const scopePayerType = computed(() => {
 })
 
 const payeeOptions = computed(() => {
+    if (customConceptMode.value) {
+        return customPayerType.value === 'staff' ? filteredStaff.value : filteredMembers.value
+    }
     const scope = selectedScope.value
     if (!scope) return []
     switch (scope.scope_type) {
@@ -129,6 +141,7 @@ const form = useForm({
 })
 
 watch(selectedConceptId, (id) => {
+    if (customConceptMode.value) return
     form.payment_concept_id = id ?? null
     if (!form.club_id && allowedClubs.value?.length) {
         form.club_id = allowedClubs.value[0].id
@@ -149,6 +162,7 @@ watch(selectedStaffId, (id) => {
 })
 
 watch(selectedScopeId, (id) => {
+    if (customConceptMode.value) return
     form.member_id = null
     form.staff_id = null
     selectedMemberId.value = null
@@ -165,6 +179,9 @@ watch(selectedScopeId, (id) => {
 
 // Reset concept when club changes
 watch(() => form.club_id, () => {
+    if (customConceptMode.value && filteredAccounts.value.length) {
+        customPayTo.value = filteredAccounts.value[0].pay_to
+    }
     selectedConceptId.value = null
     selectedScopeId.value = null
     selectedMemberId.value = null
@@ -189,6 +206,19 @@ watch(allowedClubs, (val) => {
 if (!form.club_id) {
     form.club_id = props.club?.id ?? (allowedClubs.value?.[0]?.id ?? null)
 }
+
+watch(customConceptMode, (val) => {
+    if (val) {
+        selectedConceptId.value = null
+        selectedScopeId.value = null
+        form.payment_concept_id = null
+        selectedMemberId.value = null
+        selectedStaffId.value = null
+        customConceptText.value = ''
+        customPayerType.value = 'member'
+        customPayTo.value = filteredAccounts.value[0]?.pay_to ?? null
+    }
+})
 
 // When club changes, reset selections and pick first concept for that club
 watch(() => form.club_id, () => {
@@ -223,25 +253,47 @@ const submit = async () => {
         form.setError('club_id', 'Selecciona un club.')
         return
     }
-    if (!selectedScope.value) {
-        form.setError('payment_concept_id', 'Selecciona un alcance antes de guardar.')
-        return
-    }
-    if (scopePayerType.value === 'member' && !selectedMemberId.value) {
-        form.setError('member_id', 'Selecciona un miembro para este alcance.')
-        return
-    }
-    if (scopePayerType.value === 'staff' && !selectedStaffId.value) {
-        form.setError('staff_id', 'Selecciona un miembro del personal para este alcance.')
-        return
+    if (customConceptMode.value) {
+        if (!customConceptText.value) {
+            form.setError('payment_concept_id', 'Ingresa un concepto personalizado.')
+            return
+        }
+        if (customPayerType.value === 'member' && !selectedMemberId.value) {
+            form.setError('member_id', 'Selecciona un miembro.')
+            return
+        }
+        if (customPayerType.value === 'staff' && !selectedStaffId.value) {
+            form.setError('staff_id', 'Selecciona personal.')
+            return
+        }
+    } else {
+        if (!selectedScope.value) {
+            form.setError('payment_concept_id', 'Selecciona un alcance antes de guardar.')
+            return
+        }
+        if (scopePayerType.value === 'member' && !selectedMemberId.value) {
+            form.setError('member_id', 'Selecciona un miembro para este alcance.')
+            return
+        }
+        if (scopePayerType.value === 'staff' && !selectedStaffId.value) {
+            form.setError('staff_id', 'Selecciona un miembro del personal para este alcance.')
+            return
+        }
     }
 
     submitting.value = true
     try {
         const payload = { ...form.data() }
-        delete payload.club_id
+        if (customConceptMode.value) {
+            payload.payment_concept_id = null
+            payload.concept_text = customConceptText.value
+            payload.pay_to = customPayTo.value || 'club_budget'
+        }
         await createClubPayment(payload)
         form.reset('amount_paid', 'notes', 'check_image', 'zelle_phone')
+        if (customConceptMode.value) {
+            customConceptText.value = ''
+        }
         router.reload({ only: ['payments'] })
     } catch (err) {
         if (err?.response?.status === 422) {
@@ -272,7 +324,7 @@ const filteredPayments = computed(() => {
     if (!q) return clubFiltered
     return clubFiltered.filter(p => {
         const name = (p.member_display_name ?? p.staff_display_name ?? '').toLowerCase()
-        const concept = (p.concept?.concept ?? '').toLowerCase()
+        const concept = (p.concept?.concept ?? p.concept_text ?? '').toLowerCase()
         return name.includes(q) || concept.includes(q)
     })
 })
@@ -317,17 +369,28 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <h2 class="text-base font-semibold text-gray-900">Registrar un pago</h2>
                     <p class="mt-0.5 text-sm text-gray-600">Selecciona el pagador (miembro o personal) y el concepto.</p>
 
+                    <!-- Concept mode -->
+                    <div class="mt-4 flex items-center gap-2 text-sm">
+                        <label class="inline-flex items-center gap-2">
+                            <input type="checkbox" v-model="customConceptMode" class="text-blue-600 focus:ring-blue-500" />
+                            <span>Concepto personalizado</span>
+                        </label>
+                    </div>
+
                     <!-- Concept -->
                     <div class="mt-4">
                         <label class="block text-sm font-medium text-gray-700">Concepto de pago</label>
-                        <select v-model="selectedConceptId"
+                        <select v-if="!customConceptMode" v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option :value="null" disabled>Selecciona un concepto…</option>
                             <option v-for="c in filteredConcepts" :key="c.id" :value="c.id">
                                 {{ c.concept }} • {{ c.amount ?? '—' }}
                             </option>
                         </select>
-                        <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept">
+                        <input v-else v-model="customConceptText" type="text"
+                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="Ej. Actividad especial Sunbeams" />
+                        <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept && !customConceptMode">
                             <span class="font-medium">Alcance:</span>
                             <span>{{ selectedConcept.scopes?.[0] ? scopeLabel(selectedConcept.scopes[0]) : 'Sin alcance' }}</span>
                             <span class="ml-2">•</span>
@@ -340,15 +403,31 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
                     </div>
 
+                    <div v-if="customConceptMode" class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700">Cuenta (pay_to)</label>
+                        <select v-model="customPayTo"
+                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option v-for="a in filteredAccounts" :key="a.pay_to" :value="a.pay_to">{{ a.label }}</option>
+                        </select>
+                    </div>
+
                     <!-- Payee -->
                     <div class="mt-4">
                         <label class="block text-sm font-medium text-gray-700">Pagador</label>
-                        <div class="text-xs text-gray-600 mb-1" v-if="selectedScope">
+                        <div class="text-xs text-gray-600 mb-1" v-if="selectedScope && !customConceptMode">
                             Alcance: {{ scopeLabel(selectedScope) }}
                         </div>
-                        <div v-else-if="selectedConcept" class="text-xs text-amber-700 mb-1">No hay alcances para este concepto.</div>
-                        <div v-if="scopePayerType === 'member'">
-                            <select v-model="selectedMemberId" :disabled="!selectedScope"
+                        <div v-else-if="selectedConcept && !customConceptMode" class="text-xs text-amber-700 mb-1">No hay alcances para este concepto.</div>
+                        <div v-if="customConceptMode" class="mb-2">
+                            <label class="text-xs text-gray-600">Tipo de pagador</label>
+                            <select v-model="customPayerType"
+                                class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                <option value="member">Miembro</option>
+                                <option value="staff">Personal</option>
+                            </select>
+                        </div>
+                        <div v-if="customConceptMode ? customPayerType === 'member' : scopePayerType === 'member'">
+                            <select v-model="selectedMemberId" :disabled="!selectedScope && !customConceptMode"
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50">
                                 <option :value="null" disabled>Selecciona un miembro…</option>
                                 <option v-for="m in payeeOptions" :key="m.id" :value="m.id">{{ m.applicant_name }}</option>
@@ -357,8 +436,8 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 {{ form.errors.member_id }}
                             </div>
                         </div>
-                        <div v-else-if="scopePayerType === 'staff'">
-                            <select v-model="selectedStaffId" :disabled="!selectedScope"
+                        <div v-else-if="customConceptMode ? customPayerType === 'staff' : scopePayerType === 'staff'">
+                            <select v-model="selectedStaffId" :disabled="!selectedScope && !customConceptMode"
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50">
                                 <option :value="null" disabled>Selecciona personal…</option>
                                 <option v-for="s in payeeOptions" :key="s.id" :value="s.id">{{ s.name }}</option>
@@ -510,6 +589,10 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                             class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium capitalize text-gray-700">
                                             {{ p.payment_type }}
                                         </span>
+                                        <span v-if="p.pay_to || p.account_label"
+                                            class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                                            {{ p.account_label ?? p.pay_to }}
+                                        </span>
 
                                         <span v-if="Number(p.balance_due_after ?? 0) > 0"
                                             class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
@@ -523,8 +606,9 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
-                                        <b>{{ p.concept?.concept ?? '—' }}</b>
+                                        <b>{{ p.concept?.concept ?? p.concept_text ?? '—' }}</b>
                                         • Esperado: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
+                                        <span v-if="p.pay_to || p.account_label"> • Cuenta: {{ p.account_label ?? p.pay_to }}</span>
                                         • Pagado: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
                                         • Fecha: {{ formatISODateLocal(p.payment_date) }}
                                     </div>

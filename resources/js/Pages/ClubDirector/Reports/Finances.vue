@@ -8,13 +8,14 @@ import { fetchFinancialReportBootstrap } from '@/Services/api'
 // ─────────────────────────────────────
 // UI / Filter state
 // ─────────────────────────────────────
-const mode = ref('concept') // 'concept' | 'scope' | 'date' | 'member'
+const mode = ref('account') // 'concept' | 'account'
 
 const selectedConceptId = ref(null)
 const selectedScopeType = ref(null)  // 'club_wide' | 'class' | 'member' | 'staff' | 'staff_wide'
 const selectedScopeId = ref(null)    // e.g. class_id when scope_type === 'class'
 const selectedMemberId = ref(null)
 const selectedStaffId = ref(null)
+const selectedPayTo = ref(null)
 
 const dateFrom = ref('')
 const dateTo = ref('')
@@ -49,6 +50,10 @@ const formatDateMDY = (dateStr) => {
     const yyyy = d.getFullYear()
     return `${mm}-${dd}-${yyyy}`
 }
+const payToLabel = (val) => {
+    const m = payTo.value.find(p => p.value === val)
+    return m?.label || (val ?? '—')
+}
 
 const selectedConcept = computed(() =>
     (concepts.value || []).find(c => c.id === selectedConceptId.value) || null
@@ -67,6 +72,10 @@ const conceptScopeLabel = computed(() => {
     }
 })
 
+const setDefaultPayTo = () => {
+    selectedPayTo.value = 'all'
+}
+
 // For scope filters: only show class list when scope_type === 'class'
 const activeScopeOptions = computed(() => {
     if (selectedScopeType.value !== 'class') return []
@@ -79,7 +88,7 @@ const activeScopeOptions = computed(() => {
 const loading = ref(false)
 
 // Concept mode
-const payments = ref([]) // array of payment rows (concept mode)
+const payments = ref([]) // legacy
 const summary = ref({
     payments_count: 0,
     amount_paid_sum: 0,
@@ -87,6 +96,7 @@ const summary = ref({
     balance_remaining: 0,
     by_payment_type: {},
 })
+const accountsReport = ref([])
 
 // Scope mode
 const scopeBlocks = ref([]) // [{ scope, concepts:[{concept, payments, summary}], summary }]
@@ -154,6 +164,7 @@ const fetchReport = async () => {
     // reset result states
     payments.value = []
     summary.value = { payments_count: 0, amount_paid_sum: 0, expected_sum: 0, balance_remaining: 0, by_payment_type: {} }
+    accountsReport.value = []
     scopeBlocks.value = []
     activeTabForScope.value = {}
 
@@ -167,34 +178,28 @@ const fetchReport = async () => {
     try {
         let params = {}
 
-        if (mode.value === 'concept') {
-            if (!selectedConceptId.value) {
-                reportError.value = 'Selecciona un concepto.'
-                return
-            }
+        if (selectedConceptId.value) {
+            mode.value = 'concept'
             params = { mode: 'concept', concept_id: selectedConceptId.value }
             if (dateFrom.value) params.date_from = dateFrom.value
             if (dateTo.value) params.date_to = dateTo.value
             if (selectedClubId.value) params.club_id = selectedClubId.value
-        } else if (mode.value === 'scope') {
-            params = buildScopePayload()
-            if (selectedClubId.value) params.club_id = selectedClubId.value
+            if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
         } else {
-            reportError.value = 'Solo modo concepto/alcance implementado en este paso.'
-            return
+            mode.value = 'account'
+            params = { mode: 'account' }
+            if (dateFrom.value) params.date_from = dateFrom.value
+            if (dateTo.value) params.date_to = dateTo.value
+            if (selectedClubId.value) params.club_id = selectedClubId.value
+            if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
         }
 
         const { data } = await axios.get(route('financial.report'), { params })
 
-        if (mode.value === 'concept') {
-            payments.value = data?.data?.payments ?? []
-            summary.value = data?.data?.summary ?? summary.value
-        }
-
-        if (mode.value === 'scope') {
-            scopeBlocks.value = data?.data?.scopes ?? []
-            // activeTabForScope stays {} until user clicks; defaults to 0 via currentTabIndex()
-        }
+        accountsReport.value = data?.data?.accounts ?? []
+        payments.value = data?.data?.payments ?? []
+        summary.value = data?.data?.summary ?? summary.value
+        scopeBlocks.value = []
     } catch (e) {
         console.error(e)
         reportError.value = e?.response?.data?.message || 'No se pudo obtener el reporte.'
@@ -236,6 +241,7 @@ onMounted(async () => {
         staff.value = payload.data.staff || []
         scopeTypes.value = payload.data.scope_types || []
         payTo.value = payload.data.pay_to || []
+        setDefaultPayTo()
     } catch (e) {
         console.error(e)
         loadError.value = 'No se pudo cargar la informacion del reporte.'
@@ -258,12 +264,14 @@ watch(selectedClubId, async (id, old) => {
             staff.value = payload.data.staff || []
             scopeTypes.value = payload.data.scope_types || []
             payTo.value = payload.data.pay_to || []
+            setDefaultPayTo()
             // reset selections to avoid cross-club mismatch
             selectedConceptId.value = null
             selectedScopeType.value = null
             selectedScopeId.value = null
             selectedMemberId.value = null
             selectedStaffId.value = null
+            selectedPayTo.value = selectedPayTo.value ?? null
             payments.value = []
             summary.value = { payments_count: 0, amount_paid_sum: 0, expected_sum: 0, balance_remaining: 0, by_payment_type: {} }
             scopeBlocks.value = []
@@ -297,33 +305,26 @@ watch(selectedClubId, async (id, old) => {
             <!-- FILTER BAR -->
             <section class="rounded-2xl border border-gray-200 p-4 shadow-sm">
                 <h2 class="text-base font-semibold text-gray-900">Opciones de filtro</h2>
-                <p class="mt-0.5 text-sm text-gray-600">Genera un reporte financiero por concepto, alcance, fecha o
-                    miembro/personal.</p>
+                <p class="mt-0.5 text-sm text-gray-600">
+                    Puedes generar el reporte solo por cuenta, solo por concepto, o combinando ambos.
+                </p>
 
                 <div v-if="loadError" class="mt-2 text-sm text-red-600">{{ loadError }}</div>
 
-                <!-- Mode selector -->
-                <div class="mt-4 flex flex-wrap gap-3">
-                    <label class="inline-flex items-center gap-2 cursor-pointer text-sm">
-                        <input type="radio" class="text-blue-600" v-model="mode" value="concept" />
-                        <span>Concepto</span>
-                    </label>
-                    <label class="inline-flex items-center gap-2 cursor-pointer text-sm">
-                        <input type="radio" class="text-blue-600" v-model="mode" value="scope" />
-                        <span>Alcance</span>
-                    </label>
-                    <label class="inline-flex items-center gap-2 cursor-pointer text-sm">
-                        <input type="radio" class="text-blue-600" v-model="mode" value="date" />
-                        <span>Fecha / Rango</span>
-                    </label>
-                    <label class="inline-flex items-center gap-2 cursor-pointer text-sm">
-                        <input type="radio" class="text-blue-600" v-model="mode" value="member" />
-                        <span>Miembro / Personal</span>
-                    </label>
+                <!-- Account filter -->
+                <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Cuenta (pay_to)</label>
+                        <select v-model="selectedPayTo"
+                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="all">Todas las cuentas</option>
+                            <option v-for="p in payTo" :key="p.value" :value="p.value">{{ p.label }}</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Concept filters -->
-                <div v-if="mode === 'concept'" class="mt-4 grid gap-3 sm:grid-cols-2">
+                <div class="mt-4 grid gap-3 sm:grid-cols-2">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Concepto</label>
                         <select v-model="selectedConceptId"
@@ -343,94 +344,6 @@ watch(selectedClubId, async (id, old) => {
                     </div>
                 </div>
 
-                <!-- Scope filters -->
-                <div v-if="mode === 'scope'" class="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Tipo de alcance</label>
-                        <select v-model="selectedScopeType"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Selecciona tipo…</option>
-                            <option v-for="c in scopeTypes" :key="c.value" :value="c.value">{{ c.label }}</option>
-                        </select>
-                    </div>
-
-                    <div v-if="selectedScopeType === 'class'">
-                        <label class="block text-sm font-medium text-gray-700">Selecciona clase</label>
-                        <select v-model="selectedScopeId"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Selecciona clase…</option>
-                            <option v-for="cl in activeScopeOptions" :key="cl.id" :value="cl.id">{{ cl.class_name }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <div v-if="selectedScopeType === 'member'">
-                        <label class="block text-sm font-medium text-gray-700">Selecciona miembro</label>
-                        <select v-model="selectedScopeId"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Selecciona miembro…</option>
-                            <option v-for="m in members" :key="m.id" :value="m.id">{{ m.applicant_name }}</option>
-                        </select>
-                    </div>
-
-                    <div v-if="selectedScopeType === 'staff'">
-                        <label class="block text-sm font-medium text-gray-700">Selecciona personal</label>
-                        <select v-model="selectedScopeId"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Selecciona personal…</option>
-                            <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Rango de fechas (opcional)</label>
-                        <div class="mt-1 flex gap-2">
-                            <input type="date" v-model="dateFrom"
-                                class="w-full rounded-lg border-gray-300 py-2 text-sm" />
-                            <input type="date" v-model="dateTo"
-                                class="w-full rounded-lg border-gray-300 py-2 text-sm" />
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Member/Staff (placeholder; not implemented server-side yet) -->
-                <div v-if="mode === 'member'" class="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Miembro</label>
-                        <select v-model="selectedMemberId"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Selecciona miembro…</option>
-                            <option v-for="m in members" :key="m.id" :value="m.id">{{ m.applicant_name }}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Personal</label>
-                        <select v-model="selectedStaffId"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Selecciona personal…</option>
-                            <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Rango de fechas (opcional)</label>
-                        <div class="mt-1 flex gap-2">
-                            <input type="date" v-model="dateFrom"
-                                class="w-full rounded-lg border-gray-300 py-2 text-sm" />
-                            <input type="date" v-model="dateTo"
-                                class="w-full rounded-lg border-gray-300 py-2 text-sm" />
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Date-only (placeholder; not implemented server-side yet) -->
-                <div v-if="mode === 'date'" class="mt-4">
-                    <label class="block text-sm font-medium text-gray-700">Selecciona rango de fechas</label>
-                    <div class="mt-1 flex gap-2">
-                        <input type="date" v-model="dateFrom" class="w-full rounded-lg border-gray-300 py-2 text-sm" />
-                        <input type="date" v-model="dateTo" class="w-full rounded-lg border-gray-300 py-2 text-sm" />
-                    </div>
-                </div>
-
                 <div class="mt-5 flex justify-end">
                     <button @click="fetchReport" :disabled="loading"
                         class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
@@ -440,214 +353,80 @@ watch(selectedClubId, async (id, old) => {
                 </div>
             </section>
 
-            <!-- CONCEPT MODE RESULTS -->
-            <section v-if="payments.length && mode === 'concept'"
-                class="mt-6 rounded-2xl border border-gray-200 shadow-sm overflow-x-auto">
-                <div v-if="selectedConcept" class="mt-4 bg-white p-4 shadow-sm">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div>
-                            <h3 class="text-base font-semibold text-gray-900">{{ selectedConcept.concept }}</h3>
-                            <p class="text-xs text-gray-600">
-                                Alcance: {{ conceptScopeLabel }} •
-                                Vence: {{ formatDateMDY(selectedConcept.payment_expected_by) }}
-                            </p>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-xs text-gray-500">Monto a cobrar</div>
-                            <div class="text-lg font-semibold text-blue-700">{{ fmtMoney(selectedConcept.amount) }}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <table class="min-w-full text-sm text-gray-700">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-2 text-left font-semibold">Fecha</th>
-                            <th class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
-                            <th class="px-4 py-2 text-left font-semibold">Concepto</th>
-                            <th class="px-4 py-2 text-left font-semibold">Monto</th>
-                            <th class="px-4 py-2 text-left font-semibold">Tipo de pago</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="p in payments" :key="p.id" class="border-t">
-                            <td class="px-4 py-2">{{ formatDateMDY(p.payment_date) }}</td>
-                            <td class="px-4 py-2">{{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</td>
-                            <td class="px-4 py-2">{{ p.concept?.concept ?? '—' }}</td>
-                            <td class="px-4 py-2">${{ Number(p.amount_paid ?? 0).toFixed(2) }}</td>
-                            <td class="px-4 py-2 capitalize">{{ p.payment_type }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <!-- Summary (concept mode) -->
-                <div v-if="summary && (summary.amount_paid_sum || summary.expected_sum || summary.balance_remaining)"
-                    class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div>
-                            <h4 class="text-sm font-semibold text-gray-900">Resumen</h4>
-                            <p class="text-xs text-gray-600">Totales para los filtros actuales</p>
-                        </div>
-                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                            <div v-for="item in summaryItems" :key="item.key"
-                                class="flex flex-col text-center sm:text-left">
-                                <span class="text-xs text-gray-500">{{ item.label }}</span>
-                                <span :class="['font-semibold', item.tone]">{{ item.value }}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="my-3 h-px bg-gray-200"></div>
-
-                    <div class="flex flex-wrap items-center gap-4 text-sm text-gray-800">
-                        <div v-for="pt in paymentTypeBreakdown" :key="pt.type" class="flex items-baseline gap-2">
-                            <span class="text-xs text-gray-500 capitalize">{{ pt.type }}</span>
-                            <span class="font-semibold">{{ pt.amount }}</span>
-                            <span class="text-xs text-gray-500">({{ pt.pct }}%)</span>
-                        </div>
-                        <div v-if="!paymentTypeBreakdown.length" class="text-xs text-gray-500">Aun no hay pagos por tipo.
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- SCOPE MODE RESULTS -->
-            <section v-if="mode === 'scope' && scopeBlocks.length" class="mt-6 space-y-8">
-                <div v-for="(blk, sIdx) in scopeBlocks" :key="blk.scope.identity_key"
+            <!-- RESULTS -->
+            <section v-if="accountsReport.length" class="mt-6 space-y-6">
+                <div v-for="acc in accountsReport" :key="acc.pay_to"
                     class="rounded-2xl border border-gray-200 shadow-sm overflow-hidden bg-white">
-
-                    <!-- Scope header + rollup -->
-                    <div class="p-4">
+                    <div class="p-4 border-b border-gray-100">
                         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <div>
-                                <h3 class="text-base font-semibold text-gray-900">{{ blk.scope.label }}</h3>
-                                <p class="text-xs text-gray-600">
-                                    Tipo: {{ blk.scope.type }}
-                                    <span v-if="blk.scope.staff_all"> • Personal completo</span>
-                                </p>
+                                <h3 class="text-base font-semibold text-gray-900">{{ acc.label }}</h3>
+                                <p class="text-xs text-gray-600">{{ acc.pay_to }}</p>
                             </div>
-
-                            <div class="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                    <div v-for="item in summaryItemsFor(blk.summary)" :key="item.key"
-                                        class="flex flex-col text-center sm:text-left">
-                                        <span class="text-xs text-gray-500">{{ item.label }}</span>
-                                        <span :class="['font-semibold', item.tone]">{{ item.value }}</span>
-                                    </div>
+                            <div class="grid grid-cols-3 gap-4 text-right">
+                                <div>
+                                    <div class="text-xs text-gray-500">Ingresos</div>
+                                    <div class="font-semibold text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</div>
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- Scope payment type breakdown -->
-                        <div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-gray-800">
-                            <div v-for="pt in paymentTypeBreakdownFor(blk.summary)" :key="pt.type"
-                                class="flex items-baseline gap-2">
-                                <span class="text-xs text-gray-500 capitalize">{{ pt.type }}</span>
-                                <span class="font-semibold">{{ pt.amount }}</span>
-                                <span class="text-xs text-gray-500">({{ pt.pct }}%)</span>
-                            </div>
-                            <div v-if="!paymentTypeBreakdownFor(blk.summary).length" class="text-xs text-gray-500">
-                                Aun no hay pagos por tipo.
+                                <div>
+                                    <div class="text-xs text-gray-500">Gastos</div>
+                                    <div class="font-semibold text-amber-700">{{ fmtMoney(acc.totals.spent) }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-500">Neto</div>
+                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.net) }}</div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Concept tabs under this scope -->
-                    <div class="px-4">
-                        <div class="flex flex-wrap gap-2 border-b border-gray-200">
-                            <button v-for="(c, tIdx) in blk.concepts" :key="c.concept.id" type="button"
-                                @click="setTab(sIdx, tIdx)" class="px-3 py-2 text-sm" :class="currentTabIndex(sIdx) === tIdx
-                                    ? 'border-b-2 border-blue-600 text-blue-700 font-medium'
-                                    : 'text-gray-600 hover:text-gray-900'">
-                                {{ c.concept.concept }} — {{ fmtMoney(c.concept.amount) }}
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Active concept for this scope -->
-                    <div class="p-4">
-                        <template v-if="blk.concepts.length">
-                            <div class="mb-3 rounded-lg border border-gray-200 bg-white p-3">
-                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                    <div>
-                                        <div class="text-sm font-semibold text-gray-900">
-                                            {{ blk.concepts[currentTabIndex(sIdx)].concept.concept }}
-                                        </div>
-                                        <div class="text-xs text-gray-600">
-                                            Vence: {{
-                                                formatDateMDY(blk.concepts[currentTabIndex(sIdx)].concept.payment_expected_by)
-                                            }}
-                                        </div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-xs text-gray-500">Monto a cobrar</div>
-                                        <div class="text-lg font-semibold text-blue-700">
-                                            {{ fmtMoney(blk.concepts[currentTabIndex(sIdx)].concept.amount) }}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="rounded-2xl border border-gray-200 overflow-x-auto">
-                                <table class="min-w-full text-sm text-gray-700">
-                                    <thead class="bg-gray-50">
-                                        <tr>
-                                            <th class="px-4 py-2 text-left font-semibold">Fecha</th>
-                                            <th class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
-                                            <th class="px-4 py-2 text-left font-semibold">Concepto</th>
-                                            <th class="px-4 py-2 text-left font-semibold">Monto</th>
-                                            <th class="px-4 py-2 text-left font-semibold">Tipo de pago</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="p in blk.concepts[currentTabIndex(sIdx)].payments" :key="p.id"
-                                            class="border-t">
-                                            <td class="px-4 py-2">{{ formatDateMDY(p.payment_date) }}</td>
-                                            <td class="px-4 py-2">{{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}
-                                            </td>
-                                            <td class="px-4 py-2">{{ blk.concepts[currentTabIndex(sIdx)].concept.concept
-                                                }}</td>
-                                            <td class="px-4 py-2">${{ Number(p.amount_paid ?? 0).toFixed(2) }}</td>
-                                            <td class="px-4 py-2 capitalize">{{ p.payment_type }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <div class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                    <div>
-                                        <h4 class="text-sm font-semibold text-gray-900">Resumen</h4>
-                                        <p class="text-xs text-gray-600">Totales para este concepto</p>
-                                    </div>
-                                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                        <div v-for="item in summaryItemsFor(blk.concepts[currentTabIndex(sIdx)].summary)"
-                                            :key="item.key" class="flex flex-col text-center sm:text-left">
-                                            <span class="text-xs text-gray-500">{{ item.label }}</span>
-                                            <span :class="['font-semibold', item.tone]">{{ item.value }}</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="my-3 h-px bg-gray-200"></div>
-
-                                <div class="flex flex-wrap items-center gap-4 text-sm text-gray-800">
-                                    <div v-for="pt in paymentTypeBreakdownFor(blk.concepts[currentTabIndex(sIdx)].summary)"
-                                        :key="pt.type" class="flex items-baseline gap-2">
-                                        <span class="text-xs text-gray-500 capitalize">{{ pt.type }}</span>
-                                        <span class="font-semibold">{{ pt.amount }}</span>
-                                        <span class="text-xs text-gray-500">({{ pt.pct }}%)</span>
-                                    </div>
-                                    <div v-if="!paymentTypeBreakdownFor(blk.concepts[currentTabIndex(sIdx)].summary).length"
-                                        class="text-xs text-gray-500">
-                                        Aun no hay pagos por tipo.
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-
-                        <div v-else class="text-sm text-gray-500">No se encontraron conceptos en este alcance.</div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm text-gray-700">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-2 text-left font-semibold">Fecha</th>
+                                    <th class="px-4 py-2 text-left font-semibold">Tipo</th>
+                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
+                                    <th class="px-4 py-2 text-left font-semibold">Concepto</th>
+                                    <th class="px-4 py-2 text-right font-semibold">Cargos</th>
+                                    <th class="px-4 py-2 text-right font-semibold">Abonos</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="e in acc.entries" :key="`${e.entry_type}-${e.id}`" class="border-t">
+                                    <td class="px-4 py-2">{{ formatDateMDY(e.date) }}</td>
+                                    <td class="px-4 py-2">
+                                        <span :class="[
+                                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold',
+                                            e.entry_type === 'payment' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                                        ]">
+                                            {{ e.entry_type === 'payment' ? 'Ingreso' : 'Gasto' }}
+                                        </span>
+                                    </td>
+                                    <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ e.member ?? e.staff ?? '—' }}</td>
+                                    <td class="px-4 py-2">{{ e.concept }}</td>
+                                    <td class="px-4 py-2 text-right">
+                                        <span v-if="e.entry_type === 'expense'" class="text-amber-700">-{{ fmtMoney(e.amount) }}</span>
+                                        <span v-else class="text-gray-400">—</span>
+                                    </td>
+                                    <td class="px-4 py-2 text-right">
+                                        <span v-if="e.entry_type === 'payment'" class="text-emerald-700">{{ fmtMoney(e.amount) }}</span>
+                                        <span v-else class="text-gray-400">—</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr class="border-t bg-gray-50 font-semibold">
+                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 4 : 3">Totales</td>
+                                    <td class="px-4 py-2 text-right text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</td>
+                                    <td class="px-4 py-2 text-right text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</td>
+                                </tr>
+                                <tr class="border-t bg-white font-semibold">
+                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 4 : 3">Saldo de la cuenta</td>
+                                    <td class="px-4 py-2 text-right" :colspan="2">{{ fmtMoney(acc.totals.net) }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
                 </div>
             </section>

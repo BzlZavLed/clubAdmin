@@ -12,6 +12,9 @@ class Payment extends Model
     protected $fillable = [
         'club_id',
         'payment_concept_id',
+        'concept_text',
+        'pay_to',
+        'account_id',
         'member_id',
         'staff_id',
         'amount_paid',
@@ -39,6 +42,10 @@ class Payment extends Model
     public function concept()
     {
         return $this->belongsTo(PaymentConcept::class, 'payment_concept_id');
+    }
+    public function account()
+    {
+        return $this->belongsTo(Account::class, 'account_id');
     }
 
     public function member()

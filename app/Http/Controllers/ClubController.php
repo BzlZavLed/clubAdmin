@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
-use App\Models\PayToOption;
+use App\Models\Account;
 use App\Support\ClubHelper;
 class ClubController extends Controller
 {
@@ -135,12 +135,24 @@ class ClubController extends Controller
 
     public function getClubsByChurchId($churchId)
     {
-        $clubs = Club::with('clubClasses', 'staffAdventurers')
+        $clubs = Club::with('clubClasses', 'staffAdventurers', 'users:id,name,email')
             ->where('church_id', $churchId)
             ->orderBy('club_name')
             ->get();
 
-        return response()->json($this->attachStaffAssignments($clubs));
+        $clubs = $this->attachStaffAssignments($clubs);
+
+        foreach ($clubs as $club) {
+            $ownerId = $club->user_id ?? null;
+            if ($ownerId) {
+                $owner = User::select('id', 'name', 'email')->find($ownerId);
+                if ($owner && !$club->users->contains('id', $owner->id)) {
+                    $club->users->push($owner);
+                }
+            }
+        }
+
+        return response()->json($clubs);
     }
 
     public function selectClub(Request $request)
@@ -287,6 +299,7 @@ class ClubController extends Controller
         );
 
         $this->assertScopeCoherence($payload['scopes'] ?? []);
+        $this->assertAccountPayTo($club->id, $payload['pay_to'] ?? null);
 
         return DB::transaction(function () use ($payload, $request, $club) {
             $concept = PaymentConcept::create([
@@ -311,16 +324,6 @@ class ClubController extends Controller
                     'staff_id'   => $s['staff_id']  ?? null,
                 ]);
             }
-
-            // Ensure pay_to option exists for this club
-            PayToOption::firstOrCreate(
-                ['club_id' => $club->id, 'value' => $payload['pay_to']],
-                [
-                    'label'      => \Illuminate\Support\Str::title(str_replace('_', ' ', $payload['pay_to'])),
-                    'status'     => 'active',
-                    'created_by' => $request->user()->id ?? null,
-                ]
-            );
 
             return response()->json([
                 'data' => $concept->load([
@@ -357,6 +360,9 @@ class ClubController extends Controller
 
         if (array_key_exists('scopes', $payload)) {
             $this->assertScopeCoherence($payload['scopes']);
+        }
+        if (array_key_exists('pay_to', $payload)) {
+            $this->assertAccountPayTo($club->id, $payload['pay_to']);
         }
 
         return DB::transaction(function () use ($paymentConcept, $payload) {
@@ -418,7 +424,7 @@ class ClubController extends Controller
             'payment_expected_by'  => [$create ? 'nullable' : 'sometimes', 'date'],
             'amount'               => [$create ? 'required' : 'sometimes', 'numeric', 'min:0', 'max:999999.99'], // <--
             'type'                 => [$create ? 'required' : 'sometimes', Rule::in(['mandatory','optional'])],
-            'pay_to'               => [$create ? 'required' : 'sometimes', Rule::in(['church_budget','club_budget','conference','reimbursement_to','reinbursement_to'])],
+            'pay_to'               => [$create ? 'required' : 'sometimes', 'string', 'max:255'],
             'payee_type'           => ['nullable','string','max:255'],
             'payee_id'             => ['nullable','integer'],
             'status'               => [$create ? 'required' : 'sometimes', Rule::in(['active','inactive'])],
@@ -437,6 +443,20 @@ class ClubController extends Controller
     {
         if ($payTo === 'reinbursement_to') return 'reimbursement_to';
         return $payTo;
+    }
+
+    protected function assertAccountPayTo(int $clubId, ?string $payTo): void
+    {
+        if (!$payTo) {
+            abort(422, 'Invalid pay_to.');
+        }
+        $exists = Account::query()
+            ->where('club_id', $clubId)
+            ->where('pay_to', $payTo)
+            ->exists();
+        if (!$exists) {
+            abort(422, "Account '{$payTo}' does not exist for this club.");
+        }
     }
 
     /**
@@ -459,6 +479,7 @@ class ClubController extends Controller
             'MemberAdventurer' => \App\Models\Member::class,
             'Staff'            => \App\Models\Staff::class,
             'Member'           => \App\Models\Member::class,
+            'User'             => \App\Models\User::class,
         ];
 
         if (isset($map[$type])) {

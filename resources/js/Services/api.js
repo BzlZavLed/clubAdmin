@@ -121,6 +121,27 @@ export const fetchClubsByChurchId = async (churchId) => {
     return response.data;
 };
 
+// Accounts
+export const fetchAccountsByClub = async (clubId) => {
+    const { data } = await axios.get(route('clubs.accounts.index', { club: clubId }));
+    return data;
+};
+
+export const createAccount = async (clubId, payload) => {
+    const { data } = await axios.post(route('clubs.accounts.store', { club: clubId }), payload);
+    return data;
+};
+
+export const updateAccount = async (clubId, accountId, payload) => {
+    const { data } = await axios.put(route('clubs.accounts.update', { club: clubId, account: accountId }), payload);
+    return data;
+};
+
+export const deleteAccount = async (clubId, accountId) => {
+    const { data } = await axios.delete(route('clubs.accounts.destroy', { club: clubId, account: accountId }));
+    return data;
+};
+
 export const deleteClubById = async (clubId) => {
     return await axios.delete(route("club.destroy"), { data: { id: clubId } });
 };
@@ -347,6 +368,12 @@ export const uploadExpenseReceipt = async (expenseId, file) => {
 
     return await axios.post(route('club.director.expenses.upload', expenseId), fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
+    })
+}
+
+export const markExpenseReimbursed = async (expenseId, payTo) => {
+    return await axios.post(route('club.director.expenses.reimburse', expenseId), {
+        pay_to: payTo,
     })
 }
 

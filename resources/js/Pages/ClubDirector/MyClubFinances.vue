@@ -12,7 +12,11 @@ import {
     listPaymentConceptsByClub,
     createPaymentConcept,
     deletePaymentConcept,
-    updatePaymentConcept
+    updatePaymentConcept,
+    fetchAccountsByClub,
+    createAccount,
+    updateAccount,
+    deleteAccount
 } from '@/Services/api'
 
 // 🧠 Auth state
@@ -30,6 +34,11 @@ const conceptStaff = computed(() => {
     const club = clubs.value.find(c => c.id === conceptClubId.value)
     return club?.staff_adventurers ?? []
 })
+const conceptUsers = computed(() => {
+    if (!conceptClubId.value) return []
+    const club = clubs.value.find(c => c.id === conceptClubId.value)
+    return club?.users ?? []
+})
 const conceptClasses = computed(() => {
     if (!conceptClubId.value) return []
     const club = clubs.value.find(c => c.id === conceptClubId.value)
@@ -37,6 +46,15 @@ const conceptClasses = computed(() => {
 })
 
 const paymentConcepts = ref([]) // table data
+const accounts = ref([])
+
+const accountForm = useForm({
+    pay_to: '',
+    label: '',
+})
+const savingAccount = ref(false)
+const editingAccountId = ref(null)
+const editingAccountLabel = ref('')
 
 // Form (useForm for nice error handling later)
 const pcForm = useForm({
@@ -63,12 +81,9 @@ const scopeTypeOptions = [
     { value: 'staff', label: 'Personal especifico' }
 ]
 
-const payToOptions = [
-    { value: 'church_budget', label: 'Presupuesto de iglesia' },
-    { value: 'club_budget', label: 'Presupuesto del club' },
-    { value: 'conference', label: 'Conferencia' },
-    { value: 'reimbursement_to', label: 'Reembolso a…' }
-]
+const payToOptions = computed(() => {
+    return accounts.value.map(a => ({ value: a.pay_to, label: a.label }))
+})
 
 const typeOptions = [
     { value: 'mandatory', label: 'Obligatorio' },
@@ -173,10 +188,10 @@ async function deleteConcept(id) {
     isEditingConcept.value ? 'Guardar cambios' : 'Guardar concepto'
     )
 
-    function resetConceptForm(keepClub = true) {
+function resetConceptForm(keepClub = true) {
     pcForm.reset()
     pcForm.type = 'mandatory'
-    pcForm.pay_to = 'club_budget'
+    pcForm.pay_to = payToOptions.value[0]?.value ?? null
     pcForm.status = 'active'
     pcForm.scopes = []
     if (keepClub) pcForm.club_id = conceptClubId.value || null
@@ -190,6 +205,7 @@ async function deleteConcept(id) {
     if (!t) return null
     if (t.endsWith('Staff') || t.endsWith('StaffAdventurer')) return 'StaffAdventurer'
     if (t.endsWith('Member') || t.endsWith('MemberAdventurer')) return 'MemberAdventurer'
+    if (t.endsWith('User')) return 'User'
     return null
     }
 
@@ -309,6 +325,82 @@ const fetchMembers = async (clubId) => {
     }
 };
 
+const loadAccounts = async (clubId) => {
+    if (!clubId) {
+        accounts.value = []
+        return
+    }
+    try {
+        const res = await fetchAccountsByClub(clubId)
+        accounts.value = Array.isArray(res?.data) ? res.data : []
+    } catch (error) {
+        console.error('Failed to fetch accounts:', error)
+        accounts.value = []
+    }
+}
+
+const saveAccount = async () => {
+    if (!conceptClubId.value) return
+    if (!accountForm.pay_to) return showToast('Ingresa la clave de la cuenta', 'error')
+    savingAccount.value = true
+    try {
+        await createAccount(conceptClubId.value, {
+            pay_to: accountForm.pay_to,
+            label: accountForm.label || accountForm.pay_to,
+        })
+        accountForm.reset()
+        await loadAccounts(conceptClubId.value)
+        showToast('Cuenta creada', 'success')
+    } catch (e) {
+        console.error(e)
+        showToast(e?.response?.data?.message || 'No se pudo crear la cuenta', 'error')
+    } finally {
+        savingAccount.value = false
+    }
+}
+
+const startEditAccount = (acc) => {
+    editingAccountId.value = acc.id
+    editingAccountLabel.value = acc.label
+}
+
+const cancelEditAccount = () => {
+    editingAccountId.value = null
+    editingAccountLabel.value = ''
+}
+
+const updateAccountLabel = async (acc) => {
+    if (!conceptClubId.value) return
+    if (!editingAccountLabel.value) return showToast('Ingresa un nombre', 'error')
+    savingAccount.value = true
+    try {
+        await updateAccount(conceptClubId.value, acc.id, { label: editingAccountLabel.value })
+        await loadAccounts(conceptClubId.value)
+        showToast('Cuenta actualizada', 'success')
+        cancelEditAccount()
+    } catch (e) {
+        console.error(e)
+        showToast(e?.response?.data?.message || 'No se pudo actualizar la cuenta', 'error')
+    } finally {
+        savingAccount.value = false
+    }
+}
+
+const removeAccount = async (acc) => {
+    if (!conceptClubId.value) return
+    savingAccount.value = true
+    try {
+        await deleteAccount(conceptClubId.value, acc.id)
+        await loadAccounts(conceptClubId.value)
+        showToast('Cuenta eliminada', 'success')
+    } catch (e) {
+        console.error(e)
+        showToast(e?.response?.data?.message || 'No se pudo eliminar la cuenta', 'error')
+    } finally {
+        savingAccount.value = false
+    }
+}
+
 const fetchClubs = async () => {
     try {
         const data = await fetchClubsByChurchId(user.value.church_id)
@@ -333,6 +425,7 @@ watch(conceptClubId, async (id) => {
     ensureSingleScope()
     if (!id) {
         conceptMembers.value = []
+        accounts.value = []
         return
     }
     try {
@@ -341,6 +434,7 @@ watch(conceptClubId, async (id) => {
     } catch (e) {
         conceptMembers.value = []
     }
+    await loadAccounts(id)
 })
 
 watch(conceptClubId, async (id) => {
@@ -365,6 +459,12 @@ watch(() => pcForm.pay_to, (val) => {
     if (val !== 'reimbursement_to') { pcForm.payee_type = null; pcForm.payee_id = null }
 })
 
+watch(accounts, (list) => {
+    if (!pcForm.pay_to && Array.isArray(list) && list.length) {
+        pcForm.pay_to = list[0].pay_to
+    }
+})
+
 
 
 onMounted(async () => {
@@ -383,6 +483,69 @@ onMounted(async () => {
 <template>
     <PathfinderLayout>
         <template #title>Finanzas del club</template>
+        <section class="border rounded mb-4">
+            <div class="bg-gray-100 px-4 py-2 font-semibold">Cuentas (pay_to)</div>
+            <div class="p-4 space-y-4">
+                <div class="grid md:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Clave (pay_to)</label>
+                        <input v-model="accountForm.pay_to" type="text" class="w-full mt-1 p-2 border rounded"
+                            placeholder="ej. club_budget" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Etiqueta</label>
+                        <input v-model="accountForm.label" type="text" class="w-full mt-1 p-2 border rounded"
+                            placeholder="Presupuesto del club" />
+                    </div>
+                    <div class="flex items-end">
+                        <button @click="saveAccount" :disabled="savingAccount || !conceptClubId"
+                            class="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+                            {{ savingAccount ? 'Guardando…' : 'Crear cuenta' }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm text-gray-700">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left font-semibold">pay_to</th>
+                                <th class="px-3 py-2 text-left font-semibold">Etiqueta</th>
+                                <th class="px-3 py-2 text-left font-semibold">Saldo</th>
+                                <th class="px-3 py-2 text-left font-semibold">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="acc in accounts" :key="acc.id" class="border-t">
+                                <td class="px-3 py-2">{{ acc.pay_to }}</td>
+                                <td class="px-3 py-2">
+                                    <div v-if="editingAccountId === acc.id" class="flex items-center gap-2">
+                                        <input v-model="editingAccountLabel" type="text" class="w-full p-1 border rounded" />
+                                    </div>
+                                    <div v-else>{{ acc.label }}</div>
+                                </td>
+                                <td class="px-3 py-2">{{ Number(acc.balance || 0).toFixed(2) }}</td>
+                                <td class="px-3 py-2">
+                                    <div class="flex items-center gap-2">
+                                        <button v-if="editingAccountId !== acc.id" @click="startEditAccount(acc)"
+                                            class="text-xs text-blue-700 hover:underline">Editar</button>
+                                        <button v-else @click="updateAccountLabel(acc)"
+                                            class="text-xs text-emerald-700 hover:underline">Guardar</button>
+                                        <button v-if="editingAccountId === acc.id" @click="cancelEditAccount"
+                                            class="text-xs text-gray-600 hover:underline">Cancelar</button>
+                                        <button @click="removeAccount(acc)"
+                                            class="text-xs text-red-600 hover:underline">Eliminar</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="!accounts.length">
+                                <td class="px-3 py-3 text-sm text-gray-500" colspan="4">No hay cuentas para este club.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
         <details class="border rounded">
             <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">
                 Conceptos de pago
@@ -460,6 +623,7 @@ onMounted(async () => {
                                 <option :value="null">Seleccionar…</option>
                                 <option value="StaffAdventurer">Personal</option>
                                 <option value="MemberAdventurer">Miembro</option>
+                                <option value="User">Director/Usuario</option>
                             </select>
                             <p class="text-xs text-gray-500 mt-1" v-if="!conceptClubId">Selecciona un club arriba para cargar
                                 personal/miembros</p>
@@ -481,7 +645,7 @@ onMounted(async () => {
                         </div>
 
                         <!-- Member dropdown -->
-        <div v-else-if="pcForm.payee_type === 'MemberAdventurer'">
+                        <div v-else-if="pcForm.payee_type === 'MemberAdventurer'">
             <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar miembro</label>
             <select v-model="pcForm.payee_id" :disabled="!conceptClubId || members.length === 0"
                 class="w-full mt-1 p-2 border rounded">
@@ -492,6 +656,19 @@ onMounted(async () => {
             </select>
             <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && members.length === 0">
                 No se encontraron miembros para este club.
+            </p>
+                        </div>
+                        <div v-else-if="pcForm.payee_type === 'User'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar director/usuario</label>
+            <select v-model="pcForm.payee_id" :disabled="!conceptClubId || conceptUsers.length === 0"
+                class="w-full mt-1 p-2 border rounded">
+                <option :value="null">Seleccionar usuario</option>
+                <option v-for="u in conceptUsers" :key="u.id" :value="u.id">
+                    {{ u.name }}<span v-if="u.email"> ({{ u.email }})</span>
+                </option>
+            </select>
+            <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && conceptUsers.length === 0">
+                No se encontraron usuarios para este club.
             </p>
                         </div>
                     </div>

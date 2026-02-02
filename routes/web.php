@@ -161,6 +161,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.expenses.store');
     Route::post('/club-director/expenses/{expense}/receipt', [ExpenseController::class, 'uploadReceipt'])
         ->name('club.director.expenses.upload');
+    Route::post('/club-director/expenses/{expense}/reimburse', [ExpenseController::class, 'markReimbursed'])
+        ->name('club.director.expenses.reimburse');
 
     Route::get('/club-director/staff', function () {
         $authUser = auth()->user();
@@ -325,6 +327,11 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 Route::middleware(['auth'])->group(function () {
     //Finances
     Route::prefix('clubs/{club}')->name('clubs.')->group(function () {
+        Route::get('accounts', [\App\Http\Controllers\AccountController::class, 'index'])->name('accounts.index');
+        Route::post('accounts', [\App\Http\Controllers\AccountController::class, 'store'])->name('accounts.store');
+        Route::put('accounts/{account}', [\App\Http\Controllers\AccountController::class, 'update'])->name('accounts.update');
+        Route::delete('accounts/{account}', [\App\Http\Controllers\AccountController::class, 'destroy'])->name('accounts.destroy');
+
         Route::get('payment-concepts',                [ClubController::class, 'paymentConceptsIndex'])->name('payment-concepts.index');
         Route::post('payment-concepts',               [ClubController::class, 'paymentConceptsStore'])->name('payment-concepts.store');
         Route::get('payment-concepts/{paymentConcept}',   [ClubController::class, 'paymentConceptsShow'])->name('payment-concepts.show');
