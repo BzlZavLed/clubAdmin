@@ -576,16 +576,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <div v-if="(props.payments || []).length"
                         class="mt-2 flex items-center justify-between text-xs text-gray-600">
                         <div>Mostrando {{ filteredPayments.length ? startIdx + 1 : 0 }}–{{ endIdx }} de {{ filteredPayments.length }}</div>
-                        <div class="flex items-center gap-2">
-                            <label class="hidden sm:block">Por pagina</label>
-                            <select v-model.number="pageSize"
-                                class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
-                                <option :value="5">5</option>
-                                <option :value="10">10</option>
-                                <option :value="20">20</option>
-                                <option :value="50">50</option>
-                            </select>
-                        </div>
+                        <div>10 por pagina</div>
                     </div>
 
                     <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">No hay pagos aun.</div>

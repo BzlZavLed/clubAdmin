@@ -47,6 +47,20 @@ const conceptClasses = computed(() => {
 
 const paymentConcepts = ref([]) // table data
 const accounts = ref([])
+const accountsPage = ref(1)
+const accountsPageSize = ref(10)
+const conceptsPage = ref(1)
+const conceptsPageSize = ref(10)
+
+const totalAccountsPages = computed(() => Math.max(1, Math.ceil(accounts.value.length / accountsPageSize.value)))
+const accountsStartIdx = computed(() => (accountsPage.value - 1) * accountsPageSize.value)
+const accountsEndIdx = computed(() => Math.min(accountsStartIdx.value + accountsPageSize.value, accounts.value.length))
+const pagedAccounts = computed(() => accounts.value.slice(accountsStartIdx.value, accountsEndIdx.value))
+
+const totalConceptsPages = computed(() => Math.max(1, Math.ceil(paymentConcepts.value.length / conceptsPageSize.value)))
+const conceptsStartIdx = computed(() => (conceptsPage.value - 1) * conceptsPageSize.value)
+const conceptsEndIdx = computed(() => Math.min(conceptsStartIdx.value + conceptsPageSize.value, paymentConcepts.value.length))
+const pagedConcepts = computed(() => paymentConcepts.value.slice(conceptsStartIdx.value, conceptsEndIdx.value))
 
 const accountForm = useForm({
     pay_to: '',
@@ -164,6 +178,7 @@ async function loadPaymentConcepts() {
     if (!conceptClubId.value) return
     const { data } = await listPaymentConceptsByClub(conceptClubId.value)
     paymentConcepts.value = Array.isArray(data?.data) ? data.data : []
+    conceptsPage.value = 1
 }
 
 //DELETE PAYMENT CONCEPT
@@ -333,6 +348,7 @@ const loadAccounts = async (clubId) => {
     try {
         const res = await fetchAccountsByClub(clubId)
         accounts.value = Array.isArray(res?.data) ? res.data : []
+        accountsPage.value = 1
     } catch (error) {
         console.error('Failed to fetch accounts:', error)
         accounts.value = []
@@ -465,6 +481,34 @@ watch(accounts, (list) => {
     }
 })
 
+watch(
+    () => accounts.value.length,
+    () => {
+        if (accountsPage.value > totalAccountsPages.value) {
+            accountsPage.value = totalAccountsPages.value
+        }
+        if (accountsPage.value < 1) accountsPage.value = 1
+    }
+)
+
+watch(
+    () => paymentConcepts.value.length,
+    () => {
+        if (conceptsPage.value > totalConceptsPages.value) {
+            conceptsPage.value = totalConceptsPages.value
+        }
+        if (conceptsPage.value < 1) conceptsPage.value = 1
+    }
+)
+
+const goAccountsPage = (next) => {
+    accountsPage.value = Math.min(Math.max(1, next), totalAccountsPages.value)
+}
+
+const goConceptsPage = (next) => {
+    conceptsPage.value = Math.min(Math.max(1, next), totalConceptsPages.value)
+}
+
 
 
 onMounted(async () => {
@@ -505,8 +549,13 @@ onMounted(async () => {
                     </div>
                 </div>
 
+                <div v-if="accounts.length" class="mt-2 flex items-center justify-between text-xs text-gray-600">
+                    <div>Mostrando {{ accounts.length ? accountsStartIdx + 1 : 0 }}–{{ accountsEndIdx }} de {{ accounts.length }}</div>
+                    <div>10 por pagina</div>
+                </div>
+
                 <div class="space-y-3 md:hidden">
-                    <div v-for="acc in accounts" :key="acc.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                    <div v-for="acc in pagedAccounts" :key="acc.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <div class="text-sm font-semibold text-gray-900">{{ acc.label }}</div>
@@ -547,7 +596,7 @@ onMounted(async () => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="acc in accounts" :key="acc.id" class="border-t">
+                            <tr v-for="acc in pagedAccounts" :key="acc.id" class="border-t">
                                 <td class="px-3 py-2">{{ acc.pay_to }}</td>
                                 <td class="px-3 py-2">
                                     <div v-if="editingAccountId === acc.id" class="flex items-center gap-2">
@@ -574,6 +623,17 @@ onMounted(async () => {
                             </tr>
                         </tbody>
                     </table>
+                </div>
+                <div v-if="accounts.length > accountsPageSize" class="mt-3 flex items-center justify-between">
+                    <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        :disabled="accountsPage <= 1" @click="goAccountsPage(accountsPage - 1)">
+                        Anterior
+                    </button>
+                    <div class="text-xs text-gray-600">Pagina {{ accountsPage }} de {{ totalAccountsPages }}</div>
+                    <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        :disabled="accountsPage >= totalAccountsPages" @click="goAccountsPage(accountsPage + 1)">
+                        Siguiente
+                    </button>
                 </div>
             </div>
         </section>
@@ -784,8 +844,12 @@ onMounted(async () => {
                     </div>
 
                     <div v-else>
+                        <div v-if="paymentConcepts.length" class="mb-2 flex items-center justify-between text-xs text-gray-600">
+                            <div>Mostrando {{ paymentConcepts.length ? conceptsStartIdx + 1 : 0 }}–{{ conceptsEndIdx }} de {{ paymentConcepts.length }}</div>
+                            <div>10 por pagina</div>
+                        </div>
                         <div class="space-y-3 md:hidden">
-                            <div v-for="pc in paymentConcepts" :key="pc.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                            <div v-for="pc in pagedConcepts" :key="pc.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                                 <div class="flex items-start justify-between gap-3">
                                     <div>
                                         <div class="text-sm font-semibold text-gray-900">{{ pc.concept }}</div>
@@ -848,7 +912,7 @@ onMounted(async () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="pc in paymentConcepts" :key="pc.id" class="border-t">
+                                <tr v-for="pc in pagedConcepts" :key="pc.id" class="border-t">
                                     <td class="p-2">{{ pc.concept }}</td>
                                     <td class="p-2">
                                         {{ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
@@ -889,6 +953,17 @@ onMounted(async () => {
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
+                        <div v-if="paymentConcepts.length > conceptsPageSize" class="mt-3 flex items-center justify-between">
+                            <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                :disabled="conceptsPage <= 1" @click="goConceptsPage(conceptsPage - 1)">
+                                Anterior
+                            </button>
+                            <div class="text-xs text-gray-600">Pagina {{ conceptsPage }} de {{ totalConceptsPages }}</div>
+                            <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                :disabled="conceptsPage >= totalConceptsPages" @click="goConceptsPage(conceptsPage + 1)">
+                                Siguiente
+                            </button>
                         </div>
                     </div>
                 </div>

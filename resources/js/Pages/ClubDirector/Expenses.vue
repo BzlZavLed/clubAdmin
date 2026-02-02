@@ -17,6 +17,8 @@ const uploadingId = ref(null)
 const rowErrors = ref({})
 const reimbursingId = ref(null)
 const reimbursePayToByExpense = ref({})
+const expensePage = ref(1)
+const expensePageSize = ref(10)
 const { showToast } = useGeneral()
 
 const form = useForm({
@@ -60,6 +62,10 @@ const shortfallAmount = computed(() => {
     const bal = Number(selectedBalance.value || 0)
     return Math.max(amt - bal, 0)
 })
+const totalExpensePages = computed(() => Math.max(1, Math.ceil(expenses.value.length / expensePageSize.value)))
+const expenseStartIdx = computed(() => (expensePage.value - 1) * expensePageSize.value)
+const expenseEndIdx = computed(() => Math.min(expenseStartIdx.value + expensePageSize.value, expenses.value.length))
+const pagedExpenses = computed(() => expenses.value.slice(expenseStartIdx.value, expenseEndIdx.value))
 
 const receiptHref = (expense) => {
     if (!expense) return null
@@ -77,6 +83,7 @@ const loadData = async (clubId = null) => {
         payToOptions.value = data?.pay_to || []
         accounts.value = data?.accounts || []
         expenses.value = Array.isArray(data?.expenses) ? data.expenses : []
+        expensePage.value = 1
         clubs.value = Array.isArray(data?.clubs) ? data.clubs : []
         expenses.value.forEach((e) => {
             if (e.status === 'pending_reimbursement' && !reimbursePayToByExpense.value[e.id]) {
@@ -152,6 +159,20 @@ watch(
     },
     { immediate: true }
 )
+
+watch(
+    () => expenses.value.length,
+    () => {
+        if (expensePage.value > totalExpensePages.value) {
+            expensePage.value = totalExpensePages.value
+        }
+        if (expensePage.value < 1) expensePage.value = 1
+    }
+)
+
+const goExpensePage = (next) => {
+    expensePage.value = Math.min(Math.max(1, next), totalExpensePages.value)
+}
 
 
 const onNewReceiptChange = (event) => {
@@ -300,9 +321,13 @@ const markReimbursed = async (expense) => {
                 <h2 class="text-base font-semibold text-gray-900">Gastos recientes</h2>
                 <div v-if="loading" class="mt-2 text-sm text-gray-500">Cargando…</div>
                 <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No hay gastos aun.</div>
+                <div v-else class="mt-2 flex items-center justify-between text-xs text-gray-600">
+                    <div>Mostrando {{ expenses.length ? expenseStartIdx + 1 : 0 }}–{{ expenseEndIdx }} de {{ expenses.length }}</div>
+                    <div>10 por pagina</div>
+                </div>
                 <div v-else class="mt-3">
                     <div class="space-y-3 md:hidden">
-                        <div v-for="e in expenses" :key="e.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                        <div v-for="e in pagedExpenses" :key="e.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                             <div class="flex items-start justify-between gap-3">
                                 <div>
                                     <div class="text-sm font-semibold text-gray-900">{{ fmtMoney(e.amount) }}</div>
@@ -386,7 +411,7 @@ const markReimbursed = async (expense) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="e in expenses" :key="e.id" class="border-t">
+                            <tr v-for="e in pagedExpenses" :key="e.id" class="border-t">
                                 <td class="px-4 py-2">{{ new Date(e.expense_date).toLocaleDateString() }}</td>
                                 <td class="px-4 py-2">{{ payToLabel(e.pay_to) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(e.amount) }}</td>
@@ -461,6 +486,17 @@ const markReimbursed = async (expense) => {
                         </tbody>
                     </table>
                     </div>
+                </div>
+                <div v-if="expenses.length > expensePageSize" class="mt-3 flex items-center justify-between">
+                    <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        :disabled="expensePage <= 1" @click="goExpensePage(expensePage - 1)">
+                        Anterior
+                    </button>
+                    <div class="text-xs text-gray-600">Pagina {{ expensePage }} de {{ totalExpensePages }}</div>
+                    <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        :disabled="expensePage >= totalExpensePages" @click="goExpensePage(expensePage + 1)">
+                        Siguiente
+                    </button>
                 </div>
             </section>
         </div>

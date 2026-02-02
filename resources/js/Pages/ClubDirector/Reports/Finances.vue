@@ -97,6 +97,33 @@ const summary = ref({
     by_payment_type: {},
 })
 const accountsReport = ref([])
+const entriesPageSize = 10
+const entryPageByAccount = ref({})
+
+const accountKey = (acc) => acc?.pay_to ?? acc?.label ?? 'unknown'
+const pageForAccount = (acc) => entryPageByAccount.value[accountKey(acc)] ?? 1
+const totalPagesForAccount = (acc) => Math.max(1, Math.ceil((acc?.entries?.length ?? 0) / entriesPageSize))
+const entryStartIdxForAccount = (acc) => (pageForAccount(acc) - 1) * entriesPageSize
+const entryEndIdxForAccount = (acc) => Math.min(entryStartIdxForAccount(acc) + entriesPageSize, acc?.entries?.length ?? 0)
+const pagedEntriesForAccount = (acc) => {
+    const start = entryStartIdxForAccount(acc)
+    return (acc?.entries ?? []).slice(start, start + entriesPageSize)
+}
+const setAccountPage = (acc, next) => {
+    const key = accountKey(acc)
+    const max = totalPagesForAccount(acc)
+    entryPageByAccount.value = {
+        ...entryPageByAccount.value,
+        [key]: Math.min(Math.max(1, next), max),
+    }
+}
+const resetAccountPages = (list) => {
+    const next = {}
+    ;(list || []).forEach(acc => {
+        next[accountKey(acc)] = 1
+    })
+    entryPageByAccount.value = next
+}
 
 // Scope mode
 const scopeBlocks = ref([]) // [{ scope, concepts:[{concept, payments, summary}], summary }]
@@ -197,6 +224,7 @@ const fetchReport = async () => {
         const { data } = await axios.get(route('financial.report'), { params })
 
         accountsReport.value = data?.data?.accounts ?? []
+        resetAccountPages(accountsReport.value)
         payments.value = data?.data?.payments ?? []
         summary.value = data?.data?.summary ?? summary.value
         scopeBlocks.value = []
@@ -381,7 +409,11 @@ watch(selectedClubId, async (id, old) => {
                     </div>
 
                     <div class="md:hidden p-4 space-y-3">
-                        <div v-for="e in acc.entries" :key="`${e.entry_type}-${e.id}`"
+                        <div class="flex items-center justify-between text-xs text-gray-600">
+                            <div>Mostrando {{ acc.entries?.length ? entryStartIdxForAccount(acc) + 1 : 0 }}–{{ entryEndIdxForAccount(acc) }} de {{ acc.entries?.length ?? 0 }}</div>
+                            <div>10 por pagina</div>
+                        </div>
+                        <div v-for="e in pagedEntriesForAccount(acc)" :key="`${e.entry_type}-${e.id}`"
                             class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                             <div class="flex items-start justify-between gap-3">
                                 <div>
@@ -416,6 +448,17 @@ watch(selectedClubId, async (id, old) => {
                                 <span>{{ fmtMoney(acc.totals.net) }}</span>
                             </div>
                         </div>
+                        <div v-if="(acc.entries?.length ?? 0) > entriesPageSize" class="flex items-center justify-between">
+                            <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                :disabled="pageForAccount(acc) <= 1" @click="setAccountPage(acc, pageForAccount(acc) - 1)">
+                                Anterior
+                            </button>
+                            <div class="text-xs text-gray-600">Pagina {{ pageForAccount(acc) }} de {{ totalPagesForAccount(acc) }}</div>
+                            <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                :disabled="pageForAccount(acc) >= totalPagesForAccount(acc)" @click="setAccountPage(acc, pageForAccount(acc) + 1)">
+                                Siguiente
+                            </button>
+                        </div>
                     </div>
 
                     <div class="hidden md:block overflow-x-auto">
@@ -431,7 +474,7 @@ watch(selectedClubId, async (id, old) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="e in acc.entries" :key="`${e.entry_type}-${e.id}`" class="border-t">
+                                <tr v-for="e in pagedEntriesForAccount(acc)" :key="`${e.entry_type}-${e.id}`" class="border-t">
                                     <td class="px-4 py-2">{{ formatDateMDY(e.date) }}</td>
                                     <td class="px-4 py-2">
                                         <span :class="[
@@ -465,6 +508,17 @@ watch(selectedClubId, async (id, old) => {
                                 </tr>
                             </tfoot>
                         </table>
+                    </div>
+                    <div v-if="(acc.entries?.length ?? 0) > entriesPageSize" class="mt-3 flex items-center justify-between">
+                        <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            :disabled="pageForAccount(acc) <= 1" @click="setAccountPage(acc, pageForAccount(acc) - 1)">
+                            Anterior
+                        </button>
+                        <div class="text-xs text-gray-600">Pagina {{ pageForAccount(acc) }} de {{ totalPagesForAccount(acc) }}</div>
+                        <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            :disabled="pageForAccount(acc) >= totalPagesForAccount(acc)" @click="setAccountPage(acc, pageForAccount(acc) + 1)">
+                            Siguiente
+                        </button>
                     </div>
                 </div>
             </section>
