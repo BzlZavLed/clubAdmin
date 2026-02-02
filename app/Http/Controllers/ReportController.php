@@ -302,8 +302,9 @@ class ReportController extends Controller
                     ->where('club_id', $club->id)
                     ->where('payment_concept_id', $concept->id)
                     ->with([
-                        'member:id,applicant_name',
-                        'staff:id,name',
+                        'member:id,type,id_data',
+                        'staff:id,type,id_data,user_id',
+                        'staff.user:id,name',
                         'concept:id,concept,amount',
                         'receivedBy:id,name',
                     ])
@@ -319,9 +320,10 @@ class ReportController extends Controller
 
                 if ($paginate) {
                     $page = $q->paginate($perPage);
-                    $rows = collect($page->items());
+                    $rows = $this->attachPaymentPayerNames(collect($page->items()));
+                    $page->setCollection($rows);
                 } else {
-                    $rows = $q->get();
+                    $rows = $this->attachPaymentPayerNames($q->get());
                     $page = null;
                 }
 
@@ -448,8 +450,9 @@ class ReportController extends Controller
                     ->where('club_id', $club->id)
                     ->whereIn('payment_concept_id', $allConceptIds)
                     ->with([
-                        'member:id,applicant_name',
-                        'staff:id,name',
+                        'member:id,type,id_data',
+                        'staff:id,type,id_data,user_id',
+                        'staff.user:id,name',
                         'receivedBy:id,name',
                     ])
                     ->orderBy('payment_date')->orderBy('id');
@@ -458,7 +461,7 @@ class ReportController extends Controller
                     $paymentsQ->whereBetween('payment_date', [$from ?? '1900-01-01', $to ?? '2999-12-31']);
                 }
 
-                $paymentsByConcept = $paymentsQ->get()->groupBy('payment_concept_id');
+                $paymentsByConcept = $this->attachPaymentPayerNames($paymentsQ->get())->groupBy('payment_concept_id');
 
                 $scopeBlocks = $byIdentity->map(function ($rowsForIdentity) use ($identityKey, $identityLabel, $paymentsByConcept, $concepts) {
 
@@ -505,7 +508,6 @@ class ReportController extends Controller
                     })($conceptReports->all());
 
                     $first = $rowsForIdentity->first();
-
                     return [
                         'scope' => [
                             'identity_key' => $identityKey($first),
@@ -534,6 +536,28 @@ class ReportController extends Controller
             default:
                 return response()->json(['message' => 'Mode not implemented yet'], 400);
         }
+    }
+
+    protected function attachPaymentPayerNames(Collection $rows): Collection
+    {
+        return $rows->map(function ($p) {
+            $memberDetail = ClubHelper::memberDetail($p->member);
+            $staffDetail = ClubHelper::staffDetail($p->staff);
+            $memberName = $memberDetail['name'] ?? null;
+            $staffName = $staffDetail['name'] ?? ($p->staff?->user?->name ?? null);
+
+            $p->setRelation('member', $p->member ? [
+                'id' => $p->member->id,
+                'applicant_name' => $memberName ?? '—',
+            ] : null);
+
+            $p->setRelation('staff', $p->staff ? [
+                'id' => $p->staff->id,
+                'name' => $staffName ?? '—',
+            ] : null);
+
+            return $p;
+        });
     }
 
     protected function buildSummaryFromRows(Collection $rows): array
