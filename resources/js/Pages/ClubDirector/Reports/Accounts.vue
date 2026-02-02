@@ -126,8 +126,33 @@ watch(selectedClubId, async (id, old) => {
                     Aun no hay datos de cuentas.
                 </div>
 
-                <div v-else class="mt-3 overflow-x-auto">
-                    <table class="min-w-full text-sm text-gray-700">
+                <div v-else class="mt-3">
+                    <div class="space-y-3 md:hidden">
+                        <div v-for="acc in accountBalances" :key="acc.account || acc.label"
+                            class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                            <div class="text-sm font-semibold text-gray-900">{{ acc.label || payToLabel(acc.account) }}</div>
+                            <div class="text-xs text-gray-600">{{ acc.account ?? 'Sin asignar' }}</div>
+                            <div class="mt-2 grid grid-cols-3 gap-2 text-xs">
+                                <div>
+                                    <div class="text-gray-500">Entradas</div>
+                                    <div class="font-semibold text-emerald-700">{{ fmtMoney(acc.entries) }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-gray-500">Gastos</div>
+                                    <div class="font-semibold text-amber-700">{{ fmtMoney(acc.expenses) }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-gray-500">Saldo</div>
+                                    <div class="font-semibold" :class="Number(acc.balance) > 0 ? 'text-emerald-700' : 'text-red-700'">
+                                        {{ fmtMoney(acc.balance) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
@@ -138,7 +163,7 @@ watch(selectedClubId, async (id, old) => {
                         </thead>
                         <tbody>
                             <tr v-for="acc in accountBalances" :key="acc.account || acc.label" class="border-t">
-                                <td class="px-4 py-2">{{ payToLabel(acc.account) }}</td>
+                                <td class="px-4 py-2">{{ acc.label || payToLabel(acc.account) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(acc.entries) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(acc.expenses) }}</td>
                                 <td class="px-4 py-2 font-semibold"
@@ -148,6 +173,7 @@ watch(selectedClubId, async (id, old) => {
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </section>
 
@@ -161,8 +187,40 @@ watch(selectedClubId, async (id, old) => {
 
                 <div v-if="balancesLoading" class="mt-2 text-sm text-gray-500">Cargando…</div>
                 <div v-else-if="!accountPayments.length" class="mt-2 text-sm text-gray-500">No se encontraron pagos.</div>
-                <div v-else class="mt-3 overflow-x-auto">
-                    <table class="min-w-full text-sm text-gray-700">
+                <div v-else class="mt-3">
+                    <div class="space-y-3 md:hidden">
+                        <div v-for="p in accountPayments" :key="p.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-sm font-semibold text-gray-900">{{ fmtMoney(p.amount_paid) }}</div>
+                                    <div class="text-xs text-gray-600">{{ new Date(p.payment_date).toLocaleDateString() }}</div>
+                                </div>
+                                <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                    {{ p.payment_type }}
+                                </span>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-600">
+                                <div><span class="font-medium text-gray-700">Cuenta:</span> {{ p.account_label || payToLabel(p.account) }}</div>
+                                <div><span class="font-medium text-gray-700">Concepto:</span> {{ p.concept }}</div>
+                                <div><span class="font-medium text-gray-700">Pagador:</span> {{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</div>
+                            </div>
+                            <div class="mt-3">
+                                <a v-if="p.receipt_url"
+                                    :href="p.receipt_url"
+                                    target="_blank" rel="noopener"
+                                    class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                    Ver recibo
+                                </a>
+                                <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
+                                    <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
+                                    Sin recibo
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-4 py-2 text-left font-semibold">Fecha</th>
@@ -177,7 +235,7 @@ watch(selectedClubId, async (id, old) => {
                         <tbody>
                             <tr v-for="p in accountPayments" :key="p.id" class="border-t">
                                 <td class="px-4 py-2">{{ new Date(p.payment_date).toLocaleDateString() }}</td>
-                                <td class="px-4 py-2">{{ payToLabel(p.account) }}</td>
+                                <td class="px-4 py-2">{{ p.account_label || payToLabel(p.account) }}</td>
                                 <td class="px-4 py-2">{{ p.concept }}</td>
                                 <td class="px-4 py-2">{{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(p.amount_paid) }}</td>
@@ -200,6 +258,7 @@ watch(selectedClubId, async (id, old) => {
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </section>
 
@@ -213,8 +272,41 @@ watch(selectedClubId, async (id, old) => {
 
                 <div v-if="balancesLoading" class="mt-2 text-sm text-gray-500">Cargando…</div>
                 <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No se encontraron gastos.</div>
-                <div v-else class="mt-3 overflow-x-auto">
-                    <table class="min-w-full text-sm text-gray-700">
+                <div v-else class="mt-3">
+                    <div class="space-y-3 md:hidden">
+                        <div v-for="e in expenses" :key="e.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-sm font-semibold text-gray-900">{{ fmtMoney(e.amount) }}</div>
+                                    <div class="text-xs text-gray-600">{{ new Date(e.expense_date).toLocaleDateString() }}</div>
+                                </div>
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                    :class="e.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : e.status === 'pending_reimbursement' ? 'bg-purple-50 text-purple-700' : 'bg-amber-50 text-amber-700'">
+                                    {{ e.status === 'completed' ? 'Completado' : e.status === 'pending_reimbursement' ? 'Reembolso pendiente' : 'En proceso' }}
+                                </span>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-600">
+                                <div><span class="font-medium text-gray-700">Cuenta:</span> {{ e.pay_to_label || payToLabel(e.pay_to) }}</div>
+                                <div><span class="font-medium text-gray-700">Reembolsado a:</span> {{ e.reimbursed_to || '—' }}</div>
+                                <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
+                            </div>
+                            <div class="mt-3">
+                                <a v-if="e.receipt_url"
+                                    :href="e.receipt_url"
+                                    target="_blank" rel="noopener"
+                                    class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                    Ver recibo
+                                </a>
+                                <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
+                                    <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
+                                    Sin recibo
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-4 py-2 text-left font-semibold">Fecha</th>
@@ -262,6 +354,7 @@ watch(selectedClubId, async (id, old) => {
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </section>
         </div>

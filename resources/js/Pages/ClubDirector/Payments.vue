@@ -416,16 +416,33 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </select>
                     </div>
 
+                    <!-- Payment Type -->
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700">Tipo de pago</label>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <label v-for="t in payment_types" :key="t" class="inline-flex items-center gap-2">
+                                <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t" v-model="form.payment_type" />
+                                <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? 'Saldo inicial' : t }}</span>
+                            </label>
+                        </div>
+                        <div v-if="form.errors.payment_type" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.payment_type }}
+                        </div>
+                        <div v-if="form.payment_type === 'initial'" class="mt-1 text-xs text-gray-500">
+                            Se registrara un saldo inicial en la cuenta seleccionada.
+                        </div>
+                    </div>
+
                     <!-- Payee -->
-                        <div class="mt-4">
-                            <label class="block text-sm font-medium text-gray-700">Pagador</label>
-                            <div class="text-xs text-gray-600 mb-1" v-if="selectedScope && !customConceptMode">
-                                Alcance: {{ scopeLabel(selectedScope) }}
-                            </div>
-                            <div v-else-if="selectedConcept && !customConceptMode" class="text-xs text-amber-700 mb-1">No hay alcances para este concepto.</div>
-                            <div v-if="form.payment_type === 'initial'" class="text-xs text-gray-500 mb-2">
-                                Saldo inicial no requiere pagador.
-                            </div>
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700">Pagador</label>
+                        <div class="text-xs text-gray-600 mb-1" v-if="selectedScope && !customConceptMode">
+                            Alcance: {{ scopeLabel(selectedScope) }}
+                        </div>
+                        <div v-else-if="selectedConcept && !customConceptMode" class="text-xs text-amber-700 mb-1">No hay alcances para este concepto.</div>
+                        <div v-if="form.payment_type === 'initial'" class="text-xs text-gray-500 mb-2">
+                            Saldo inicial no requiere pagador.
+                        </div>
                         <div v-if="customConceptMode && form.payment_type !== 'initial'" class="mb-2">
                             <label class="text-xs text-gray-600">Tipo de pagador</label>
                             <select v-model="customPayerType"
@@ -487,23 +504,6 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                             <div v-if="form.errors.payment_date" class="mt-1 text-sm text-red-600">
                                 {{ form.errors.payment_date }}
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Payment Type -->
-                    <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Tipo de pago</label>
-                        <div class="mt-2 flex flex-wrap items-center gap-2">
-                            <label v-for="t in payment_types" :key="t" class="inline-flex items-center gap-2">
-                                <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t" v-model="form.payment_type" />
-                                <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? 'Saldo inicial' : t }}</span>
-                            </label>
-                        </div>
-                        <div v-if="form.errors.payment_type" class="mt-1 text-sm text-red-600">
-                            {{ form.errors.payment_type }}
-                        </div>
-                        <div v-if="form.payment_type === 'initial'" class="mt-1 text-xs text-gray-500">
-                            Se registrara un saldo inicial en la cuenta seleccionada.
                         </div>
                     </div>
 

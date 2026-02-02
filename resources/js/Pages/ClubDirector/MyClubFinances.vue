@@ -505,7 +505,38 @@ onMounted(async () => {
                     </div>
                 </div>
 
-                <div class="overflow-x-auto">
+                <div class="space-y-3 md:hidden">
+                    <div v-for="acc in accounts" :key="acc.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="text-sm font-semibold text-gray-900">{{ acc.label }}</div>
+                                <div class="text-xs text-gray-600">{{ acc.pay_to }}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-xs text-gray-500">Saldo</div>
+                                <div class="font-semibold text-gray-900">{{ Number(acc.balance || 0).toFixed(2) }}</div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <div v-if="editingAccountId === acc.id" class="flex items-center gap-2">
+                                <input v-model="editingAccountLabel" type="text" class="w-full p-1 border rounded" />
+                            </div>
+                        </div>
+                        <div class="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                            <button v-if="editingAccountId !== acc.id" @click="startEditAccount(acc)"
+                                class="text-blue-700 hover:underline">Editar</button>
+                            <button v-else @click="updateAccountLabel(acc)"
+                                class="text-emerald-700 hover:underline">Guardar</button>
+                            <button v-if="editingAccountId === acc.id" @click="cancelEditAccount"
+                                class="text-gray-600 hover:underline">Cancelar</button>
+                            <button @click="removeAccount(acc)"
+                                class="text-red-600 hover:underline">Eliminar</button>
+                        </div>
+                    </div>
+                    <div v-if="!accounts.length" class="text-sm text-gray-500">No hay cuentas para este club.</div>
+                </div>
+
+                <div class="hidden md:block overflow-x-auto">
                     <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
@@ -752,8 +783,57 @@ onMounted(async () => {
                         No hay conceptos de pago creados.
                     </div>
 
-                    <div v-else class="overflow-x-auto">
-                        <table class="min-w-full border rounded text-sm">
+                    <div v-else>
+                        <div class="space-y-3 md:hidden">
+                            <div v-for="pc in paymentConcepts" :key="pc.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div class="text-sm font-semibold text-gray-900">{{ pc.concept }}</div>
+                                        <div class="text-xs text-gray-600">{{ pc.club?.club_name ?? conceptClubName }}</div>
+                                    </div>
+                                    <div class="text-right text-sm font-semibold text-gray-900">
+                                        {{ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(pc.amount ?? 0) }}
+                                    </div>
+                                </div>
+                                <div class="mt-2 text-xs text-gray-600">
+                                    <div><span class="font-medium text-gray-700">Vence:</span> {{ formatISODate(pc.payment_expected_by) }}</div>
+                                    <div><span class="font-medium text-gray-700">Tipo:</span> {{ pc.type }}</div>
+                                    <div><span class="font-medium text-gray-700">Pagar a:</span> {{ pc.pay_to }}</div>
+                                    <div><span class="font-medium text-gray-700">Estado:</span> {{ pc.status }}</div>
+                                    <div>
+                                        <span class="font-medium text-gray-700">Alcances:</span>
+                                        <span v-if="scopeOf(pc)">{{ scopeLabel(scopeOf(pc)) }}</span>
+                                        <span v-else class="text-gray-500 italic">Sin alcance</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        class="p-1 rounded hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        @click.prevent="editConcept(pc)"
+                                        aria-label="Editar"
+                                        title="Editar"
+                                    >
+                                        <PencilSquareIcon class="h-5 w-5 text-blue-600" />
+                                        <span class="sr-only">Editar</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="p-1 rounded hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+                                        @click="deleteConcept(pc.id)"
+                                        aria-label="Eliminar"
+                                        title="Eliminar"
+                                    >
+                                        <TrashIcon class="h-5 w-5 text-red-600" />
+                                        <span class="sr-only">Eliminar</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="hidden md:block overflow-x-auto">
+                            <table class="min-w-full border rounded text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
                                     <th class="p-2 text-left">Concepto</th>
@@ -809,6 +889,7 @@ onMounted(async () => {
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                     </div>
                 </div>
 

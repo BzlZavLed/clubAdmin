@@ -407,9 +407,9 @@ class ClubPaymentController extends Controller
             ->when($concept, fn($q) => $q->where('payment_concept_id', $concept->id));
 
         if ($isMember) {
-            $priorPaidQuery->where('member_id', $validated['member_id']);
+            $priorPaidQuery->where('member_id', $validated['member_id'] ?? null);
         } else {
-            $priorPaidQuery->where('staff_id', $validated['staff_id']);
+            $priorPaidQuery->where('staff_id', $validated['staff_id'] ?? null);
         }
 
         if ($isInitial) {

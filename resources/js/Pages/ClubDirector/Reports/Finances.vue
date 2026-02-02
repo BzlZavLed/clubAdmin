@@ -380,7 +380,45 @@ watch(selectedClubId, async (id, old) => {
                         </div>
                     </div>
 
-                    <div class="overflow-x-auto">
+                    <div class="md:hidden p-4 space-y-3">
+                        <div v-for="e in acc.entries" :key="`${e.entry_type}-${e.id}`"
+                            class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-xs text-gray-500">{{ formatDateMDY(e.date) }}</div>
+                                    <div class="text-sm font-semibold text-gray-900">{{ e.concept }}</div>
+                                </div>
+                                <span :class="[
+                                    'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                                    e.entry_type === 'payment' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                                ]">
+                                    {{ e.entry_type === 'payment' ? 'Ingreso' : 'Gasto' }}
+                                </span>
+                            </div>
+                            <div v-if="acc.pay_to === 'reimbursement_to'" class="mt-1 text-xs text-gray-600">
+                                <span class="font-medium text-gray-700">Miembro/Personal:</span> {{ e.member ?? e.staff ?? '—' }}
+                            </div>
+                            <div class="mt-2 text-sm">
+                                <span v-if="e.entry_type === 'expense'" class="font-semibold text-amber-700">-{{ fmtMoney(e.amount) }}</span>
+                                <span v-else class="font-semibold text-emerald-700">{{ fmtMoney(e.amount) }}</span>
+                            </div>
+                        </div>
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-600">Totales</span>
+                                <div class="text-right">
+                                    <div class="text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</div>
+                                    <div class="text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</div>
+                                </div>
+                            </div>
+                            <div class="mt-2 flex items-center justify-between font-semibold">
+                                <span class="text-gray-700">Saldo de la cuenta</span>
+                                <span>{{ fmtMoney(acc.totals.net) }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto">
                         <table class="min-w-full text-sm text-gray-700">
                             <thead class="bg-gray-50">
                                 <tr>

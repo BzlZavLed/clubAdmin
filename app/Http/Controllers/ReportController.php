@@ -355,6 +355,7 @@ class ReportController extends Controller
                         'staff:id,type,id_data,user_id',
                         'staff.user:id,name',
                         'concept:id,concept,amount',
+                        'account:id,club_id,pay_to,label',
                         'receivedBy:id,name',
                     ]);
 
@@ -408,7 +409,7 @@ class ReportController extends Controller
                 $entriesByAccount = [];
 
                 foreach ($payments as $p) {
-                    $key = $p->pay_to ?? 'unknown';
+                    $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
                     $entriesByAccount[$key][] = [
                         'entry_type' => 'payment',
                         'id' => $p->id,
@@ -422,7 +423,7 @@ class ReportController extends Controller
                 }
 
                 foreach ($expenses as $e) {
-                    $key = $e->pay_to ?? 'unknown';
+                    $key = $e->pay_to ?? 'unassigned';
                     $entriesByAccount[$key][] = [
                         'entry_type' => 'expense',
                         'id' => $e->id,
@@ -441,7 +442,7 @@ class ReportController extends Controller
                     $spent = array_sum(array_map(fn($e) => $e['entry_type'] === 'expense' ? $e['amount'] : 0, $entries));
                     return [
                         'pay_to' => $payToKey,
-                        'label' => $accountLabels[$payToKey] ?? $payToKey,
+                        'label' => $accountLabels[$payToKey] ?? ($payToKey === 'unassigned' ? 'Cuenta sin asignar' : $payToKey),
                         'totals' => [
                             'paid' => $paid,
                             'spent' => $spent,
@@ -761,19 +762,18 @@ class ReportController extends Controller
             ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
             ->all();
 
-        // Sum payments by pay_to via the concept
+        // Sum payments by pay_to from payments
         $entries = Payment::query()
             ->where('payments.club_id', $club->id)
-            ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
-            ->selectRaw('payment_concepts.pay_to as account, COALESCE(SUM(payments.amount_paid), 0) as entries')
-            ->groupBy('payment_concepts.pay_to')
+            ->selectRaw('payments.pay_to as account, COALESCE(SUM(payments.amount_paid), 0) as entries')
+            ->groupBy('payments.pay_to')
             ->get()
             ->map(function ($row) use ($payToLabelMap) {
-                $account = $row->account ?? 'unknown';
+                $account = $row->account ?? 'unassigned';
                 $entries = (float) $row->entries;
                 return [
                     'account' => $account,
-                    'label' => $payToLabelMap[$account] ?? $account,
+                    'label' => $payToLabelMap[$account] ?? ($account === 'unassigned' ? 'Cuenta sin asignar' : $account),
                     'entries' => $entries,
                     'expenses' => 0.0,
                     'balance' => $entries,
@@ -801,6 +801,7 @@ class ReportController extends Controller
         $payments = Payment::query()
             ->where('payments.club_id', $club->id)
             ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
+            ->leftJoin('accounts as acc', 'acc.id', '=', 'payments.account_id')
             ->with([
                 'member:id,type,id_data',
                 'staff:id,type,id_data,user_id',
@@ -817,8 +818,10 @@ class ReportController extends Controller
                 'payments.staff_id',
                 'payments.payment_concept_id',
                 'payments.check_image_path',
+                'payments.concept_text',
+                DB::raw('COALESCE(payments.pay_to, acc.pay_to) as account'),
+                'acc.label as account_label',
                 'payment_concepts.concept as concept_name',
-                'payment_concepts.pay_to as account',
             ])
             ->map(function ($p) use ($payToLabelMap, &$paymentReceiptCounter) {
                 $ref = null;
@@ -832,9 +835,9 @@ class ReportController extends Controller
                     'payment_date' => $p->payment_date,
                     'amount_paid' => (float) $p->amount_paid,
                     'payment_type' => $p->payment_type,
-                    'account' => $p->account ?? 'unknown',
-                    'account_label' => $payToLabelMap[$p->account] ?? ($p->account ?? 'Unassigned'),
-                    'concept' => $p->concept_name ?? '—',
+                    'account' => $p->account ?? 'unassigned',
+                    'account_label' => $p->account_label ?? $payToLabelMap[$p->account] ?? (($p->account ?? null) === 'unassigned' ? 'Cuenta sin asignar' : ($p->account ?? 'Cuenta sin asignar')),
+                    'concept' => $p->concept_name ?? $p->concept_text ?? '—',
                     'member' => $p->member ? ['id' => $p->member->id, 'applicant_name' => (ClubHelper::memberDetail($p->member)['name'] ?? '—')] : null,
                     'staff' => $p->staff ? ['id' => $p->staff->id, 'name' => (ClubHelper::staffDetail($p->staff)['name'] ?? ($p->staff->user?->name ?? '—'))] : null,
                     'receipt_path' => $p->check_image_path,

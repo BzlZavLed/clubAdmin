@@ -38,9 +38,12 @@ class ExpenseController extends Controller
             ]);
         }
 
-        $payTo = $accounts->map(function ($a) {
-            return ['value' => $a->pay_to, 'label' => $a->label];
-        })->values();
+        $payTo = $accounts
+            ->filter(fn($a) => $a->pay_to !== 'reimbursement_to')
+            ->map(function ($a) {
+                return ['value' => $a->pay_to, 'label' => $a->label];
+            })
+            ->values();
         $clubs = \App\Models\Club::where('user_id', $request->user()->id)
             ->orderBy('club_name')
             ->get(['id', 'club_name']);
@@ -64,8 +67,6 @@ class ExpenseController extends Controller
                 'created_at',
             ]);
 
-        $reimbursementConcepts = $this->reimbursementBalances($club->id);
-
         if ($request->wantsJson()) {
             return response()->json([
                 'data' => [
@@ -74,7 +75,6 @@ class ExpenseController extends Controller
                     'accounts' => $accounts,
                     'clubs' => $clubs,
                     'expenses' => $expenses,
-                    'reimbursements' => $reimbursementConcepts,
                 ]
             ]);
         }
@@ -85,7 +85,6 @@ class ExpenseController extends Controller
             'accounts' => $accounts,
             'clubs' => $clubs,
             'expenses' => $expenses,
-            'reimbursements' => $reimbursementConcepts,
         ]);
     }
 
@@ -94,11 +93,9 @@ class ExpenseController extends Controller
         $validated = $request->validate([
             'club_id' => ['required', 'integer', 'exists:clubs,id'],
             'pay_to' => ['required', 'string', 'max:255'],
-            'payment_concept_id' => ['nullable', 'integer', 'exists:payment_concepts,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'expense_date' => ['required', 'date'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'reimbursed_to' => ['nullable', 'string', 'max:255'],
             'receipt_image' => ['nullable', 'image', 'max:5120'],
         ]);
 
@@ -109,37 +106,12 @@ class ExpenseController extends Controller
         }
         $club = \App\Models\Club::where('id', $clubId)->firstOrFail();
 
-        if ($validated['pay_to'] === 'reimbursement_to' && empty($validated['reimbursed_to'])) {
-            return response()->json(['message' => 'Please enter who is being reimbursed.'], 422);
+        if ($validated['pay_to'] === 'reimbursement_to') {
+            return response()->json(['message' => 'Los reembolsos se generan automaticamente.'], 422);
         }
 
-        $concept = null;
         $payeeId = null;
         $payeeName = null;
-        if ($validated['pay_to'] === 'reimbursement_to') {
-            if (empty($validated['payment_concept_id'])) {
-                return response()->json(['message' => 'Select a reimbursement concept.'], 422);
-            }
-            $concept = PaymentConcept::where('id', $validated['payment_concept_id'])
-                ->where('club_id', $club->id)
-                ->where('pay_to', 'reimbursement_to')
-                ->first();
-            if (!$concept) {
-                return response()->json(['message' => 'Invalid reimbursement concept.'], 422);
-            }
-            $payeeId = $concept->payee_id;
-            $payeeName = $this->resolvePayeeName($concept->payee_type, $concept->payee_id);
-
-            $available = $this->reimbursementAvailable($concept);
-            if ($validated['amount'] > $available) {
-                return response()->json([
-                    'message' => 'Amount exceeds available reimbursement balance.',
-                    'errors' => ['amount' => ['Amount exceeds available reimbursement balance.']],
-                ], 422);
-            }
-        } else {
-            $payeeName = null;
-        }
 
         $expense = null;
         $splitExpense = null;
@@ -156,7 +128,7 @@ class ExpenseController extends Controller
             $reimbursementConcept = null;
             $reimburseTo = null;
 
-            if ($validated['pay_to'] !== 'reimbursement_to' && $amount > $available) {
+            if ($amount > $available) {
                 $fromAccount = $available;
                 $shortfall = max($amount - $available, 0.0);
 
@@ -212,12 +184,12 @@ class ExpenseController extends Controller
                 $expense = Expense::create([
                     'club_id' => $club->id,
                     'pay_to' => $validated['pay_to'],
-                    'payment_concept_id' => $validated['payment_concept_id'] ?? null,
+                    'payment_concept_id' => null,
                     'payee_id' => $payeeId,
                     'amount' => $fromAccount,
                     'expense_date' => $validated['expense_date'],
                     'description' => $validated['description'] ?? null,
-                    'reimbursed_to' => $validated['reimbursed_to'] ?? $payeeName,
+                    'reimbursed_to' => $payeeName,
                     'created_by_user_id' => $request->user()->id,
                     'status' => $receiptPath ? 'completed' : 'working',
                     'receipt_path' => $receiptPath,

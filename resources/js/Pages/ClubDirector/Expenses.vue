@@ -10,7 +10,6 @@ const payToOptions = ref([])
 const expenses = ref([])
 const accounts = ref([])
 const clubs = ref([])
-const reimbursements = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const saving = ref(false)
@@ -23,11 +22,9 @@ const { showToast } = useGeneral()
 const form = useForm({
     club_id: null,
     pay_to: null,
-    payment_concept_id: null,
     amount: '',
     expense_date: new Date().toISOString().slice(0, 10),
     description: '',
-    reimbursed_to: '',
     receipt_image: null,
 })
 
@@ -49,22 +46,8 @@ const selectedBalance = computed(() => {
     const acc = accounts.value.find(a => a.pay_to === form.pay_to)
     return acc?.balance ?? null
 })
-const reimbursementOptions = computed(() => reimbursements.value || [])
-const selectedReimbursement = computed(() => reimbursementOptions.value.find(r => r.id === form.payment_concept_id) || null)
-const amountExceedsReimbursement = computed(() => {
-    if (form.pay_to !== 'reimbursement_to') return false
-    if (!selectedReimbursement.value) return false
-    const avail = Number(selectedReimbursement.value.available || 0)
-    return Number(form.amount || 0) > avail
-})
 const disableSave = computed(() => {
-    const exceedsReimb = form.pay_to === 'reimbursement_to' && form.payment_concept_id && amountExceedsReimbursement.value
-    return saving.value || exceedsReimb
-})
-const maxAmount = computed(() => {
-    if (form.pay_to !== 'reimbursement_to') return null
-    if (!selectedReimbursement.value) return null
-    return Number(selectedReimbursement.value.available || 0)
+    return saving.value
 })
 const amountExceedsBalance = computed(() => {
     if (selectedBalance.value === null) return false
@@ -72,7 +55,6 @@ const amountExceedsBalance = computed(() => {
     return amt > Number(selectedBalance.value || 0)
 })
 const shortfallAmount = computed(() => {
-    if (form.pay_to === 'reimbursement_to') return 0
     if (selectedBalance.value === null) return 0
     const amt = Number(form.amount || 0)
     const bal = Number(selectedBalance.value || 0)
@@ -96,7 +78,6 @@ const loadData = async (clubId = null) => {
         accounts.value = data?.accounts || []
         expenses.value = Array.isArray(data?.expenses) ? data.expenses : []
         clubs.value = Array.isArray(data?.clubs) ? data.clubs : []
-        reimbursements.value = Array.isArray(data?.reimbursements) ? data.reimbursements : []
         expenses.value.forEach((e) => {
             if (e.status === 'pending_reimbursement' && !reimbursePayToByExpense.value[e.id]) {
                 reimbursePayToByExpense.value[e.id] = defaultReimbursePayTo.value
@@ -107,12 +88,6 @@ const loadData = async (clubId = null) => {
             form.club_id = data?.club_id || (clubs.value[0]?.id ?? null)
         }
         if (!form.pay_to && payToOptions.value.length) form.pay_to = payToOptions.value[0].value
-        if (!form.payment_concept_id && reimbursementOptions.value.length) {
-            form.payment_concept_id = reimbursementOptions.value[0].id
-        }
-        if (form.pay_to === 'reimbursement_to' && selectedReimbursement.value?.payee_name && !form.reimbursed_to) {
-            form.reimbursed_to = selectedReimbursement.value.payee_name
-        }
     } catch (e) {
         console.error(e)
         loadError.value = e?.response?.data?.message || 'No se pudieron cargar los gastos.'
@@ -130,21 +105,8 @@ const submit = async () => {
         saving.value = false
         return
     }
-    if (form.pay_to === 'reimbursement_to') {
-        if (!form.payment_concept_id) {
-            form.setError('payment_concept_id', 'Selecciona un concepto de reembolso')
-            saving.value = false
-            return
-        }
-        if (amountExceedsReimbursement.value) {
-            form.setError('amount', 'El monto excede el saldo disponible para reembolso.')
-            saving.value = false
-            return
-        }
-    }
     try {
         const { data } = await createExpense(form.data())
-        const primary = data?.data?.expense ?? data?.data
         const split = data?.data?.split_expense ?? null
         if (split) {
             showToast(`Gasto registrado. Se creó un reembolso pendiente por ${fmtMoney(split.amount)}.`, 'info')
@@ -191,13 +153,6 @@ watch(
     { immediate: true }
 )
 
-watch(() => form.payment_concept_id, () => {
-    syncReimbursementDetails()
-})
-
-watch(() => form.pay_to, () => {
-    syncReimbursementDetails()
-})
 
 const onNewReceiptChange = (event) => {
     const [file] = event.target.files || []
@@ -231,18 +186,6 @@ const handleReceiptSelected = async (expenseId, event) => {
     }
 }
 
-const syncReimbursementDetails = () => {
-    if (form.pay_to !== 'reimbursement_to') return
-    if (selectedReimbursement.value?.payee_name) {
-        form.reimbursed_to = selectedReimbursement.value.payee_name
-    }
-    if (selectedReimbursement.value) {
-        const avail = Number(selectedReimbursement.value.available || 0)
-        if (avail >= 0 && Number(form.amount || 0) > avail) {
-            form.amount = avail ? String(avail) : ''
-        }
-    }
-}
 
 const markReimbursed = async (expense) => {
     if (!expense || expense.status !== 'pending_reimbursement') return
@@ -310,26 +253,11 @@ const markReimbursed = async (expense) => {
                         <div v-if="form.errors.pay_to" class="mt-1 text-sm text-red-600">{{ form.errors.pay_to }}</div>
                     </div>
 
-                    <div v-if="form.pay_to === 'reimbursement_to'">
-                        <label class="block text-sm font-medium text-gray-700">Fuente de reembolso</label>
-                        <select v-model="form.payment_concept_id" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null">Selecciona un reembolso</option>
-                            <option v-for="r in reimbursementOptions" :key="r.id" :value="r.id">
-                                {{ r.concept }} — {{ r.payee_name || 'Beneficiario desconocido' }} — disponible {{ fmtMoney(r.available) }}
-                            </option>
-                        </select>
-                        <p class="text-xs text-gray-500 mt-1" v-if="selectedReimbursement">Pagado {{ fmtMoney(selectedReimbursement.paid) }} · Gastado {{ fmtMoney(selectedReimbursement.spent) }}</p>
-                        <div v-if="form.errors.payment_concept_id" class="mt-1 text-sm text-red-600">{{ form.errors.payment_concept_id }}</div>
-                    </div>
-
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Monto</label>
-                        <input type="number" step="0.01" min="0" :max="form.pay_to === 'reimbursement_to' && selectedReimbursement ? selectedReimbursement.available : null" v-model="form.amount"
+                        <input type="number" step="0.01" min="0" v-model="form.amount"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
                         <div v-if="form.errors.amount" class="mt-1 text-sm text-red-600">{{ form.errors.amount }}</div>
-                        <div v-else-if="amountExceedsReimbursement" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
-                            El monto excede el saldo disponible de reembolso.
-                        </div>
                         <div v-else-if="amountExceedsBalance" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
                             El monto excede el saldo actual. Se registrará un reembolso pendiente por {{ fmtMoney(shortfallAmount) }}.
                         </div>
@@ -357,13 +285,6 @@ const markReimbursed = async (expense) => {
                         <div v-if="form.errors.receipt_image" class="mt-1 text-sm text-red-600">{{ form.errors.receipt_image }}</div>
                     </div>
 
-                    <div v-if="form.pay_to === 'reimbursement_to'">
-                        <label class="block text-sm font-medium text-gray-700">Reembolsado a</label>
-                        <input type="text" v-model="form.reimbursed_to"
-                            class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="Nombre del beneficiario" />
-                        <div v-if="form.errors.reimbursed_to" class="mt-1 text-sm text-red-600">{{ form.errors.reimbursed_to }}</div>
-                    </div>
                 </div>
 
                 <div class="mt-4 flex justify-end">
@@ -379,8 +300,80 @@ const markReimbursed = async (expense) => {
                 <h2 class="text-base font-semibold text-gray-900">Gastos recientes</h2>
                 <div v-if="loading" class="mt-2 text-sm text-gray-500">Cargando…</div>
                 <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No hay gastos aun.</div>
-                <div v-else class="mt-3 overflow-x-auto">
-                    <table class="min-w-full text-sm text-gray-700">
+                <div v-else class="mt-3">
+                    <div class="space-y-3 md:hidden">
+                        <div v-for="e in expenses" :key="e.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-sm font-semibold text-gray-900">{{ fmtMoney(e.amount) }}</div>
+                                    <div class="text-xs text-gray-600">{{ new Date(e.expense_date).toLocaleDateString() }}</div>
+                                </div>
+                                <span
+                                    :class="[
+                                        'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                                        e.status === 'completed'
+                                            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                                            : e.status === 'pending_reimbursement'
+                                            ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-100'
+                                            : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                                    ]">
+                                    {{
+                                        e.status === 'completed'
+                                            ? 'Completado'
+                                            : e.status === 'pending_reimbursement'
+                                            ? 'Reembolso pendiente'
+                                            : 'En proceso'
+                                    }}
+                                </span>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-600">
+                                <div><span class="font-medium text-gray-700">Cuenta:</span> {{ payToLabel(e.pay_to) }}</div>
+                                <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
+                                <div><span class="font-medium text-gray-700">Reembolsado a:</span> {{ e.reimbursed_to || '—' }}</div>
+                            </div>
+                            <div class="mt-3 flex flex-wrap items-center gap-2">
+                                <a v-if="receiptHref(e)" :href="receiptHref(e)" target="_blank" rel="noreferrer"
+                                    class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                    Ver recibo
+                                </a>
+                                <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
+                                    <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
+                                    Sin recibo
+                                </span>
+                                <button
+                                    v-if="e.status !== 'completed'"
+                                    @click="triggerReceiptUpload(e.id)"
+                                    :disabled="uploadingId === e.id"
+                                    class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
+                                    <ArrowPathIcon v-if="uploadingId === e.id" class="h-3.5 w-3.5 animate-spin" />
+                                    <span>{{ uploadingId === e.id ? 'Subiendo…' : 'Cargar imagen' }}</span>
+                                </button>
+                                <input type="file" accept="image/*" class="hidden"
+                                    :ref="el => { if (el) receiptInputs[e.id] = el }"
+                                    @change="(ev) => handleReceiptSelected(e.id, ev)" />
+                            </div>
+                            <div v-if="rowErrors[e.id]" class="mt-2 text-xs text-red-600">{{ rowErrors[e.id] }}</div>
+                            <div v-if="e.status === 'pending_reimbursement'" class="mt-3 flex flex-wrap items-center gap-2">
+                                <select
+                                    v-model="reimbursePayToByExpense[e.id]"
+                                    class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
+                                    <option v-for="a in reimbursePayToOptions" :key="a.pay_to" :value="a.pay_to">
+                                        {{ a.label }}
+                                    </option>
+                                </select>
+                                <button
+                                    @click="markReimbursed(e)"
+                                    :disabled="reimbursingId === e.id"
+                                    class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
+                                    <ArrowPathIcon v-if="reimbursingId === e.id" class="h-3.5 w-3.5 animate-spin" />
+                                    <span>{{ reimbursingId === e.id ? 'Procesando…' : 'Marcar reembolsado' }}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-4 py-2 text-left font-semibold">Fecha</th>
@@ -467,6 +460,7 @@ const markReimbursed = async (expense) => {
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </section>
         </div>
