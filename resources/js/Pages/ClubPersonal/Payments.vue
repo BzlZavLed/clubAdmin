@@ -114,6 +114,9 @@ watch(selectedMemberId, (id) => {
 watch(() => form.payment_type, (t) => {
     if (t !== 'zelle') form.zelle_phone = ''
     if (t !== 'check') form.check_image = null
+    if (t === 'initial') {
+        selectedMemberId.value = null
+    }
 })
 
 // File handling
@@ -129,14 +132,12 @@ const submit = async () => {
     submitting.value = true
     form.clearErrors()
     if (customConceptMode.value && !customConceptText.value) {
-        form.setError('payment_concept_id', 'Ingresa un concepto personalizado.')
-        submitting.value = false
-        return
+        customConceptText.value = 'Saldo inicial'
     }
     try {
-        if (customConceptMode.value) {
+        if (customConceptMode.value || form.payment_type === 'initial') {
             form.payment_concept_id = null
-            form.concept_text = customConceptText.value
+            form.concept_text = customConceptText.value || 'Saldo inicial'
             form.pay_to = 'club_budget'
         }
         await createClubPayment(form.data())
@@ -216,8 +217,12 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <!-- Member -->
                     <div class="mt-4">
                         <label class="block text-sm font-medium text-gray-700">Member</label>
+                        <div v-if="form.payment_type === 'initial'" class="mt-1 text-xs text-gray-500">
+                            Saldo inicial no requiere miembro.
+                        </div>
                         <div class="mt-1 relative">
                             <select v-model="selectedMemberId"
+                                :disabled="form.payment_type === 'initial'"
                                 class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                                 <option :value="null" disabled>Select a member…</option>
                                 <option v-for="m in assignedMembers" :key="m.id" :value="m.id">
@@ -236,13 +241,13 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                             <input type="checkbox" v-model="customConceptMode" class="text-blue-600 focus:ring-blue-500" />
                             <span>Custom concept</span>
                         </label>
-                        <span v-if="customConceptMode" class="text-xs text-gray-500">Posts to club_budget</span>
+                        <span v-if="customConceptMode || form.payment_type === 'initial'" class="text-xs text-gray-500">Posts to club_budget</span>
                     </div>
 
                     <!-- Concept -->
                     <div class="mt-4">
                         <label class="block text-sm font-medium text-gray-700">Payment concept</label>
-                        <select v-if="!customConceptMode" v-model="selectedConceptId"
+                        <select v-if="!customConceptMode && form.payment_type !== 'initial'" v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option :value="null" disabled>Select a concept…</option>
                             <option v-for="c in concepts" :key="c.id" :value="c.id">
@@ -252,7 +257,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         <input v-else v-model="customConceptText" type="text"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                             placeholder="E.g. special class activity" />
-                        <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept">
+                        <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept && !customConceptMode && form.payment_type !== 'initial'">
                             <span class="font-medium">Scope:</span>
                             <span>
                                 <!-- first (only) scope -->
@@ -304,7 +309,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <div class="mt-4">
                         <label class="block text-sm font-medium text-gray-700">Payment type</label>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
-                            <label v-for="t in payment_types" :key="t" class="inline-flex items-center gap-2">
+                            <label v-for="t in payment_types.filter(pt => pt !== 'initial')" :key="t" class="inline-flex items-center gap-2">
                                 <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t"
                                     v-model="form.payment_type" />
                                 <span class="capitalize text-sm text-gray-700">{{ t }}</span>

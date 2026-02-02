@@ -233,6 +233,10 @@ watch(() => form.club_id, () => {
 watch(() => form.payment_type, (t) => {
     if (t !== 'zelle') form.zelle_phone = ''
     if (t !== 'check') form.check_image = null
+    if (t === 'initial') {
+        selectedMemberId.value = null
+        selectedStaffId.value = null
+    }
 })
 
 // File handling
@@ -253,18 +257,19 @@ const submit = async () => {
         form.setError('club_id', 'Selecciona un club.')
         return
     }
-    if (customConceptMode.value) {
+    if (customConceptMode.value || form.payment_type === 'initial') {
         if (!customConceptText.value) {
-            form.setError('payment_concept_id', 'Ingresa un concepto personalizado.')
-            return
+            customConceptText.value = 'Saldo inicial'
         }
-        if (customPayerType.value === 'member' && !selectedMemberId.value) {
-            form.setError('member_id', 'Selecciona un miembro.')
-            return
-        }
-        if (customPayerType.value === 'staff' && !selectedStaffId.value) {
-            form.setError('staff_id', 'Selecciona personal.')
-            return
+        if (form.payment_type !== 'initial') {
+            if (customPayerType.value === 'member' && !selectedMemberId.value) {
+                form.setError('member_id', 'Selecciona un miembro.')
+                return
+            }
+            if (customPayerType.value === 'staff' && !selectedStaffId.value) {
+                form.setError('staff_id', 'Selecciona personal.')
+                return
+            }
         }
     } else {
         if (!selectedScope.value) {
@@ -284,9 +289,9 @@ const submit = async () => {
     submitting.value = true
     try {
         const payload = { ...form.data() }
-        if (customConceptMode.value) {
+        if (customConceptMode.value || form.payment_type === 'initial') {
             payload.payment_concept_id = null
-            payload.concept_text = customConceptText.value
+            payload.concept_text = customConceptText.value || 'Saldo inicial'
             payload.pay_to = customPayTo.value || 'club_budget'
         }
         await createClubPayment(payload)
@@ -412,13 +417,16 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     </div>
 
                     <!-- Payee -->
-                    <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Pagador</label>
-                        <div class="text-xs text-gray-600 mb-1" v-if="selectedScope && !customConceptMode">
-                            Alcance: {{ scopeLabel(selectedScope) }}
-                        </div>
-                        <div v-else-if="selectedConcept && !customConceptMode" class="text-xs text-amber-700 mb-1">No hay alcances para este concepto.</div>
-                        <div v-if="customConceptMode" class="mb-2">
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium text-gray-700">Pagador</label>
+                            <div class="text-xs text-gray-600 mb-1" v-if="selectedScope && !customConceptMode">
+                                Alcance: {{ scopeLabel(selectedScope) }}
+                            </div>
+                            <div v-else-if="selectedConcept && !customConceptMode" class="text-xs text-amber-700 mb-1">No hay alcances para este concepto.</div>
+                            <div v-if="form.payment_type === 'initial'" class="text-xs text-gray-500 mb-2">
+                                Saldo inicial no requiere pagador.
+                            </div>
+                        <div v-if="customConceptMode && form.payment_type !== 'initial'" class="mb-2">
                             <label class="text-xs text-gray-600">Tipo de pagador</label>
                             <select v-model="customPayerType"
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
@@ -426,7 +434,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 <option value="staff">Personal</option>
                             </select>
                         </div>
-                        <div v-if="customConceptMode ? customPayerType === 'member' : scopePayerType === 'member'">
+                        <div v-if="form.payment_type !== 'initial' && (customConceptMode ? customPayerType === 'member' : scopePayerType === 'member')">
                             <select v-model="selectedMemberId" :disabled="!selectedScope && !customConceptMode"
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50">
                                 <option :value="null" disabled>Selecciona un miembro…</option>
@@ -436,7 +444,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                 {{ form.errors.member_id }}
                             </div>
                         </div>
-                        <div v-else-if="customConceptMode ? customPayerType === 'staff' : scopePayerType === 'staff'">
+                        <div v-else-if="form.payment_type !== 'initial' && (customConceptMode ? customPayerType === 'staff' : scopePayerType === 'staff')">
                             <select v-model="selectedStaffId" :disabled="!selectedScope && !customConceptMode"
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50">
                                 <option :value="null" disabled>Selecciona personal…</option>
@@ -445,6 +453,9 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                             <div v-if="form.errors.staff_id" class="mt-1 text-sm text-red-600">
                                 {{ form.errors.staff_id }}
                             </div>
+                        </div>
+                        <div v-else-if="form.payment_type === 'initial'" class="text-xs text-gray-500 mt-1">
+                            Saldo inicial no requiere pagador.
                         </div>
                         <div v-else class="text-xs text-gray-500 mt-1">Selecciona concepto y alcance para elegir quien paga.</div>
                     </div>
@@ -485,11 +496,14 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                             <label v-for="t in payment_types" :key="t" class="inline-flex items-center gap-2">
                                 <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t" v-model="form.payment_type" />
-                                <span class="capitalize text-sm text-gray-700">{{ t }}</span>
+                                <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? 'Saldo inicial' : t }}</span>
                             </label>
                         </div>
                         <div v-if="form.errors.payment_type" class="mt-1 text-sm text-red-600">
                             {{ form.errors.payment_type }}
+                        </div>
+                        <div v-if="form.payment_type === 'initial'" class="mt-1 text-xs text-gray-500">
+                            Se registrara un saldo inicial en la cuenta seleccionada.
                         </div>
                     </div>
 

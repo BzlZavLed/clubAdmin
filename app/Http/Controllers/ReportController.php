@@ -706,7 +706,7 @@ class ReportController extends Controller
             ->mapWithKeys(fn($g, $t) => [$t => (float) $g->sum('amount_paid')])
             ->all();
 
-        foreach (['cash', 'zelle', 'check'] as $t) {
+        foreach (['cash', 'zelle', 'check', 'initial'] as $t) {
             $byType[$t] = (float) ($byType[$t] ?? 0.0);
         }
 

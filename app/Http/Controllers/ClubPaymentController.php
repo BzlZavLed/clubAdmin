@@ -159,7 +159,7 @@ class ClubPaymentController extends Controller
                     'assigned_class' => $assignedClass ? ['id' => $assignedClass->id, 'name' => $assignedClass->class_name] : null,
                     'concepts' => $concepts,
                     'payments' => $recent,
-                    'payment_types' => ['zelle', 'cash', 'check'],
+                    'payment_types' => ['zelle', 'cash', 'check', 'initial'],
                 ]
             ]);
         }
@@ -177,7 +177,7 @@ class ClubPaymentController extends Controller
             'assigned_members' => $assignedMembers,
             'concepts' => $concepts,
             'payments' => $recent,
-            'payment_types' => ['zelle', 'cash', 'check'],
+            'payment_types' => ['zelle', 'cash', 'check', 'initial'],
         ]);
     }
 
@@ -298,7 +298,7 @@ class ClubPaymentController extends Controller
                     'concepts' => $concepts,
                     'accounts' => $accounts,
                     'payments' => $recent,
-                    'payment_types' => ['zelle', 'cash', 'check'],
+                    'payment_types' => ['zelle', 'cash', 'check', 'initial'],
                 ]
             ]);
         }
@@ -313,7 +313,7 @@ class ClubPaymentController extends Controller
             'concepts' => $concepts,
             'accounts' => $accounts,
             'payments' => $recent,
-            'payment_types' => ['zelle', 'cash', 'check'],
+            'payment_types' => ['zelle', 'cash', 'check', 'initial'],
         ]);
     }
 
@@ -335,16 +335,21 @@ class ClubPaymentController extends Controller
             'staff_id' => ['nullable', 'integer', 'exists:staff,id'],
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
-            'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check'])],
+            'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'initial'])],
             'zelle_phone' => ['nullable', 'string', 'max:32'],
             'check_image' => ['nullable', 'image', 'max:4096'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        // exactly one payer
+        $isInitial = $validated['payment_type'] === 'initial';
+        if ($isInitial && $user?->profile_type !== 'club_director') {
+            return response()->json(['message' => 'Saldo inicial solo puede ser registrado por el director.'], 403);
+        }
+
+        // exactly one payer (unless initial balance)
         $isMember = !empty($validated['member_id']);
         $isStaff = !empty($validated['staff_id']);
-        if ($isMember === $isStaff) {
+        if (!$isInitial && $isMember === $isStaff) {
             return response()->json(['message' => 'Provide exactly one payer: member OR staff.'], 422);
         }
 
@@ -378,6 +383,11 @@ class ClubPaymentController extends Controller
             $payTo = $validated['pay_to'] ?? 'club_budget';
         }
 
+        if ($isInitial) {
+            $conceptText = $conceptText ?: 'Saldo inicial';
+            $expected = null;
+        }
+
         $account = Account::query()
             ->where('club_id', $clubId)
             ->where('pay_to', $payTo)
@@ -402,7 +412,11 @@ class ClubPaymentController extends Controller
             $priorPaidQuery->where('staff_id', $validated['staff_id']);
         }
 
-        $priorPaid = (float) ($priorPaidQuery->sum('amount_paid'));
+        if ($isInitial) {
+            $priorPaid = 0.0;
+        } else {
+            $priorPaid = (float) ($priorPaidQuery->sum('amount_paid'));
+        }
 
         $remainingBefore = $expected !== null ? max($expected - $priorPaid, 0.0) : null;
 
