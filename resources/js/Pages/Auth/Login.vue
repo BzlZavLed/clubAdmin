@@ -34,7 +34,7 @@ const submit = () => {
 
         <Head title="Iniciar sesión" />
 
-        <template #title>Iniciar sesión en el Portal de Conquistadores</template>
+        <template #title>Iniciar sesión en el Portal de Clubes</template>
 
         <div v-if="status" class="mb-4 text-sm font-medium text-green-600">
             {{ status }}
