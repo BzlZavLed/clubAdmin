@@ -106,21 +106,31 @@ const filteredPendingStaff = computed(() =>
 const displayedStaff = computed(() => {
     if (selectedClub.value?.club_type === 'pathfinders') {
         const baseStaff = staff.value.filter(p => p.type !== 'temp_pathfinder')
-        const tempMapped = tempStaff.value.map(ts => ({
-            id: `temp-${ts.id}`,
-            name: ts.staff_name,
-            dob: ts.staff_dob,
-            staff_dob: ts.staff_dob,
-            type: 'temp_pathfinder',
-            address: ts.address || '—',
-            cell_phone: ts.staff_phone,
-            email: ts.staff_email,
-            status: 'active',
-            assigned_classes: [],
-            class_names: [],
-            assigned_class: null,
-            club_id: ts.club_id,
-        }))
+        const tempMapped = tempStaff.value.map(ts => {
+            const staffRecord = staff.value.find(s =>
+                s.type === 'temp_pathfinder' &&
+                (String(s.id_data) === String(ts.id) || (s.user_id && s.user_id === ts.user_id))
+            )
+            const staffId = staffRecord?.id ?? null
+            return {
+                id: staffId ?? `temp-${ts.id}`,
+                staff_id: staffId ?? null,
+                name: ts.staff_name,
+                dob: ts.staff_dob,
+                staff_dob: ts.staff_dob,
+                type: 'temp_pathfinder',
+                address: ts.address || '—',
+                cell_phone: ts.staff_phone,
+                email: ts.staff_email,
+                status: staffRecord?.status ?? 'active',
+                assigned_classes: staffRecord?.assigned_classes ?? [],
+                class_names: staffRecord?.class_names ?? [],
+                assigned_class: staffRecord?.assigned_class ?? null,
+                club_id: ts.club_id,
+                user_id: staffRecord?.user_id ?? ts.user_id ?? null,
+                id_data: ts.id,
+            }
+        })
         return [...baseStaff, ...tempMapped]
     }
     return staff.value
@@ -223,10 +233,10 @@ const fetchStaff = async (clubId, churchId = null) => {
 const saveAssignedClass = async (person) => {
     const newClassId = assignedClassChanges.value[person.id]
     if (!newClassId) return
-    const staffId = Number(person.id)
+    const staffId = Number(person.staff_id ?? person.id)
     const classId = Number(newClassId)
     if (!Number.isInteger(staffId)) {
-        showToast('Este registro no permite asignar clases.', 'error')
+        showToast('No se pudo asignar la clase. Falta un registro de personal valido.', 'error')
         return
     }
     if (!Number.isInteger(classId)) {
@@ -630,7 +640,7 @@ onMounted(fetchClubs)
                                 </td>
                                 <td class="p-2 text-xs">
                                     {{ classDisplay(person) }}
-                                    <div v-if="person.type !== 'temp_pathfinder'" class="mt-1 flex items-center gap-2">
+                                    <div class="mt-1 flex items-center gap-2">
                                         <select
                                             v-model="assignedClassChanges[person.id]"
                                             class="border p-1 rounded text-xs"
@@ -647,9 +657,6 @@ onMounted(fetchClubs)
                                         >
                                             {{ isUpdatingClass[person.id] ? 'Guardando...' : 'Guardar' }}
                                         </button>
-                                    </div>
-                                    <div v-else class="mt-1 text-[11px] text-gray-500">
-                                        No disponible para personal temporal.
                                     </div>
                                 </td>
                             </tr>
