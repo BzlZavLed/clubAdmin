@@ -143,18 +143,35 @@ class ParentMemberController extends Controller
         $parentId = $parent->id;
         $parentName = strtolower($parent->name ?? '');
         $parentEmail = strtolower($parent->email ?? '');
+        $churchId = $parent->church_id;
 
-        // Unlinked members by type
-        $unlinkedAdvMemberRows = Member::whereNull('parent_id')
+        if (!$churchId) {
+            return response()->json([
+                'linkable' => [],
+            ]);
+        }
+
+        $clubIds = Club::where('church_id', $churchId)->pluck('id')->all();
+        if (empty($clubIds)) {
+            return response()->json([
+                'linkable' => [],
+            ]);
+        }
+
+        // Only exclude members already linked to a parent
+        $linkedAdvIds = Member::whereNotNull('parent_id')
             ->where('type', 'adventurers')
-            ->get(['id', 'id_data', 'club_id']);
-        $unlinkedTempMemberRows = Member::whereNull('parent_id')
+            ->pluck('id_data')
+            ->all();
+        $linkedTempIds = Member::whereNotNull('parent_id')
             ->where('type', 'temp_pathfinder')
-            ->get(['id', 'id_data', 'club_id']);
+            ->pluck('id_data')
+            ->all();
 
         // Adventurers: match on parent_name OR emergency_contact OR email_address
         $advCandidates = MemberAdventurer::query()
-            ->whereIn('id', $unlinkedAdvMemberRows->pluck('id_data'))
+            ->whereIn('club_id', $clubIds)
+            ->whereNotIn('id', $linkedAdvIds)
             ->where(function ($q) use ($parentName, $parentEmail) {
                 $q->whereRaw('LOWER(parent_name) = ?', [$parentName])
                     ->orWhereRaw('LOWER(emergency_contact) = ?', [$parentName])
@@ -162,33 +179,32 @@ class ParentMemberController extends Controller
             })
             ->limit(20)
             ->get()
-            ->map(function ($row) use ($unlinkedAdvMemberRows) {
-                $memberRow = $unlinkedAdvMemberRows->firstWhere('id_data', $row->id);
+            ->map(function ($row) {
                 return [
                     'member_type' => 'adventurers',
                     'id_data' => $row->id,
                     'display_name' => $row->applicant_name,
-                    'club_id' => $memberRow?->club_id ?? $row->club_id,
+                    'club_id' => $row->club_id,
                     'detail' => 'Adventurer',
                 ];
             });
 
         // Pathfinder temp: match on father_name OR email
         $pathfinderCandidates = TempMemberPathfinder::query()
-            ->whereIn('id', $unlinkedTempMemberRows->pluck('id_data'))
+            ->whereIn('club_id', $clubIds)
+            ->whereNotIn('id', $linkedTempIds)
             ->where(function ($q) use ($parentName, $parentEmail) {
                 $q->whereRaw('LOWER(father_name) = ?', [$parentName])
                     ->orWhereRaw('LOWER(email) = ?', [$parentEmail]);
             })
             ->limit(20)
             ->get()
-            ->map(function ($row) use ($unlinkedTempMemberRows) {
-                $memberRow = $unlinkedTempMemberRows->firstWhere('id_data', $row->id);
+            ->map(function ($row) {
                 return [
                     'member_type' => 'temp_pathfinder',
                     'id_data' => $row->id,
                     'display_name' => $row->nombre,
-                    'club_id' => $memberRow?->club_id ?? $row->club_id,
+                    'club_id' => $row->club_id,
                     'detail' => 'Pathfinder (temp)',
                 ];
             });
