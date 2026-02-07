@@ -4,6 +4,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import WorkplanCalendar from '@/Components/WorkplanCalendar.vue'
 import { fetchParentWorkplan } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
+import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 
 const props = defineProps({
     auth_user: Object
@@ -18,6 +19,8 @@ const events = ref([])
 const memberships = ref([])
 const selectedEvent = ref(null)
 const eventModalOpen = ref(false)
+const showPasswordModal = ref(false)
+const changePasswordUserId = ref(null)
 const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value }) : '#')
 const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value }) : '#')
 
@@ -65,6 +68,12 @@ const closeEvent = () => {
     selectedEvent.value = null
 }
 
+const openPasswordModal = () => {
+    if (!props.auth_user?.id) return
+    changePasswordUserId.value = props.auth_user.id
+    showPasswordModal.value = true
+}
+
 onMounted(() => {
     load()
 })
@@ -76,8 +85,18 @@ onMounted(() => {
 
         <div class="space-y-4">
             <div class="bg-white border rounded shadow-sm p-4">
-                <h2 class="text-xl font-semibold text-gray-800">Bienvenido, {{ props.auth_user?.name }}</h2>
-                <p class="text-gray-600 text-sm mt-1">Consulta los planes de trabajo de los clubes de tus hijos.</p>
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-800">Bienvenido, {{ props.auth_user?.name }}</h2>
+                        <p class="text-gray-600 text-sm mt-1">Consulta los planes de trabajo de los clubes de tus hijos.</p>
+                    </div>
+                    <button
+                        class="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                        @click="openPasswordModal"
+                    >
+                        Actualizar contrasena
+                    </button>
+                </div>
             </div>
 
             <div class="bg-white border rounded shadow-sm p-4 space-y-3">
@@ -146,5 +165,13 @@ onMounted(() => {
                 </div>
             </div>
         </div>
+
+        <UpdatePasswordModal
+            v-if="showPasswordModal && changePasswordUserId"
+            :show="showPasswordModal"
+            :user-id="changePasswordUserId"
+            @close="showPasswordModal = false"
+            @updated="showToast('Contrasena actualizada correctamente')"
+        />
     </PathfinderLayout>
 </template>
