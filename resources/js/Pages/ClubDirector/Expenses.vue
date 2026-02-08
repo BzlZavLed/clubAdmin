@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ArrowPathIcon, BanknotesIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
-import { fetchExpenses, createExpense, uploadExpenseReceipt, markExpenseReimbursed } from '@/Services/api'
+import { fetchExpenses, createExpense, uploadExpenseReceipt, uploadReimbursementReceipt, markExpenseReimbursed } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { compressImage } from '@/Utils/imageCompression'
 
@@ -261,7 +261,7 @@ const triggerReimbursementReceiptUpload = (expenseId) => {
     if (input) input.click()
 }
 
-const handleReimbursementReceiptSelected = (expenseId, event) => {
+const handleReimbursementReceiptSelected = (expense, event) => {
     const [file] = event.target.files || []
     event.target.value = ''
     if (!file) return
@@ -272,15 +272,43 @@ const handleReimbursementReceiptSelected = (expenseId, event) => {
                 showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, 'error')
                 return
             }
-            reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expenseId]: compressed }
-            rowErrors.value = { ...rowErrors.value, [expenseId]: '' }
+            if (expense?.status === 'pending_reimbursement') {
+                reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: compressed }
+                rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
+                return
+            }
+            uploadReimbursementReceiptNow(expense, compressed)
         }).catch(() => {
             showToast('No se pudo comprimir la imagen.', 'error')
         })
         return
     }
-    reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expenseId]: file }
-    rowErrors.value = { ...rowErrors.value, [expenseId]: '' }
+    if (expense?.status === 'pending_reimbursement') {
+        reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: file }
+        rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
+        return
+    }
+    uploadReimbursementReceiptNow(expense, file)
+}
+
+const uploadReimbursementReceiptNow = async (expense, file) => {
+    if (!expense?.id) return
+    rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
+    uploadingId.value = expense.id
+    try {
+        const { data } = await uploadReimbursementReceipt(expense.id, file)
+        const idx = expenses.value.findIndex(e => e.id === expense.id)
+        if (idx !== -1) expenses.value[idx] = data?.data
+        showToast('Recibo de reembolso subido.', 'success')
+    } catch (e) {
+        rowErrors.value = {
+            ...rowErrors.value,
+            [expense.id]: e?.response?.data?.message || 'No se pudo subir el recibo de reembolso.',
+        }
+        console.error(e)
+    } finally {
+        uploadingId.value = null
+    }
 }
 
 const markReimbursed = async (expense) => {
@@ -450,6 +478,15 @@ const markReimbursed = async (expense) => {
                                     Recibo reembolso
                                 </a>
                                 <button
+                                    v-if="e.pay_to === 'reimbursement_to' && e.status === 'completed' && !reimbursementReceiptHref(e)"
+                                    @click="triggerReimbursementReceiptUpload(e.id)"
+                                    class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                                    <span>Adjuntar recibo reembolso</span>
+                                </button>
+                                <input type="file" accept="image/*" class="hidden"
+                                    :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
+                                    @change="(ev) => handleReimbursementReceiptSelected(e, ev)" />
+                                <button
                                     v-if="e.status !== 'completed'"
                                     @click="triggerReceiptUpload(e.id)"
                                     :disabled="uploadingId === e.id"
@@ -476,9 +513,6 @@ const markReimbursed = async (expense) => {
                                     class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
                                     <span>Adjuntar recibo</span>
                                 </button>
-                                <input type="file" accept="image/*" class="hidden"
-                                    :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
-                                    @change="(ev) => handleReimbursementReceiptSelected(e.id, ev)" />
                                 <button
                                     @click="markReimbursed(e)"
                                     :disabled="reimbursingId === e.id || !reimbursementReceiptFiles[e.id]"
@@ -540,9 +574,6 @@ const markReimbursed = async (expense) => {
                                             class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
                                             <span>Adjuntar recibo</span>
                                         </button>
-                                        <input type="file" accept="image/*" class="hidden"
-                                            :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
-                                            @change="(ev) => handleReimbursementReceiptSelected(e.id, ev)" />
                                         <button
                                             @click="markReimbursed(e)"
                                             :disabled="reimbursingId === e.id || !reimbursementReceiptFiles[e.id]"
@@ -567,6 +598,15 @@ const markReimbursed = async (expense) => {
                                                 class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
                                                 Recibo reembolso
                                             </a>
+                                            <button
+                                                v-if="e.pay_to === 'reimbursement_to' && e.status === 'completed' && !reimbursementReceiptHref(e)"
+                                                @click="triggerReimbursementReceiptUpload(e.id)"
+                                                class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                                                <span>Adjuntar recibo reembolso</span>
+                                            </button>
+                                            <input type="file" accept="image/*" class="hidden"
+                                                :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
+                                                @change="(ev) => handleReimbursementReceiptSelected(e, ev)" />
 
                                             <button
                                                 v-if="e.status !== 'completed'"

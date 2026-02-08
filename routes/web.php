@@ -161,6 +161,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.expenses.store');
     Route::post('/club-director/expenses/{expense}/receipt', [ExpenseController::class, 'uploadReceipt'])
         ->name('club.director.expenses.upload');
+    Route::post('/club-director/expenses/{expense}/reimbursement-receipt', [ExpenseController::class, 'uploadReimbursementReceipt'])
+        ->name('club.director.expenses.uploadReimbursementReceipt');
     Route::post('/club-director/expenses/{expense}/reimburse', [ExpenseController::class, 'markReimbursed'])
         ->name('club.director.expenses.reimburse');
 

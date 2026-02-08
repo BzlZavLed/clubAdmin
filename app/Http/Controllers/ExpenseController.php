@@ -252,6 +252,34 @@ class ExpenseController extends Controller
         ]);
     }
 
+    public function uploadReimbursementReceipt(Request $request, Expense $expense)
+    {
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
+
+        if ($expense->pay_to !== 'reimbursement_to') {
+            return response()->json(['message' => 'Only reimbursements can accept this receipt.'], 422);
+        }
+
+        $validated = $request->validate([
+            'receipt_image' => ['required', 'image', 'max:5120'],
+        ]);
+
+        $path = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
+
+        if ($expense->reimbursement_receipt_path) {
+            Storage::disk('public')->delete($expense->reimbursement_receipt_path);
+        }
+
+        $expense->update([
+            'reimbursement_receipt_path' => $path,
+        ]);
+
+        return response()->json([
+            'message' => 'Reimbursement receipt uploaded',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
     public function markReimbursed(Request $request, Expense $expense)
     {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
