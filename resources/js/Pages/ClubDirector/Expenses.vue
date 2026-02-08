@@ -188,6 +188,12 @@ const goExpensePage = (next) => {
     expensePage.value = Math.min(Math.max(1, next), totalExpensePages.value)
 }
 
+const fmtBytes = (bytes) => {
+    if (!Number.isFinite(bytes)) return '—'
+    const mb = bytes / (1024 * 1024)
+    return `${mb.toFixed(2)}MB`
+}
+
 const onNewReceiptChange = (event) => {
     const [file] = event.target.files || []
     if (!file) return
@@ -195,7 +201,7 @@ const onNewReceiptChange = (event) => {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
             if (compressed.size > MAX_RECEIPT_BYTES) {
-                showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB.`, 'error')
+                showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, 'error')
                 form.receipt_image = null
                 if (newReceiptInput.value) newReceiptInput.value.value = ''
                 return
@@ -228,7 +234,7 @@ const handleReceiptSelected = async (expenseId, event) => {
             return
         }
         if (uploadFile.size > MAX_RECEIPT_BYTES) {
-            showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB.`, 'error')
+            showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(uploadFile.size)}.`, 'error')
             return
         }
     }
@@ -263,7 +269,7 @@ const handleReimbursementReceiptSelected = (expenseId, event) => {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
             if (compressed.size > MAX_RECEIPT_BYTES) {
-                showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB.`, 'error')
+                showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, 'error')
                 return
             }
             reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expenseId]: compressed }
