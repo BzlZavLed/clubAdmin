@@ -158,7 +158,7 @@ class ParentMemberController extends Controller
             ]);
         }
 
-        // Only exclude members already linked to a parent
+        // Only exclude members already linked to any parent
         $linkedAdvIds = Member::whereNotNull('parent_id')
             ->where('type', 'adventurers')
             ->pluck('id_data')
