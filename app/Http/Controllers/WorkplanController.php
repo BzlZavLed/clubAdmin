@@ -243,8 +243,13 @@ class WorkplanController extends Controller
     public function data(Request $request)
     {
         $user = $request->user();
-        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
-        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        $clubIds = $user->profile_type === 'parent'
+            ? $this->clubIdsForParent($user)
+            : ClubHelper::clubIdsForUser($user)->all();
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+        $selectedClubId = $request->input('club_id')
+            ?: ($user->profile_type === 'parent' ? null : $user->club_id)
+            ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
@@ -301,11 +306,26 @@ class WorkplanController extends Controller
         return $workplan;
     }
 
+    private function clubIdsForParent($user): array
+    {
+        return \App\Models\Member::where('parent_id', $user->id)
+            ->whereNotNull('club_id')
+            ->pluck('club_id')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     public function pdf(Request $request)
     {
         $user = $request->user();
-        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
-        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        $clubIds = $user->profile_type === 'parent'
+            ? $this->clubIdsForParent($user)
+            : ClubHelper::clubIdsForUser($user)->all();
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+        $selectedClubId = $request->input('club_id')
+            ?: ($user->profile_type === 'parent' ? null : $user->club_id)
+            ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
@@ -437,8 +457,13 @@ class WorkplanController extends Controller
     public function ics(Request $request)
     {
         $user = $request->user();
-        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
-        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        $clubIds = $user->profile_type === 'parent'
+            ? $this->clubIdsForParent($user)
+            : ClubHelper::clubIdsForUser($user)->all();
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+        $selectedClubId = $request->input('club_id')
+            ?: ($user->profile_type === 'parent' ? null : $user->club_id)
+            ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
@@ -675,8 +700,13 @@ class WorkplanController extends Controller
     public function classPlansPdf(Request $request)
     {
         $user = $request->user();
-        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
-        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+        $clubIds = $user->profile_type === 'parent'
+            ? $this->clubIdsForParent($user)
+            : ClubHelper::clubIdsForUser($user)->all();
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+        $selectedClubId = $request->input('club_id')
+            ?: ($user->profile_type === 'parent' ? null : $user->club_id)
+            ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
