@@ -64,6 +64,7 @@ class ExpenseController extends Controller
                 'created_by_user_id',
                 'status',
                 'receipt_path',
+                'reimbursement_receipt_path',
                 'created_at',
             ]);
 
@@ -257,6 +258,7 @@ class ExpenseController extends Controller
 
         $validated = $request->validate([
             'pay_to' => ['required', 'string', 'max:255'],
+            'receipt_image' => ['required', 'image', 'max:5120'],
         ]);
 
         if ($expense->pay_to !== 'reimbursement_to' || $expense->status !== 'pending_reimbursement') {
@@ -279,9 +281,18 @@ class ExpenseController extends Controller
             ], 422);
         }
 
-        \DB::transaction(function () use ($expense, $account) {
+        $receiptPath = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
+
+        if ($expense->reimbursement_receipt_path) {
+            Storage::disk('public')->delete($expense->reimbursement_receipt_path);
+        }
+
+        \DB::transaction(function () use ($expense, $account, $receiptPath) {
             $account->decrement('balance', (float) $expense->amount);
-            $expense->update(['status' => 'completed']);
+            $expense->update([
+                'status' => 'completed',
+                'reimbursement_receipt_path' => $receiptPath,
+            ]);
         });
 
         return response()->json([

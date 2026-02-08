@@ -291,16 +291,24 @@ watch(selectedClubId, async (id, old) => {
                                 <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
                             </div>
                             <div class="mt-3">
-                                <a v-if="e.receipt_url"
-                                    :href="e.receipt_url"
-                                    target="_blank" rel="noopener"
-                                    class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                    Ver recibo
-                                </a>
-                                <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
-                                    <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
-                                    Sin recibo
-                                </span>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <a v-if="e.receipt_url"
+                                        :href="e.receipt_url"
+                                        target="_blank" rel="noopener"
+                                        class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                        Recibo gasto
+                                    </a>
+                                    <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
+                                        <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
+                                        Sin recibo gasto
+                                    </span>
+                                    <a v-if="e.reimbursement_receipt_url"
+                                        :href="e.reimbursement_receipt_url"
+                                        target="_blank" rel="noopener"
+                                        class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                        Recibo reembolso
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -341,12 +349,19 @@ watch(selectedClubId, async (id, old) => {
                                             :href="e.receipt_url"
                                             target="_blank" rel="noopener"
                                             class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                            Ver recibo
+                                            Recibo gasto
                                         </a>
                                         <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
                                             <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
-                                            Sin recibo
+                                            Sin recibo gasto
                                         </span>
+                                        <span v-if="e.reimbursement_receipt_ref" class="text-xs text-gray-600">{{ e.reimbursement_receipt_ref }}</span>
+                                        <a v-if="e.reimbursement_receipt_url"
+                                            :href="e.reimbursement_receipt_url"
+                                            target="_blank" rel="noopener"
+                                            class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                            Recibo reembolso
+                                        </a>
                                     </div>
                                 </td>
                                 <td class="px-4 py-2">{{ e.reimbursed_to || '—' }}</td>

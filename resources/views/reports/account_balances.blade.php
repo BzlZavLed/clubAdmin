@@ -79,7 +79,8 @@
                     <th>Account</th>
                     <th>Amount</th>
                     <th>Status</th>
-                    <th>Receipt Ref</th>
+                    <th>Expense Receipt Ref</th>
+                    <th>Reimbursement Receipt Ref</th>
                     <th>Reimbursed to</th>
                     <th>Description</th>
                 </tr>
@@ -92,6 +93,7 @@
                         <td>${{ number_format($e['amount'] ?? 0, 2) }}</td>
                         <td>{{ $e['status'] ? ucfirst($e['status']) : '—' }}</td>
                         <td>{{ $e['receipt_ref'] ?? '—' }}</td>
+                        <td>{{ $e['reimbursement_receipt_ref'] ?? '—' }}</td>
                         <td>{{ $e['reimbursed_to'] ?? '—' }}</td>
                         <td>{{ $e['description'] ?? '—' }}</td>
                     </tr>

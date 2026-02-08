@@ -371,9 +371,14 @@ export const uploadExpenseReceipt = async (expenseId, file) => {
     })
 }
 
-export const markExpenseReimbursed = async (expenseId, payTo) => {
-    return await axios.post(route('club.director.expenses.reimburse', expenseId), {
-        pay_to: payTo,
+export const markExpenseReimbursed = async (expenseId, payTo, receiptFile) => {
+    const fd = new FormData()
+    fd.append('pay_to', payTo)
+    if (receiptFile) {
+        fd.append('receipt_image', receiptFile)
+    }
+    return await axios.post(route('club.director.expenses.reimburse', expenseId), fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
     })
 }
 

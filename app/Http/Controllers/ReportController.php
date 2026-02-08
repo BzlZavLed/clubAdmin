@@ -851,15 +851,20 @@ class ReportController extends Controller
             ->where('club_id', $club->id)
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
-            ->get(['id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path'])
+            ->get(['id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path', 'reimbursement_receipt_path'])
             ->values();
 
         // Assign receipt references and map to DTOs
         $expenseReceiptCounter = 1;
-        $expenseRows = $expenses->map(function ($e) use ($payToLabelMap, &$expenseReceiptCounter) {
+        $reimburseReceiptCounter = 1;
+        $expenseRows = $expenses->map(function ($e) use ($payToLabelMap, &$expenseReceiptCounter, &$reimburseReceiptCounter) {
             $ref = null;
             if ($e->receipt_path) {
                 $ref = 'R' . $expenseReceiptCounter++;
+            }
+            $reimburseRef = null;
+            if ($e->reimbursement_receipt_path) {
+                $reimburseRef = 'RR' . $reimburseReceiptCounter++;
             }
             return [
                 'id' => $e->id,
@@ -873,6 +878,9 @@ class ReportController extends Controller
                 'receipt_path' => $e->receipt_path,
                 'receipt_ref' => $ref,
                 'receipt_url' => $e->receipt_url ?? null,
+                'reimbursement_receipt_path' => $e->reimbursement_receipt_path,
+                'reimbursement_receipt_ref' => $reimburseRef,
+                'reimbursement_receipt_url' => $e->reimbursement_receipt_url ?? null,
             ];
         });
 
@@ -896,6 +904,9 @@ class ReportController extends Controller
         $receiptAnnexes = collect();
         $expenseRows->filter(fn($e) => $e['receipt_path'])->each(function ($e) use (&$receiptAnnexes, $buildAnnex) {
             $receiptAnnexes->push($buildAnnex($e['receipt_ref'], $e['receipt_path'], $e['id'], 'Expense'));
+        });
+        $expenseRows->filter(fn($e) => $e['reimbursement_receipt_path'])->each(function ($e) use (&$receiptAnnexes, $buildAnnex) {
+            $receiptAnnexes->push($buildAnnex($e['reimbursement_receipt_ref'], $e['reimbursement_receipt_path'], $e['id'], 'Reimbursement'));
         });
 
         $payments->filter(fn($p) => $p['receipt_path'])->each(function ($p) use (&$receiptAnnexes, $buildAnnex) {
