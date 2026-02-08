@@ -21,6 +21,7 @@ const expanded = ref(new Set())
 const linkModalOpen = ref(false)
 const linkable = ref([])
 const linking = ref(false)
+const linkSearchName = ref('')
 const lang = ref('en')
 
 const labels = {
@@ -142,7 +143,24 @@ const openLinkModal = async () => {
     linkable.value = []
     linking.value = true
     try {
-        const { data } = await axios.get('/parent/children/linkable')
+        const { data } = await axios.get('/parent/children/linkable', {
+            params: { name: linkSearchName.value || undefined }
+        })
+        linkable.value = data.linkable || []
+    } catch (e) {
+        showToast('Could not load linkable members', 'error')
+    } finally {
+        linking.value = false
+    }
+}
+
+const searchLinkable = async () => {
+    linkable.value = []
+    linking.value = true
+    try {
+        const { data } = await axios.get('/parent/children/linkable', {
+            params: { name: linkSearchName.value || undefined }
+        })
         linkable.value = data.linkable || []
     } catch (e) {
         showToast('Could not load linkable members', 'error')
@@ -428,6 +446,22 @@ const linkMember = async (candidate) => {
                         <button class="text-gray-500" @click="linkModalOpen = false">✕</button>
                     </div>
                     <p class="text-sm text-gray-600">If we found children whose parent info matches your account it will be displayed here.</p>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input
+                            v-model="linkSearchName"
+                            type="text"
+                            placeholder="Child name"
+                            class="flex-1 border rounded px-3 py-2 text-sm"
+                            @keyup.enter="searchLinkable"
+                        />
+                        <button
+                            class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                            @click="searchLinkable"
+                            :disabled="linking"
+                        >
+                            Search
+                        </button>
+                    </div>
                     <div v-if="linking" class="text-sm text-gray-600">Loading…</div>
                     <div v-else>
                         <div v-if="!linkable.length" class="text-sm text-gray-500">No matching children found.</div>

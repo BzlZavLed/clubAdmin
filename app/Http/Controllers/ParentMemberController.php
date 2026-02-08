@@ -144,6 +144,7 @@ class ParentMemberController extends Controller
         $parentName = strtolower($parent->name ?? '');
         $parentEmail = strtolower($parent->email ?? '');
         $churchId = $parent->church_id;
+        $searchName = strtolower(trim(request()->input('name', '')));
 
         if (!$churchId) {
             return response()->json([
@@ -177,6 +178,9 @@ class ParentMemberController extends Controller
                     ->orWhereRaw('LOWER(emergency_contact) = ?', [$parentName])
                     ->orWhereRaw('LOWER(email_address) = ?', [$parentEmail]);
             })
+            ->when($searchName !== '', function ($q) use ($searchName) {
+                $q->whereRaw('LOWER(applicant_name) LIKE ?', ['%' . $searchName . '%']);
+            })
             ->limit(20)
             ->get()
             ->map(function ($row) {
@@ -196,6 +200,9 @@ class ParentMemberController extends Controller
             ->where(function ($q) use ($parentName, $parentEmail) {
                 $q->whereRaw('LOWER(father_name) = ?', [$parentName])
                     ->orWhereRaw('LOWER(email) = ?', [$parentEmail]);
+            })
+            ->when($searchName !== '', function ($q) use ($searchName) {
+                $q->whereRaw('LOWER(nombre) LIKE ?', ['%' . $searchName . '%']);
             })
             ->limit(20)
             ->get()
