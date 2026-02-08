@@ -22,6 +22,7 @@ const linkModalOpen = ref(false)
 const linkable = ref([])
 const linking = ref(false)
 const linkSearchName = ref('')
+const manualSearchVisible = ref(false)
 const lang = ref('en')
 
 const labels = {
@@ -142,6 +143,8 @@ const openLinkModal = async () => {
     linkModalOpen.value = true
     linkable.value = []
     linking.value = true
+    manualSearchVisible.value = false
+    linkSearchName.value = ''
     try {
         const { data } = await axios.get('/parent/children/linkable', {
             params: { name: linkSearchName.value || undefined }
@@ -151,6 +154,7 @@ const openLinkModal = async () => {
         showToast('Could not load linkable members', 'error')
     } finally {
         linking.value = false
+        manualSearchVisible.value = linkable.value.length === 0
     }
 }
 
@@ -165,6 +169,7 @@ const searchLinkable = async () => {
     } catch (e) {
         showToast('Could not load linkable members', 'error')
     } finally {
+        manualSearchVisible.value = linkable.value.length === 0
         linking.value = false
     }
 }
@@ -446,21 +451,24 @@ const linkMember = async (candidate) => {
                         <button class="text-gray-500" @click="linkModalOpen = false">✕</button>
                     </div>
                     <p class="text-sm text-gray-600">If we found children whose parent info matches your account it will be displayed here.</p>
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <input
-                            v-model="linkSearchName"
-                            type="text"
-                            placeholder="Child name"
-                            class="flex-1 border rounded px-3 py-2 text-sm"
-                            @keyup.enter="searchLinkable"
-                        />
-                        <button
-                            class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                            @click="searchLinkable"
-                            :disabled="linking"
-                        >
-                            Search
-                        </button>
+                    <div v-if="manualSearchVisible" class="space-y-2">
+                        <p class="text-sm text-gray-600">No matches found. Try searching by your child’s name.</p>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input
+                                v-model="linkSearchName"
+                                type="text"
+                                placeholder="Child name"
+                                class="flex-1 border rounded px-3 py-2 text-sm"
+                                @keyup.enter="searchLinkable"
+                            />
+                            <button
+                                class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                                @click="searchLinkable"
+                                :disabled="linking"
+                            >
+                                Search
+                            </button>
+                        </div>
                     </div>
                     <div v-if="linking" class="text-sm text-gray-600">Loading…</div>
                     <div v-else>
