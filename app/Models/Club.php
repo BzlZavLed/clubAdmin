@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Club extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'user_id',
         'club_name',
@@ -56,6 +58,11 @@ class Club extends Model
     public function reportsAssistance()
     {
         return $this->hasMany(RepAssistanceAdv::class, 'club_id');
+    }
+
+    public function events()
+    {
+        return $this->hasMany(Event::class);
     }
 
 }

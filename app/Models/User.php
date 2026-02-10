@@ -84,4 +84,9 @@ class User extends Authenticatable
         return $this->belongsTo(Church::class);
     }
 
+    public function createdEvents()
+    {
+        return $this->hasMany(Event::class, 'created_by_user_id');
+    }
+
 }

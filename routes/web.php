@@ -23,6 +23,14 @@ use App\Http\Controllers\ReportController;
 use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Controllers\WorkplanController;
 use App\Http\Controllers\ClubSettingsController;
+use App\Http\Controllers\EventController;
+use App\Http\Controllers\EventPlanController;
+use App\Http\Controllers\EventTaskController;
+use App\Http\Controllers\EventBudgetItemController;
+use App\Http\Controllers\EventParticipantController;
+use App\Http\Controllers\EventDocumentController;
+use App\Http\Controllers\EventPlannerController;
+use App\Http\Controllers\EventPlaceOptionController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -321,6 +329,37 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/financial-report/accounts', [ReportController::class, 'financialAccountBalances'])->name('financial.accounts');
     Route::get('/financial-report/accounts/pdf', [ReportController::class, 'financialAccountBalancesPdf'])->name('financial.accounts.pdf');
 
+});
+
+// ---------------------------------
+// 🗓️ Event Planner (Club Director + Club Personal)
+// ---------------------------------
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('events', EventController::class);
+    Route::patch('/event-plans/{event}', [EventPlanController::class, 'update'])->name('event-plans.update');
+
+    Route::get('/events/{event}/tasks', [EventTaskController::class, 'index'])->name('event-tasks.index');
+    Route::post('/events/{event}/tasks', [EventTaskController::class, 'store'])->name('event-tasks.store');
+    Route::put('/event-tasks/{eventTask}', [EventTaskController::class, 'update'])->name('event-tasks.update');
+    Route::delete('/event-tasks/{eventTask}', [EventTaskController::class, 'destroy'])->name('event-tasks.destroy');
+
+    Route::get('/events/{event}/budget-items', [EventBudgetItemController::class, 'index'])->name('event-budget-items.index');
+    Route::post('/events/{event}/budget-items', [EventBudgetItemController::class, 'store'])->name('event-budget-items.store');
+    Route::put('/event-budget-items/{eventBudgetItem}', [EventBudgetItemController::class, 'update'])->name('event-budget-items.update');
+    Route::delete('/event-budget-items/{eventBudgetItem}', [EventBudgetItemController::class, 'destroy'])->name('event-budget-items.destroy');
+
+    Route::get('/events/{event}/participants', [EventParticipantController::class, 'index'])->name('event-participants.index');
+    Route::post('/events/{event}/participants', [EventParticipantController::class, 'store'])->name('event-participants.store');
+    Route::put('/event-participants/{eventParticipant}', [EventParticipantController::class, 'update'])->name('event-participants.update');
+    Route::delete('/event-participants/{eventParticipant}', [EventParticipantController::class, 'destroy'])->name('event-participants.destroy');
+
+    Route::get('/events/{event}/documents', [EventDocumentController::class, 'index'])->name('event-documents.index');
+    Route::post('/events/{event}/documents', [EventDocumentController::class, 'store'])->name('event-documents.store');
+    Route::delete('/event-documents/{eventDocument}', [EventDocumentController::class, 'destroy'])->name('event-documents.destroy');
+
+    Route::post('/events/{event}/planner/message', [EventPlannerController::class, 'message'])->name('planner.message');
+    Route::post('/events/{event}/place-options', [EventPlaceOptionController::class, 'store'])->name('event-place-options.store');
+    Route::put('/event-place-options/{eventPlaceOption}', [EventPlaceOptionController::class, 'update'])->name('event-place-options.update');
 });
 
 // ---------------------------------

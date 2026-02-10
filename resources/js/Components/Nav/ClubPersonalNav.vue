@@ -22,6 +22,7 @@ const showDropdown = ref(false)
 
 const menuItems = [
     { name: 'Panel', href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
+    { name: 'Event Planner', href: '/events', route: 'events.index', icon: CalendarDaysIcon },
 ]
 
 const clubSubItems = [
