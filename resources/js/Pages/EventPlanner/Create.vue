@@ -19,6 +19,8 @@ const form = useForm({
     budget_estimated_total: '',
     budget_actual_total: '',
     requires_approval: false,
+    is_payable: false,
+    payment_amount: '',
     risk_level: '',
 })
 
@@ -71,6 +73,24 @@ const submit = () => {
             <div class="flex items-center gap-3">
                 <label class="text-sm text-gray-600">Requires approval</label>
                 <input type="checkbox" v-model="form.requires_approval" />
+            </div>
+            <div class="flex items-center gap-6">
+                <label class="text-sm text-gray-600 flex items-center gap-2">
+                    <input type="checkbox" v-model="form.is_payable" />
+                    Payable event
+                </label>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-600">Fee amount</label>
+                    <input
+                        v-model="form.payment_amount"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        :disabled="!form.is_payable"
+                        class="w-32 border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                        placeholder="0.00"
+                    />
+                </div>
             </div>
             <button @click="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm" :disabled="form.processing">
                 {{ form.processing ? 'Saving...' : 'Create Event' }}

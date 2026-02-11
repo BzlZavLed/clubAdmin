@@ -15,6 +15,7 @@ class EventFactory extends Factory
     {
         $start = $this->faker->dateTimeBetween('+1 days', '+2 months');
         $end = (clone $start)->modify('+4 hours');
+        $isPayable = $this->faker->boolean(30);
 
         return [
             'club_id' => Club::factory(),
@@ -34,6 +35,8 @@ class EventFactory extends Factory
             'budget_estimated_total' => $this->faker->randomFloat(2, 0, 1000),
             'budget_actual_total' => null,
             'requires_approval' => $this->faker->boolean(20),
+            'is_payable' => $isPayable,
+            'payment_amount' => $isPayable ? $this->faker->randomFloat(2, 5, 50) : null,
             'risk_level' => $this->faker->randomElement(['low', 'medium', 'high']),
         ];
     }

@@ -4,7 +4,8 @@ import axios from 'axios'
 
 const props = defineProps({
     eventId: { type: Number, required: true },
-    messages: { type: Array, default: () => [] }
+    messages: { type: Array, default: () => [] },
+    autoCreateBudgetItem: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update'])
@@ -16,12 +17,22 @@ const error = ref(null)
 const messagesRef = ref(null)
 const inputRef = ref(null)
 
+const placeMapLink = (place) => {
+    if (place?.place_id) {
+        return `https://www.google.com/maps/place/?q=place_id:${place.place_id}`
+    }
+    const query = place?.address || place?.vicinity || place?.name
+    if (!query) return null
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
+
 watch(
     () => props.messages,
     (value) => {
         localMessages.value = [...value]
     }
 )
+
 
 watch(
     () => localMessages.value.length,
@@ -57,6 +68,7 @@ const send = async () => {
     try {
         const { data } = await axios.post(route('planner.message', { event: props.eventId }), {
             message: input.value,
+            create_budget_item: props.autoCreateBudgetItem,
         })
         emit('update', data)
         localMessages.value = data.eventPlan?.conversation_json || localMessages.value
@@ -81,6 +93,8 @@ const send = async () => {
                 <li><span class="font-medium">set_missing_items</span> — Track missing plan requirements.</li>
                 <li><span class="font-medium">add_participants</span> — Add participants and roles.</li>
                 <li><span class="font-medium">find_recommended_places</span> — Find recommended places near the church address.</li>
+                <li><span class="font-medium">find_rental_agencies</span> — Find nearby car/van/bus rental agencies.</li>
+                <li><span class="font-medium">estimate_rental_costs</span> — Estimate rental costs per day and total.</li>
             </ul>
         </details>
         <div ref="messagesRef" class="space-y-3 max-h-80 overflow-y-auto">
@@ -89,6 +103,20 @@ const send = async () => {
                     class="px-3 py-2 rounded-lg max-w-[80%] text-sm whitespace-pre-wrap">
                     <div class="text-xs opacity-70 mb-1">{{ msg.role }}</div>
                     {{ msg.content }}
+                    <div v-if="msg.places?.length" class="mt-2 space-y-2">
+                        <div v-for="place in msg.places" :key="place.place_id || place.name" class="border rounded-md bg-white p-2 text-xs text-gray-700">
+                            <div class="font-semibold text-gray-900">{{ place.name }}</div>
+                            <div v-if="place.address || place.vicinity" class="text-gray-600">{{ place.address || place.vicinity }}</div>
+                            <div v-if="place.rating" class="text-gray-600">Rating: {{ place.rating }}<span v-if="place.user_ratings_total"> ({{ place.user_ratings_total }} reviews)</span></div>
+                            <div v-if="place.international_phone_number || place.formatted_phone_number" class="text-gray-600">Phone: {{ place.international_phone_number || place.formatted_phone_number }}</div>
+                            <div v-if="place.distance_text || place.duration_text" class="text-gray-600">
+                                <span v-if="place.distance_text">Distance: {{ place.distance_text }}</span>
+                                <span v-if="place.distance_text && place.duration_text"> • </span>
+                                <span v-if="place.duration_text">ETA: {{ place.duration_text }}</span>
+                            </div>
+                            <a v-if="placeMapLink(place)" :href="placeMapLink(place)" target="_blank" rel="noopener noreferrer" class="inline-block mt-1 text-xs text-blue-600 underline">Open in Maps</a>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div v-if="!localMessages.length" class="text-sm text-gray-500">Start the conversation with the planner.</div>

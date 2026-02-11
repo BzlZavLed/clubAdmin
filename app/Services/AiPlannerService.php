@@ -29,10 +29,12 @@ class AiPlannerService
     ) {
     }
 
-    public function handleMessage(Event $event, User $user, string $message): array
+    public function handleMessage(Event $event, User $user, string $message, array $options = []): array
     {
         $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents', 'club.church']);
         $plan = $event->plan ?? $this->initializePlan($event);
+
+        $this->applyPlannerPreferences($plan, $options);
 
         if (empty($plan->missing_items_json)) {
             $defaults = $this->defaultMissingItems($event->event_type);
@@ -58,8 +60,9 @@ class AiPlannerService
 
         $forceNoTools = $this->isDocumentRequest($message);
         $isNonPlaceRequest = $this->isNonPlaceRequest($message);
-        $placeIntent = $this->detectPlaceIntent($message);
-        $forcedTool = $placeIntent ? 'find_recommended_places' : null;
+        $rentalAgencyIntent = $this->detectRentalAgencyIntent($message);
+        $placeIntent = !$rentalAgencyIntent && $this->detectPlaceIntent($message);
+        $forcedTool = $rentalAgencyIntent ? 'find_rental_agencies' : ($placeIntent ? 'find_recommended_places' : null);
 
         $pendingIntent = $plan->plan_json['pending_place_intent'] ?? null;
         if (!$pendingIntent && !$placeIntent && !$isNonPlaceRequest && !$forceNoTools) {
@@ -173,11 +176,70 @@ class AiPlannerService
             }
         }
 
+        if ($inferredTool === 'estimate_rental_costs') {
+            $details = $this->extractRentalDetails($message, $event);
+            if ($details) {
+                $toolOutput = $this->handleEstimateRentalCosts($event, array_merge([
+                    'event_id' => $event->id,
+                ], $details));
+
+                if (isset($toolOutput['error'])) {
+                    $assistantMessage = 'I could not estimate rental costs. Please provide vehicle type, passenger count, and dates.';
+                } else {
+                    $daily = $toolOutput['daily_range'] ?? [];
+                    $total = $toolOutput['total_range'] ?? [];
+                    $days = $toolOutput['days'] ?? 1;
+                    $vehicleType = $toolOutput['vehicle_type'] ?? 'rental vehicle';
+                    $vehiclesCount = $toolOutput['vehicles_count'] ?? 1;
+                    $dailyLow = $daily[0] ?? 0;
+                    $dailyHigh = $daily[1] ?? 0;
+                    $totalLow = $total[0] ?? 0;
+                    $totalHigh = $total[1] ?? 0;
+                    $gasEstimate = $toolOutput['gas_estimate'] ?? null;
+                    $distanceText = $toolOutput['distance']['distance_text'] ?? null;
+                    $assistantMessage = "Estimated {$vehiclesCount} {$vehicleType} rental(s) for {$days} day(s): \${$totalLow} - \${$totalHigh} (about \${$dailyLow}-\${$dailyHigh} per day each).";
+                    if ($gasEstimate !== null) {
+                        $assistantMessage .= $distanceText
+                            ? " Estimated gas: \${$gasEstimate} (round trip {$distanceText} from the church address)."
+                            : " Estimated gas: \${$gasEstimate} (from the church address).";
+                    }
+                    if (!empty($details['vehicles_count_inferred'])) {
+                        $assistantMessage .= ' I assumed the vehicle count from the passenger estimate; tell me if you need more vehicles.';
+                    }
+                }
+
+                $conversation[] = [
+                    'role' => 'assistant',
+                    'content' => $assistantMessage,
+                    'at' => now()->toIso8601String(),
+                ];
+                $plan->conversation_json = $conversation;
+                $plan->last_generated_at = now();
+                $plan->ai_summary = $assistantMessage;
+                $plan->save();
+
+                $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents']);
+
+                $response = [
+                    'assistant_message' => $assistantMessage,
+                    'event' => $event,
+                    'eventPlan' => $event->plan,
+                    'tasks' => $event->tasks,
+                    'budget_items' => $event->budgetItems,
+                    'participants' => $event->participants,
+                    'documents' => $event->documents,
+                    'missing_items' => $event->plan?->missing_items_json ?? [],
+                ];
+                return $this->withDebug($response);
+            }
+        }
+
 
         $payload = $this->buildPayload(array_merge([
             ['role' => 'system', 'content' => $systemPrompt],
         ], $conversation), $tools, $forcedTool, $forceNoTools ? 'none' : null);
 
+        $latestPlaces = null;
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $response = $this->callAndLog($event, $user, $payload);
             $assistantMessage = $this->extractAssistantMessage($response);
@@ -233,6 +295,15 @@ class AiPlannerService
                     if ($count !== null) {
                         $lastToolSummary = "I found {$count} recommended places near the church address.";
                     }
+                    $latestPlaces = $toolOutput['result']['places'] ?? null;
+                }
+
+                if (($toolOutput['name'] ?? null) === 'find_rental_agencies') {
+                    $count = $toolOutput['result']['count'] ?? null;
+                    if ($count !== null) {
+                        $lastToolSummary = "I found {$count} rental agencies near the church address.";
+                    }
+                    $latestPlaces = $toolOutput['result']['agencies'] ?? null;
                 }
             }
 
@@ -258,6 +329,29 @@ class AiPlannerService
         }
         if (!$assistantMessage) {
             $assistantMessage = 'I’m here and ready. Tell me what you want to accomplish next (tasks, budget, participants, plan outline, or place recommendations).';
+        }
+
+        if ($latestPlaces) {
+            $lastIndex = count($conversation) - 1;
+            $lastMessage = $lastIndex >= 0 ? $conversation[$lastIndex] : null;
+            $shouldAppend = !($lastMessage && ($lastMessage['role'] ?? null) === 'assistant')
+                || !empty($lastMessage['tool_calls'])
+                || empty($lastMessage['content'] ?? null);
+            if ($shouldAppend) {
+                $conversation[] = [
+                    'role' => 'assistant',
+                    'content' => $assistantMessage,
+                    'places' => $latestPlaces,
+                    'at' => now()->toIso8601String(),
+                ];
+            } else {
+                $conversation[$lastIndex]['places'] = $latestPlaces;
+                $conversation[$lastIndex]['content'] = $assistantMessage;
+            }
+            $plan->conversation_json = $conversation;
+            $plan->last_generated_at = now();
+            $plan->ai_summary = $assistantMessage;
+            $plan->save();
         }
 
         $response = [
@@ -312,6 +406,7 @@ class AiPlannerService
     protected function buildSystemPrompt(Event $event): string
     {
         $plan = $event->plan;
+        $preferences = $plan?->plan_json['preferences'] ?? [];
 
         $context = [
             'event' => [
@@ -335,9 +430,10 @@ class AiPlannerService
             'budget_items' => $event->budgetItems->map->only(['id', 'category', 'description', 'qty', 'unit_cost', 'total'])->values()->all(),
             'participants' => $event->participants->map->only(['id', 'participant_name', 'role', 'status'])->values()->all(),
             'church_address' => $event->club?->church?->address,
+            'preferences' => $preferences,
         ];
 
-        return "You are an AI Event Planner Manager for club directors. Use the provided tools to update event plans, tasks, budget items, participants, and to find recommended places near the church address when asked (camping, night out, dinner, venues, outings). If the user asks for places or recommendations, you MUST call find_recommended_places. Never delete records. Treat tool arguments as untrusted and only include safe, validated data. Provide concise, actionable guidance. Context:\n" . json_encode($context);
+        return "You are an AI Event Planner Manager for club directors. Use the provided tools to update event plans, tasks, budget items, participants, and to find recommended places near the church address when asked (camping, night out, dinner, venues, outings). If the user asks for places or recommendations, you MUST call find_recommended_places. If the user asks about renting vehicles (car/van/bus), call estimate_rental_costs and, when location is needed, call find_rental_agencies (Google Places can list agencies but not actual prices). If preferences.auto_create_budget_item is true, you should set create_budget_item=true when estimating rental costs. Never delete records. Treat tool arguments as untrusted and only include safe, validated data. Provide concise, actionable guidance. Context:\n" . json_encode($context);
     }
 
     protected function buildPayload(array $input, array $tools, ?string $forcedTool = null, ?string $toolChoice = null): array
@@ -604,9 +700,30 @@ class AiPlannerService
         return ($hasNumber && ($hasStreetHint || $hasComma)) || $hasZip;
     }
 
+    protected function detectRentalAgencyIntent(string $message): bool
+    {
+        $text = mb_strtolower($message);
+        if (!(str_contains($text, 'rent') || str_contains($text, 'rental') || str_contains($text, 'agency') || str_contains($text, 'agencies'))) {
+            return false;
+        }
+        return str_contains($text, 'where')
+            || str_contains($text, 'near')
+            || str_contains($text, 'suggest')
+            || str_contains($text, 'find')
+            || str_contains($text, 'recommend');
+    }
+
     protected function inferToolIntent(string $message): ?string
     {
         $text = mb_strtolower($message);
+
+        if ($this->detectRentalAgencyIntent($message)) {
+            return 'find_rental_agencies';
+        }
+
+        if (str_contains($text, 'rent') || str_contains($text, 'rental') || str_contains($text, 'van') || str_contains($text, 'bus') || str_contains($text, 'coach') || str_contains($text, 'minivan') || str_contains($text, 'car')) {
+            return 'estimate_rental_costs';
+        }
 
         if ($this->detectPlaceIntent($message)) {
             return 'find_recommended_places';
@@ -643,6 +760,8 @@ class AiPlannerService
     {
         return match ($tool) {
             'find_recommended_places' => 'No tools were executed. Please provide a city, state, or ZIP code (or confirm the church address) so I can find nearby recommendations.',
+            'find_rental_agencies' => 'No tools were executed. Please provide a pickup city/ZIP (or confirm the church address) so I can list nearby rental agencies.',
+            'estimate_rental_costs' => 'No tools were executed. Please provide vehicle type (car/van/bus), passenger count, and dates so I can estimate costs.',
             'create_tasks' => 'No tools were executed. Please list the tasks you want created (e.g., title and due date if known).',
             'create_budget_items' => 'No tools were executed. Please share budget items with category, description, and estimated cost.',
             'add_participants' => 'No tools were executed. Please provide participant names, roles, and statuses.',
@@ -732,6 +851,26 @@ class AiPlannerService
                     'missing_items' => $items,
                 ]);
                 $assistantMessage = 'Missing items updated from your follow-up details.';
+            }
+        } elseif ($tool === 'find_rental_agencies') {
+            $locationHint = $this->extractLocationHint($message);
+            $radiusKm = $this->extractRadiusKm($message);
+            $toolOutput = $this->handleFindRentalAgencies($event, [
+                'event_id' => $event->id,
+                'location' => $locationHint ?: $message,
+                'radius_km' => $radiusKm,
+            ]);
+            $count = $toolOutput['count'] ?? null;
+            $assistantMessage = $count
+                ? "I found {$count} rental agencies near the church address."
+                : 'I could not find rental agencies. Please provide a city, state, or ZIP code.';
+        } elseif ($tool === 'estimate_rental_costs') {
+            $details = $this->extractRentalDetails($message, $event);
+            if ($details) {
+                $toolOutput = $this->handleEstimateRentalCosts($event, array_merge([
+                    'event_id' => $event->id,
+                ], $details));
+                $assistantMessage = 'Rental cost estimate generated from your details.';
             }
         } elseif ($tool === 'update_event_spine' || $tool === 'update_plan_section') {
             // Use model assistance to interpret the follow-up details.
@@ -1008,6 +1147,8 @@ class AiPlannerService
             'set_missing_items' => $this->handleSetMissingItems($event, $args),
             'add_participants' => $this->handleAddParticipants($event, $args),
             'find_recommended_places' => $this->handleFindRecommendedPlaces($event, $args),
+            'find_rental_agencies' => $this->handleFindRentalAgencies($event, $args),
+            'estimate_rental_costs' => $this->handleEstimateRentalCosts($event, $args),
             default => ['error' => 'Unknown tool call: ' . $name],
         };
 
@@ -1351,6 +1492,494 @@ class AiPlannerService
         ];
     }
 
+    protected function handleFindRentalAgencies(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+            'location' => ['nullable', 'string'],
+            'vehicle_type' => ['nullable', 'string'],
+            'radius_km' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'max_results' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'min_rating' => ['nullable', 'numeric', 'min:0', 'max:5'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        $vehicleType = $args['vehicle_type'] ?? null;
+        $intent = trim(($vehicleType ? "{$vehicleType} " : '') . 'rental');
+        $location = $args['location'] ?? null;
+        $address = $this->composeSearchAddress($event->club?->church?->address, $location);
+
+        if (!$address) {
+            return ['error' => 'Church address is missing for this club.'];
+        }
+
+        if (!config('places.google.api_key')) {
+            return [
+                'error' => 'Google Maps API key is missing. Please set GOOGLE_MAPS_API_KEY.',
+                'debug' => config('ai.debug_return') ? [
+                    'address' => $address,
+                    'intent' => $intent,
+                    'radius_km' => $args['radius_km'] ?? null,
+                ] : null,
+            ];
+        }
+
+        try {
+            $places = $this->places->findRecommendedPlaces(
+                $address,
+                $intent,
+                $args['radius_km'] ?? null,
+                $args['max_results'] ?? null,
+                $args['min_rating'] ?? null,
+            );
+        } catch (\Throwable $e) {
+            $message = $e->getMessage();
+            if (str_contains($message, 'referer restrictions')) {
+                $message = 'Google Maps API key is restricted by HTTP referrer. Use a server key restricted by IP addresses.';
+            }
+            return [
+                'error' => $message,
+                'details' => $e->getMessage(),
+                'debug' => config('ai.debug_return') ? [
+                    'address' => $address,
+                    'intent' => $intent,
+                    'radius_km' => $args['radius_km'] ?? null,
+                ] : null,
+            ];
+        }
+
+        $plan = $event->plan ?? $this->initializePlan($event);
+        $planJson = $plan->plan_json ?? ['sections' => []];
+        $sections = $planJson['sections'] ?? [];
+
+        $sectionName = 'Transportation Options';
+        $items = array_map(function ($place) {
+            $label = $place['name'] ?? 'Rental Agency';
+            $detail = trim(($place['address'] ?? '') . ($place['rating'] ? " (Rating {$place['rating']})" : ''));
+            return [
+                'label' => $label,
+                'detail' => $detail,
+                'meta' => $place,
+            ];
+        }, $places);
+
+        $found = false;
+        foreach ($sections as &$section) {
+            if (($section['name'] ?? null) === $sectionName) {
+                $section['items'] = $items;
+                $section['summary'] = 'Rental agencies near the church address.';
+                $found = true;
+                break;
+            }
+        }
+        unset($section);
+
+        if (!$found) {
+            $sections[] = [
+                'name' => $sectionName,
+                'summary' => 'Rental agencies near the church address.',
+                'items' => $items,
+            ];
+        }
+
+        $planJson['sections'] = $sections;
+        $plan->plan_json = $planJson;
+        $plan->save();
+
+        return [
+            'address_used' => $address,
+            'count' => count($places),
+            'agencies' => $places,
+            'debug' => config('ai.debug_return') ? [
+                'address' => $address,
+                'intent' => $intent,
+                'radius_km' => $args['radius_km'] ?? null,
+                'results_count' => count($places),
+            ] : null,
+        ];
+    }
+
+    protected function handleEstimateRentalCosts(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+            'vehicle_type' => ['required', 'string'],
+            'vehicles_count' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'days' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'passengers' => ['nullable', 'integer', 'min:1', 'max:80'],
+            'pickup_location' => ['nullable', 'string'],
+            'destination' => ['nullable', 'string'],
+            'create_budget_item' => ['nullable', 'boolean'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        $vehicleType = mb_strtolower($args['vehicle_type']);
+        $vehiclesCount = (int) ($args['vehicles_count'] ?? 1);
+        $vehiclesCount = max(1, $vehiclesCount);
+        $days = (int) ($args['days'] ?? $this->calculateEventDays($event));
+        $days = max(1, $days);
+        $passengers = $args['passengers'] ?? null;
+        $destination = $args['destination'] ?? null;
+
+        $ranges = $this->rentalRateRanges();
+        $range = $ranges[$vehicleType] ?? $ranges[$this->normalizeVehicleType($vehicleType)] ?? $ranges['car'];
+
+        $dailyLow = $range['low'];
+        $dailyHigh = $range['high'];
+
+        $totalLow = $dailyLow * $days * $vehiclesCount;
+        $totalHigh = $dailyHigh * $days * $vehiclesCount;
+
+        $suggested = [];
+        if ($passengers !== null) {
+            if ($passengers > 12 && !str_contains($vehicleType, 'bus')) {
+                $suggested[] = 'Passenger count suggests a mini bus or coach.';
+            } elseif ($passengers > 6 && !str_contains($vehicleType, 'van')) {
+                $suggested[] = 'Consider a minivan or passenger van for this group size.';
+            }
+        }
+
+        $gasEstimate = null;
+        $distanceInfo = null;
+        $origin = $event->club?->church?->address;
+        if ($origin && $destination && config('places.google.api_key')) {
+            $distanceInfo = $this->places->getDistanceEstimate($origin, $destination);
+            if ($distanceInfo) {
+                $roundTripMiles = ($distanceInfo['distance_miles'] ?? 0) * 2;
+                $mpg = str_contains($vehicleType, 'bus') || str_contains($vehicleType, 'coach') ? 7 : (str_contains($vehicleType, 'van') ? 15 : 22);
+                $gasPrice = 3.5;
+                $gasPerVehicle = ($roundTripMiles / max(1, $mpg)) * $gasPrice;
+                $gasEstimate = round($gasPerVehicle * $vehiclesCount, 2);
+            }
+        }
+
+        $budgetItemId = null;
+        $createBudgetItem = $args['create_budget_item'] ?? $this->getPlanPreference($event, 'auto_create_budget_item');
+        if ($createBudgetItem) {
+            $mid = round(($dailyLow + $dailyHigh) / 2, 2);
+            $qty = $days * $vehiclesCount;
+            $existingItem = $event->budgetItems()
+                ->where('category', 'Transportation')
+                ->where(function ($query) use ($vehicleType) {
+                    $query->where('description', 'ilike', '%rental%')
+                        ->orWhere('description', 'ilike', '%' . $vehicleType . '%');
+                })
+                ->first();
+
+            if ($existingItem) {
+                $existingItem->update([
+                    'qty' => $qty,
+                    'unit_cost' => $mid,
+                    'notes' => "Estimated range: \${$totalLow} - \${$totalHigh} for {$vehiclesCount} vehicle(s) over {$days} day(s).",
+                ]);
+                $budgetItemId = $existingItem->id;
+            } else {
+                $budgetItemId = EventBudgetItem::create([
+                    'event_id' => $event->id,
+                    'category' => 'Transportation',
+                    'description' => ucfirst($vehicleType) . " rental estimate ({$vehiclesCount}x)",
+                    'qty' => $qty,
+                    'unit_cost' => $mid,
+                    'notes' => "Estimated range: \${$totalLow} - \${$totalHigh} for {$vehiclesCount} vehicle(s) over {$days} day(s).",
+                ])->id;
+            }
+
+            if ($gasEstimate !== null) {
+                $gasItem = $event->budgetItems()
+                    ->where('category', 'Transportation')
+                    ->where('description', 'ilike', '%gas%')
+                    ->first();
+                if ($gasItem) {
+                    $gasItem->update([
+                        'qty' => 1,
+                        'unit_cost' => $gasEstimate,
+                        'notes' => $distanceInfo ? "Round trip distance: {$distanceInfo['distance_text']}." : 'Gas estimate based on round trip mileage.',
+                    ]);
+                } else {
+                    EventBudgetItem::create([
+                        'event_id' => $event->id,
+                        'category' => 'Transportation',
+                        'description' => 'Gas reimbursement estimate',
+                        'qty' => 1,
+                        'unit_cost' => $gasEstimate,
+                        'notes' => $distanceInfo ? "Round trip distance: {$distanceInfo['distance_text']}." : 'Gas estimate based on round trip mileage.',
+                    ]);
+                }
+            }
+        }
+
+        $plan = $event->plan ?? $this->initializePlan($event);
+        $planJson = $plan->plan_json ?? ['sections' => []];
+        $sections = $planJson['sections'] ?? [];
+        $sectionName = 'Transportation Options';
+        $detail = "Estimated {$vehiclesCount} vehicle(s) for {$days} day(s): \${$totalLow} - \${$totalHigh} (\${$dailyLow}-\${$dailyHigh}/day each).";
+        if ($gasEstimate !== null) {
+            $distanceText = $distanceInfo['distance_text'] ?? null;
+            $detail .= $distanceText ? " Gas est: \${$gasEstimate} (round trip {$distanceText})." : " Gas est: \${$gasEstimate}.";
+        }
+
+        $found = false;
+        foreach ($sections as &$section) {
+            if (($section['name'] ?? null) === $sectionName) {
+                $section['items'][] = [
+                    'label' => ucfirst($vehicleType) . ' rental estimate',
+                    'detail' => $detail,
+                    'meta' => [
+                        'vehicle_type' => $vehicleType,
+                        'vehicles_count' => $vehiclesCount,
+                        'days' => $days,
+                        'passengers' => $passengers,
+                        'distance' => $distanceInfo,
+                        'gas_estimate' => $gasEstimate,
+                    ],
+                ];
+                $section['summary'] = 'Rental cost estimates (heuristic).';
+                $found = true;
+                break;
+            }
+        }
+        unset($section);
+
+        if (!$found) {
+            $sections[] = [
+                'name' => $sectionName,
+                'summary' => 'Rental cost estimates (heuristic).',
+                'items' => [[
+                    'label' => ucfirst($vehicleType) . ' rental estimate',
+                    'detail' => $detail,
+                    'meta' => [
+                        'vehicle_type' => $vehicleType,
+                        'vehicles_count' => $vehiclesCount,
+                        'days' => $days,
+                        'passengers' => $passengers,
+                        'distance' => $distanceInfo,
+                        'gas_estimate' => $gasEstimate,
+                    ],
+                ]],
+            ];
+        }
+
+        $planJson['sections'] = $sections;
+        $plan->plan_json = $planJson;
+        $plan->save();
+
+        return [
+            'vehicle_type' => $vehicleType,
+            'vehicles_count' => $vehiclesCount,
+            'days' => $days,
+            'passengers' => $passengers,
+            'daily_range' => [$dailyLow, $dailyHigh],
+            'total_range' => [$totalLow, $totalHigh],
+            'gas_estimate' => $gasEstimate,
+            'distance' => $distanceInfo,
+            'assumptions' => [
+                'Estimates are heuristic and vary by season/location.',
+                'Actual prices require rental provider quotes.',
+            ],
+            'suggestions' => $suggested,
+            'budget_item_id' => $budgetItemId,
+        ];
+    }
+
+    protected function rentalRateRanges(): array
+    {
+        return [
+            'car' => ['low' => 45, 'high' => 90],
+            'suv' => ['low' => 70, 'high' => 130],
+            'minivan' => ['low' => 90, 'high' => 160],
+            '12-passenger van' => ['low' => 140, 'high' => 230],
+            '15-passenger van' => ['low' => 170, 'high' => 280],
+            'passenger van' => ['low' => 150, 'high' => 260],
+            'van' => ['low' => 140, 'high' => 260],
+            'shuttle bus' => ['low' => 260, 'high' => 520],
+            'mini bus' => ['low' => 350, 'high' => 700],
+            'school bus' => ['low' => 400, 'high' => 850],
+            'bus' => ['low' => 500, 'high' => 1000],
+            'coach' => ['low' => 900, 'high' => 1400],
+        ];
+    }
+
+    protected function normalizeVehicleType(string $vehicleType): string
+    {
+        if (str_contains($vehicleType, '15')) {
+            return '15-passenger van';
+        }
+        if (str_contains($vehicleType, '12')) {
+            return '12-passenger van';
+        }
+        if (str_contains($vehicleType, 'school')) {
+            return 'school bus';
+        }
+        if (str_contains($vehicleType, 'shuttle')) {
+            return 'shuttle bus';
+        }
+        if (str_contains($vehicleType, 'coach')) {
+            return 'coach';
+        }
+        if (str_contains($vehicleType, 'minivan')) {
+            return 'minivan';
+        }
+        if (str_contains($vehicleType, 'bus')) {
+            return 'bus';
+        }
+        if (str_contains($vehicleType, 'mini')) {
+            return 'mini bus';
+        }
+        if (str_contains($vehicleType, 'passenger')) {
+            return 'passenger van';
+        }
+        if (str_contains($vehicleType, 'van')) {
+            return 'van';
+        }
+        if (str_contains($vehicleType, 'suv')) {
+            return 'suv';
+        }
+        return 'car';
+    }
+
+    protected function calculateEventDays(Event $event): int
+    {
+        if ($event->start_at && $event->end_at) {
+            $days = $event->start_at->diffInDays($event->end_at) + 1;
+            return max(1, $days);
+        }
+        return 1;
+    }
+
+    protected function extractDestination(string $message): ?string
+    {
+        if (preg_match('/\\bto\\s+go\\s+to\\s+([^\\?\\.,]+)/i', $message, $matches)) {
+            return trim($matches[1]);
+        }
+        if (preg_match('/\\bgo(?:ing)?\\s+to\\s+([^\\?\\.,]+)/i', $message, $matches)) {
+            return trim($matches[1]);
+        }
+        if (preg_match('/\\bto\\s+([^\\?\\.,]+)/i', $message, $matches)) {
+            $candidate = trim($matches[1]);
+            if (preg_match('/^go\\s+to\\s+(.+)$/i', $candidate, $nested)) {
+                return trim($nested[1]);
+            }
+            return $candidate;
+        }
+        return null;
+    }
+
+    protected function extractRentalDetails(string $message, Event $event): ?array
+    {
+        $text = mb_strtolower($message);
+        $vehicleType = null;
+        if (preg_match('/\\b15\\s*passenger\\b/', $text)) {
+            $vehicleType = '15-passenger van';
+        } elseif (preg_match('/\\b12\\s*passenger\\b/', $text)) {
+            $vehicleType = '12-passenger van';
+        } elseif (str_contains($text, 'school bus')) {
+            $vehicleType = 'school bus';
+        } elseif (str_contains($text, 'shuttle bus')) {
+            $vehicleType = 'shuttle bus';
+        }
+
+        $vehicles = ['15-passenger van', '12-passenger van', 'school bus', 'shuttle bus', 'coach', 'bus', 'mini bus', 'minibus', 'passenger van', 'van', 'minivan', 'suv', 'car'];
+        if (!$vehicleType) {
+            foreach ($vehicles as $candidate) {
+                if (str_contains($text, $candidate)) {
+                    $vehicleType = $candidate;
+                    break;
+                }
+            }
+        }
+
+        if (!$vehicleType) {
+            return null;
+        }
+
+        $passengers = null;
+        if (preg_match('/\\b(\\d{1,2})\\s*(people|passengers|kids|students|riders)\\b/', $text, $matches)) {
+            $passengers = (int) $matches[1];
+        }
+
+        if (!$vehicleType && str_contains($text, 'van') && $passengers) {
+            $vehicleType = $passengers >= 13 ? '15-passenger van' : '12-passenger van';
+        }
+
+        if ($vehicleType === 'van' && $passengers) {
+            $vehicleType = $passengers >= 13 ? '15-passenger van' : '12-passenger van';
+        }
+
+        $days = null;
+        if (preg_match('/\\b(\\d{1,2})\\s*(day|days|night|nights)\\b/', $text, $matches)) {
+            $days = (int) $matches[1];
+        }
+
+        $vehiclesCount = null;
+        $vehiclesCountInferred = false;
+        if (preg_match('/\\b(\\d{1,2})\\s*(?:x\\s*)?(?:vehicles|vans|buses|cars|rentals)\\b/', $text, $matches)) {
+            $vehiclesCount = (int) $matches[1];
+        }
+        if (!$vehiclesCount && preg_match('/\\b([1-5])\\b(?:\\s+\\w+){0,3}\\s+(vehicles|vans|buses|cars|rentals)\\b/i', $message, $matches)) {
+            $vehiclesCount = (int) $matches[1];
+        }
+        if (!$vehiclesCount) {
+            $wordCounts = [
+                'one' => 1,
+                'two' => 2,
+                'three' => 3,
+                'four' => 4,
+                'five' => 5,
+            ];
+            foreach ($wordCounts as $word => $count) {
+                $pattern = '/\\b' . $word . '\\b(?:\\s+\\w+){0,3}\\s+(vehicles|vans|buses|cars|rentals)\\b/i';
+                if (preg_match($pattern, $message)) {
+                    $vehiclesCount = $count;
+                    break;
+                }
+            }
+        }
+
+        if (!$vehiclesCount && $passengers) {
+            $capacity = 0;
+            if (str_contains($vehicleType, '15')) {
+                $capacity = 15;
+            } elseif (str_contains($vehicleType, '12')) {
+                $capacity = 12;
+            } elseif (str_contains($vehicleType, 'bus') || str_contains($vehicleType, 'coach')) {
+                $capacity = 40;
+            } elseif (str_contains($vehicleType, 'van')) {
+                $capacity = 12;
+            } elseif (str_contains($vehicleType, 'minivan')) {
+                $capacity = 7;
+            }
+
+            if ($capacity > 0) {
+                $vehiclesCount = (int) ceil($passengers / $capacity);
+                $vehiclesCountInferred = true;
+            }
+        }
+
+        return [
+            'vehicle_type' => $vehicleType,
+            'vehicles_count' => $vehiclesCount,
+            'vehicles_count_inferred' => $vehiclesCountInferred,
+            'days' => $days ?? $this->calculateEventDays($event),
+            'passengers' => $passengers,
+            'pickup_location' => $this->extractLocationHint($message),
+            'destination' => $this->extractDestination($message),
+        ];
+    }
+
     protected function toolDefinitions(): array
     {
         return [
@@ -1553,6 +2182,70 @@ class AiPlannerService
                 ],
                 'strict' => false,
             ],
+            [
+                'type' => 'function',
+                'name' => 'find_rental_agencies',
+                'description' => 'Find rental agencies (car/van/bus) near the church address or pickup location.',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                        'location' => ['type' => ['string', 'null']],
+                        'vehicle_type' => ['type' => ['string', 'null']],
+                        'radius_km' => ['type' => ['integer', 'null']],
+                        'max_results' => ['type' => ['integer', 'null']],
+                        'min_rating' => ['type' => ['number', 'null']],
+                    ],
+                    'required' => ['event_id'],
+                ],
+                'strict' => false,
+            ],
+            [
+                'type' => 'function',
+                'name' => 'estimate_rental_costs',
+                'description' => 'Estimate rental costs using heuristic ranges (daily and total).',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                        'vehicle_type' => ['type' => 'string', 'description' => 'Example: car, minivan, 12-passenger van, 15-passenger van, school bus, coach'],
+                        'vehicles_count' => ['type' => ['integer', 'null']],
+                        'days' => ['type' => ['integer', 'null']],
+                        'passengers' => ['type' => ['integer', 'null']],
+                        'pickup_location' => ['type' => ['string', 'null']],
+                        'destination' => ['type' => ['string', 'null']],
+                        'create_budget_item' => ['type' => ['boolean', 'null']],
+                    ],
+                    'required' => ['event_id', 'vehicle_type'],
+                ],
+                'strict' => false,
+            ],
         ];
+    }
+
+    protected function applyPlannerPreferences(EventPlan $plan, array $options): void
+    {
+        if (!array_key_exists('create_budget_item', $options)) {
+            return;
+        }
+
+        $planJson = $plan->plan_json ?? ['sections' => []];
+        $preferences = $planJson['preferences'] ?? [];
+        $value = $options['create_budget_item'];
+        if ($value !== null) {
+            $preferences['auto_create_budget_item'] = (bool) $value;
+        }
+        $planJson['preferences'] = $preferences;
+        $plan->plan_json = $planJson;
+        $plan->save();
+    }
+
+    protected function getPlanPreference(Event $event, string $key): bool
+    {
+        $plan = $event->plan;
+        $preferences = $plan?->plan_json['preferences'] ?? [];
+        return (bool) ($preferences[$key] ?? false);
     }
 }

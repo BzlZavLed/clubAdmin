@@ -1,6 +1,6 @@
 <script setup>
 import PathfinderLayout from "@/Layouts/PathfinderLayout.vue";
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import {
     CreditCardIcon,
@@ -24,6 +24,7 @@ const props = defineProps({
     accounts: { type: Array, default: () => [] },
     payments: { type: Array, required: true },
     payment_types: { type: Array, required: true },
+    prefill: { type: Object, default: () => ({}) },
 })
 const allowedClubs = computed(() => {
     const userClubId = props.auth_user?.club_id
@@ -91,6 +92,9 @@ const customConceptMode = ref(false)
 const customConceptText = ref('')
 const customPayTo = ref(null)
 const customPayerType = ref('member')
+const prefillApplied = ref(false)
+const prefillMemberId = ref(null)
+const prefillStaffId = ref(null)
 
 const scopePayerType = computed(() => {
     const st = selectedScope.value?.scope_type
@@ -175,6 +179,12 @@ watch(selectedScopeId, (id) => {
     if (scope.scope_type === 'staff') {
         selectedStaffId.value = scope.staff_id || scope.staff?.id || null
     }
+    if (scope.scope_type === 'club_wide' && prefillMemberId.value) {
+        selectedMemberId.value = prefillMemberId.value
+    }
+    if (scope.scope_type === 'staff_wide' && prefillStaffId.value) {
+        selectedStaffId.value = prefillStaffId.value
+    }
 })
 
 // Reset concept when club changes
@@ -206,6 +216,45 @@ watch(allowedClubs, (val) => {
 if (!form.club_id) {
     form.club_id = props.club?.id ?? (allowedClubs.value?.[0]?.id ?? null)
 }
+
+const applyPrefill = () => {
+    if (prefillApplied.value) return
+    const prefill = props.prefill || {}
+    if (!prefill.concept_id && !prefill.member_id && !prefill.staff_id) return
+
+    if (prefill.club_id && allowedClubs.value.some(c => Number(c.id) === Number(prefill.club_id))) {
+        form.club_id = Number(prefill.club_id)
+    }
+
+    const concept = (filteredConcepts.value || []).find(c => Number(c.id) === Number(prefill.concept_id))
+    if (concept) {
+        selectedConceptId.value = concept.id
+        form.payment_concept_id = concept.id
+        selectedScopeId.value = scopesForConcept.value[0]?.id ?? null
+    }
+
+    if (prefill.member_id) {
+        prefillMemberId.value = Number(prefill.member_id)
+    }
+    if (prefill.staff_id) {
+        prefillStaffId.value = Number(prefill.staff_id)
+    }
+    if (prefill.amount) {
+        form.amount_paid = String(prefill.amount)
+    }
+
+    prefillApplied.value = true
+    nextTick(() => {
+        if (prefillMemberId.value) {
+            selectedMemberId.value = prefillMemberId.value
+        }
+        if (prefillStaffId.value) {
+            selectedStaffId.value = prefillStaffId.value
+        }
+    })
+}
+
+watch([filteredConcepts, () => form.club_id], applyPrefill, { immediate: true })
 
 watch(customConceptMode, (val) => {
     if (val) {

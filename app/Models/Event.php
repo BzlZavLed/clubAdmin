@@ -24,6 +24,9 @@ class Event extends Model
         'budget_estimated_total',
         'budget_actual_total',
         'requires_approval',
+        'is_payable',
+        'payment_amount',
+        'payment_concept_id',
         'risk_level',
     ];
 
@@ -31,8 +34,10 @@ class Event extends Model
         'start_at' => 'datetime',
         'end_at' => 'datetime',
         'requires_approval' => 'boolean',
+        'is_payable' => 'boolean',
         'budget_estimated_total' => 'decimal:2',
         'budget_actual_total' => 'decimal:2',
+        'payment_amount' => 'decimal:2',
     ];
 
     public function club()
@@ -73,5 +78,20 @@ class Event extends Model
     public function placeOptions()
     {
         return $this->hasMany(EventPlaceOption::class);
+    }
+
+    public function drivers()
+    {
+        return $this->hasMany(EventDriver::class);
+    }
+
+    public function vehicles()
+    {
+        return $this->hasMany(EventVehicle::class);
+    }
+
+    public function paymentConcept()
+    {
+        return $this->belongsTo(PaymentConcept::class);
     }
 }

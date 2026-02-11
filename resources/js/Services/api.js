@@ -455,6 +455,17 @@ export const deleteWorkplanEvent = async (id) => {
     return data
 }
 
+// Event Planner
+export const updateEvent = async (id, payload) => {
+    const { data } = await axios.put(route('events.update', id), payload, {
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    })
+    return data
+}
+
 export const deleteWorkplan = async (clubId) => {
     const { data } = await axios.delete(route('club.workplan.destroy'), {
         params: clubId ? { club_id: clubId } : {}

@@ -18,6 +18,8 @@ const form = useForm({
     budget_estimated_total: props.event.budget_estimated_total,
     budget_actual_total: props.event.budget_actual_total,
     requires_approval: props.event.requires_approval,
+    is_payable: props.event.is_payable,
+    payment_amount: props.event.payment_amount,
     risk_level: props.event.risk_level,
 })
 
@@ -63,6 +65,24 @@ const submit = () => {
                 <div>
                     <label class="text-sm text-gray-600">Status</label>
                     <input v-model="form.status" class="w-full border rounded px-3 py-2 text-sm" />
+                </div>
+            </div>
+            <div class="flex items-center gap-6">
+                <label class="text-sm text-gray-600 flex items-center gap-2">
+                    <input type="checkbox" v-model="form.is_payable" />
+                    Payable event
+                </label>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-600">Fee amount</label>
+                    <input
+                        v-model="form.payment_amount"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        :disabled="!form.is_payable"
+                        class="w-32 border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                        placeholder="0.00"
+                    />
                 </div>
             </div>
             <button @click="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm" :disabled="form.processing">

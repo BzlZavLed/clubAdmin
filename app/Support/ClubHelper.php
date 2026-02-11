@@ -94,7 +94,7 @@ class ClubHelper
             $query->where('class_id', $classId);
         }
 
-        $memberRows = $query->get(['id', 'type', 'id_data', 'club_id', 'class_id']);
+        $memberRows = $query->get(['id', 'type', 'id_data', 'club_id', 'class_id', 'parent_id']);
 
         $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->filter()->values();
         $pathfinderIds = $memberRows->whereIn('type', ['temp_pathfinder', 'pathfinders'])->pluck('id_data')->filter()->values();
@@ -124,6 +124,7 @@ class ClubHelper
                     'id_data' => $m->id_data,
                     'class_id' => $m->class_id,
                     'club_id' => $m->club_id,
+                    'parent_id' => $m->parent_id,
                     'applicant_name' => $name ?? '—',
                 ];
             })

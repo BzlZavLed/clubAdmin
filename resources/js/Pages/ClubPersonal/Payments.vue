@@ -24,6 +24,7 @@ const props = defineProps({
     payment_types: { type: Array, required: true }, // ['zelle','cash','check']
     assigned_members: { type: Array, default: () => [] },
     assigned_class: { type: Object, default: null },
+    prefill: { type: Object, default: () => ({}) },
 })
 const assignedMembers = ref([]);
 const assignedClass = ref(null);
@@ -42,6 +43,30 @@ onMounted(async () => {
         await loadAssignedMembers(props.staff.id);
     }
 });
+
+const applyPrefill = () => {
+    if (prefillApplied.value) return
+    const prefill = props.prefill || {}
+    if (!prefill.concept_id && !prefill.member_id) return
+
+    const concept = (props.concepts || []).find(c => Number(c.id) === Number(prefill.concept_id))
+    if (concept) {
+        selectedConceptId.value = concept.id
+        form.payment_concept_id = concept.id
+    }
+
+    if (prefill.member_id) {
+        selectedMemberId.value = Number(prefill.member_id)
+    }
+
+    if (prefill.amount) {
+        form.amount_paid = String(prefill.amount)
+    }
+
+    prefillApplied.value = true
+}
+
+watch(() => props.concepts, applyPrefill, { immediate: true })
 
 // ----- Helpers -----
 const scopeLabel = (sc) => {
@@ -70,6 +95,7 @@ const customConceptMode = ref(false)
 const customConceptText = ref('')
 const selectedConcept = computed(() => props.concepts.find(c => c.id === selectedConceptId.value) || null)
 const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? '')
+const prefillApplied = ref(false)
 
 // ----- Form -----
 const form = useForm({

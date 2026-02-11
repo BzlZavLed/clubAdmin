@@ -29,8 +29,11 @@ use App\Http\Controllers\EventTaskController;
 use App\Http\Controllers\EventBudgetItemController;
 use App\Http\Controllers\EventParticipantController;
 use App\Http\Controllers\EventDocumentController;
+use App\Http\Controllers\EventDriverController;
+use App\Http\Controllers\EventVehicleController;
 use App\Http\Controllers\EventPlannerController;
 use App\Http\Controllers\EventPlaceOptionController;
+use App\Http\Controllers\TaskFormController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -355,11 +358,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/events/{event}/documents', [EventDocumentController::class, 'index'])->name('event-documents.index');
     Route::post('/events/{event}/documents', [EventDocumentController::class, 'store'])->name('event-documents.store');
+    Route::put('/event-documents/{eventDocument}', [EventDocumentController::class, 'update'])->name('event-documents.update');
     Route::delete('/event-documents/{eventDocument}', [EventDocumentController::class, 'destroy'])->name('event-documents.destroy');
+
+    Route::get('/events/{event}/drivers', [EventDriverController::class, 'index'])->name('event-drivers.index');
+    Route::post('/events/{event}/drivers', [EventDriverController::class, 'store'])->name('event-drivers.store');
+    Route::put('/event-drivers/{eventDriver}', [EventDriverController::class, 'update'])->name('event-drivers.update');
+    Route::delete('/event-drivers/{eventDriver}', [EventDriverController::class, 'destroy'])->name('event-drivers.destroy');
+    Route::post('/event-drivers/{eventDriver}/vehicles', [EventVehicleController::class, 'store'])->name('event-vehicles.store');
+    Route::put('/event-vehicles/{eventVehicle}', [EventVehicleController::class, 'update'])->name('event-vehicles.update');
+    Route::delete('/event-vehicles/{eventVehicle}', [EventVehicleController::class, 'destroy'])->name('event-vehicles.destroy');
 
     Route::post('/events/{event}/planner/message', [EventPlannerController::class, 'message'])->name('planner.message');
     Route::post('/events/{event}/place-options', [EventPlaceOptionController::class, 'store'])->name('event-place-options.store');
     Route::put('/event-place-options/{eventPlaceOption}', [EventPlaceOptionController::class, 'update'])->name('event-place-options.update');
+    Route::get('/event-tasks/{eventTask}/form', [TaskFormController::class, 'show'])->name('event-tasks.form.show');
+    Route::put('/event-tasks/{eventTask}/form', [TaskFormController::class, 'update'])->name('event-tasks.form.update');
 });
 
 // ---------------------------------

@@ -4,10 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\EventParticipant;
+use App\Services\EventChecklistService;
 use Illuminate\Http\Request;
 
 class EventParticipantController extends Controller
 {
+    public function __construct(private readonly EventChecklistService $checklistService)
+    {
+    }
+
     public function index(Event $event)
     {
         $this->authorize('view', $event);
@@ -42,6 +47,8 @@ class EventParticipantController extends Controller
             'emergency_contact_json' => $validated['emergency_contact_json'] ?? null,
         ]);
 
+        $this->checklistService->syncPermissionSlips($event);
+
         return response()->json(['participant' => $participant]);
     }
 
@@ -62,6 +69,8 @@ class EventParticipantController extends Controller
 
         $eventParticipant->update($validated);
 
+        $this->checklistService->syncPermissionSlips($event);
+
         return response()->json(['participant' => $eventParticipant]);
     }
 
@@ -71,6 +80,8 @@ class EventParticipantController extends Controller
         $this->authorize('update', $event);
 
         $eventParticipant->delete();
+
+        $this->checklistService->syncPermissionSlips($event);
 
         return response()->json(['deleted' => true]);
     }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\TaskFormResponse;
 
 class EventTask extends Model
 {
@@ -33,5 +34,10 @@ class EventTask extends Model
     public function assignedTo()
     {
         return $this->belongsTo(User::class, 'assigned_to_user_id');
+    }
+
+    public function formResponse()
+    {
+        return $this->hasOne(TaskFormResponse::class, 'event_task_id');
     }
 }

@@ -89,6 +89,46 @@ class PlacesService
         }, $trimmed);
     }
 
+    public function getDistanceEstimate(string $origin, string $destination): ?array
+    {
+        $apiKey = $this->apiKey();
+        $response = Http::get(config('places.google.distance_matrix_url'), [
+            'origins' => $origin,
+            'destinations' => $destination,
+            'key' => $apiKey,
+        ]);
+
+        if ($response->failed()) {
+            return null;
+        }
+
+        $data = $response->json();
+        if (($data['status'] ?? null) !== 'OK') {
+            return null;
+        }
+
+        $element = $data['rows'][0]['elements'][0] ?? null;
+        if (!$element || ($element['status'] ?? null) !== 'OK') {
+            return null;
+        }
+
+        $distanceMeters = $element['distance']['value'] ?? null;
+        $durationText = $element['duration']['text'] ?? null;
+        if (!$distanceMeters) {
+            return null;
+        }
+
+        $distanceKm = $distanceMeters / 1000;
+        $distanceMiles = $distanceKm * 0.621371;
+
+        return [
+            'distance_miles' => round($distanceMiles, 1),
+            'distance_km' => round($distanceKm, 1),
+            'distance_text' => $element['distance']['text'] ?? null,
+            'duration_text' => $durationText,
+        ];
+    }
+
     protected function geocodeAddress(string $address): array
     {
         $apiKey = $this->apiKey();

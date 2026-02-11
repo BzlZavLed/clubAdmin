@@ -19,10 +19,18 @@ class EventPlannerController extends Controller
 
         $validated = $request->validate([
             'message' => ['required', 'string', 'max:2000'],
+            'create_budget_item' => ['nullable', 'boolean'],
         ]);
 
         try {
-            $payload = $this->planner->handleMessage($event, $request->user(), $validated['message']);
+            $payload = $this->planner->handleMessage(
+                $event,
+                $request->user(),
+                $validated['message'],
+                [
+                    'create_budget_item' => $validated['create_budget_item'] ?? null,
+                ]
+            );
         } catch (RuntimeException $e) {
             return response()->json([
                 'message' => $e->getMessage(),

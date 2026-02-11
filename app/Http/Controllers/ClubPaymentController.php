@@ -178,6 +178,7 @@ class ClubPaymentController extends Controller
             'concepts' => $concepts,
             'payments' => $recent,
             'payment_types' => ['zelle', 'cash', 'check', 'initial'],
+            'prefill' => $request->only(['club_id', 'concept_id', 'member_id', 'staff_id', 'amount']),
         ]);
     }
 
@@ -314,6 +315,7 @@ class ClubPaymentController extends Controller
             'accounts' => $accounts,
             'payments' => $recent,
             'payment_types' => ['zelle', 'cash', 'check', 'initial'],
+            'prefill' => $request->only(['club_id', 'concept_id', 'member_id', 'staff_id', 'amount']),
         ]);
     }
 
