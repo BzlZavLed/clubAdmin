@@ -31,10 +31,10 @@ class WorkplanController extends Controller
             'church',
         ]);
         if ($user->profile_type === 'superadmin') {
-            $clubs = Club::query()->orderBy('club_name')->get(['id', 'club_name']);
+            $clubs = Club::query()->orderBy('club_name')->get(['id', 'club_name', 'church_name']);
         } else {
             $clubIds = ClubHelper::clubIdsForUser($user);
-            $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+            $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'church_name']);
         }
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {

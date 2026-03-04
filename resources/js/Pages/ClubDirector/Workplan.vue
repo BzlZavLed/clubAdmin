@@ -37,8 +37,10 @@ const props = defineProps({
 const { showToast } = useGeneral()
 
 const isDirector = computed(() => props.auth_user?.profile_type === 'club_director')
+const isSuperadmin = computed(() => props.auth_user?.profile_type === 'superadmin')
 const isStaff = computed(() => props.auth_user?.profile_type === 'club_personal')
 const isReadOnly = computed(() => !isDirector.value)
+const canSelectClub = computed(() => isDirector.value || isSuperadmin.value)
 const selectedClubId = ref(props.selected_club_id || props.auth_user?.club_id || (props.clubs?.[0]?.id ?? ''))
 const hasClubSelected = computed(() => Boolean(selectedClubId.value))
 
@@ -382,6 +384,13 @@ function normalizeDate(val) {
     if (!val) return ''
     const raw = String(val)
     return raw.includes('T') ? raw.slice(0, 10) : raw
+}
+
+function onClubChange() {
+    if (!selectedClubId.value) return
+    window.location.assign(
+        safeRoute('club.workplan', { club_id: selectedClubId.value }, '/club-director/workplan')
+    )
 }
 
 function formatTime(val) {
@@ -1028,10 +1037,12 @@ watch(userClassId, (val) => {
                     <p class="text-sm text-gray-600">Calendario de reuniones sabaticas y dominicales del club con eventos especiales.</p>
                     <div class="flex items-center gap-2">
                         <label class="text-sm text-gray-700">Club</label>
-                        <template v-if="isDirector">
-                            <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm">
+                        <template v-if="canSelectClub">
+                            <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm" @change="onClubChange">
                                 <option value="">Selecciona un club</option>
-                                <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
+                                <option v-for="club in clubs" :key="club.id" :value="club.id">
+                                    {{ isSuperadmin ? `${club.club_name} - ${club.church_name || 'Sin iglesia'}` : club.club_name }}
+                                </option>
                             </select>
                         </template>
                         <template v-else>
@@ -1372,11 +1383,11 @@ watch(userClassId, (val) => {
                         <select
                             v-model="selectedClubId"
                             class="w-full border rounded px-3 py-2 text-sm bg-white"
-                            @change="window.location.assign(safeRoute('club.workplan', { club_id: selectedClubId }, '/club-director/workplan'))"
+                            @change="onClubChange"
                         >
                             <option value="">Selecciona un club</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">
-                                {{ club.club_name }}
+                                {{ isSuperadmin ? `${club.club_name} - ${club.church_name || 'Sin iglesia'}` : club.club_name }}
                             </option>
                         </select>
                     </div>
