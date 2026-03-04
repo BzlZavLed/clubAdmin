@@ -30,8 +30,12 @@ class WorkplanController extends Controller
             'clubs',
             'church',
         ]);
-        $clubIds = ClubHelper::clubIdsForUser($user);
-        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+        if ($user->profile_type === 'superadmin') {
+            $clubs = Club::query()->orderBy('club_name')->get(['id', 'club_name']);
+        } else {
+            $clubIds = ClubHelper::clubIdsForUser($user);
+            $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+        }
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');

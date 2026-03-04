@@ -1365,7 +1365,21 @@ watch(userClassId, (val) => {
             </div>
 
             <div v-else class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded">
-                Selecciona un club para ver o administrar su plan de trabajo.
+                <p>Selecciona un club para ver o administrar su plan de trabajo.</p>
+                <div v-if="clubs.length" class="mt-2">
+                    <p class="text-sm font-medium">Clubes disponibles:</p>
+                    <div class="mt-1 flex flex-wrap gap-2">
+                        <a
+                            v-for="club in clubs"
+                            :key="club.id"
+                            :href="safeRoute('club.workplan', { club_id: club.id }, '/club-director/workplan')"
+                            class="inline-flex items-center rounded border border-yellow-300 bg-white/70 px-2 py-1 text-xs text-yellow-900 hover:bg-white"
+                        >
+                            {{ club.club_name }}
+                        </a>
+                    </div>
+                </div>
+                <p v-else class="mt-2 text-sm">No hay clubes creados en el sistema.</p>
             </div>
 
             <!-- Diff modal -->
