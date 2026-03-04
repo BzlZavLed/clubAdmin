@@ -17,8 +17,16 @@ import {
     fetchMembersByClub
 } from '@/Services/api'
 
+const props = defineProps({
+    churches: {
+        type: Array,
+        default: () => []
+    }
+})
+
 // 🧠 Auth state
 const { user } = useAuth()
+const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
 
 const { showToast } = useGeneral()
 const today = new Date().toISOString().split("T")[0]
@@ -39,19 +47,27 @@ const clubId = ref(user.value.club_id || null)
 const clubStaff = computed(() => {
     return clubs.value[0]?.staff_adventurers ?? []
 })
-if (!user.value.pastor_name) {
+if (!isSuperadmin.value && !user.value.pastor_name) {
     showToast('Primero crea la iglesia', 'error')
 }
 
+const initialChurch = isSuperadmin.value
+    ? (props.churches.find(ch => Number(ch.id) === Number(user.value.church_id)) || props.churches[0] || null)
+    : null
+
 // 🧠 Club form
 const clubForm = useForm({
-    church_id: user.value.church_id,
+    church_id: isSuperadmin.value ? (initialChurch?.id || '') : user.value.church_id,
     club_name: '',
-    church_name: user.value.church_name,
+    church_name: isSuperadmin.value ? (initialChurch?.church_name || '') : user.value.church_name,
     director_name: user.value.name,
     creation_date: today,
-    pastor_name: user.value.pastor_name || 'Iglesia no creada',
-    conference_name: user.value.conference_name || 'Iglesia no creada',
+    pastor_name: isSuperadmin.value
+        ? (initialChurch?.pastor_name || '')
+        : (user.value.pastor_name || 'Iglesia no creada'),
+    conference_name: isSuperadmin.value
+        ? (initialChurch?.conference || '')
+        : (user.value.conference_name || 'Iglesia no creada'),
     conference_region: '',
     club_type: ''
 })
@@ -62,6 +78,14 @@ const filteredClubs = computed(() => {
     return selectedClubId.value
         ? clubs.value.filter(club => club.id === selectedClubId.value)
         : clubs.value
+})
+
+watch(() => clubForm.church_id, (churchId) => {
+    if (!isSuperadmin.value) return
+    const selected = props.churches.find(ch => Number(ch.id) === Number(churchId))
+    clubForm.church_name = selected?.church_name || ''
+    clubForm.pastor_name = selected?.pastor_name || ''
+    clubForm.conference_name = selected?.conference || ''
 })
 
 // 🧠 Load clubs on mount
@@ -183,14 +207,21 @@ const editCls = (cls) => {
 const startCreatingClub = () => {
     addClub.value = true
     clubForm.reset()
+    const selected = props.churches.find(ch => Number(ch.id) === Number(clubForm.church_id))
     Object.assign(clubForm, {
-        church_id: user.value.church_id,
+        church_id: isSuperadmin.value ? (selected?.id || props.churches?.[0]?.id || '') : user.value.church_id,
         club_name: '',
-        church_name: user.value.church_name,
+        church_name: isSuperadmin.value
+            ? (selected?.church_name || props.churches?.[0]?.church_name || '')
+            : user.value.church_name,
         director_name: user.value.name,
         creation_date: today,
-        pastor_name: user.value.pastor_name,
-        conference_name: user.value.conference_name || '',
+        pastor_name: isSuperadmin.value
+            ? (selected?.pastor_name || props.churches?.[0]?.pastor_name || '')
+            : user.value.pastor_name,
+        conference_name: isSuperadmin.value
+            ? (selected?.conference || props.churches?.[0]?.conference || '')
+            : (user.value.conference_name || ''),
         conference_region: '',
         club_type: ''
     })
@@ -425,8 +456,18 @@ onMounted(fetchClubs);
                     { key: 'conference_region', label: 'Region de la conferencia' }
                 ]" :key="field.key">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
-                    <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
-                        class="w-full mt-1 p-2 border rounded" />
+                    <template v-if="field.key === 'church_name' && isSuperadmin">
+                        <select v-model="clubForm.church_id" class="w-full mt-1 p-2 border rounded">
+                            <option value="">Selecciona una iglesia</option>
+                            <option v-for="church in props.churches" :key="church.id" :value="church.id">
+                                {{ church.church_name }}
+                            </option>
+                        </select>
+                    </template>
+                    <template v-else>
+                        <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
+                            class="w-full mt-1 p-2 border rounded" />
+                    </template>
                 </div>
 
                 <div>

@@ -181,7 +181,12 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get(
         '/club-director/my-club',
         fn() =>
-        Inertia::render('ClubDirector/MyClub', ['auth_user' => auth()->user()])
+        Inertia::render('ClubDirector/MyClub', [
+            'auth_user' => auth()->user(),
+            'churches' => Church::select('id', 'church_name', 'pastor_name', 'conference')
+                ->orderBy('church_name')
+                ->get(),
+        ])
     )->name('club.my-club');
 
     Route::get(
