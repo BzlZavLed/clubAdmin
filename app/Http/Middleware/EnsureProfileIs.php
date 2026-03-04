@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use App\Http\Middleware\RedirectIfAuthenticated;
 
 class EnsureProfileIs
 {
@@ -15,7 +16,7 @@ class EnsureProfileIs
                 return response()->json(['message' => 'Access denied.'], 403);
             }
 
-            return redirect('/dashboard')->with('error', 'Access denied.');
+            return redirect(RedirectIfAuthenticated::redirectPath())->with('error', 'Access denied.');
         }
 
         return $next($request);
