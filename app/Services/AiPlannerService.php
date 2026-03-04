@@ -10,6 +10,7 @@ use App\Models\EventParticipant;
 use App\Models\EventPlan;
 use App\Models\EventTask;
 use App\Models\User;
+use App\Services\EventTaskTemplateService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -29,6 +30,7 @@ class AiPlannerService
         private PlacesService $places,
         private RentalQuoteService $rentalQuotes,
         private PlannerIntentEngine $intentEngine,
+        private EventTaskTemplateService $taskTemplates,
     ) {
     }
 
@@ -46,6 +48,8 @@ class AiPlannerService
                 $plan->save();
             }
         }
+
+        $this->validateAndBackfillTasks($event, $plan);
 
         $this->assertWithinCaps($event, $user, $plan);
 
@@ -822,6 +826,87 @@ class AiPlannerService
             ]),
             default => $base,
         };
+    }
+
+    protected function validateAndBackfillTasks(Event $event, EventPlan $plan): void
+    {
+        $templates = $this->taskTemplates->templatesForEventType($event->club_id, $event->event_type);
+        $requiredTitles = $templates->isNotEmpty()
+            ? $templates->pluck('title')->filter()->values()->all()
+            : $this->defaultMissingItems($event->event_type);
+
+        if (empty($requiredTitles)) {
+            return;
+        }
+
+        $existingTasks = $event->tasks()->get(['id', 'title', 'status', 'checklist_json']);
+        $existingByTitle = [];
+        foreach ($existingTasks as $task) {
+            $normalized = strtolower(trim((string) $task->title));
+            if ($normalized !== '') {
+                $existingByTitle[$normalized] = true;
+            }
+        }
+
+        $createdAny = false;
+        foreach ($requiredTitles as $title) {
+            $normalized = strtolower(trim((string) $title));
+            if ($normalized === '' || isset($existingByTitle[$normalized])) {
+                continue;
+            }
+
+            EventTask::create([
+                'event_id' => $event->id,
+                'title' => $title,
+                'status' => 'todo',
+                'checklist_json' => [
+                    'source' => 'ai_validation',
+                    'task_key' => $this->taskKeyFromTitle($title),
+                ],
+            ]);
+            $existingByTitle[$normalized] = true;
+            $createdAny = true;
+        }
+
+        if ($createdAny) {
+            $openTitles = $event->tasks()
+                ->where('status', '!=', 'done')
+                ->orderBy('id')
+                ->pluck('title')
+                ->values()
+                ->all();
+            $plan->missing_items_json = $openTitles;
+            $plan->save();
+        }
+    }
+
+    protected function taskKeyFromTitle(string $title): ?string
+    {
+        $normalized = strtolower($title);
+        $mappings = [
+            ['confirm date/time with venue', 'camp_reservation'],
+            ['confirm date with venue', 'camp_reservation'],
+            ['confirm venue', 'camp_reservation'],
+            ['venue confirmation', 'camp_reservation'],
+            ['collect permission slips', 'permission_slips'],
+            ['permission slips', 'permission_slips'],
+            ['permission slip', 'permission_slips'],
+            ['finalize attendee list', 'finalize_attendee_list'],
+            ['attendee list', 'finalize_attendee_list'],
+            ['arrange transportation', 'transportation_plan'],
+            ['transportation', 'transportation_plan'],
+            ['emergency contact list', 'emergency_contacts'],
+            ['emergency contacts', 'emergency_contacts'],
+            ['assign chaperones', 'chaperone_assignments'],
+            ['chaperones', 'chaperone_assignments'],
+        ];
+        foreach ($mappings as [$needle, $key]) {
+            if (str_contains($normalized, $needle)) {
+                return $key;
+            }
+        }
+
+        return null;
     }
 
     protected function handlePendingAction(Event $event, EventPlan $plan, array $conversation, string $tool, string $message): ?array
