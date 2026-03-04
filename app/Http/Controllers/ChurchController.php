@@ -8,15 +8,7 @@ use App\Models\ChurchInviteCode;
 use Illuminate\Support\Str;
 class ChurchController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        return Church::all();
-    }
-
-    public function indexWithInviteCodes()
+    private function listWithInviteCodes()
     {
         return Church::with('inviteCode')
             ->orderBy('church_name')
@@ -41,6 +33,19 @@ class ChurchController extends Controller
     }
 
     /**
+     * Display a listing of the resource.
+     */
+    public function index()
+    {
+        return $this->listWithInviteCodes();
+    }
+
+    public function indexWithInviteCodes()
+    {
+        return $this->listWithInviteCodes();
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
@@ -61,15 +66,15 @@ class ChurchController extends Controller
             $validated 
         );
 
-        // Ensure an invite code exists for this church
-        if ($church->wasRecentlyCreated) {
-            ChurchInviteCode::create([
-                'church_id' => $church->id,
+        // Ensure an invite code exists for this church, even for previously created records.
+        ChurchInviteCode::firstOrCreate(
+            ['church_id' => $church->id],
+            [
                 'code' => Str::upper(Str::random(10)),
                 'uses_left' => null,
                 'status' => 'active',
-            ]);
-        }
+            ]
+        );
 
         return response()->json([
             'message' => $church->wasRecentlyCreated

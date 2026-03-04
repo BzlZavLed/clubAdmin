@@ -90,4 +90,26 @@ class ChurchInviteCodeController extends Controller
             'status' => $code->status,
         ]);
     }
+
+    public function upsertForChurch(Request $request, Church $church)
+    {
+        $code = ChurchInviteCode::updateOrCreate(
+            ['church_id' => $church->id],
+            [
+                'code' => Str::upper(Str::random(10)),
+                'status' => 'active',
+                'uses_left' => null,
+                'expires_at' => null,
+                'created_by' => $request->user()?->id,
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Invite code generated',
+            'code' => $code->code,
+            'uses_left' => $code->uses_left,
+            'expires_at' => $code->expires_at,
+            'status' => $code->status,
+        ]);
+    }
 }

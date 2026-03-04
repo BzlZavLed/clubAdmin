@@ -94,7 +94,7 @@
                                 <span v-else class="text-gray-400 text-xs">Sin código</span>
                             </td>
                             <td class="px-4 py-2 text-right space-x-2">
-                                <button v-if="isSuperAdmin" type="button" class="text-indigo-600 hover:underline"
+                                <button type="button" class="text-indigo-600 hover:underline"
                                     @click="regenerateInviteCode(church.id)">
                                     {{ church.invite_code ? 'Regenerar' : 'Generar' }}
                                 </button>
@@ -243,12 +243,11 @@ const deleteChurch = async (churchId) => {
 }
 
 const regenerateInviteCode = async (churchId) => {
-    if (!isSuperAdmin.value) {
-        return
-    }
-
     try {
-        const response = await axios.post(`/super-admin/churches/${churchId}/invite-code`)
+        const endpoint = isSuperAdmin.value
+            ? `/super-admin/churches/${churchId}/invite-code`
+            : `/churches/${churchId}/invite-code`
+        const response = await axios.post(endpoint)
         const updated = response.data.code
         const idx = churches.value.findIndex((church) => church.id === churchId)
         if (idx !== -1) {
