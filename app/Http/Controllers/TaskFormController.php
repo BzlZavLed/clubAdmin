@@ -17,6 +17,11 @@ class TaskFormController extends Controller
         $event = $eventTask->event;
         $this->authorize('view', $event);
 
+        $checklist = is_array($eventTask->checklist_json) ? $eventTask->checklist_json : [];
+        $customSchema = is_array($checklist['custom_form_schema'] ?? null)
+            ? $checklist['custom_form_schema']
+            : null;
+
         $schemaKey = $eventTask->checklist_json['task_key'] ?? null;
         if (!$schemaKey) {
             $schemaKey = $this->inferSchemaKey($eventTask->title);
@@ -26,13 +31,23 @@ class TaskFormController extends Controller
                 $eventTask->update(['checklist_json' => $meta]);
             }
         }
-        if (!$schemaKey) {
+        if (!$schemaKey && !$customSchema) {
             return response()->json(['message' => 'No form schema assigned.'], 404);
         }
-
-        $schema = TaskFormSchema::where('key', $schemaKey)->first();
-        if (!$schema) {
-            return response()->json(['message' => 'Form schema not found.'], 404);
+        $schema = null;
+        if ($schemaKey) {
+            $schema = TaskFormSchema::where('key', $schemaKey)->first();
+            if (!$schema && !$customSchema) {
+                return response()->json(['message' => 'Form schema not found.'], 404);
+            }
+        }
+        if (!$schema && $customSchema) {
+            $schema = new TaskFormSchema([
+                'key' => 'custom_task_form',
+                'name' => 'Custom Task Form',
+                'description' => 'Custom fields defined by club director.',
+                'schema_json' => $customSchema,
+            ]);
         }
 
         $response = TaskFormResponse::where('event_task_id', $eventTask->id)->first();
@@ -57,14 +72,22 @@ class TaskFormController extends Controller
             'data_json' => ['required', 'array'],
         ]);
 
+        $checklist = is_array($eventTask->checklist_json) ? $eventTask->checklist_json : [];
+        $customSchema = is_array($checklist['custom_form_schema'] ?? null)
+            ? $checklist['custom_form_schema']
+            : null;
         $schemaKey = $eventTask->checklist_json['task_key'] ?? null;
-        if (!$schemaKey) {
+        if (!$schemaKey && !$customSchema) {
             return response()->json(['message' => 'No form schema assigned.'], 404);
         }
-
-        $schema = TaskFormSchema::where('key', $schemaKey)->first();
-        if (!$schema) {
-            return response()->json(['message' => 'Form schema not found.'], 404);
+        if ($schemaKey) {
+            $schema = TaskFormSchema::where('key', $schemaKey)->first();
+            if (!$schema && !$customSchema) {
+                return response()->json(['message' => 'Form schema not found.'], 404);
+            }
+        }
+        if (!$schemaKey && $customSchema) {
+            $schemaKey = 'custom_task_form';
         }
 
         $response = TaskFormResponse::updateOrCreate(
@@ -92,8 +115,6 @@ class TaskFormController extends Controller
             ['emergency contacts', 'emergency_contacts'],
             ['assign chaperones', 'chaperone_assignments'],
             ['chaperones', 'chaperone_assignments'],
-            ['campsite reservation', 'camp_reservation'],
-            ['site reservation', 'camp_reservation'],
         ];
 
         foreach ($mappings as [$needle, $key]) {

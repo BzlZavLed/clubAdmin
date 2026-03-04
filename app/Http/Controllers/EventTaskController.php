@@ -4,10 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\EventTask;
+use App\Services\EventTaskTemplateService;
 use Illuminate\Http\Request;
 
 class EventTaskController extends Controller
 {
+    public function __construct(
+        private readonly EventTaskTemplateService $templateService,
+    ) {
+    }
+
     public function index(Event $event)
     {
         $this->authorize('view', $event);
@@ -40,6 +46,8 @@ class EventTaskController extends Controller
             'checklist_json' => $validated['checklist_json'] ?? null,
         ]);
 
+        $this->templateService->syncTemplateFromTask($task);
+
         return response()->json(['task' => $task]);
     }
 
@@ -58,6 +66,7 @@ class EventTaskController extends Controller
         ]);
 
         $eventTask->update($validated);
+        $this->templateService->syncTemplateFromTask($eventTask);
 
         return response()->json(['task' => $eventTask]);
     }

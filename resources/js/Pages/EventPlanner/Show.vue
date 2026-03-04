@@ -289,8 +289,6 @@ const taskKeyFromTitle = (title) => {
         ['emergency contacts', 'emergency_contacts'],
         ['assign chaperones', 'chaperone_assignments'],
         ['chaperones', 'chaperone_assignments'],
-        ['campsite reservation', 'camp_reservation'],
-        ['site reservation', 'camp_reservation'],
     ]
     for (const [needle, key] of mappings) {
         if (normalized.includes(needle)) {
@@ -309,8 +307,20 @@ const supportedFormTaskKeys = new Set([
 ])
 
 const hasFormForTask = (task) => {
+    const title = (task?.title || '').toLowerCase()
+    const customSchema = task?.checklist_json?.custom_form_schema
+    const hasCustom = Array.isArray(customSchema?.fields) && customSchema.fields.length > 0
+    if (title.includes('campsite reservation confirmed')) {
+        return hasCustom
+    }
     const key = (task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '') || '').toLowerCase()
-    return supportedFormTaskKeys.has(key)
+    return supportedFormTaskKeys.has(key) || hasCustom
+}
+
+const isFinalizeAttendeeTask = (task) => {
+    const key = (task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '') || '').toLowerCase()
+    const title = (task?.title || '').toLowerCase()
+    return key === 'finalize_attendee_list' || title.includes('finalize attendee list')
 }
 
 const isPermissionSlipTask = (task) => {
@@ -354,6 +364,10 @@ const formSchema = ref(null)
 const formData = ref({})
 const formLoading = ref(false)
 const formError = ref('')
+const showCustomFormBuilder = ref(false)
+const customFormTask = ref(null)
+const customFormFields = ref([])
+const customFormError = ref('')
 const documentPreset = ref(null)
 const showTransportModal = ref(false)
 const transportDrivers = ref([])
@@ -427,6 +441,94 @@ watch(
         }
     }
 )
+
+const toSnake = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+const openCustomFormBuilderModal = (task) => {
+    customFormTask.value = task
+    const existing = task?.checklist_json?.custom_form_schema
+    if (existing && Array.isArray(existing.fields) && existing.fields.length) {
+        customFormFields.value = existing.fields.map((field) => ({
+            key: field.key || '',
+            label: field.label || '',
+            type: field.type || 'text',
+            required: !!field.required,
+        }))
+    } else {
+        customFormFields.value = [{ key: '', label: '', type: 'text', required: false }]
+    }
+    customFormError.value = ''
+    showCustomFormBuilder.value = true
+}
+
+const addCustomFormField = () => {
+    customFormFields.value = [
+        ...customFormFields.value,
+        { key: '', label: '', type: 'text', required: false },
+    ]
+}
+
+const removeCustomFormField = (index) => {
+    customFormFields.value = customFormFields.value.filter((_, i) => i !== index)
+}
+
+const saveCustomFormDefinition = async () => {
+    if (!customFormTask.value) return
+    customFormError.value = ''
+
+    const normalizedFields = customFormFields.value
+        .map((field) => {
+            const label = String(field.label || '').trim()
+            const key = toSnake(field.key || label)
+            return {
+                key,
+                label,
+                type: field.type || 'text',
+                required: !!field.required,
+            }
+        })
+        .filter((field) => field.key && field.label)
+
+    if (!normalizedFields.length) {
+        customFormError.value = 'Add at least one valid field.'
+        return
+    }
+
+    const keys = new Set()
+    for (const field of normalizedFields) {
+        if (keys.has(field.key)) {
+            customFormError.value = `Duplicate field key: ${field.key}`
+            return
+        }
+        keys.add(field.key)
+    }
+
+    const checklist = {
+        ...(customFormTask.value.checklist_json || {}),
+        source: (customFormTask.value.checklist_json || {}).source || 'event_checklist',
+        custom_form_schema: { fields: normalizedFields },
+    }
+    if (!checklist.task_key) {
+        checklist.task_key = taskKeyFromTitle(customFormTask.value.title)
+    }
+
+    const { data } = await axios.put(route('event-tasks.update', { eventTask: customFormTask.value.id }), {
+        title: customFormTask.value.title,
+        description: customFormTask.value.description,
+        assigned_to_user_id: customFormTask.value.assigned_to_user_id,
+        due_at: customFormTask.value.due_at,
+        status: customFormTask.value.status,
+        checklist_json: checklist,
+    })
+    tasksState.value = tasksState.value.map((item) => item.id === data.task.id ? data.task : item)
+    showCustomFormBuilder.value = false
+    customFormTask.value = null
+    customFormFields.value = []
+}
 
 const addChecklistItem = async () => {
     const label = newChecklistItem.value.trim()
@@ -1531,8 +1633,29 @@ const saveBudgetPreference = async (value) => {
                                             </span>
                                         </span>
                                         <span class="flex items-center gap-2">
-                                            <button type="button" class="text-xs text-blue-600 hover:text-blue-700" @click="openTaskForm(task)">
+                                            <button
+                                                v-if="isFinalizeAttendeeTask(task)"
+                                                type="button"
+                                                class="text-xs text-blue-600 hover:text-blue-700"
+                                                @click="activeTab = 'participants'"
+                                            >
+                                                Go to Participants
+                                            </button>
+                                            <button
+                                                v-else-if="hasFormForTask(task)"
+                                                type="button"
+                                                class="text-xs text-blue-600 hover:text-blue-700"
+                                                @click="openTaskForm(task)"
+                                            >
                                                 Open Form
+                                            </button>
+                                            <button
+                                                v-else
+                                                type="button"
+                                                class="text-xs text-amber-600 hover:text-amber-700"
+                                                @click="openCustomFormBuilderModal(task)"
+                                            >
+                                                Create Form
                                             </button>
                                             <button type="button" class="text-xs text-gray-400 hover:text-red-500" @click="removeChecklistTask(task)">
                                                 Remove
@@ -1871,6 +1994,54 @@ const saveBudgetPreference = async (value) => {
                     <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="saveVehicle">
                         Save Vehicle
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showCustomFormBuilder" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div class="w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">Custom Form Builder</h3>
+                    <button type="button" class="text-gray-400 hover:text-gray-600" @click="showCustomFormBuilder = false">✕</button>
+                </div>
+                <div class="text-sm text-gray-600 mb-3">
+                    Task: <span class="font-semibold text-gray-800">{{ customFormTask?.title }}</span>
+                </div>
+                <div class="space-y-2 max-h-[55vh] overflow-auto pr-1">
+                    <div v-for="(field, idx) in customFormFields" :key="idx" class="grid grid-cols-12 gap-2 items-center">
+                        <input
+                            v-model="field.label"
+                            class="col-span-4 rounded border border-gray-300 px-2 py-1 text-sm"
+                            placeholder="Label"
+                        />
+                        <input
+                            v-model="field.key"
+                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            placeholder="key_name"
+                        />
+                        <select v-model="field.type" class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm">
+                            <option value="text">text</option>
+                            <option value="textarea">textarea</option>
+                            <option value="number">number</option>
+                            <option value="date">date</option>
+                            <option value="select">select</option>
+                            <option value="checkbox">checkbox</option>
+                        </select>
+                        <label class="col-span-1 flex items-center justify-center">
+                            <input type="checkbox" v-model="field.required" class="rounded border-gray-300 text-blue-600" />
+                        </label>
+                        <button type="button" class="col-span-1 text-xs text-red-600" @click="removeCustomFormField(idx)">Remove</button>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="button" class="px-3 py-1 rounded text-xs bg-gray-200 text-gray-700" @click="addCustomFormField">
+                        Add field
+                    </button>
+                </div>
+                <div v-if="customFormError" class="mt-2 text-xs text-red-600">{{ customFormError }}</div>
+                <div class="mt-5 flex justify-end gap-2">
+                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="showCustomFormBuilder = false">Cancel</button>
+                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="saveCustomFormDefinition">Save Form</button>
                 </div>
             </div>
         </div>

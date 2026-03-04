@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\PaymentConcept;
 use App\Models\PaymentConceptScope;
 use App\Models\Payment;
+use App\Services\EventTaskTemplateService;
 use App\Services\SerpApiUsageService;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
@@ -117,6 +118,13 @@ class EventController extends Controller
             'missing_items_json' => [],
             'conversation_json' => [],
         ]);
+
+        $seededTasks = app(EventTaskTemplateService::class)->seedEventTasks($event);
+        if (!empty($seededTasks)) {
+            $event->plan()->update([
+                'missing_items_json' => collect($seededTasks)->map(fn ($task) => $task->title)->values()->all(),
+            ]);
+        }
 
         $this->syncPaymentConcept($event, $isPayable, $validated['payment_amount'] ?? null, $request->user()->id);
 
