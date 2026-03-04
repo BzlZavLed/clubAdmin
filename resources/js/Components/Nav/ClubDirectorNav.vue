@@ -19,11 +19,16 @@ const openDropdown = ref(null)
 
 const menuItems = [
     { name: 'Panel', href: '/club-director/dashboard', route: 'dashboard', icon: HomeIcon },
-    { name: 'Event Planner', href: '/events', route: 'events.index', icon: CalendarDaysIcon },
     {
         name: 'Mi club',
         icon: UsersIcon,
         children: [
+            {
+                name: 'Event Planner',
+                href: '/events',
+                route: 'events.index',
+                icon: CalendarDaysIcon
+            },
             {
                 name: 'Administración',
                 href: '/club-director/my-club',

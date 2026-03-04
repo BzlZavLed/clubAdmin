@@ -49,6 +49,12 @@ const menuItems = [
         icon: UsersIcon,
         children: [
             {
+                name: 'Event Planner',
+                href: '/events',
+                route: 'events.index',
+                icon: CalendarDaysIcon
+            },
+            {
                 name: 'Administración',
                 href: '/club-director/my-club',
                 route: 'club.my-club',
