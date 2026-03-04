@@ -9,9 +9,11 @@ import ParentNav from '@/Components/Nav/ParentNav.vue'
 const isCollapsed = ref(false)
 const isMobileOpen = ref(false)
 const isMobile = ref(false)
-const user = usePage().props.auth.user
+const page = usePage()
+const user = computed(() => page.props.auth?.user ?? null)
 
 const logout = () => {
+    if (!user.value) return
     router.post(route('logout'))
 }
 const updateIsMobile = () => {
@@ -33,13 +35,15 @@ onBeforeUnmount(() => {
 })
 const navCollapsed = computed(() => (isMobile.value ? false : isCollapsed.value))
 const getNavComponent = () => {
-    if (user.profile_type === 'club_director') {
+    const profileType = user.value?.profile_type
+
+    if (profileType === 'club_director') {
         return h(ClubDirectorNav, { isCollapsed: navCollapsed.value })
-    } else if (user.profile_type === 'superadmin') {
+    } else if (profileType === 'superadmin') {
         return h(SuperAdminNav, { isCollapsed: navCollapsed.value })
-    } else if (user.profile_type === 'club_personal') {
+    } else if (profileType === 'club_personal') {
         return h(ClubPersonalNav, { isCollapsed: navCollapsed.value })
-    } else if (user.profile_type === 'parent') {
+    } else if (profileType === 'parent') {
         return h(ParentNav, { isCollapsed: navCollapsed.value })
     }
     return null

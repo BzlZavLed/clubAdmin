@@ -94,7 +94,7 @@
                                 <span v-else class="text-gray-400 text-xs">Sin código</span>
                             </td>
                             <td class="px-4 py-2 text-right space-x-2">
-                                <button type="button" class="text-indigo-600 hover:underline"
+                                <button v-if="isSuperAdmin" type="button" class="text-indigo-600 hover:underline"
                                     @click="regenerateInviteCode(church.id)">
                                     {{ church.invite_code ? 'Regenerar' : 'Generar' }}
                                 </button>
@@ -123,10 +123,14 @@
     </PathfinderLayout>
 </template>
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
-import { Link } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+
+const page = usePage()
+const currentUser = computed(() => page.props.auth?.user ?? null)
+const isSuperAdmin = computed(() => currentUser.value?.profile_type === 'superadmin')
 
 const form = reactive({
     church_name: '',
@@ -156,7 +160,8 @@ const editForm = reactive({
 const fetchChurches = async () => {
     loadingChurches.value = true
     try {
-        const response = await axios.get('/super-admin/churches')
+        const endpoint = isSuperAdmin.value ? '/super-admin/churches' : '/churches'
+        const response = await axios.get(endpoint)
         churches.value = response.data
     } catch (err) {
         console.error(err)
@@ -238,6 +243,10 @@ const deleteChurch = async (churchId) => {
 }
 
 const regenerateInviteCode = async (churchId) => {
+    if (!isSuperAdmin.value) {
+        return
+    }
+
     try {
         const response = await axios.post(`/super-admin/churches/${churchId}/invite-code`)
         const updated = response.data.code
