@@ -42,7 +42,7 @@ const props = defineProps({
     }
 })
 
-const emit = defineEmits(['updated'])
+const emit = defineEmits(['updated', 'finish-list'])
 const highlightIds = ref(new Set())
 const selectedParticipantIds = ref([])
 
@@ -140,6 +140,10 @@ const paymentStatusFor = (participant) => {
         return { status: 'na', amount: 0, payerType: null, payerId: null }
     }
 
+    if ((participant?.role || '').toLowerCase() === 'parent') {
+        return { status: 'na', amount: 0, payerType: null, payerId: null }
+    }
+
     if (participant.member_id) {
         const amount = paymentByMember.value.get(Number(participant.member_id)) || 0
         return {
@@ -147,20 +151,6 @@ const paymentStatusFor = (participant) => {
             amount,
             payerType: 'member',
             payerId: participant.member_id
-        }
-    }
-
-    if (participant.role === 'parent') {
-        const parent = parentByName.value.get(participant.participant_name)
-        const childId = parent?.children?.[0]?.id
-        if (childId) {
-            const amount = paymentByMember.value.get(Number(childId)) || 0
-            return {
-                status: amount > 0 ? 'paid' : 'unpaid',
-                amount,
-                payerType: 'readonly',
-                payerId: null
-            }
         }
     }
 
@@ -509,6 +499,9 @@ const confirmSelected = async () => {
         </div>
 
         <div class="bg-white rounded-lg border p-3 flex flex-wrap items-center gap-2 text-xs">
+            <button type="button" class="px-2 py-1 rounded bg-blue-600 text-white" @click="emit('finish-list')">
+                Finish List
+            </button>
             <button type="button" class="px-2 py-1 rounded bg-green-600 text-white" @click="confirmAll">
                 Confirm All
             </button>
@@ -568,7 +561,8 @@ const confirmSelected = async () => {
                         </select>
                     </td>
                     <td class="px-4 py-2">
-                        <div class="flex items-center gap-2 text-xs">
+                        <div v-if="participant.role === 'parent'" class="text-xs text-gray-400">—</div>
+                        <div v-else class="flex items-center gap-2 text-xs">
                             <span
                                 class="inline-flex items-center justify-center w-2.5 h-2.5 rounded-full"
                                 :class="{
@@ -580,16 +574,8 @@ const confirmSelected = async () => {
                                     ? 'Partial payment received'
                                     : (paymentStatusFor(participant).status === 'unpaid' ? 'No payment recorded' : 'Not applicable')"
                             />
-                            <template v-if="participant.role === 'parent' && paymentStatusFor(participant).payerType === 'readonly'">
-                                <span
-                                    class="text-xs"
-                                    :class="paymentStatusFor(participant).status === 'paid' ? 'text-emerald-600' : 'text-red-600'"
-                                >
-                                    {{ paymentStatusFor(participant).status === 'paid' ? 'Payment submitted' : 'Child payment' }}
-                                </span>
-                            </template>
                             <span
-                                v-else-if="paymentStatusFor(participant).status === 'paid' && participant.member_id"
+                                v-if="paymentStatusFor(participant).status === 'paid' && participant.member_id"
                                 class="text-emerald-600 text-xs"
                             >
                                 Payment submitted

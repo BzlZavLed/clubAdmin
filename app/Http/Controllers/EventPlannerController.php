@@ -4,12 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Services\AiPlannerService;
+use App\Services\SerpApiUsageService;
 use Illuminate\Http\Request;
 use RuntimeException;
 
 class EventPlannerController extends Controller
 {
-    public function __construct(private AiPlannerService $planner)
+    public function __construct(
+        private AiPlannerService $planner,
+        private SerpApiUsageService $serpApiUsage,
+    )
     {
     }
 
@@ -36,6 +40,8 @@ class EventPlannerController extends Controller
                 'message' => $e->getMessage(),
             ], 429);
         }
+
+        $payload['serpApiUsage'] = $this->serpApiUsage->currentMonthSummary();
 
         return response()->json($payload);
     }

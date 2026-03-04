@@ -72,6 +72,7 @@ class PlacesService
         }
 
         return array_map(function ($place) {
+            $placeId = $place['place_id'] ?? null;
             return [
                 'name' => $place['name'] ?? null,
                 'rating' => $place['rating'] ?? null,
@@ -83,7 +84,8 @@ class PlacesService
                 'distance_value' => $place['distance_value'] ?? null,
                 'duration_text' => $place['duration_text'] ?? null,
                 'duration_value' => $place['duration_value'] ?? null,
-                'place_id' => $place['place_id'] ?? null,
+                'place_id' => $placeId,
+                'maps_url' => $placeId ? ('https://www.google.com/maps/place/?q=place_id:' . $placeId) : null,
                 'types' => $place['types'] ?? [],
             ];
         }, $trimmed);

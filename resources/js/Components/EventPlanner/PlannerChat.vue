@@ -6,6 +6,7 @@ const props = defineProps({
     eventId: { type: Number, required: true },
     messages: { type: Array, default: () => [] },
     autoCreateBudgetItem: { type: Boolean, default: false },
+    serpApiUsage: { type: Object, default: () => ({ month: null, limit: 250, used: 0, remaining: 250 }) },
 })
 
 const emit = defineEmits(['update'])
@@ -24,6 +25,99 @@ const placeMapLink = (place) => {
     const query = place?.address || place?.vicinity || place?.name
     if (!query) return null
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
+
+const RENTAL_SEGMENT_KEYS = [
+    'Estimated ',
+    'Per vehicle per day:',
+    'Fleet cost per day',
+    'Total rental for',
+    'Estimated gas per vehicle',
+    'Estimated gas ',
+    'Source (live web quotes):',
+    'Live quote samples:',
+    'Fallback source (pricing):',
+    'Provider sources:',
+]
+
+const isRentalEstimateMessage = (content) => {
+    if (!content || typeof content !== 'string') return false
+    return content.includes('Per vehicle per day:') && content.includes('Total rental for')
+}
+
+const parseLinkedItems = (rawValue) => {
+    const value = (rawValue || '').replace(/\.$/, '').trim()
+    if (!value) return []
+
+    return value.split(/\s*;\s*/).map((item) => {
+        const match = item.match(/^(.*)\((https?:\/\/[^)]+)\)\s*$/)
+        if (match) {
+            return {
+                label: match[1].trim(),
+                url: match[2].trim(),
+            }
+        }
+
+        return {
+            label: item.trim(),
+            url: null,
+        }
+    }).filter((item) => item.label)
+}
+
+const parseRentalEstimateMessage = (content) => {
+    if (!isRentalEstimateMessage(content)) return null
+
+    const found = []
+    RENTAL_SEGMENT_KEYS.forEach((key) => {
+        const idx = content.indexOf(key)
+        if (idx >= 0) {
+            found.push({ key, idx })
+        }
+    })
+
+    found.sort((a, b) => a.idx - b.idx)
+    if (!found.length) return null
+
+    const segments = found.map((entry, i) => {
+        const start = entry.idx
+        const end = i < found.length - 1 ? found[i + 1].idx : content.length
+        return content.slice(start, end).trim()
+    })
+
+    const getByPrefix = (prefix) => segments.find((s) => s.startsWith(prefix)) || null
+    const getValue = (segment) => {
+        if (!segment) return null
+        const pos = segment.indexOf(':')
+        if (pos < 0) return segment.replace(/\.$/, '').trim()
+        return segment.slice(pos + 1).replace(/\.$/, '').trim()
+    }
+
+    const intro = getByPrefix('Estimated ')
+    const perVehicle = getByPrefix('Per vehicle per day:')
+    const fleetPerDay = getByPrefix('Fleet cost per day')
+    const totalRental = getByPrefix('Total rental for')
+    const gas = getByPrefix('Estimated gas per vehicle') || getByPrefix('Estimated gas ')
+    const liveSource = getByPrefix('Source (live web quotes):')
+    const liveSamples = getByPrefix('Live quote samples:')
+    const fallback = getByPrefix('Fallback source (pricing):')
+    const providers = getByPrefix('Provider sources:')
+
+    return {
+        intro: intro ? intro.replace(/\.$/, '').trim() : null,
+        costRows: [
+            perVehicle ? { label: 'Per Vehicle / Day', value: getValue(perVehicle) } : null,
+            fleetPerDay ? { label: 'Fleet / Day', value: getValue(fleetPerDay) } : null,
+            totalRental ? { label: 'Total Rental', value: getValue(totalRental) } : null,
+            gas ? { label: 'Gas', value: getValue(gas) } : null,
+        ].filter(Boolean),
+        sourceRows: [
+            liveSource ? { label: 'Live Source', value: getValue(liveSource) } : null,
+            fallback ? { label: 'Fallback Source', value: getValue(fallback) } : null,
+        ].filter(Boolean),
+        liveSampleItems: parseLinkedItems(getValue(liveSamples)),
+        providerItems: parseLinkedItems(getValue(providers)),
+    }
 }
 
 watch(
@@ -83,6 +177,17 @@ const send = async () => {
 
 <template>
     <div class="bg-white rounded-lg border p-4 space-y-4">
+        <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <div class="font-semibold">SerpAPI Monthly Usage</div>
+            <div class="mt-1">
+                Used {{ Number(props.serpApiUsage?.used || 0) }} / {{ Number(props.serpApiUsage?.limit || 0) }}
+                <span class="mx-1">•</span>
+                Remaining {{ Number(props.serpApiUsage?.remaining || 0) }}
+                <span v-if="props.serpApiUsage?.month" class="mx-1">•</span>
+                <span v-if="props.serpApiUsage?.month">Month {{ props.serpApiUsage.month }}</span>
+            </div>
+        </div>
+
         <details class="bg-gray-50 border rounded-md p-3 text-xs text-gray-700">
             <summary class="font-semibold text-gray-800 cursor-pointer">Available tools</summary>
             <ul class="list-disc pl-4 space-y-1 mt-2">
@@ -102,7 +207,62 @@ const send = async () => {
                 <div :class="msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'"
                     class="px-3 py-2 rounded-lg max-w-[80%] text-sm whitespace-pre-wrap">
                     <div class="text-xs opacity-70 mb-1">{{ msg.role }}</div>
-                    {{ msg.content }}
+                    <template v-if="msg.role === 'assistant' && parseRentalEstimateMessage(msg.content)">
+                        <div class="space-y-2 break-words">
+                            <div class="font-medium text-sm">{{ parseRentalEstimateMessage(msg.content).intro }}</div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div
+                                    v-for="(row, rowIdx) in parseRentalEstimateMessage(msg.content).costRows"
+                                    :key="`cost-${rowIdx}`"
+                                    class="rounded border bg-white px-2 py-1"
+                                >
+                                    <div class="text-[11px] uppercase tracking-wide text-gray-500">{{ row.label }}</div>
+                                    <div class="text-xs text-gray-800">{{ row.value }}</div>
+                                </div>
+                            </div>
+
+                            <div v-if="parseRentalEstimateMessage(msg.content).sourceRows.length" class="space-y-1">
+                                <div
+                                    v-for="(row, rowIdx) in parseRentalEstimateMessage(msg.content).sourceRows"
+                                    :key="`source-${rowIdx}`"
+                                    class="text-xs text-gray-700 break-words"
+                                >
+                                    <span class="font-semibold">{{ row.label }}:</span> {{ row.value }}
+                                </div>
+                            </div>
+
+                            <div v-if="parseRentalEstimateMessage(msg.content).liveSampleItems.length" class="space-y-1">
+                                <div class="text-[11px] uppercase tracking-wide text-gray-500">Live Quote Samples</div>
+                                <ul class="space-y-1">
+                                    <li
+                                        v-for="(item, itemIdx) in parseRentalEstimateMessage(msg.content).liveSampleItems"
+                                        :key="`sample-${itemIdx}`"
+                                        class="text-xs text-gray-700 break-all"
+                                    >
+                                        <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">{{ item.label }}</a>
+                                        <span v-else>{{ item.label }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div v-if="parseRentalEstimateMessage(msg.content).providerItems.length" class="space-y-1">
+                                <div class="text-[11px] uppercase tracking-wide text-gray-500">Rental Providers</div>
+                                <ul class="space-y-1">
+                                    <li
+                                        v-for="(item, itemIdx) in parseRentalEstimateMessage(msg.content).providerItems"
+                                        :key="`provider-${itemIdx}`"
+                                        class="text-xs text-gray-700 break-all"
+                                    >
+                                        <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">{{ item.label }}</a>
+                                        <span v-else>{{ item.label }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </template>
+                    <template v-else>
+                        {{ msg.content }}
+                    </template>
                     <div v-if="msg.places?.length" class="mt-2 space-y-2">
                         <div v-for="place in msg.places" :key="place.place_id || place.name" class="border rounded-md bg-white p-2 text-xs text-gray-700">
                             <div class="font-semibold text-gray-900">{{ place.name }}</div>

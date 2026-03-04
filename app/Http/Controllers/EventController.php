@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\Club;
 use App\Models\Event;
 use App\Models\EventPlan;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Models\PaymentConcept;
 use App\Models\PaymentConceptScope;
 use App\Models\Payment;
+use App\Services\SerpApiUsageService;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -181,27 +183,64 @@ class EventController extends Controller
             'by_member_id' => [],
             'by_staff_id' => [],
         ];
+        $paymentRecords = [];
+        $paymentConceptLabel = null;
         if ($event->payment_concept_id) {
-            $paymentSummary['total_received'] = (float) Payment::query()
-                ->where('payment_concept_id', $event->payment_concept_id)
-                ->sum('amount_paid');
+            $paymentConceptLabel = PaymentConcept::query()
+                ->where('id', $event->payment_concept_id)
+                ->value('concept');
 
-            $paymentSummary['by_member_id'] = Payment::query()
-                ->where('payment_concept_id', $event->payment_concept_id)
+            $conceptPayments = Payment::query()
+                ->where('club_id', $clubId)
+                ->where('payment_concept_id', $event->payment_concept_id);
+
+            $paymentSummary['total_received'] = (float) (clone $conceptPayments)->sum('amount_paid');
+            $paymentSummary['by_member_id'] = (clone $conceptPayments)
                 ->whereNotNull('member_id')
                 ->groupBy('member_id')
                 ->selectRaw('member_id, SUM(amount_paid) as total_paid')
                 ->pluck('total_paid', 'member_id')
                 ->toArray();
-
-            $paymentSummary['by_staff_id'] = Payment::query()
-                ->where('payment_concept_id', $event->payment_concept_id)
+            $paymentSummary['by_staff_id'] = (clone $conceptPayments)
                 ->whereNotNull('staff_id')
                 ->groupBy('staff_id')
                 ->selectRaw('staff_id, SUM(amount_paid) as total_paid')
                 ->pluck('total_paid', 'staff_id')
                 ->toArray();
+
+            $paymentRecords = (clone $conceptPayments)
+                ->with(['member', 'staff.user:id,name', 'receivedBy:id,name'])
+                ->orderByDesc('payment_date')
+                ->orderByDesc('id')
+                ->get()
+                ->map(function (Payment $payment) {
+                    $memberName = null;
+                    if ($payment->member) {
+                        $memberName = ClubHelper::memberDetail($payment->member)['name'] ?? null;
+                    }
+
+                    $staffName = null;
+                    if ($payment->staff) {
+                        $staffName = ClubHelper::staffDetail($payment->staff)['name']
+                            ?? $payment->staff->user?->name;
+                    }
+
+                    return [
+                        'id' => $payment->id,
+                        'payment_date' => optional($payment->payment_date)->format('Y-m-d'),
+                        'amount_paid' => (float) $payment->amount_paid,
+                        'payment_type' => $payment->payment_type,
+                        'payer_type' => $payment->member_id ? 'member' : ($payment->staff_id ? 'staff' : 'other'),
+                        'payer_name' => $memberName ?: $staffName ?: 'Unknown',
+                        'notes' => $payment->notes,
+                        'received_by' => $payment->receivedBy?->name,
+                    ];
+                })
+                ->values()
+                ->all();
         }
+
+        $serpApiUsage = app(SerpApiUsageService::class)->currentMonthSummary();
 
         return Inertia::render('EventPlanner/Show', [
             'event' => $event,
@@ -218,9 +257,12 @@ class EventController extends Controller
             'paymentSummary' => $paymentSummary,
             'paymentConfig' => [
                 'concept_id' => $event->payment_concept_id,
+                'concept_label' => $paymentConceptLabel,
                 'amount' => $event->payment_amount,
                 'is_payable' => $event->is_payable,
             ],
+            'paymentRecords' => $paymentRecords,
+            'serpApiUsage' => $serpApiUsage,
         ]);
     }
 
@@ -231,6 +273,75 @@ class EventController extends Controller
         return Inertia::render('EventPlanner/Edit', [
             'event' => $event,
         ]);
+    }
+
+    public function pdf(Event $event)
+    {
+        $this->authorize('view', $event);
+
+        $event->load([
+            'club',
+            'plan',
+            'drivers.participant',
+            'drivers.vehicles',
+            'documents',
+        ]);
+
+        $planJson = $event->plan?->plan_json ?? ['sections' => []];
+        $sections = collect($planJson['sections'] ?? [])
+            ->filter(function ($section) {
+                return ($section['name'] ?? '') !== 'Recommendations';
+            })
+            ->values()
+            ->all();
+
+        $transportMode = $planJson['transportation_mode'] ?? null;
+
+        $documents = collect($event->documents ?? []);
+        $drivers = collect($event->drivers ?? [])->map(function ($driver) use ($documents, $transportMode) {
+            $participantId = $driver->participant_id;
+            $licenseDoc = $documents->first(function ($doc) use ($participantId) {
+                $docType = strtolower((string) ($doc->doc_type ?? $doc->type ?? ''));
+                return (int) $doc->driver_participant_id === (int) $participantId
+                    && str_contains($docType, 'license');
+            });
+
+            $vehicleRows = collect($driver->vehicles ?? [])->map(function ($vehicle) use ($documents) {
+                $insuranceDoc = $documents->first(function ($doc) use ($vehicle) {
+                    $docType = strtolower((string) ($doc->doc_type ?? $doc->type ?? ''));
+                    return (int) $doc->vehicle_id === (int) $vehicle->id
+                        && (str_contains($docType, 'insurance') || str_contains($docType, 'rental'));
+                });
+
+                return [
+                    'make' => $vehicle->make,
+                    'model' => $vehicle->model,
+                    'year' => $vehicle->year,
+                    'plate' => $vehicle->plate,
+                    'vin' => $vehicle->vin,
+                    'insurance_doc_title' => $insuranceDoc?->title,
+                    'insurance_doc_path' => $insuranceDoc?->path,
+                ];
+            })->values()->all();
+
+            return [
+                'name' => $driver->participant?->participant_name ?? 'Driver',
+                'license_number' => $driver->license_number,
+                'license_doc_title' => $licenseDoc?->title,
+                'license_doc_path' => $licenseDoc?->path,
+                'vehicles' => $vehicleRows,
+                'private_mode' => $transportMode === 'private',
+            ];
+        })->values()->all();
+
+        $pdf = Pdf::loadView('pdf.event_planner', [
+            'event' => $event,
+            'sections' => $sections,
+            'drivers' => $drivers,
+            'transport_mode' => $transportMode,
+        ]);
+
+        return $pdf->download('event-plan-' . $event->id . '.pdf');
     }
 
     public function update(Request $request, Event $event)

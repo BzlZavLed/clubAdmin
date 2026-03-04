@@ -79,6 +79,10 @@ class TaskFormController extends Controller
     {
         $normalized = strtolower($title);
         $mappings = [
+            ['confirm date/time with venue', 'camp_reservation'],
+            ['confirm date with venue', 'camp_reservation'],
+            ['confirm venue', 'camp_reservation'],
+            ['venue confirmation', 'camp_reservation'],
             ['collect permission slips', 'permission_slips'],
             ['permission slips', 'permission_slips'],
             ['permission slip', 'permission_slips'],

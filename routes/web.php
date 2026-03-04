@@ -378,6 +378,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 // ---------------------------------
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('events', EventController::class);
+    Route::get('/events/{event}/pdf', [EventController::class, 'pdf'])->name('events.pdf');
     Route::patch('/event-plans/{event}', [EventPlanController::class, 'update'])->name('event-plans.update');
 
     Route::get('/events/{event}/tasks', [EventTaskController::class, 'index'])->name('event-tasks.index');

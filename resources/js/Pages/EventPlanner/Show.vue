@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios'
 import { router } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
@@ -24,6 +24,8 @@ const props = defineProps({
     parents: Array,
     paymentSummary: Object,
     paymentConfig: Object,
+    paymentRecords: Array,
+    serpApiUsage: Object,
 })
 
 const activeTab = ref('tasks')
@@ -40,9 +42,13 @@ const classesState = ref(props.classes || [])
 const staffState = ref(props.staff || [])
 const parentsState = ref(props.parents || [])
 const paymentSummaryState = ref(props.paymentSummary || { total_received: 0, by_member_id: {}, by_staff_id: {} })
-const paymentConfigState = ref(props.paymentConfig || { concept_id: null, amount: null, is_payable: false })
+const paymentConfigState = ref(props.paymentConfig || { concept_id: null, concept_label: null, amount: null, is_payable: false })
+const paymentRecordsState = ref(props.paymentRecords || [])
+const serpApiUsageState = ref(props.serpApiUsage || { month: null, limit: 250, used: 0, remaining: 250 })
 const transportMode = ref(planState.value?.plan_json?.transportation_mode || null)
 const autoCreateBudgetItem = ref(planState.value?.plan_json?.preferences?.auto_create_budget_item || false)
+const isPrivateTransport = computed(() => transportMode.value === 'private')
+const isRentalTransport = computed(() => transportMode.value === 'rental')
 
 const formatMoney = (value) => {
     const num = Number(value || 0)
@@ -54,6 +60,14 @@ const toLocalInput = (value) => {
     const date = new Date(value)
     const pad = (n) => String(n).padStart(2, '0')
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const toReservationDateTime = (value) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 const eventForm = ref({
@@ -261,8 +275,14 @@ const outlineSections = computed(() => {
 const taskKeyFromTitle = (title) => {
     const normalized = (title || '').toLowerCase()
     const mappings = [
+        ['confirm date/time with venue', 'camp_reservation'],
+        ['confirm date with venue', 'camp_reservation'],
+        ['confirm venue', 'camp_reservation'],
+        ['venue confirmation', 'camp_reservation'],
         ['collect permission slips', 'permission_slips'],
         ['permission slips', 'permission_slips'],
+        ['finalize attendee list', 'finalize_attendee_list'],
+        ['attendee list', 'finalize_attendee_list'],
         ['arrange transportation', 'transportation_plan'],
         ['transportation', 'transportation_plan'],
         ['emergency contact list', 'emergency_contacts'],
@@ -278,6 +298,19 @@ const taskKeyFromTitle = (title) => {
         }
     }
     return null
+}
+
+const supportedFormTaskKeys = new Set([
+    'permission_slips',
+    'transportation_plan',
+    'emergency_contacts',
+    'chaperone_assignments',
+    'camp_reservation',
+])
+
+const hasFormForTask = (task) => {
+    const key = (task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '') || '').toLowerCase()
+    return supportedFormTaskKeys.has(key)
 }
 
 const isPermissionSlipTask = (task) => {
@@ -316,6 +349,7 @@ const toggleChecklistTask = async (task) => {
 
 const newChecklistItem = ref('')
 const activeFormTask = ref(null)
+const activeFormTaskKey = ref(null)
 const formSchema = ref(null)
 const formData = ref({})
 const formLoading = ref(false)
@@ -325,10 +359,74 @@ const showTransportModal = ref(false)
 const transportDrivers = ref([])
 const transportLoading = ref(false)
 const transportError = ref('')
+const transportNotice = ref('')
+const transportNoticeType = ref('success')
 const transportTask = ref(null)
 const vehicleModalOpen = ref(false)
 const vehicleForm = ref({ id: null, driver_id: null, vin: '', plate: '', make: '', model: '', year: '', insurance_doc_id: '' })
 const driverLicenseNumbers = ref({})
+const driverEditMode = ref({})
+const newDriverName = ref('')
+const addingDriver = ref(false)
+const attendeeToast = ref({ show: false, type: 'success', message: '' })
+const venueTotalEditedManually = ref(false)
+let attendeeToastTimer = null
+
+const showAttendeeToast = (message, type = 'success') => {
+    if (attendeeToastTimer) {
+        clearTimeout(attendeeToastTimer)
+    }
+    attendeeToast.value = { show: true, type, message }
+    attendeeToastTimer = setTimeout(() => {
+        attendeeToast.value = { show: false, type: 'success', message: '' }
+    }, 3200)
+}
+
+const roundedMoney = (value) => {
+    const num = Number(value || 0)
+    if (!Number.isFinite(num)) return 0
+    return Number(num.toFixed(2))
+}
+
+const computedVenueTotal = () => {
+    const qty = Number(formData.value?.venue_qty ?? 0)
+    const unit = Number(formData.value?.venue_unit_cost ?? 0)
+    if (!Number.isFinite(qty) || !Number.isFinite(unit) || qty <= 0 || unit < 0) return 0
+    return roundedMoney(qty * unit)
+}
+
+const applyAutoVenueTotal = () => {
+    const total = computedVenueTotal()
+    if (!total) return
+    formData.value = {
+        ...formData.value,
+        venue_expected_total: total,
+    }
+}
+
+const onVenueExpectedTotalInput = (value) => {
+    venueTotalEditedManually.value = true
+    formData.value = {
+        ...formData.value,
+        venue_expected_total: value,
+    }
+}
+
+watch(
+    () => [activeFormTaskKey.value, formData.value?.venue_qty, formData.value?.venue_unit_cost],
+    () => {
+        if (activeFormTaskKey.value !== 'camp_reservation') return
+        if (venueTotalEditedManually.value) return
+        const total = computedVenueTotal()
+        if (!total) return
+        const current = roundedMoney(formData.value?.venue_expected_total ?? 0)
+        if (current === total) return
+        formData.value = {
+            ...formData.value,
+            venue_expected_total: total,
+        }
+    }
+)
 
 const addChecklistItem = async () => {
     const label = newChecklistItem.value.trim()
@@ -351,9 +449,14 @@ const removeChecklistTask = async (task) => {
 }
 
 const openTaskForm = async (task) => {
-    const taskKey = task?.checklist_json?.task_key
+    const taskKey = task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '')
     const docKeywords = ['release', 'doc', 'slip', 'permission', 'medical', 'insurance', 'rental']
     const title = (task?.title || '').toLowerCase()
+    const isFinalizeAttendeesTask = taskKey === 'finalize_attendee_list' || title.includes('finalize attendee list')
+    if (isFinalizeAttendeesTask) {
+        activeTab.value = 'participants'
+        return
+    }
     const isDocTask = taskKey
         ? docKeywords.some((word) => taskKey.includes(word))
         : docKeywords.some((word) => title.includes(word))
@@ -377,10 +480,12 @@ const openTaskForm = async (task) => {
         formSchema.value = data.schema?.schema_json || null
         const existingData = data.response?.data_json || data.prefill || {}
         formData.value = applyCampReservationDefaults(taskKey, existingData)
+        activeFormTaskKey.value = data.schema?.key || taskKey || null
         activeFormTask.value = task
     } catch (error) {
         formError.value = error?.response?.data?.message || 'Unable to load form.'
         activeFormTask.value = task
+        activeFormTaskKey.value = taskKey || null
         formSchema.value = null
         formData.value = {}
     } finally {
@@ -407,8 +512,8 @@ const applyCampReservationDefaults = (taskKey, currentData) => {
         site_name: name,
         contact: contactParts.join(' • '),
         reservation_id: '',
-        check_in: '',
-        check_out: '',
+        check_in: toReservationDateTime(eventState.value?.start_at),
+        check_out: toReservationDateTime(eventState.value?.end_at),
     }
 }
 
@@ -434,6 +539,17 @@ const confirmCampReservation = async () => {
     const checkIn = formData.value?.check_in || ''
     const checkOut = formData.value?.check_out || ''
     const contact = formData.value?.contact || ''
+    const venueType = String(formData.value?.venue_type || '').trim()
+    const venueUnitLabel = String(formData.value?.venue_unit_label || '').trim() || 'units'
+    const venueQtyRaw = Number(formData.value?.venue_qty ?? formData.value?.spaces_qty ?? 0)
+    const venueUnitCostRaw = Number(formData.value?.venue_unit_cost ?? 0)
+    const venueExpectedTotalRaw = Number(formData.value?.venue_expected_total ?? 0)
+    const venueQty = Number.isFinite(venueQtyRaw) && venueQtyRaw > 0 ? venueQtyRaw : 0
+    const venueUnitCost = Number.isFinite(venueUnitCostRaw) && venueUnitCostRaw >= 0 ? venueUnitCostRaw : 0
+    const venueExpectedTotal = Number.isFinite(venueExpectedTotalRaw) && venueExpectedTotalRaw > 0
+        ? venueExpectedTotalRaw
+        : (venueQty > 0 && venueUnitCost >= 0 ? venueQty * venueUnitCost : 0)
+    const hasVenueCostSummary = venueQty > 0 || venueUnitCost > 0 || venueExpectedTotal > 0 || !!venueType
 
     const items = [
         placeName && { label: 'Place', detail: placeName },
@@ -444,6 +560,11 @@ const confirmCampReservation = async () => {
         checkOut && { label: 'Check-out', detail: checkOut },
         contact && { label: 'Contact', detail: contact },
         phone && { label: 'Phone', detail: phone },
+        venueType && { label: 'Venue Type', detail: venueType },
+        hasVenueCostSummary && {
+            label: 'Venue Cost Summary',
+            detail: `Qty: ${venueQty || 0} ${venueUnitLabel} • Unit: ${formatMoney(venueUnitCost)} • Expected Total: ${formatMoney(venueExpectedTotal)}`,
+        },
     ].filter(Boolean)
 
     const sections = planState.value?.plan_json?.sections || []
@@ -530,6 +651,7 @@ const openTransportModal = async () => {
     showTransportModal.value = true
     transportLoading.value = true
     transportError.value = ''
+    transportNotice.value = ''
     try {
         if (transportMode.value) {
             await ensureTransportBudgets(transportMode.value)
@@ -540,11 +662,81 @@ const openTransportModal = async () => {
             acc[driver.participant_id] = driver.license_number || ''
             return acc
         }, {})
+        const participants = (driverParticipants.value || []).map((participant) => participant.id)
+        const mode = {}
+        participants.forEach((participantId) => {
+            const hasDriver = (data.drivers || []).some((driver) => driver.participant_id === participantId)
+            mode[participantId] = !hasDriver
+        })
+        driverEditMode.value = mode
         await refreshTransportationCompletion()
     } catch (error) {
         transportError.value = error?.response?.data?.message || 'Unable to load drivers.'
     } finally {
         transportLoading.value = false
+    }
+}
+
+const isDriverEditing = (participantId) => {
+    if (Object.prototype.hasOwnProperty.call(driverEditMode.value, participantId)) {
+        return !!driverEditMode.value[participantId]
+    }
+    return !driverRecordFor(participantId)
+}
+
+const setDriverEditing = (participantId, editing) => {
+    driverEditMode.value = {
+        ...driverEditMode.value,
+        [participantId]: !!editing,
+    }
+}
+
+const addDriverParticipant = async () => {
+    const name = newDriverName.value.trim()
+    if (!name) {
+        transportNoticeType.value = 'error'
+        transportNotice.value = 'Please enter a driver name.'
+        return
+    }
+
+    const exists = (participantsState.value || []).some((participant) => {
+        return participant.role === 'driver' && (participant.participant_name || '').toLowerCase() === name.toLowerCase()
+    })
+    if (exists) {
+        transportNoticeType.value = 'error'
+        transportNotice.value = `Driver "${name}" already exists.`
+        return
+    }
+
+    addingDriver.value = true
+    transportNotice.value = ''
+    try {
+        const { data } = await axios.post(route('event-participants.store', { event: eventState.value.id }), {
+            participant_name: name,
+            role: 'driver',
+            status: 'invited',
+        })
+
+        const participant = data?.participant
+        if (!participant) {
+            throw new Error('No participant returned.')
+        }
+
+        participantsState.value = [...(participantsState.value || []), participant]
+        driverLicenseNumbers.value = {
+            ...driverLicenseNumbers.value,
+            [participant.id]: '',
+        }
+        setDriverEditing(participant.id, true)
+        newDriverName.value = ''
+        transportNoticeType.value = 'success'
+        transportNotice.value = `Driver "${participant.participant_name}" added.`
+        await refreshTransportationCompletion()
+    } catch (error) {
+        transportNoticeType.value = 'error'
+        transportNotice.value = error?.response?.data?.message || `Unable to add driver "${name}".`
+    } finally {
+        addingDriver.value = false
     }
 }
 
@@ -583,13 +775,24 @@ const docForVehicle = (vehicleId) => {
 }
 
 const upsertDriver = async (participant, licenseNumber) => {
-    const { data } = await axios.post(route('event-drivers.store', { event: eventState.value.id }), {
-        participant_id: participant.id,
-        license_number: licenseNumber || null,
-    })
-    const next = transportDrivers.value.filter((driver) => driver.id !== data.driver.id)
-    transportDrivers.value = [...next, data.driver]
-    await refreshTransportationCompletion()
+    transportNotice.value = ''
+    try {
+        const { data } = await axios.post(route('event-drivers.store', { event: eventState.value.id }), {
+            participant_id: participant.id,
+            license_number: licenseNumber || null,
+        })
+        const next = transportDrivers.value.filter((driver) => driver.id !== data.driver.id)
+        transportDrivers.value = [...next, data.driver]
+        await refreshTransportationCompletion()
+        transportNoticeType.value = 'success'
+        transportNotice.value = `Driver "${participant.participant_name}" saved successfully.`
+        setDriverEditing(participant.id, false)
+        return data.driver
+    } catch (error) {
+        transportNoticeType.value = 'error'
+        transportNotice.value = error?.response?.data?.message || `Unable to save driver "${participant.participant_name}".`
+        return null
+    }
 }
 
 const updateDriverLicenseDoc = async (docId, participantId) => {
@@ -615,7 +818,19 @@ const openVehicleModal = (driverId, vehicle = null) => {
     }
 }
 
+const openVehicleModalForParticipant = async (participant) => {
+    if (!isPrivateTransport.value) return
+    let driver = driverRecordFor(participant.id)
+    if (!driver) {
+        driver = await upsertDriver(participant, driverLicenseNumbers.value[participant.id])
+    }
+    if (driver?.id) {
+        openVehicleModal(driver.id)
+    }
+}
+
 const saveVehicle = async () => {
+    if (!isPrivateTransport.value) return
     const payload = {
         vin: vehicleForm.value.vin,
         plate: vehicleForm.value.plate,
@@ -653,29 +868,35 @@ const deleteVehicle = async (vehicleId) => {
 }
 
 const refreshTransportationCompletion = async () => {
-    if (!transportTask.value) return
-    const driverList = driverParticipants.value
-    if (!driverList.length) return
+    const transportTaskRef = transportTask.value
+        || (tasksState.value || []).find((task) => task?.checklist_json?.task_key === 'transportation_plan')
 
-    const allComplete = driverList.every((participant) => {
+    const driverList = driverParticipants.value
+
+    const allComplete = driverList.length > 0 && driverList.every((participant) => {
         const driver = driverRecordFor(participant.id)
         if (!driver) return false
+        const licenseNumber = String(driver.license_number ?? '').trim()
+        if (!licenseNumber) return false
         const licenseDoc = docForDriver(participant.id)
         if (!licenseDoc) return false
+        if (!isPrivateTransport.value) {
+            return true
+        }
         const vehicles = driver.vehicles || []
         if (!vehicles.length) return false
         return vehicles.every((vehicle) => !!docForVehicle(vehicle.id))
     })
 
     const nextStatus = allComplete ? 'done' : 'todo'
-    if (transportTask.value.status !== nextStatus) {
-        const { data } = await axios.put(route('event-tasks.update', { eventTask: transportTask.value.id }), {
-            title: transportTask.value.title,
-            description: transportTask.value.description,
-            assigned_to_user_id: transportTask.value.assigned_to_user_id,
-            due_at: transportTask.value.due_at,
+    if (transportTaskRef && transportTaskRef.status !== nextStatus) {
+        const { data } = await axios.put(route('event-tasks.update', { eventTask: transportTaskRef.id }), {
+            title: transportTaskRef.title,
+            description: transportTaskRef.description,
+            assigned_to_user_id: transportTaskRef.assigned_to_user_id,
+            due_at: transportTaskRef.due_at,
             status: nextStatus,
-            checklist_json: transportTask.value.checklist_json,
+            checklist_json: transportTaskRef.checklist_json,
         })
         transportTask.value = data.task
         tasksState.value = tasksState.value.map((item) => item.id === data.task.id ? data.task : item)
@@ -692,6 +913,57 @@ const refreshDocuments = async () => {
     documentsState.value = data.documents || []
 }
 
+const finishAttendeeList = async () => {
+    try {
+        const confirmed = (participantsState.value || []).filter((participant) => participant.status === 'confirmed')
+        const attendeeItems = confirmed.map((participant) => ({
+            label: participant.participant_name,
+            detail: participant.role ? `Role: ${participant.role}` : null,
+        }))
+
+        const sections = planState.value?.plan_json?.sections || []
+        const nextSections = sections.filter((section) => section.name !== 'Attendee List')
+        nextSections.unshift({
+            name: 'Attendee List',
+            summary: 'Confirmed participants.',
+            items: attendeeItems,
+        })
+
+        const planPayload = {
+            plan_json: {
+                ...(planState.value?.plan_json || {}),
+                sections: nextSections,
+            },
+            missing_items_json: planState.value?.missing_items_json || [],
+        }
+        const { data: planData } = await axios.patch(route('event-plans.update', { event: eventState.value.id }), planPayload)
+        planState.value = planData.eventPlan
+
+        const finalizeTask = checklistTasks.value.find((task) => {
+            const key = (task?.checklist_json?.task_key || '').toLowerCase()
+            const title = (task?.title || '').toLowerCase()
+            return key === 'finalize_attendee_list' || title.includes('finalize attendee list')
+        })
+        if (finalizeTask && finalizeTask.status !== 'done') {
+            const { data: taskData } = await axios.put(route('event-tasks.update', { eventTask: finalizeTask.id }), {
+                title: finalizeTask.title,
+                description: finalizeTask.description,
+                assigned_to_user_id: finalizeTask.assigned_to_user_id,
+                due_at: finalizeTask.due_at,
+                status: 'done',
+                checklist_json: finalizeTask.checklist_json,
+            })
+            tasksState.value = tasksState.value.map((item) => item.id === taskData.task.id ? taskData.task : item)
+            await syncMissingItems()
+        }
+
+        showAttendeeToast(`Attendee list finalized with ${confirmed.length} confirmed participant${confirmed.length === 1 ? '' : 's'}.`)
+    } catch (error) {
+        const message = error?.response?.data?.message || 'Unable to finalize attendee list.'
+        showAttendeeToast(message, 'error')
+    }
+}
+
 const updateTransportationOutline = async () => {
     const drivers = driverParticipants.value
     if (!drivers.length) return
@@ -699,23 +971,27 @@ const updateTransportationOutline = async () => {
     const items = drivers.map((participant) => {
         const driver = driverRecordFor(participant.id)
         const licenseDoc = docForDriver(participant.id)
-        const vehicles = (driver?.vehicles || []).map((vehicle) => {
-            const insurance = docForVehicle(vehicle.id)
-            const summary = [
-                vehicle.make,
-                vehicle.model,
-                vehicle.year,
-                vehicle.plate ? `Plate: ${vehicle.plate}` : null,
-                vehicle.vin ? `VIN: ${vehicle.vin}` : null,
-                insurance ? `Coverage: ${insurance.title}` : 'Coverage: Missing',
-            ].filter(Boolean).join(' • ')
-            return summary
-        })
+        const vehicles = isPrivateTransport.value
+            ? (driver?.vehicles || []).map((vehicle) => {
+                const insurance = docForVehicle(vehicle.id)
+                const summary = [
+                    vehicle.make,
+                    vehicle.model,
+                    vehicle.year,
+                    vehicle.plate ? `Plate: ${vehicle.plate}` : null,
+                    vehicle.vin ? `VIN: ${vehicle.vin}` : null,
+                    insurance ? `Coverage: ${insurance.title}` : 'Coverage: Missing',
+                ].filter(Boolean).join(' • ')
+                return summary
+            })
+            : []
 
         const detailParts = [
             driver?.license_number ? `License #: ${driver.license_number}` : 'License #: —',
             licenseDoc ? `License Doc: ${licenseDoc.title}` : 'License Doc: Missing',
-            vehicles.length ? `Vehicles: ${vehicles.join(' | ')}` : 'Vehicles: —',
+            isPrivateTransport.value
+                ? (vehicles.length ? `Vehicles: ${vehicles.join(' | ')}` : 'Vehicles: —')
+                : 'Vehicles: Rental fleet (assigned at pickup).',
         ]
 
         return {
@@ -728,7 +1004,9 @@ const updateTransportationOutline = async () => {
     const nextSections = sections.filter((section) => section.name !== 'Transportation')
     nextSections.unshift({
         name: 'Transportation',
-        summary: 'Driver assignments and vehicle details.',
+        summary: isPrivateTransport.value
+            ? 'Driver assignments and vehicle details.'
+            : 'Driver assignments for rented transportation.',
         items,
     })
 
@@ -743,9 +1021,65 @@ const updateTransportationOutline = async () => {
 
 const closeTaskForm = () => {
     activeFormTask.value = null
+    activeFormTaskKey.value = null
+    venueTotalEditedManually.value = false
     formSchema.value = null
     formData.value = {}
     formError.value = ''
+}
+
+const upsertVenueBudgetFromForm = async () => {
+    const quantityRaw = Number(formData.value?.venue_qty ?? formData.value?.spaces_qty ?? 0)
+    const unitCostRaw = Number(formData.value?.venue_unit_cost ?? 0)
+    const explicitTotal = Number(formData.value?.venue_expected_total ?? 0)
+
+    let qty = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 0
+    let total = Number.isFinite(explicitTotal) && explicitTotal > 0 ? explicitTotal : 0
+    if (!total && qty > 0 && Number.isFinite(unitCostRaw) && unitCostRaw >= 0) {
+        total = qty * unitCostRaw
+    }
+    if (!total) return
+
+    if (!qty) qty = 1
+    const unitCost = Number((total / qty).toFixed(2))
+    const venueType = String(formData.value?.venue_type || '').trim()
+    const siteName = String(formData.value?.site_name || '').trim()
+    const unitLabel = String(formData.value?.venue_unit_label || 'spots').trim()
+    const reservationId = String(formData.value?.reservation_id || '').trim()
+    const checkIn = String(formData.value?.check_in || '').trim()
+    const checkOut = String(formData.value?.check_out || '').trim()
+
+    const label = siteName || venueType || 'Venue'
+    const description = `${label} hosting (${qty} ${unitLabel})`
+    const marker = 'source:venue_confirmation'
+    const notes = [
+        marker,
+        reservationId ? `Reservation ID: ${reservationId}` : null,
+        checkIn ? `Check-in: ${checkIn}` : null,
+        checkOut ? `Check-out: ${checkOut}` : null,
+    ].filter(Boolean).join(' | ')
+
+    const payload = {
+        category: 'Venue',
+        description,
+        qty,
+        unit_cost: unitCost,
+        notes,
+    }
+
+    const existing = (budgetState.value || []).find((item) => {
+        return String(item?.category || '').toLowerCase() === 'venue'
+            && String(item?.notes || '').includes(marker)
+    })
+
+    if (existing?.id) {
+        const { data } = await axios.put(route('event-budget-items.update', { eventBudgetItem: existing.id }), payload)
+        budgetState.value = (budgetState.value || []).map((item) => item.id === existing.id ? data.budget_item : item)
+        return
+    }
+
+    const { data } = await axios.post(route('event-budget-items.store', { event: eventState.value.id }), payload)
+    budgetState.value = [...(budgetState.value || []), data.budget_item]
 }
 
 const saveTaskForm = async () => {
@@ -755,9 +1089,10 @@ const saveTaskForm = async () => {
         await axios.put(route('event-tasks.form.update', { eventTask: activeFormTask.value.id }), {
             data_json: formData.value || {},
         })
-        const taskKey = activeFormTask.value?.checklist_json?.task_key
+        const taskKey = activeFormTaskKey.value || activeFormTask.value?.checklist_json?.task_key
         if (taskKey === 'camp_reservation') {
             await confirmCampReservation()
+            await upsertVenueBudgetFromForm()
         }
         if (taskKey === 'emergency_contacts') {
             await confirmEmergencyContacts()
@@ -787,6 +1122,20 @@ const missingCount = computed(() => {
     return planState.value?.missing_items_json?.length || 0
 })
 
+const expectedIncomeParticipantsCount = computed(() => {
+    return (participantsState.value || []).filter((participant) => {
+        const role = (participant?.role || '').toLowerCase()
+        return role === 'kid'
+    }).length
+})
+
+const expectedPaymentsTotal = computed(() => {
+    if (!paymentConfigState.value?.is_payable) return 0
+    const amount = Number(paymentConfigState.value?.amount || 0)
+    if (!Number.isFinite(amount) || amount <= 0) return 0
+    return Number((expectedIncomeParticipantsCount.value * amount).toFixed(2))
+})
+
 const seededChecklist = ref(false)
 
 onMounted(async () => {
@@ -807,6 +1156,13 @@ onMounted(async () => {
         tasksState.value = [...tasksState.value, data.task]
     }
     await syncMissingItems()
+})
+
+onUnmounted(() => {
+    if (attendeeToastTimer) {
+        clearTimeout(attendeeToastTimer)
+        attendeeToastTimer = null
+    }
 })
 const completeness = computed(() => {
     const sections = (planState.value?.plan_json?.sections || [])
@@ -840,6 +1196,10 @@ const handlePlannerUpdate = (payload) => {
     budgetState.value = payload.budget_items || []
     participantsState.value = payload.participants || []
     documentsState.value = payload.documents || []
+    paymentSummaryState.value = payload.paymentSummary || paymentSummaryState.value
+    paymentConfigState.value = payload.paymentConfig || paymentConfigState.value
+    paymentRecordsState.value = payload.paymentRecords || paymentRecordsState.value
+    serpApiUsageState.value = payload.serpApiUsage || serpApiUsageState.value
     eventForm.value = {
         start_at: toLocalInput(payload.event?.start_at),
         end_at: toLocalInput(payload.event?.end_at),
@@ -859,6 +1219,10 @@ const updateParticipants = (participants) => {
     participantsState.value = participants
     refreshTasks()
     refreshTransportationCompletion()
+}
+
+const updateBudget = (items) => {
+    budgetState.value = items || []
 }
 
 const handlePlaceOptionsUpdate = (updated) => {
@@ -891,39 +1255,21 @@ const saveTransportMode = async (mode) => {
     }
 }
 
-const ensureBudgetItem = async (description, notes) => {
-    const exists = (budgetState.value || []).some((item) => (item.description || '').toLowerCase() === description.toLowerCase())
-    if (exists) return
-    try {
-        const { data } = await axios.post(route('event-budget-items.store', { event: eventState.value.id }), {
-            category: 'Transportation',
-            description,
-            qty: 1,
-            unit_cost: 0,
-            notes: notes || null,
-        })
-        if (data?.budget_item) {
-            budgetState.value = [...budgetState.value, data.budget_item]
-        }
-    } catch (error) {
-        // ignore budget failures in UI
-    }
-}
-
-const ensureTransportBudgets = async (mode) => {
-    await ensureBudgetItem('Gas reimbursement', 'Estimate fuel reimbursement or donations for drivers.')
-    if (mode === 'rental') {
-        await ensureBudgetItem('Vehicle rental', 'Estimated rental costs for van/bus/coach.')
-    }
+const ensureTransportBudgets = async (_mode) => {
+    // Transportation placeholders create confusing $0 rows.
+    // Budget rows should come from explicit user input or AI estimate tools.
+    return
 }
 
 const selectTransportMode = async (mode) => {
     await saveTransportMode(mode)
     await ensureTransportBudgets(mode)
+    await refreshTransportationCompletion()
 }
 
 const clearTransportMode = async () => {
     await saveTransportMode(null)
+    await refreshTransportationCompletion()
 }
 
 const saveBudgetPreference = async (value) => {
@@ -948,6 +1294,16 @@ const saveBudgetPreference = async (value) => {
 <template>
     <PathfinderLayout>
         <template #title>{{ eventState.title }}</template>
+
+        <div
+            v-if="attendeeToast.show"
+            class="fixed top-5 right-5 z-[60] rounded-lg border px-4 py-3 text-sm shadow-lg"
+            :class="attendeeToast.type === 'error'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-green-200 bg-green-50 text-green-700'"
+        >
+            {{ attendeeToast.message }}
+        </div>
 
         <div class="space-y-6">
             <div class="bg-white rounded-lg border p-4 relative">
@@ -1159,7 +1515,20 @@ const saveBudgetPreference = async (value) => {
                                             >
                                                 {{ permissionSlipStats.received }} / {{ permissionSlipStats.required }} slips
                                             </span>
-                                            <span v-if="task?.checklist_json?.task_key" class="text-green-600 text-xs" title="Form available">✓</span>
+                                            <span
+                                                v-if="hasFormForTask(task)"
+                                                class="text-green-600 text-xs font-semibold"
+                                                title="Form available"
+                                            >
+                                                ✓
+                                            </span>
+                                            <span
+                                                v-else
+                                                class="text-red-600 text-xs font-semibold"
+                                                title="No form available"
+                                            >
+                                                ✕
+                                            </span>
                                         </span>
                                         <span class="flex items-center gap-2">
                                             <button type="button" class="text-xs text-blue-600 hover:text-blue-700" @click="openTaskForm(task)">
@@ -1193,7 +1562,15 @@ const saveBudgetPreference = async (value) => {
                                     Enable
                                 </label>
                             </div>
-                            <BudgetTable :items="budgetState" />
+                            <BudgetTable
+                                :items="budgetState"
+                                :event-id="eventState.id"
+                                :payment-summary="paymentSummaryState"
+                                :payment-records="paymentRecordsState"
+                                :concept-label="paymentConfigState?.concept_label || eventState?.title || ''"
+                                :expected-payments-total="expectedPaymentsTotal"
+                                @updated="updateBudget"
+                            />
                         </div>
                         <div v-else-if="activeTab === 'participants'">
                             <ParticipantsTable
@@ -1207,6 +1584,7 @@ const saveBudgetPreference = async (value) => {
                                 :payment-config="paymentConfigState"
                                 :club-id="eventState.club_id"
                                 @updated="updateParticipants"
+                                @finish-list="finishAttendeeList"
                             />
                         </div>
                         <div v-else>
@@ -1225,9 +1603,12 @@ const saveBudgetPreference = async (value) => {
                     <div class="bg-white rounded-lg border p-4">
                         <div class="flex items-center justify-between mb-3">
                             <h2 class="text-lg font-semibold text-gray-800">Plan Outline</h2>
-                            <button type="button" class="text-sm text-blue-600 hover:text-blue-700">
+                            <a
+                                :href="route('events.pdf', { event: eventState.id })"
+                                class="text-sm text-blue-600 hover:text-blue-700"
+                            >
                                 Export PDF
-                            </button>
+                            </a>
                         </div>
                         <p class="text-sm text-gray-500 mb-3">
                             This section will summarize task outcomes and export a printable report.
@@ -1241,6 +1622,7 @@ const saveBudgetPreference = async (value) => {
                         :event-id="eventState.id"
                         :messages="planState?.conversation_json || []"
                         :auto-create-budget-item="planState?.plan_json?.preferences?.auto_create_budget_item || false"
+                        :serp-api-usage="serpApiUsageState"
                         @update="handlePlannerUpdate"
                     />
                 </div>
@@ -1256,6 +1638,14 @@ const saveBudgetPreference = async (value) => {
                 <div v-if="transportLoading" class="text-sm text-gray-500">Loading drivers...</div>
                 <div v-else-if="transportError" class="text-sm text-red-500">{{ transportError }}</div>
                 <div v-else class="space-y-4">
+                    <div
+                        v-if="transportNotice"
+                        :class="transportNoticeType === 'error'
+                            ? 'rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'
+                            : 'rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700'"
+                    >
+                        {{ transportNotice }}
+                    </div>
                     <div class="rounded-lg border bg-gray-50 p-4 space-y-3">
                         <div class="text-sm font-semibold text-gray-800">Transportation method</div>
                         <div v-if="!transportMode" class="flex flex-wrap gap-3">
@@ -1287,23 +1677,48 @@ const saveBudgetPreference = async (value) => {
                             </button>
                         </div>
                         <div class="text-xs text-gray-500">
-                            Each driver must have a license document and at least one insured vehicle to complete this task.
+                            <template v-if="isPrivateTransport">
+                                Each driver must have a license document and at least one insured vehicle to complete this task.
+                            </template>
+                            <template v-else-if="isRentalTransport">
+                                Each driver must have a license document. Vehicle assignment is not required for rental mode.
+                            </template>
+                            <template v-else>
+                                Select a transportation method to continue.
+                            </template>
                         </div>
                     </div>
                     <div v-if="!transportMode" class="text-sm text-gray-500">
                         Select a transportation method to continue.
                     </div>
-                    <div v-else-if="!driverParticipants.length" class="text-sm text-gray-500">
-                        No drivers added yet. Add drivers from the Participants tab.
-                    </div>
-                    <div v-else class="overflow-auto border rounded-lg">
+                    <div v-else class="space-y-3">
+                        <div class="rounded border bg-gray-50 px-3 py-2 flex flex-wrap items-center gap-2">
+                            <input
+                                v-model="newDriverName"
+                                class="border rounded px-2 py-1 text-sm min-w-[220px]"
+                                placeholder="Driver name"
+                                @keyup.enter="addDriverParticipant"
+                            />
+                            <button
+                                type="button"
+                                class="px-3 py-1 rounded text-xs bg-blue-600 text-white disabled:opacity-50"
+                                :disabled="addingDriver"
+                                @click="addDriverParticipant"
+                            >
+                                {{ addingDriver ? 'Adding...' : 'Add driver' }}
+                            </button>
+                        </div>
+                        <div v-if="!driverParticipants.length" class="text-sm text-gray-500">
+                            No drivers added yet. Add one with the form above.
+                        </div>
+                        <div v-else class="overflow-auto border rounded-lg">
                         <table class="min-w-full text-sm">
                             <thead class="bg-gray-50 text-gray-600">
                                 <tr>
                                     <th class="text-left px-4 py-2">Driver</th>
                                     <th class="text-left px-4 py-2">License #</th>
                                     <th class="text-left px-4 py-2">License Doc</th>
-                                    <th class="text-left px-4 py-2">Vehicles</th>
+                                    <th v-if="isPrivateTransport" class="text-left px-4 py-2">Vehicles</th>
                                     <th class="text-right px-4 py-2">Actions</th>
                                 </tr>
                             </thead>
@@ -1311,24 +1726,34 @@ const saveBudgetPreference = async (value) => {
                                 <tr v-for="driver in driverParticipants" :key="driver.id" class="border-t align-top">
                                     <td class="px-4 py-2 font-medium text-gray-800">{{ driver.participant_name }}</td>
                                     <td class="px-4 py-2">
-                                        <input
-                                            v-model="driverLicenseNumbers[driver.id]"
-                                            class="w-40 border rounded px-2 py-1 text-sm"
-                                            placeholder="License number"
-                                        />
+                                        <template v-if="isDriverEditing(driver.id)">
+                                            <input
+                                                v-model="driverLicenseNumbers[driver.id]"
+                                                class="w-40 border rounded px-2 py-1 text-sm"
+                                                placeholder="License number"
+                                            />
+                                        </template>
+                                        <template v-else>
+                                            <span class="text-gray-700">{{ driverRecordFor(driver.id)?.license_number || '—' }}</span>
+                                        </template>
                                     </td>
                                     <td class="px-4 py-2">
                                         <div class="flex flex-col gap-1">
-                                            <select
-                                                class="border rounded px-2 py-1 text-sm"
-                                                :value="docForDriver(driver.id)?.id || ''"
-                                                @change="updateDriverLicenseDoc($event.target.value, driver.id)"
-                                            >
-                                                <option value="">Select license doc</option>
-                                                <option v-for="doc in licenseDocs" :key="doc.id" :value="doc.id">
-                                                    {{ doc.title }}
-                                                </option>
-                                            </select>
+                                            <template v-if="isDriverEditing(driver.id)">
+                                                <select
+                                                    class="border rounded px-2 py-1 text-sm"
+                                                    :value="docForDriver(driver.id)?.id || ''"
+                                                    @change="updateDriverLicenseDoc($event.target.value, driver.id)"
+                                                >
+                                                    <option value="">Select license doc</option>
+                                                    <option v-for="doc in licenseDocs" :key="doc.id" :value="doc.id">
+                                                        {{ doc.title }}
+                                                    </option>
+                                                </select>
+                                            </template>
+                                            <template v-else>
+                                                <div class="text-gray-700">{{ docForDriver(driver.id)?.title || '—' }}</div>
+                                            </template>
                                             <a
                                                 v-if="docForDriver(driver.id)?.path"
                                                 :href="`/storage/${docForDriver(driver.id).path}`"
@@ -1340,7 +1765,7 @@ const saveBudgetPreference = async (value) => {
                                             </a>
                                         </div>
                                     </td>
-                                    <td class="px-4 py-2">
+                                    <td v-if="isPrivateTransport" class="px-4 py-2">
                                         <div v-if="driverRecordFor(driver.id)?.vehicles?.length" class="space-y-2">
                                             <div
                                                 v-for="vehicle in driverRecordFor(driver.id).vehicles"
@@ -1381,6 +1806,7 @@ const saveBudgetPreference = async (value) => {
                                     </td>
                                     <td class="px-4 py-2 text-right">
                                         <button
+                                            v-if="isDriverEditing(driver.id)"
                                             type="button"
                                             class="text-xs text-blue-600"
                                             @click="upsertDriver(driver, driverLicenseNumbers[driver.id])"
@@ -1388,26 +1814,35 @@ const saveBudgetPreference = async (value) => {
                                             Save driver
                                         </button>
                                         <button
+                                            v-else
+                                            type="button"
+                                            class="text-xs text-blue-600"
+                                            @click="setDriverEditing(driver.id, true)"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            v-if="isPrivateTransport"
                                             type="button"
                                             class="ml-2 text-xs text-green-600"
-                                            :disabled="!driverRecordFor(driver.id)"
-                                            @click="openVehicleModal(driverRecordFor(driver.id).id)"
+                                            @click="openVehicleModalForParticipant(driver)"
                                         >
                                             Add vehicle
                                         </button>
                                     </td>
                                 </tr>
                                 <tr v-if="!driverParticipants.length">
-                                    <td colspan="5" class="px-4 py-6 text-center text-gray-500">No drivers yet.</td>
+                                    <td :colspan="isPrivateTransport ? 5 : 4" class="px-4 py-6 text-center text-gray-500">No drivers yet.</td>
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div v-if="vehicleModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div v-if="vehicleModalOpen && isPrivateTransport" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-gray-800">Vehicle Details</h3>
@@ -1481,6 +1916,59 @@ const saveBudgetPreference = async (value) => {
                             {{ field.help || 'Yes' }}
                         </label>
                         <div v-else class="text-xs text-gray-500">Unsupported field type: {{ field.type }}</div>
+                    </div>
+                    <div v-if="activeFormTaskKey === 'camp_reservation'" class="rounded-lg border bg-gray-50 p-3 space-y-2">
+                        <div class="text-sm font-semibold text-gray-800">Venue Cost (Budget Entry)</div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                                v-model="formData.venue_type"
+                                class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                                placeholder="Venue type (camping site, salon rental, sport field...)"
+                            />
+                            <input
+                                v-model="formData.venue_unit_label"
+                                class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                                placeholder="Unit label (spots, cabins, hours...)"
+                            />
+                            <input
+                                v-model.number="formData.venue_qty"
+                                type="number"
+                                min="0"
+                                step="1"
+                                class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                                placeholder="Quantity"
+                            />
+                            <input
+                                v-model.number="formData.venue_unit_cost"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                                placeholder="Unit cost"
+                            />
+                            <input
+                                :value="formData.venue_expected_total"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                class="w-full rounded border border-gray-300 px-3 py-2 text-sm md:col-span-2"
+                                placeholder="Expected total (optional if qty x unit cost is provided)"
+                                @input="onVenueExpectedTotalInput($event.target.value)"
+                            />
+                            <div class="md:col-span-2 flex items-center justify-between text-xs text-gray-500">
+                                <span>
+                                    Auto total from qty × unit cost:
+                                    <span class="font-semibold text-gray-700">${{ computedVenueTotal().toFixed(2) }}</span>
+                                </span>
+                                <button
+                                    type="button"
+                                    class="text-blue-600 hover:text-blue-700"
+                                    @click="venueTotalEditedManually = false; applyAutoVenueTotal()"
+                                >
+                                    Use auto
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div v-else class="text-sm text-gray-500">No form fields available for this task.</div>
