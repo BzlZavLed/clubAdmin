@@ -1368,15 +1368,17 @@ watch(userClassId, (val) => {
                 <p>Selecciona un club para ver o administrar su plan de trabajo.</p>
                 <div v-if="clubs.length" class="mt-2">
                     <p class="text-sm font-medium">Clubes disponibles:</p>
-                    <div class="mt-1 flex flex-wrap gap-2">
-                        <a
-                            v-for="club in clubs"
-                            :key="club.id"
-                            :href="safeRoute('club.workplan', { club_id: club.id }, '/club-director/workplan')"
-                            class="inline-flex items-center rounded border border-yellow-300 bg-white/70 px-2 py-1 text-xs text-yellow-900 hover:bg-white"
+                    <div class="mt-1 max-w-md">
+                        <select
+                            v-model="selectedClubId"
+                            class="w-full border rounded px-3 py-2 text-sm bg-white"
+                            @change="window.location.assign(safeRoute('club.workplan', { club_id: selectedClubId }, '/club-director/workplan'))"
                         >
-                            {{ club.club_name }}
-                        </a>
+                            <option value="">Selecciona un club</option>
+                            <option v-for="club in clubs" :key="club.id" :value="club.id">
+                                {{ club.club_name }}
+                            </option>
+                        </select>
                     </div>
                 </div>
                 <p v-else class="mt-2 text-sm">No hay clubes creados en el sistema.</p>
