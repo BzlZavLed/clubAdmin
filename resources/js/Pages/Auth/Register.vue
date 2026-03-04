@@ -171,10 +171,9 @@ watch(
 
 
             <div class="flex items-center justify-between pt-2">
-                <Link :href="route('church.form')" class="text-sm text-yellow-600 hover:underline"
-                    v-if="churches.length == 0">
-                Crear nueva iglesia
-                </Link>
+                <span v-if="churches.length == 0" class="text-sm text-gray-500">
+                    No hay iglesias registradas. Contacta a un superadmin.
+                </span>
 
                 <Link :href="route('login')" class="text-sm text-yellow-600 hover:underline">
                 ¿Ya estás registrado?

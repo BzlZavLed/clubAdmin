@@ -62,15 +62,6 @@ Route::get('/force-logout', function () {
     return redirect('/login');
 });
 
-Route::get('/churches', [ChurchController::class, 'index']);
-Route::get('/churches/create', fn() => Inertia::render('Church/ChurchForm'))->name('churches.create');
-Route::post('/churches', [ChurchController::class, 'store']);
-Route::post('/churches/{church}/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'upsertForChurch'])->name('churches.invite-code');
-Route::put('/churches/{church}', [ChurchController::class, 'update']);
-Route::delete('/churches/{church}', [ChurchController::class, 'destroy']);
-
-Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('church.form');
-
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard', [
         'auth_user' => auth()->user(),
@@ -130,6 +121,13 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::get('/super-admin/dashboard', fn() => Inertia::render('SuperAdmin/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('superadmin.dashboard');
+    Route::get('/churches', [ChurchController::class, 'index']);
+    Route::get('/churches/create', fn() => Inertia::render('Church/ChurchForm'))->name('churches.create');
+    Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('church.form');
+    Route::post('/churches', [ChurchController::class, 'store']);
+    Route::post('/churches/{church}/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'upsertForChurch'])->name('churches.invite-code');
+    Route::put('/churches/{church}', [ChurchController::class, 'update']);
+    Route::delete('/churches/{church}', [ChurchController::class, 'destroy']);
     Route::get('/super-admin/churches', [ChurchController::class, 'indexWithInviteCodes'])
         ->name('superadmin.churches.index');
     Route::post('/super-admin/churches/{church}/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'regenerateForChurch'])
