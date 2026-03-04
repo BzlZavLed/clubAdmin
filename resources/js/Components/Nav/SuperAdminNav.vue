@@ -4,13 +4,6 @@ import {
     HomeIcon,
     UsersIcon,
     UserGroupIcon,
-    BriefcaseIcon,
-    ChartBarIcon,
-    CogIcon,
-    DocumentTextIcon,
-    CurrencyDollarIcon,
-    BanknotesIcon,
-    CalendarDaysIcon,
     BuildingOffice2Icon
 } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
@@ -20,70 +13,30 @@ const openDropdown = ref(null)
 
 const menuItems = [
     { name: 'Panel', href: '/super-admin/dashboard', route: 'superadmin.dashboard', icon: HomeIcon },
-    { name: 'Crear iglesia', href: '/church-form', route: 'church.form', icon: BuildingOffice2Icon },
     {
-        name: 'Mi club',
+        name: 'Superadmin',
         icon: UsersIcon,
         children: [
             {
-                name: 'Administración',
-                href: '/club-director/my-club',
-                route: 'club.my-club',
-                icon: DocumentTextIcon
+                name: 'Iglesias',
+                href: '/super-admin/churches/manage',
+                route: 'superadmin.churches.manage',
+                icon: BuildingOffice2Icon
             },
             {
-                name: 'Finanzas',
-                href: '/club-director/my-club-finances',
-                route: 'club.my-club-finances',
-                icon: CurrencyDollarIcon
+                name: 'Clubes',
+                href: '/super-admin/clubs',
+                route: 'superadmin.clubs.manage',
+                icon: UserGroupIcon
             },
             {
-                name: 'Pagos',
-                href: '/club-director/payments',
-                route: 'club.director.payments',
-                icon: BanknotesIcon
-            },
-            {
-                name: 'Gastos',
-                href: '/club-director/expenses',
-                route: 'club.director.expenses',
-                icon: CurrencyDollarIcon
-            },
-            {
-                name: 'Plan de trabajo',
-                href: '/club-director/workplan',
-                route: 'club.workplan',
-                icon: CalendarDaysIcon
+                name: 'Usuarios',
+                href: '/super-admin/users',
+                route: 'superadmin.users.manage',
+                icon: UsersIcon
             }
         ]
     },
-    { name: 'Miembros', href: '/club-director/members', route: 'club.members', icon: UserGroupIcon },
-    { name: 'Personal y cuentas', href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
-    {
-        name: 'Reportes',
-        icon: ChartBarIcon,
-        children: [
-            {
-                name: 'Reportes de asistencia',
-                href: '/club-director/reports/assistance',
-                route: 'club.reports.assistance',
-                icon: DocumentTextIcon
-            },
-            {
-                name: 'Reportes financieros',
-                href: '/club-director/reports/finances',
-                route: 'club.reports.finances',
-                icon: BanknotesIcon
-            },
-            {
-                name: 'Saldos de cuentas',
-                href: '/club-director/reports/accounts',
-                route: 'club.reports.accounts',
-                icon: CurrencyDollarIcon
-            }
-        ]
-    },
-    { name: 'Configuración', href: '/club-director/settings', route: 'club.settings', icon: CogIcon },
 ]
 
 defineProps({

@@ -8,6 +8,8 @@ use App\Http\Controllers\ClubController;
 use App\Http\Controllers\MemberAdventurerController;
 use App\Http\Controllers\ParentAuthController;
 use App\Models\Club;
+use App\Models\Church;
+use App\Models\User;
 use App\Http\Controllers\ChurchController;
 use App\Http\Controllers\ParentMemberController;
 use App\Http\Controllers\ExportController;
@@ -121,6 +123,38 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::get('/super-admin/dashboard', fn() => Inertia::render('SuperAdmin/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('superadmin.dashboard');
+    Route::get('/super-admin/churches/manage', fn() => Inertia::render('Church/ChurchForm'))->name('superadmin.churches.manage');
+    Route::get('/super-admin/clubs', fn() => Inertia::render('SuperAdmin/Clubs', [
+        'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
+        'directors' => User::select('id', 'name', 'email', 'church_id', 'club_id')
+            ->where('profile_type', 'club_director')
+            ->where('status', '!=', 'deleted')
+            ->orderBy('name')
+            ->get(),
+        'clubs' => Club::query()
+            ->select('id', 'club_name', 'church_name', 'director_name', 'creation_date', 'pastor_name', 'conference_name', 'conference_region', 'club_type', 'church_id', 'user_id', 'status')
+            ->orderBy('club_name')
+            ->get(),
+    ]))->name('superadmin.clubs.manage');
+    Route::post('/super-admin/clubs', [ClubController::class, 'storeBySuperadmin'])->name('superadmin.clubs.store');
+    Route::put('/super-admin/clubs/{club}', [ClubController::class, 'updateBySuperadmin'])->name('superadmin.clubs.update');
+    Route::put('/super-admin/clubs/{club}/deactivate', [ClubController::class, 'deactivateBySuperadmin'])->name('superadmin.clubs.deactivate');
+    Route::delete('/super-admin/clubs/{club}', [ClubController::class, 'deleteBySuperadmin'])->name('superadmin.clubs.delete');
+    Route::get('/super-admin/users', fn() => Inertia::render('SuperAdmin/Users', [
+        'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
+        'clubs' => Club::select('id', 'club_name', 'church_id')->orderBy('club_name')->get(),
+        'subRoles' => SubRole::all(),
+        'users' => User::query()
+            ->select('id', 'name', 'email', 'profile_type', 'sub_role', 'church_id', 'church_name', 'club_id', 'status')
+            ->where('status', '!=', 'deleted')
+            ->orderBy('name')
+            ->get(),
+    ]))->name('superadmin.users.manage');
+    Route::post('/super-admin/users', [RegisteredUserController::class, 'storeBySuperadmin'])->name('superadmin.users.store');
+    Route::put('/super-admin/users/{user}', [RegisteredUserController::class, 'updateBySuperadmin'])->name('superadmin.users.update');
+    Route::put('/super-admin/users/{user}/deactivate', [RegisteredUserController::class, 'deactivateBySuperadmin'])->name('superadmin.users.deactivate');
+    Route::delete('/super-admin/users/{user}', [RegisteredUserController::class, 'deleteBySuperadmin'])->name('superadmin.users.delete');
+
     Route::get('/churches', [ChurchController::class, 'index']);
     Route::get('/churches/create', fn() => Inertia::render('Church/ChurchForm'))->name('churches.create');
     Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('church.form');

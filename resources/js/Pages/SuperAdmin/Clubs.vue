@@ -1,0 +1,215 @@
+<script setup>
+import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import InputError from '@/Components/InputError.vue'
+import InputLabel from '@/Components/InputLabel.vue'
+import PrimaryButton from '@/Components/PrimaryButton.vue'
+import { router, useForm } from '@inertiajs/vue3'
+import { computed, ref } from 'vue'
+
+const props = defineProps({
+    churches: { type: Array, default: () => [] },
+    directors: { type: Array, default: () => [] },
+    clubs: { type: Array, default: () => [] },
+})
+
+const editingClubId = ref(null)
+
+const form = useForm({
+    club_name: '',
+    church_id: '',
+    director_user_id: '',
+    creation_date: '',
+    pastor_name: '',
+    conference_name: '',
+    conference_region: '',
+    club_type: 'pathfinders',
+})
+
+const isEditing = computed(() => editingClubId.value !== null)
+
+const resetForm = () => {
+    editingClubId.value = null
+    form.reset()
+    form.club_type = 'pathfinders'
+}
+
+const editClub = (club) => {
+    editingClubId.value = club.id
+    form.club_name = club.club_name || ''
+    form.church_id = club.church_id || ''
+    form.director_user_id = club.user_id || ''
+    form.creation_date = club.creation_date || ''
+    form.pastor_name = club.pastor_name || ''
+    form.conference_name = club.conference_name || ''
+    form.conference_region = club.conference_region || ''
+    form.club_type = club.club_type || 'pathfinders'
+}
+
+const submit = () => {
+    const options = {
+        preserveScroll: true,
+        onSuccess: () => {
+            resetForm()
+            router.reload({ only: ['clubs', 'directors'] })
+        },
+    }
+
+    if (isEditing.value) {
+        form.put(route('superadmin.clubs.update', editingClubId.value), options)
+        return
+    }
+
+    form.post(route('superadmin.clubs.store'), options)
+}
+
+const churchNameById = (churchId) => {
+    const church = props.churches.find((item) => Number(item.id) === Number(churchId))
+    return church?.church_name || '-'
+}
+
+const directorLabelById = (directorId) => {
+    const director = props.directors.find((item) => Number(item.id) === Number(directorId))
+    return director ? `${director.name} (${director.email})` : '-'
+}
+
+const deactivateClub = (club) => {
+    if (!confirm(`Deactivate club "${club.club_name}"?`)) return
+    router.put(
+        route('superadmin.clubs.deactivate', club.id),
+        {},
+        {
+            preserveScroll: true,
+            onSuccess: () => router.reload({ only: ['clubs'] }),
+        }
+    )
+}
+
+const deleteClub = (club) => {
+    if (!confirm(`Delete club "${club.club_name}"? This will hide it from active lists.`)) return
+    router.delete(route('superadmin.clubs.delete', club.id), {
+        preserveScroll: true,
+        onSuccess: () => router.reload({ only: ['clubs'] }),
+    })
+}
+</script>
+
+<template>
+    <PathfinderLayout>
+        <template #title>Superadmin: Clubs</template>
+
+        <div class="max-w-5xl mx-auto space-y-6">
+            <div class="bg-white border rounded-lg p-6 space-y-4">
+                <h2 class="text-lg font-semibold">{{ isEditing ? 'Editar club' : 'Crear club' }}</h2>
+
+                <form @submit.prevent="submit" class="space-y-4">
+                    <div>
+                        <InputLabel for="church_id" value="Iglesia" />
+                        <select id="church_id" v-model="form.church_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <option disabled value="">Selecciona una iglesia</option>
+                            <option v-for="church in props.churches" :key="church.id" :value="church.id">
+                                {{ church.church_name }}
+                            </option>
+                        </select>
+                        <InputError class="mt-2" :message="form.errors.church_id" />
+                    </div>
+
+                    <div>
+                        <InputLabel for="director_user_id" value="Director (usuario)" />
+                        <select id="director_user_id" v-model="form.director_user_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <option disabled value="">Selecciona un director</option>
+                            <option v-for="director in props.directors" :key="director.id" :value="director.id">
+                                {{ director.name }} ({{ director.email }})
+                            </option>
+                        </select>
+                        <InputError class="mt-2" :message="form.errors.director_user_id" />
+                    </div>
+
+                    <div>
+                        <InputLabel for="club_name" value="Nombre del club" />
+                        <input id="club_name" v-model="form.club_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" required />
+                        <InputError class="mt-2" :message="form.errors.club_name" />
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <InputLabel for="club_type" value="Tipo" />
+                            <select id="club_type" v-model="form.club_type" class="mt-1 block w-full rounded-md border-gray-300" required>
+                                <option value="adventurers">Adventurers</option>
+                                <option value="pathfinders">Pathfinders</option>
+                                <option value="master_guide">Master Guide</option>
+                            </select>
+                            <InputError class="mt-2" :message="form.errors.club_type" />
+                        </div>
+                        <div>
+                            <InputLabel for="creation_date" value="Fecha de creacion" />
+                            <input id="creation_date" v-model="form.creation_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <InputError class="mt-2" :message="form.errors.creation_date" />
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <InputLabel for="pastor_name" value="Pastor" />
+                            <input id="pastor_name" v-model="form.pastor_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <InputError class="mt-2" :message="form.errors.pastor_name" />
+                        </div>
+                        <div>
+                            <InputLabel for="conference_name" value="Conferencia" />
+                            <input id="conference_name" v-model="form.conference_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <InputError class="mt-2" :message="form.errors.conference_name" />
+                        </div>
+                        <div>
+                            <InputLabel for="conference_region" value="Region" />
+                            <input id="conference_region" v-model="form.conference_region" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <InputError class="mt-2" :message="form.errors.conference_region" />
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <PrimaryButton :disabled="form.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                            {{ isEditing ? 'Guardar cambios' : 'Crear club' }}
+                        </PrimaryButton>
+                        <button v-if="isEditing" type="button" @click="resetForm" class="px-4 py-2 rounded border border-gray-300 text-gray-700">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white border rounded-lg p-6">
+                <h2 class="text-lg font-semibold mb-3">Clubes existentes</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50 text-gray-700">
+                            <tr>
+                                <th class="text-left px-3 py-2">Club</th>
+                                <th class="text-left px-3 py-2">Iglesia</th>
+                                <th class="text-left px-3 py-2">Director</th>
+                                <th class="text-left px-3 py-2">Tipo</th>
+                                <th class="text-left px-3 py-2">Estado</th>
+                                <th class="text-right px-3 py-2">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-if="props.clubs.length === 0">
+                                <td colspan="6" class="px-3 py-3 text-gray-500">No hay clubes.</td>
+                            </tr>
+                            <tr v-for="club in props.clubs" :key="club.id" class="border-t">
+                                <td class="px-3 py-2">{{ club.club_name }}</td>
+                                <td class="px-3 py-2">{{ churchNameById(club.church_id) }}</td>
+                                <td class="px-3 py-2">{{ directorLabelById(club.user_id) }}</td>
+                                <td class="px-3 py-2">{{ club.club_type }}</td>
+                                <td class="px-3 py-2">{{ club.status || 'active' }}</td>
+                                <td class="px-3 py-2 text-right space-x-2">
+                                    <button type="button" class="text-blue-600 hover:underline" @click="editClub(club)">Editar</button>
+                                    <button type="button" class="text-amber-600 hover:underline" @click="deactivateClub(club)">Desactivar</button>
+                                    <button type="button" class="text-red-600 hover:underline" @click="deleteClub(club)">Eliminar</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </PathfinderLayout>
+</template>

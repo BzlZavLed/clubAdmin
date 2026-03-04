@@ -16,6 +16,158 @@ use App\Support\ClubHelper;
 class ClubController extends Controller
 {
     use AuthorizesRequests;
+
+    public function storeBySuperadmin(Request $request)
+    {
+        if (auth()->user()?->profile_type !== 'superadmin') {
+            abort(403, 'Only superadmin can create clubs here.');
+        }
+
+        $validated = $request->validate([
+            'club_name' => 'required|string|max:255',
+            'church_id' => 'required|exists:churches,id',
+            'director_user_id' => 'required|exists:users,id',
+            'creation_date' => 'nullable|date',
+            'pastor_name' => 'nullable|string|max:255',
+            'conference_name' => 'nullable|string|max:255',
+            'conference_region' => 'nullable|string|max:255',
+            'club_type' => 'required|in:adventurers,pathfinders,master_guide',
+        ]);
+
+        $church = Church::findOrFail($validated['church_id']);
+        $director = User::findOrFail($validated['director_user_id']);
+
+        if ($director->profile_type !== 'club_director') {
+            return back()->withErrors([
+                'director_user_id' => 'Selected user must have club_director profile.',
+            ]);
+        }
+
+        $club = Club::create([
+            'user_id' => $director->id,
+            'club_name' => $validated['club_name'],
+            'church_name' => $church->church_name,
+            'director_name' => $director->name,
+            'creation_date' => $validated['creation_date'] ?? null,
+            'pastor_name' => $validated['pastor_name'] ?? null,
+            'conference_name' => $validated['conference_name'] ?? null,
+            'conference_region' => $validated['conference_region'] ?? null,
+            'club_type' => $validated['club_type'],
+            'church_id' => $church->id,
+            'status' => 'active',
+        ]);
+
+        DB::table('club_user')->updateOrInsert(
+            ['user_id' => $director->id, 'club_id' => $club->id],
+            ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+        );
+
+        $director->church_id = $church->id;
+        $director->church_name = $church->church_name;
+        $director->club_id = $club->id;
+        $director->status = $director->status ?: 'active';
+        $director->save();
+
+        return back()->with('success', 'Club created and linked to director successfully.');
+    }
+
+    public function updateBySuperadmin(Request $request, Club $club)
+    {
+        if (auth()->user()?->profile_type !== 'superadmin') {
+            abort(403, 'Only superadmin can update clubs here.');
+        }
+
+        $validated = $request->validate([
+            'club_name' => 'required|string|max:255',
+            'church_id' => 'required|exists:churches,id',
+            'director_user_id' => 'required|exists:users,id',
+            'creation_date' => 'nullable|date',
+            'pastor_name' => 'nullable|string|max:255',
+            'conference_name' => 'nullable|string|max:255',
+            'conference_region' => 'nullable|string|max:255',
+            'club_type' => 'required|in:adventurers,pathfinders,master_guide',
+        ]);
+
+        $church = Church::findOrFail($validated['church_id']);
+        $director = User::findOrFail($validated['director_user_id']);
+
+        if ($director->profile_type !== 'club_director') {
+            return back()->withErrors([
+                'director_user_id' => 'Selected user must have club_director profile.',
+            ]);
+        }
+
+        $previousDirectorId = $club->user_id;
+
+        $club->update([
+            'user_id' => $director->id,
+            'club_name' => $validated['club_name'],
+            'church_name' => $church->church_name,
+            'director_name' => $director->name,
+            'creation_date' => $validated['creation_date'] ?? null,
+            'pastor_name' => $validated['pastor_name'] ?? null,
+            'conference_name' => $validated['conference_name'] ?? null,
+            'conference_region' => $validated['conference_region'] ?? null,
+            'club_type' => $validated['club_type'],
+            'church_id' => $church->id,
+        ]);
+
+        DB::table('club_user')->updateOrInsert(
+            ['user_id' => $director->id, 'club_id' => $club->id],
+            ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+        );
+
+        $director->church_id = $church->id;
+        $director->church_name = $church->church_name;
+        $director->club_id = $club->id;
+        $director->status = $director->status ?: 'active';
+        $director->save();
+
+        if ($previousDirectorId && $previousDirectorId !== $director->id) {
+            $previousDirector = User::find($previousDirectorId);
+            if ($previousDirector && (int) $previousDirector->club_id === (int) $club->id) {
+                $previousDirector->club_id = null;
+                $previousDirector->save();
+            }
+        }
+
+        return back()->with('success', 'Club updated successfully.');
+    }
+
+    public function deactivateBySuperadmin(Club $club)
+    {
+        if (auth()->user()?->profile_type !== 'superadmin') {
+            abort(403, 'Only superadmin can deactivate clubs here.');
+        }
+
+        $club->update(['status' => 'inactive']);
+
+        DB::table('club_user')
+            ->where('club_id', $club->id)
+            ->update(['status' => 'inactive', 'updated_at' => now()]);
+
+        User::where('club_id', $club->id)->update(['club_id' => null]);
+
+        return back()->with('success', 'Club deactivated successfully.');
+    }
+
+    public function deleteBySuperadmin(Club $club)
+    {
+        if (auth()->user()?->profile_type !== 'superadmin') {
+            abort(403, 'Only superadmin can delete clubs here.');
+        }
+
+        $club->update(['status' => 'deleted']);
+
+        DB::table('club_user')
+            ->where('club_id', $club->id)
+            ->update(['status' => 'inactive', 'updated_at' => now()]);
+
+        User::where('club_id', $club->id)->update(['club_id' => null]);
+
+        return back()->with('success', 'Club deleted successfully.');
+    }
+
     public function store(Request $request)
     {
         if (auth()->user()->profile_type !== 'club_director') {
