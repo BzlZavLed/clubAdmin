@@ -344,8 +344,8 @@ class ClubPaymentController extends Controller
         ]);
 
         $isInitial = $validated['payment_type'] === 'initial';
-        if ($isInitial && $user?->profile_type !== 'club_director') {
-            return response()->json(['message' => 'Saldo inicial solo puede ser registrado por el director.'], 403);
+        if ($isInitial && !in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
+            return response()->json(['message' => 'Saldo inicial solo puede ser registrado por director o superadmin.'], 403);
         }
 
         // exactly one payer (unless initial balance)

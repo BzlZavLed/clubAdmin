@@ -79,7 +79,7 @@ class ClassPlanController extends Controller
     public function updateStatus(Request $request, ClassPlan $plan)
     {
         $user = $request->user();
-        if ($user->profile_type !== 'club_director') {
+        if (!in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403);
         }
         $validated = $request->validate([

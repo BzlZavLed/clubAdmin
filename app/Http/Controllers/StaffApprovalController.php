@@ -13,8 +13,11 @@ class StaffApprovalController extends Controller
     protected function authorizeStaff(Request $request, Staff $staff): void
     {
         $user = $request->user();
-        if (!$user || $user->profile_type !== 'club_director') {
+        if (!$user || !in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403);
+        }
+        if ($user->profile_type === 'superadmin') {
+            return;
         }
         $clubIds = ClubHelper::clubIdsForUser($user);
         if (!$clubIds->contains($staff->club_id)) {

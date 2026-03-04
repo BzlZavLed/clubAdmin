@@ -10,7 +10,9 @@ class EnsureParent
 {
     public function handle($request, Closure $next)
     {
-        if (auth()->check() && auth()->user()->profile_type === 'parent') {
+        $profileType = auth()->check() ? auth()->user()->profile_type : null;
+
+        if (in_array($profileType, ['parent', 'superadmin'], true)) {
             return $next($request);
         }
 

@@ -170,8 +170,8 @@ class ClubController extends Controller
 
     public function store(Request $request)
     {
-        if (auth()->user()->profile_type !== 'club_director') {
-            abort(403, 'Only club directors can create a club.');
+        if (!in_array(auth()->user()->profile_type, ['club_director', 'superadmin'], true)) {
+            abort(403, 'Only club directors or superadmin can create a club.');
         }
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
@@ -239,7 +239,7 @@ class ClubController extends Controller
 
         $club = Club::findOrFail($clubId);
 
-        if (!$club->users()->where('user_id', auth()->id())->exists()) {
+        if (auth()->user()?->profile_type !== 'superadmin' && !$club->users()->where('user_id', auth()->id())->exists()) {
             abort(403);
         }
 

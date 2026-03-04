@@ -11,7 +11,11 @@ class EnsureProfileIs
 {
     public function handle(Request $request, Closure $next, string $role): Response
     {
-        if ($request->user()?->profile_type !== $role) {
+        $profileType = $request->user()?->profile_type;
+        $isSuperadmin = $profileType === 'superadmin';
+        $hasRole = $profileType === $role;
+
+        if (!$isSuperadmin && !$hasRole) {
             if ($request->expectsJson()) {
                 return response()->json(['message' => 'Access denied.'], 403);
             }

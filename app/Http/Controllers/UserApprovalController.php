@@ -11,8 +11,14 @@ class UserApprovalController extends Controller
     public function approve(Request $request, User $user)
     {
         $director = $request->user();
-        if ($director->profile_type !== 'club_director') {
+        if (!in_array($director->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403);
+        }
+
+        if ($director->profile_type === 'superadmin') {
+            $user->status = 'active';
+            $user->save();
+            return response()->json(['message' => 'User approved']);
         }
 
         // Ensure director shares a club with the user

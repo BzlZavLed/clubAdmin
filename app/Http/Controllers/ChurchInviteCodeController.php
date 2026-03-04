@@ -12,12 +12,14 @@ class ChurchInviteCodeController extends Controller
     public function show(Request $request)
     {
         $user = $request->user();
-        if ($user->profile_type !== 'club_director') {
+        if (!in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403);
         }
-        $churchId = $user->church_id;
+        $churchId = $user->profile_type === 'superadmin'
+            ? ($request->input('church_id') ?: Church::query()->orderBy('id')->value('id'))
+            : $user->church_id;
         if (!$churchId) {
-            abort(422, 'Director is not linked to a church.');
+            abort(422, 'Missing church_id (for superadmin) or user church link.');
         }
 
         $code = ChurchInviteCode::firstOrCreate(
@@ -36,12 +38,14 @@ class ChurchInviteCodeController extends Controller
     public function regenerate(Request $request)
     {
         $user = $request->user();
-        if ($user->profile_type !== 'club_director') {
+        if (!in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403);
         }
-        $churchId = $user->church_id;
+        $churchId = $user->profile_type === 'superadmin'
+            ? ($request->input('church_id') ?: Church::query()->orderBy('id')->value('id'))
+            : $user->church_id;
         if (!$churchId) {
-            abort(422, 'Director is not linked to a church.');
+            abort(422, 'Missing church_id (for superadmin) or user church link.');
         }
 
         $code = ChurchInviteCode::updateOrCreate(
