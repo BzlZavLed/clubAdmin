@@ -31,9 +31,10 @@ class RepAssistanceAdvController extends Controller
             'merits.*.asistencia' => 'boolean',
             'merits.*.puntualidad' => 'boolean',
             'merits.*.uniforme' => 'boolean',
-            'merits.*.conductor' => 'boolean',
+            'merits.*.conductor' => 'nullable|boolean',
             'merits.*.cuota' => 'boolean',
-            'merits.*.cuota_amount' => 'integer',
+            'merits.*.cuota_amount' => 'nullable|numeric',
+            'merits.*.requirement_checks_json' => 'nullable|array',
             'merits.*.total' => 'required|integer',
         ]);
 
@@ -55,17 +56,27 @@ class RepAssistanceAdvController extends Controller
 
             // Save each merit row (per member)
             foreach ($validated['merits'] as $entry) {
+                $asistencia = (bool) ($entry['asistencia'] ?? false);
+                $puntualidad = $asistencia ? (bool) ($entry['puntualidad'] ?? false) : false;
+                $uniforme = $asistencia ? (bool) ($entry['uniforme'] ?? false) : false;
+                $cuota = $asistencia ? (bool) ($entry['cuota'] ?? false) : false;
+                $cuotaAmount = $cuota ? (float) ($entry['cuota_amount'] ?? 0) : 0.0;
+                $checks = $entry['requirement_checks_json'] ?? null;
+                if (!$asistencia && is_array($checks)) {
+                    $checks = array_map(static fn () => false, $checks);
+                }
                 RepAssistanceAdvMerit::create([
                     'report_id' => $report->id,
                     'mem_adv_name' => $entry['mem_adv_name'],
                     'mem_adv_id' => $entry['mem_adv_id'],
-                    'asistencia' => $entry['asistencia'] ?? false,
-                    'puntualidad' => $entry['puntualidad'] ?? false,
-                    'uniforme' => $entry['uniforme'] ?? false,
+                    'asistencia' => $asistencia,
+                    'puntualidad' => $puntualidad,
+                    'uniforme' => $uniforme,
                     'conductor' => $entry['conductor'] ?? false,
-                    'cuota' => $entry['cuota'] ?? false,
-                    'cuota_amount' => $entry['cuota_amount'] ?? false,
-                    'total' => $entry['total'] ?? false
+                    'cuota' => $cuota,
+                    'cuota_amount' => $cuotaAmount,
+                    'requirement_checks_json' => $checks,
+                    'total' => (int) ($asistencia + $puntualidad + $uniforme + $cuota),
                 ]);
             }
 
@@ -117,9 +128,10 @@ class RepAssistanceAdvController extends Controller
             'merits.*.asistencia' => 'boolean',
             'merits.*.puntualidad' => 'boolean',
             'merits.*.uniforme' => 'boolean',
-            'merits.*.conductor' => 'boolean',
+            'merits.*.conductor' => 'nullable|boolean',
             'merits.*.cuota' => 'boolean',
-            'merits.*.cuota_amount' => 'integer',
+            'merits.*.cuota_amount' => 'nullable|numeric',
+            'merits.*.requirement_checks_json' => 'nullable|array',
             'merits.*.total' => 'required|integer',
         ]);
 
@@ -146,17 +158,27 @@ class RepAssistanceAdvController extends Controller
 
             // Recreate merit rows
             foreach ($validated['merits'] as $entry) {
+                $asistencia = (bool) ($entry['asistencia'] ?? false);
+                $puntualidad = $asistencia ? (bool) ($entry['puntualidad'] ?? false) : false;
+                $uniforme = $asistencia ? (bool) ($entry['uniforme'] ?? false) : false;
+                $cuota = $asistencia ? (bool) ($entry['cuota'] ?? false) : false;
+                $cuotaAmount = $cuota ? (float) ($entry['cuota_amount'] ?? 0) : 0.0;
+                $checks = $entry['requirement_checks_json'] ?? null;
+                if (!$asistencia && is_array($checks)) {
+                    $checks = array_map(static fn () => false, $checks);
+                }
                 RepAssistanceAdvMerit::create([
                     'report_id' => $report->id,
                     'mem_adv_name' => $entry['mem_adv_name'],
                     'mem_adv_id' => $entry['mem_adv_id'],
-                    'asistencia' => $entry['asistencia'] ?? false,
-                    'puntualidad' => $entry['puntualidad'] ?? false,
-                    'uniforme' => $entry['uniforme'] ?? false,
+                    'asistencia' => $asistencia,
+                    'puntualidad' => $puntualidad,
+                    'uniforme' => $uniforme,
                     'conductor' => $entry['conductor'] ?? false,
-                    'cuota' => $entry['cuota'] ?? false,
-                    'cuota_amount' => $entry['cuota_amount'] ?? false,
-                    'total' => $entry['total'] ?? 0
+                    'cuota' => $cuota,
+                    'cuota_amount' => $cuotaAmount,
+                    'requirement_checks_json' => $checks,
+                    'total' => (int) ($asistencia + $puntualidad + $uniforme + $cuota),
                 ]);
             }
 

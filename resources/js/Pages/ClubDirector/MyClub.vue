@@ -14,7 +14,10 @@ import {
     createClub,
     updateClub as updateClubApi,
     deleteClassById,
-    fetchMembersByClub
+    fetchMembersByClub,
+    createInvestitureRequirement,
+    updateInvestitureRequirement,
+    deleteInvestitureRequirement
 } from '@/Services/api'
 
 const props = defineProps({
@@ -39,6 +42,9 @@ const clubs = ref([])
 const showClassModal = ref(false)
 const classToEdit = ref(null)
 const hasClub = ref(false)
+const requirementDraftByClass = ref({})
+const editingRequirementByClass = ref({})
+const showRequirementFormByClass = ref({})
 
 // 🧠 Derived data
 const church_name = user.value.church_name || 'Iglesia desconocida'
@@ -166,6 +172,103 @@ const deleteCls = async (classID) => {
     }
 }
 
+const getClassRequirements = (cls) => {
+    if (!Array.isArray(cls?.investiture_requirements)) return []
+    return cls.investiture_requirements
+        .slice()
+        .sort((a, b) => {
+            const oa = Number(a.sort_order || 0)
+            const ob = Number(b.sort_order || 0)
+            if (oa !== ob) return oa - ob
+            return Number(a.id || 0) - Number(b.id || 0)
+        })
+}
+
+const getRequirementDraft = (classId) => {
+    if (!requirementDraftByClass.value[classId]) {
+        requirementDraftByClass.value[classId] = {
+            title: '',
+            description: '',
+            sort_order: ''
+        }
+    }
+    return requirementDraftByClass.value[classId]
+}
+
+const startCreateRequirement = (classId) => {
+    showRequirementFormByClass.value[classId] = true
+    editingRequirementByClass.value[classId] = null
+    requirementDraftByClass.value[classId] = {
+        title: '',
+        description: '',
+        sort_order: ''
+    }
+}
+
+const startEditRequirement = (classId, requirement) => {
+    showRequirementFormByClass.value[classId] = true
+    editingRequirementByClass.value[classId] = requirement.id
+    requirementDraftByClass.value[classId] = {
+        title: requirement.title || '',
+        description: requirement.description || '',
+        sort_order: requirement.sort_order || ''
+    }
+}
+
+const cancelRequirementEdit = (classId) => {
+    showRequirementFormByClass.value[classId] = false
+    editingRequirementByClass.value[classId] = null
+    requirementDraftByClass.value[classId] = {
+        title: '',
+        description: '',
+        sort_order: ''
+    }
+}
+
+const saveRequirement = async (cls) => {
+    const classId = cls?.id
+    if (!classId) return
+    const draft = getRequirementDraft(classId)
+    if (!draft.title?.trim()) {
+        showToast('El requisito necesita un titulo', 'error')
+        return
+    }
+
+    const payload = {
+        title: draft.title.trim(),
+        description: draft.description?.trim() || null,
+        sort_order: draft.sort_order ? Number(draft.sort_order) : null
+    }
+
+    try {
+        const editingId = editingRequirementByClass.value[classId]
+        if (editingId) {
+            await updateInvestitureRequirement(editingId, payload)
+            showToast('Requisito actualizado')
+        } else {
+            await createInvestitureRequirement(classId, payload)
+            showToast('Requisito creado')
+        }
+        cancelRequirementEdit(classId)
+        await fetchClubs()
+    } catch (error) {
+        console.error('Failed to save requirement:', error)
+        showToast('No se pudo guardar el requisito', 'error')
+    }
+}
+
+const removeRequirement = async (requirementId) => {
+    if (!confirm('¿Seguro que deseas eliminar este requisito?')) return
+    try {
+        await deleteInvestitureRequirement(requirementId)
+        showToast('Requisito eliminado')
+        await fetchClubs()
+    } catch (error) {
+        console.error('Failed to delete requirement:', error)
+        showToast('No se pudo eliminar el requisito', 'error')
+    }
+}
+
 // 🧠 Select club (director choosing one)
 const selectClub = async (clubId) => {
     try {
@@ -201,6 +304,17 @@ const openNewClassModal = () => {
 const editCls = (cls) => {
     classToEdit.value = cls
     showClassModal.value = true
+}
+
+const exportClassesPdf = (withRequirements = false) => {
+    const routeName = withRequirements
+        ? 'club-classes.pdf-with-requirements'
+        : 'club-classes.pdf'
+    const clubId = selectedClubId.value ? Number(selectedClubId.value) : null
+    const url = clubId
+        ? route(routeName, { club_id: clubId })
+        : route(routeName)
+    window.open(url, '_blank')
 }
 
 // 🧠 Start new form
@@ -557,10 +671,26 @@ onMounted(fetchClubs);
                 <div class="p-4">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-lg font-bold">Clases del club</h3>
-                        <button @click="openNewClassModal"
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                            + Agregar clase
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                @click="exportClassesPdf(false)"
+                                class="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 text-sm"
+                            >
+                                PDF clases
+                            </button>
+                            <button
+                                type="button"
+                                @click="exportClassesPdf(true)"
+                                class="px-3 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-800 text-sm"
+                            >
+                                PDF clases + requisitos
+                            </button>
+                            <button @click="openNewClassModal"
+                                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                + Agregar clase
+                            </button>
+                        </div>
                     </div>
                     <select v-model="selectedClubId" class="border rounded mb-6">
                         <option value="">Todos los clubes</option>
@@ -590,8 +720,96 @@ onMounted(fetchClubs);
                                         <td class="p-2 space-x-2">
                                             <button @click="editCls(cls)"
                                                 class="text-blue-600 hover:underline">Editar</button>
-                                            <button @click="deleteCls(cls)"
+                                            <button @click="deleteCls(cls.id)"
                                                 class="text-red-600 hover:underline">Eliminar</button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="4" class="px-4 py-3 bg-gray-50 border-b">
+                                            <div class="flex items-center justify-between mb-2">
+                                                <p class="text-sm font-semibold text-gray-800">Requisitos de investidura</p>
+                                                <button
+                                                    type="button"
+                                                    class="text-sm text-blue-700 hover:underline"
+                                                    @click="startCreateRequirement(cls.id)"
+                                                >
+                                                    + Agregar requisito
+                                                </button>
+                                            </div>
+
+                                            <ul v-if="getClassRequirements(cls).length" class="space-y-2 mb-3">
+                                                <li
+                                                    v-for="requirement in getClassRequirements(cls)"
+                                                    :key="requirement.id"
+                                                    class="border rounded p-2 bg-white"
+                                                >
+                                                    <div class="flex items-start justify-between gap-3">
+                                                        <div>
+                                                            <p class="text-sm font-medium text-gray-900">
+                                                                {{ requirement.sort_order }}. {{ requirement.title }}
+                                                            </p>
+                                                            <p v-if="requirement.description" class="text-xs text-gray-600 mt-1">
+                                                                {{ requirement.description }}
+                                                            </p>
+                                                        </div>
+                                                        <div class="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                class="text-xs text-blue-700 hover:underline"
+                                                                @click="startEditRequirement(cls.id, requirement)"
+                                                            >
+                                                                Editar
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                class="text-xs text-red-700 hover:underline"
+                                                                @click="removeRequirement(requirement.id)"
+                                                            >
+                                                                Eliminar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            </ul>
+                                            <p v-else class="text-xs text-gray-500 mb-3">No hay requisitos registrados para esta clase.</p>
+
+                                            <div v-if="showRequirementFormByClass[cls.id]" class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                                <input
+                                                    v-model="getRequirementDraft(cls.id).title"
+                                                    type="text"
+                                                    placeholder="Titulo del requisito"
+                                                    class="border rounded px-2 py-1 text-sm md:col-span-2"
+                                                />
+                                                <input
+                                                    v-model="getRequirementDraft(cls.id).description"
+                                                    type="text"
+                                                    placeholder="Descripcion (opcional)"
+                                                    class="border rounded px-2 py-1 text-sm"
+                                                />
+                                                <input
+                                                    v-model.number="getRequirementDraft(cls.id).sort_order"
+                                                    type="number"
+                                                    min="1"
+                                                    placeholder="Orden"
+                                                    class="border rounded px-2 py-1 text-sm"
+                                                />
+                                            </div>
+                                            <div v-if="showRequirementFormByClass[cls.id]" class="mt-2 flex items-center gap-3">
+                                                <button
+                                                    type="button"
+                                                    class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
+                                                    @click="saveRequirement(cls)"
+                                                >
+                                                    {{ editingRequirementByClass[cls.id] ? 'Actualizar' : 'Guardar' }}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="text-xs text-gray-600 hover:underline"
+                                                    @click="cancelRequirementEdit(cls.id)"
+                                                >
+                                                    Limpiar
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 </template>

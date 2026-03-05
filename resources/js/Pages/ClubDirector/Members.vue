@@ -45,6 +45,12 @@ const deletingMember = ref(null)
 const selectedMemberIds = ref(new Set())
 const selectAll = ref(false)
 const selectedTab = ref('members')
+const classSummaryPdfOptions = ref({
+    include_contact: false,
+    include_parent: false,
+    include_dob: false,
+    include_address: false
+})
 const tempMembers = ref([])
 const tempMemberForm = ref({
     club_id: '',
@@ -317,6 +323,23 @@ const classOptionsExcluding = (currentClassOrder) => {
     return filtered;
 };
 
+const exportClassSummaryPdf = () => {
+    if (!selectedClub.value?.id) {
+        showToast('Selecciona un club primero', 'error')
+        return
+    }
+
+    const params = new URLSearchParams()
+    Object.entries(classSummaryPdfOptions.value).forEach(([key, enabled]) => {
+        if (enabled) params.append(key, '1')
+    })
+
+    const base = route('clubs.members.class-summary-pdf', { id: selectedClub.value.id })
+    const query = params.toString()
+    const url = query ? `${base}?${query}` : base
+    window.open(url, '_blank')
+}
+
 onMounted(fetchClubs)
 </script>
 
@@ -525,16 +548,39 @@ onMounted(fetchClubs)
 
             <!-- Tab 2: Class Overview -->
             <div v-if="selectedTab === 'classes' && selectedClub">
+                <div class="mb-2 flex flex-wrap items-center gap-4 text-sm">
+                    <span class="font-medium text-gray-700">Exportar PDF:</span>
+                    <label class="inline-flex items-center gap-2">
+                        <input v-model="classSummaryPdfOptions.include_contact" type="checkbox" />
+                        Contacto
+                    </label>
+                    <label class="inline-flex items-center gap-2">
+                        <input v-model="classSummaryPdfOptions.include_parent" type="checkbox" />
+                        Padre/Madre
+                    </label>
+                    <label class="inline-flex items-center gap-2">
+                        <input v-model="classSummaryPdfOptions.include_dob" type="checkbox" />
+                        DOB
+                    </label>
+                    <label class="inline-flex items-center gap-2">
+                        <input v-model="classSummaryPdfOptions.include_address" type="checkbox" />
+                        Direccion
+                    </label>
+                    <button
+                        type="button"
+                        @click="exportClassSummaryPdf"
+                        class="px-3 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900"
+                    >
+                        Exportar PDF
+                    </button>
+                </div>
                 <h2 class="text-lg font-semibold mb-4">Resumen de clases</h2>
                 <div v-if="clubClasses.length === 0" class="text-gray-600">
                     No se encontraron clases para este club.
                 </div>
                 <div v-else class="space-y-6">
-                    <h2 class="text-lg font-semibold mb-4">Miembros sin asignar</h2>
-                    <div v-if="unassignedMembers.length === 0" class="text-gray-600">
-                        No hay miembros para asignar
-                    </div>
-                    <div v-else class="border rounded p-4 bg-gray-100">
+                    <div v-if="unassignedMembers.length > 0" class="border rounded p-4 bg-gray-100">
+                        <h2 class="text-lg font-semibold mb-4">Miembros sin asignar</h2>
                         <table class="w-full border text-sm">
                             <thead class="bg-gray-200">
                                 <tr>
@@ -571,7 +617,7 @@ onMounted(fetchClubs)
                             {{ clubClass.class_name }} (Orden: {{ clubClass.class_order }})
                         </h3>
                         <p class="text-sm text-gray-700 mb-2" v-if="selectedClub.club_type === 'adventurers'">
-                            Personal asignado: {{ clubClass.assigned_staff?.name }}
+                            Personal asignado: {{ clubClass.assigned_staff_name || '—' }}
                         </p>
                         <div v-if="membersInClass(clubClass.id).length === 0" class="text-gray-600">
                             No hay miembros asignados a esta clase.

@@ -9,6 +9,7 @@ import BudgetTable from '@/Components/EventPlanner/BudgetTable.vue'
 import ParticipantsTable from '@/Components/EventPlanner/ParticipantsTable.vue'
 import DocumentsUploader from '@/Components/EventPlanner/DocumentsUploader.vue'
 import PlannerChat from '@/Components/EventPlanner/PlannerChat.vue'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     event: Object,
@@ -29,6 +30,7 @@ const props = defineProps({
 })
 
 const activeTab = ref('tasks')
+const { tr } = useLocale()
 
 const eventState = ref(props.event)
 const planState = ref(props.eventPlan)
@@ -107,7 +109,7 @@ const saveEventBasics = async () => {
         },
         onError: (errors) => {
             const firstError = Object.values(errors || {})[0]
-            eventFormError.value = Array.isArray(firstError) ? firstError[0] : (firstError || 'Unable to update event.')
+            eventFormError.value = Array.isArray(firstError) ? firstError[0] : (firstError || tr('No se pudo actualizar el evento.', 'Unable to update event.'))
             eventFormSaving.value = false
         },
         onFinish: () => {
@@ -1080,9 +1082,9 @@ const updateTransportationOutline = async () => {
                     vehicle.make,
                     vehicle.model,
                     vehicle.year,
-                    vehicle.plate ? `Plate: ${vehicle.plate}` : null,
-                    vehicle.vin ? `VIN: ${vehicle.vin}` : null,
-                    insurance ? `Coverage: ${insurance.title}` : 'Coverage: Missing',
+                    vehicle.plate ? `${tr('Placa', 'Plate')}: ${vehicle.plate}` : null,
+                    vehicle.vin ? `${tr('VIN', 'VIN')}: ${vehicle.vin}` : null,
+                    insurance ? `${tr('Cobertura', 'Coverage')}: ${insurance.title}` : `${tr('Cobertura', 'Coverage')}: ${tr('Faltante', 'Missing')}`,
                 ].filter(Boolean).join(' • ')
                 return summary
             })
@@ -1412,7 +1414,7 @@ const saveBudgetPreference = async (value) => {
                 <button
                     type="button"
                     class="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
-                    title="Edit event details"
+                     :title="tr('Editar detalles del evento', 'Edit event details')"
                     @click="showEventModal = true"
                 >
                     <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -1421,19 +1423,19 @@ const saveBudgetPreference = async (value) => {
                 </button>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
-                        <div class="text-xs text-gray-500">Event Type</div>
+                        <div class="text-xs text-gray-500">{{ tr('Tipo de evento', 'Event Type') }}</div>
                         <div class="font-semibold text-gray-800">{{ eventState.event_type }}</div>
                     </div>
                     <div>
-                        <div class="text-xs text-gray-500">Date</div>
+                        <div class="text-xs text-gray-500">{{ tr('Fecha', 'Date') }}</div>
                         <div class="font-semibold text-gray-800">{{ new Date(eventState.start_at).toLocaleString() }}</div>
                     </div>
                     <div>
-                        <div class="text-xs text-gray-500">Status</div>
+                        <div class="text-xs text-gray-500">{{ tr('Estado', 'Status') }}</div>
                         <div class="font-semibold text-gray-800 capitalize">{{ eventState.status }}</div>
                     </div>
                     <div>
-                        <div class="text-xs text-gray-500">Payments Received</div>
+                        <div class="text-xs text-gray-500">{{ tr('Pagos recibidos', 'Payments Received') }}</div>
                         <div class="font-semibold text-gray-800">
                             {{ formatMoney(paymentSummaryState.total_received || 0) }}
                         </div>
@@ -1441,16 +1443,16 @@ const saveBudgetPreference = async (value) => {
                 </div>
                 <div class="mt-4">
                     <div class="flex items-center justify-between text-sm">
-                        <span>Completeness</span>
+                        <span>{{ tr('Avance', 'Completeness') }}</span>
                         <span>{{ completeness }}%</span>
                     </div>
                     <div class="h-2 bg-gray-200 rounded-full mt-1">
                         <div class="h-2 bg-green-500 rounded-full" :style="{ width: completeness + '%' }"></div>
                     </div>
                     <div class="text-xs text-gray-500 mt-1 relative inline-flex items-center gap-1 group">
-                        <span>Missing items: {{ missingCount }}</span>
+                        <span>{{ tr('Pendientes', 'Missing items') }}: {{ missingCount }}</span>
                         <div v-if="missingCount" class="hidden group-hover:block absolute z-10 left-0 top-full mt-2 w-64 rounded-md border bg-white p-3 shadow-lg text-xs text-gray-700">
-                            <div class="font-semibold text-gray-800 mb-2">Missing items</div>
+                            <div class="font-semibold text-gray-800 mb-2">{{ tr('Pendientes', 'Missing items') }}</div>
                             <div class="space-y-1">
                                 <div v-for="task in checklistTasks.filter((entry) => entry.status !== 'done')" :key="task.id">
                                     • {{ task.title }}
@@ -1468,27 +1470,27 @@ const saveBudgetPreference = async (value) => {
             >
                 <div class="w-full max-w-lg rounded-lg bg-white border shadow-xl">
                     <div class="flex items-center justify-between px-5 py-4 border-b">
-                        <h2 class="text-lg font-semibold text-gray-800">Edit Event Details</h2>
+                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Editar detalles del evento', 'Edit Event Details') }}</h2>
                         <button type="button" class="text-gray-500 hover:text-gray-700" @click="showEventModal = false">×</button>
                     </div>
                     <div class="p-5 space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="text-xs text-gray-600">Start</label>
+                                <label class="text-xs text-gray-600">{{ tr('Inicio', 'Start') }}</label>
                                 <input v-model="eventForm.start_at" type="datetime-local" class="w-full border rounded px-3 py-2 text-sm" />
                             </div>
                             <div>
-                                <label class="text-xs text-gray-600">End</label>
+                                <label class="text-xs text-gray-600">{{ tr('Fin', 'End') }}</label>
                                 <input v-model="eventForm.end_at" type="datetime-local" class="w-full border rounded px-3 py-2 text-sm" />
                             </div>
                             <div>
-                                <label class="text-xs text-gray-600">Timezone</label>
+                                <label class="text-xs text-gray-600">{{ tr('Zona horaria', 'Timezone') }}</label>
                                 <input v-model="eventForm.timezone" class="w-full border rounded px-3 py-2 text-sm" />
                             </div>
                             <div class="flex items-center gap-4">
                                 <label class="text-xs text-gray-600 flex items-center gap-2">
                                     <input type="checkbox" v-model="eventForm.is_payable" />
-                                    Payable event
+                                    {{ tr('Evento con pago', 'Payable event') }}
                                 </label>
                                 <input
                                     v-model="eventForm.payment_amount"
@@ -1515,7 +1517,7 @@ const saveBudgetPreference = async (value) => {
                             :disabled="eventFormSaving"
                             @click="saveEventBasics"
                         >
-                            {{ eventFormSaving ? 'Saving...' : 'Save Changes' }}
+                            {{ eventFormSaving ? tr('Guardando...', 'Saving...') : tr('Guardar cambios', 'Save Changes') }}
                         </button>
                     </div>
                 </div>
@@ -1525,7 +1527,7 @@ const saveBudgetPreference = async (value) => {
                 <div class="lg:col-span-2 space-y-6">
                     <div class="bg-white rounded-lg border p-4">
                         <div class="flex items-center justify-between mb-3">
-                            <h2 class="text-lg font-semibold text-gray-800">Recommended Places</h2>
+                            <h2 class="text-lg font-semibold text-gray-800">{{ tr('Lugares recomendados', 'Recommended Places') }}</h2>
                             <button
                                 v-if="selectedPlaceOption && !showRecommendations && selectedPlaceOption.status !== 'confirmed'"
                                 type="button"
@@ -1537,22 +1539,22 @@ const saveBudgetPreference = async (value) => {
                         </div>
 
                         <div v-if="selectedPlaceOption && !showRecommendations" class="rounded-md border bg-gray-50 p-4">
-                            <div class="text-xs uppercase tracking-wide text-gray-500 mb-2">Preselected Place ({{ selectedPlaceOption.status }})</div>
+                            <div class="text-xs uppercase tracking-wide text-gray-500 mb-2">{{ tr('Lugar preseleccionado', 'Preselected Place') }} ({{ selectedPlaceOption.status }})</div>
                             <div class="text-lg font-semibold text-gray-800">
                                 {{ selectedPlaceDetails?.details?.name || selectedPlaceOption.name }}
                             </div>
                             <div class="text-sm text-gray-600">
-                                {{ selectedPlaceDetails?.details?.address || selectedPlaceOption.address || 'Address unavailable' }}
+                                {{ selectedPlaceDetails?.details?.address || selectedPlaceOption.address || tr('Dirección no disponible', 'Address unavailable') }}
                             </div>
                             <div class="mt-2 text-sm text-gray-600 flex flex-wrap gap-3">
                                 <span v-if="selectedPlaceDetails?.details?.rating || selectedPlaceOption.rating">
-                                    Rating: {{ selectedPlaceDetails?.details?.rating ?? selectedPlaceOption.rating }} ★
+                                    {{ tr('Calificación', 'Rating') }}: {{ selectedPlaceDetails?.details?.rating ?? selectedPlaceOption.rating }} ★
                                 </span>
                                 <span v-if="selectedPlaceDetails?.details?.user_ratings_total || selectedPlaceOption.user_ratings_total">
-                                    Reviews: {{ selectedPlaceDetails?.details?.user_ratings_total ?? selectedPlaceOption.user_ratings_total }}
+                                    {{ tr('Reseñas', 'Reviews') }}: {{ selectedPlaceDetails?.details?.user_ratings_total ?? selectedPlaceOption.user_ratings_total }}
                                 </span>
                                 <span v-if="selectedPlaceDetails?.details?.phone || selectedPlaceOption.phone">
-                                    Phone: {{ selectedPlaceDetails?.details?.phone ?? selectedPlaceOption.phone }}
+                                    {{ tr('Teléfono', 'Phone') }}: {{ selectedPlaceDetails?.details?.phone ?? selectedPlaceOption.phone }}
                                 </span>
                             </div>
                             <div class="mt-3 flex flex-wrap gap-3 text-sm">
@@ -1574,7 +1576,7 @@ const saveBudgetPreference = async (value) => {
                                     Change selection
                                 </button>
                                 <div v-else class="text-xs text-gray-500">
-                                    Need a new place? Ask the planner to find another and we will cancel the current selection.
+                                    {{ tr('¿Necesitas un nuevo lugar? Pide al planificador otro y cancelaremos la selección actual.', 'Need a new place? Ask the planner to find another and we will cancel the current selection.') }}
                                 </div>
                             </div>
                         </div>
@@ -1590,21 +1592,21 @@ const saveBudgetPreference = async (value) => {
                     </div>
                     <div class="bg-white rounded-lg border p-4">
                         <div class="flex gap-3 mb-4">
-                            <button @click="activeTab = 'tasks'" :class="activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">Tasks</button>
-                            <button @click="activeTab = 'budget'" :class="activeTab === 'budget' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">Budget</button>
-                            <button @click="activeTab = 'participants'" :class="activeTab === 'participants' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">Participants</button>
-                            <button @click="activeTab = 'documents'" :class="activeTab === 'documents' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">Documents</button>
+                            <button @click="activeTab = 'tasks'" :class="activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Tareas', 'Tasks') }}</button>
+                            <button @click="activeTab = 'budget'" :class="activeTab === 'budget' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Presupuesto', 'Budget') }}</button>
+                            <button @click="activeTab = 'participants'" :class="activeTab === 'participants' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Participantes', 'Participants') }}</button>
+                            <button @click="activeTab = 'documents'" :class="activeTab === 'documents' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Documentos', 'Documents') }}</button>
                         </div>
 
                         <div v-if="activeTab === 'tasks'">
                             <div class="mb-4 rounded-lg border bg-gray-50 p-4">
                                 <div class="flex items-center justify-between mb-2">
-                                    <h3 class="text-sm font-semibold text-gray-800">Event Checklist</h3>
-                                    <span class="text-xs text-gray-500">{{ missingCount }} remaining</span>
+                                    <h3 class="text-sm font-semibold text-gray-800">{{ tr('Checklist del evento', 'Event Checklist') }}</h3>
+                                    <span class="text-xs text-gray-500">{{ missingCount }} {{ tr('pendientes', 'remaining') }}</span>
                                 </div>
                                 <div class="space-y-2">
                                     <div v-if="!checklistTasks.length" class="text-xs text-gray-500">
-                                        No checklist items yet.
+                                        {{ tr('Aún no hay elementos del checklist.', 'No checklist items yet.') }}
                                     </div>
                                     <label v-for="task in checklistTasks" :key="task.id" class="flex items-center justify-between gap-2 text-sm text-gray-700">
                                         <span class="flex items-center gap-2">
@@ -1613,21 +1615,21 @@ const saveBudgetPreference = async (value) => {
                                             <span
                                                 v-if="isPermissionSlipTask(task)"
                                                 class="text-[11px] px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700"
-                                                title="Permission slips received"
+                                                :title="tr('Permisos recibidos', 'Permission slips received')"
                                             >
-                                                {{ permissionSlipStats.received }} / {{ permissionSlipStats.required }} slips
+                                                {{ permissionSlipStats.received }} / {{ permissionSlipStats.required }} {{ tr('permisos', 'slips') }}
                                             </span>
                                             <span
                                                 v-if="hasFormForTask(task)"
                                                 class="text-green-600 text-xs font-semibold"
-                                                title="Form available"
+                                                :title="tr('Formulario disponible', 'Form available')"
                                             >
                                                 ✓
                                             </span>
                                             <span
                                                 v-else
                                                 class="text-red-600 text-xs font-semibold"
-                                                title="No form available"
+                                                :title="tr('Sin formulario disponible', 'No form available')"
                                             >
                                                 ✕
                                             </span>
@@ -1664,16 +1666,16 @@ const saveBudgetPreference = async (value) => {
                                     </label>
                                 </div>
                                 <div class="mt-3 flex items-center gap-2">
-                                    <input v-model="newChecklistItem" type="text" class="flex-1 rounded border border-gray-300 px-2 py-1 text-sm" placeholder="Add checklist item" />
-                                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addChecklistItem">Add</button>
+                                    <input v-model="newChecklistItem" type="text" class="flex-1 rounded border border-gray-300 px-2 py-1 text-sm" :placeholder="tr('Agregar elemento al checklist', 'Add checklist item')" />
+                                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addChecklistItem">{{ tr('Agregar', 'Add') }}</button>
                                 </div>
                             </div>
                         </div>
                         <div v-else-if="activeTab === 'budget'">
                             <div class="mb-3 flex items-center justify-between rounded-lg border bg-gray-50 px-3 py-2">
                                 <div>
-                                    <div class="text-sm font-semibold text-gray-800">Auto-create rental budget</div>
-                                    <div class="text-xs text-gray-500">When the planner estimates rentals, update or create a rental budget line.</div>
+                                    <div class="text-sm font-semibold text-gray-800">{{ tr('Auto-crear presupuesto de renta', 'Auto-create rental budget') }}</div>
+                                    <div class="text-xs text-gray-500">{{ tr('Cuando el planificador estima rentas, actualiza o crea una línea de presupuesto de renta.', 'When the planner estimates rentals, update or create a rental budget line.') }}</div>
                                 </div>
                                 <label class="inline-flex items-center gap-2 text-sm text-gray-700">
                                     <input
@@ -1725,7 +1727,7 @@ const saveBudgetPreference = async (value) => {
 
                     <div class="bg-white rounded-lg border p-4">
                         <div class="flex items-center justify-between mb-3">
-                            <h2 class="text-lg font-semibold text-gray-800">Plan Outline</h2>
+                            <h2 class="text-lg font-semibold text-gray-800">{{ tr('Esquema del plan', 'Plan Outline') }}</h2>
                             <a
                                 :href="route('events.pdf', { event: eventState.id })"
                                 class="text-sm text-blue-600 hover:text-blue-700"
@@ -1734,7 +1736,7 @@ const saveBudgetPreference = async (value) => {
                             </a>
                         </div>
                         <p class="text-sm text-gray-500 mb-3">
-                            This section will summarize task outcomes and export a printable report.
+                            {{ tr('Esta sección resume resultados de tareas y exporta un reporte imprimible.', 'This section will summarize task outcomes and export a printable report.') }}
                         </p>
                         <PlanSectionsAccordion :sections="outlineSections" />
                     </div>
@@ -1755,10 +1757,10 @@ const saveBudgetPreference = async (value) => {
         <div v-if="showTransportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-5xl rounded-lg bg-white p-6 shadow-xl">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">Arrange Transportation</h3>
+                    <h3 class="text-lg font-semibold text-gray-800">{{ tr('Organizar transporte', 'Arrange Transportation') }}</h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="showTransportModal = false">✕</button>
                 </div>
-                <div v-if="transportLoading" class="text-sm text-gray-500">Loading drivers...</div>
+                <div v-if="transportLoading" class="text-sm text-gray-500">{{ tr('Cargando conductores...', 'Loading drivers...') }}</div>
                 <div v-else-if="transportError" class="text-sm text-red-500">{{ transportError }}</div>
                 <div v-else class="space-y-4">
                     <div
@@ -1770,26 +1772,26 @@ const saveBudgetPreference = async (value) => {
                         {{ transportNotice }}
                     </div>
                     <div class="rounded-lg border bg-gray-50 p-4 space-y-3">
-                        <div class="text-sm font-semibold text-gray-800">Transportation method</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ tr('Método de transporte', 'Transportation method') }}</div>
                         <div v-if="!transportMode" class="flex flex-wrap gap-3">
                             <button
                                 type="button"
                                 class="px-3 py-2 rounded border bg-white text-sm text-gray-700 hover:border-blue-500"
                                 @click="selectTransportMode('private')"
                             >
-                                Use private cars (gas reimbursement)
+                                {{ tr('Usar autos privados (reembolso de gasolina)', 'Use private cars (gas reimbursement)') }}
                             </button>
                             <button
                                 type="button"
                                 class="px-3 py-2 rounded border bg-white text-sm text-gray-700 hover:border-blue-500"
                                 @click="selectTransportMode('rental')"
                             >
-                                Rent vehicles (adds rental + gas budget)
+                                {{ tr('Rentar vehículos (agrega renta + gasolina al presupuesto)', 'Rent vehicles (adds rental + gas budget)') }}
                             </button>
                         </div>
                         <div v-else class="flex items-center justify-between gap-3 text-sm text-gray-700">
                             <div>
-                                Selected: <span class="font-semibold">{{ transportMode === 'rental' ? 'Rental vehicles' : 'Private cars' }}</span>
+                                {{ tr('Seleccionado', 'Selected') }}: <span class="font-semibold">{{ transportMode === 'rental' ? tr('Vehículos rentados', 'Rental vehicles') : tr('Autos privados', 'Private cars') }}</span>
                             </div>
                             <button
                                 type="button"
@@ -1801,25 +1803,25 @@ const saveBudgetPreference = async (value) => {
                         </div>
                         <div class="text-xs text-gray-500">
                             <template v-if="isPrivateTransport">
-                                Each driver must have a license document and at least one insured vehicle to complete this task.
+                                {{ tr('Cada conductor debe tener documento de licencia y al menos un vehículo asegurado para completar esta tarea.', 'Each driver must have a license document and at least one insured vehicle to complete this task.') }}
                             </template>
                             <template v-else-if="isRentalTransport">
-                                Each driver must have a license document. Vehicle assignment is not required for rental mode.
+                                {{ tr('Cada conductor debe tener documento de licencia. No se requiere asignar vehículo en modo renta.', 'Each driver must have a license document. Vehicle assignment is not required for rental mode.') }}
                             </template>
                             <template v-else>
-                                Select a transportation method to continue.
+                                {{ tr('Selecciona un método de transporte para continuar.', 'Select a transportation method to continue.') }}
                             </template>
                         </div>
                     </div>
                     <div v-if="!transportMode" class="text-sm text-gray-500">
-                        Select a transportation method to continue.
+                        {{ tr('Selecciona un método de transporte para continuar.', 'Select a transportation method to continue.') }}
                     </div>
                     <div v-else class="space-y-3">
                         <div class="rounded border bg-gray-50 px-3 py-2 flex flex-wrap items-center gap-2">
                             <input
                                 v-model="newDriverName"
                                 class="border rounded px-2 py-1 text-sm min-w-[220px]"
-                                placeholder="Driver name"
+                                :placeholder="tr('Nombre del conductor', 'Driver name')"
                                 @keyup.enter="addDriverParticipant"
                             />
                             <button
@@ -1828,21 +1830,21 @@ const saveBudgetPreference = async (value) => {
                                 :disabled="addingDriver"
                                 @click="addDriverParticipant"
                             >
-                                {{ addingDriver ? 'Adding...' : 'Add driver' }}
+                                {{ addingDriver ? tr('Agregando...', 'Adding...') : tr('Agregar conductor', 'Add driver') }}
                             </button>
                         </div>
                         <div v-if="!driverParticipants.length" class="text-sm text-gray-500">
-                            No drivers added yet. Add one with the form above.
+                            {{ tr('Aún no hay conductores. Agrega uno con el formulario de arriba.', 'No drivers added yet. Add one with the form above.') }}
                         </div>
                         <div v-else class="overflow-auto border rounded-lg">
                         <table class="min-w-full text-sm">
                             <thead class="bg-gray-50 text-gray-600">
                                 <tr>
-                                    <th class="text-left px-4 py-2">Driver</th>
-                                    <th class="text-left px-4 py-2">License #</th>
-                                    <th class="text-left px-4 py-2">License Doc</th>
-                                    <th v-if="isPrivateTransport" class="text-left px-4 py-2">Vehicles</th>
-                                    <th class="text-right px-4 py-2">Actions</th>
+                                    <th class="text-left px-4 py-2">{{ tr('Conductor', 'Driver') }}</th>
+                                    <th class="text-left px-4 py-2">{{ tr('Licencia #', 'License #') }}</th>
+                                    <th class="text-left px-4 py-2">{{ tr('Doc. licencia', 'License Doc') }}</th>
+                                    <th v-if="isPrivateTransport" class="text-left px-4 py-2">{{ tr('Vehículos', 'Vehicles') }}</th>
+                                    <th class="text-right px-4 py-2">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1853,7 +1855,7 @@ const saveBudgetPreference = async (value) => {
                                             <input
                                                 v-model="driverLicenseNumbers[driver.id]"
                                                 class="w-40 border rounded px-2 py-1 text-sm"
-                                                placeholder="License number"
+                                                :placeholder="tr('Número de licencia', 'License number')"
                                             />
                                         </template>
                                         <template v-else>
@@ -1868,7 +1870,7 @@ const saveBudgetPreference = async (value) => {
                                                     :value="docForDriver(driver.id)?.id || ''"
                                                     @change="updateDriverLicenseDoc($event.target.value, driver.id)"
                                                 >
-                                                    <option value="">Select license doc</option>
+                                                    <option value="">{{ tr('Selecciona documento de licencia', 'Select license doc') }}</option>
                                                     <option v-for="doc in licenseDocs" :key="doc.id" :value="doc.id">
                                                         {{ doc.title }}
                                                     </option>
@@ -1898,10 +1900,10 @@ const saveBudgetPreference = async (value) => {
                                                 <div class="font-semibold text-gray-800">
                                                     {{ vehicle.make }} {{ vehicle.model }} {{ vehicle.year }}
                                                 </div>
-                                                <div>Plate: {{ vehicle.plate || '—' }}</div>
-                                                <div>VIN: {{ vehicle.vin || '—' }}</div>
+                                                <div>{{ tr('Placa', 'Plate') }}: {{ vehicle.plate || '—' }}</div>
+                                                <div>{{ tr('VIN', 'VIN') }}: {{ vehicle.vin || '—' }}</div>
                                                 <div>
-                                                    Coverage:
+                                                    {{ tr('Cobertura', 'Coverage') }}:
                                                     <a
                                                         v-if="docForVehicle(vehicle.id)?.path"
                                                         :href="`/storage/${docForVehicle(vehicle.id).path}`"
@@ -1911,7 +1913,7 @@ const saveBudgetPreference = async (value) => {
                                                     >
                                                         View
                                                     </a>
-                                                    <span v-else class="text-red-600">Missing</span>
+                                                    <span v-else class="text-red-600">{{ tr('Faltante', 'Missing') }}</span>
                                                 </div>
                                                 <div class="mt-1 flex gap-2">
                                                     <button
@@ -1921,11 +1923,11 @@ const saveBudgetPreference = async (value) => {
                                                     >
                                                         Edit
                                                     </button>
-                                                    <button type="button" class="text-red-600" @click="deleteVehicle(vehicle.id)">Remove</button>
+                                                    <button type="button" class="text-red-600" @click="deleteVehicle(vehicle.id)">{{ tr('Eliminar', 'Remove') }}</button>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div v-else class="text-xs text-gray-500">No vehicles yet.</div>
+                                        <div v-else class="text-xs text-gray-500">{{ tr('Aún no hay vehículos.', 'No vehicles yet.') }}</div>
                                     </td>
                                     <td class="px-4 py-2 text-right">
                                         <button
@@ -1968,19 +1970,19 @@ const saveBudgetPreference = async (value) => {
         <div v-if="vehicleModalOpen && isPrivateTransport" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">Vehicle Details</h3>
+                    <h3 class="text-lg font-semibold text-gray-800">{{ tr('Detalles del vehículo', 'Vehicle Details') }}</h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="vehicleModalOpen = false">✕</button>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input v-model="vehicleForm.make" class="border rounded px-3 py-2 text-sm" placeholder="Make" />
-                    <input v-model="vehicleForm.model" class="border rounded px-3 py-2 text-sm" placeholder="Model" />
-                    <input v-model="vehicleForm.year" class="border rounded px-3 py-2 text-sm" placeholder="Year" />
-                    <input v-model="vehicleForm.plate" class="border rounded px-3 py-2 text-sm" placeholder="Plate" />
-                    <input v-model="vehicleForm.vin" class="border rounded px-3 py-2 text-sm md:col-span-2" placeholder="VIN" />
+                    <input v-model="vehicleForm.make" class="border rounded px-3 py-2 text-sm" :placeholder="tr('Marca', 'Make')" />
+                    <input v-model="vehicleForm.model" class="border rounded px-3 py-2 text-sm" :placeholder="tr('Modelo', 'Model')" />
+                    <input v-model="vehicleForm.year" class="border rounded px-3 py-2 text-sm" :placeholder="tr('Año', 'Year')" />
+                    <input v-model="vehicleForm.plate" class="border rounded px-3 py-2 text-sm" :placeholder="tr('Placa', 'Plate')" />
+                    <input v-model="vehicleForm.vin" class="border rounded px-3 py-2 text-sm md:col-span-2" :placeholder="tr('VIN', 'VIN')" />
                     <div class="md:col-span-2">
-                        <label class="text-xs text-gray-600">Insurance or Rental Agreement</label>
+                        <label class="text-xs text-gray-600">{{ tr('Seguro o contrato de renta', 'Insurance or Rental Agreement') }}</label>
                         <select v-model="vehicleForm.insurance_doc_id" class="w-full border rounded px-2 py-1 text-sm">
-                            <option value="">Select coverage doc</option>
+                            <option value="">{{ tr('Selecciona documento de cobertura', 'Select coverage doc') }}</option>
                             <option v-for="doc in insuranceDocs" :key="doc.id" :value="doc.id">
                                 {{ doc.title }}
                             </option>
@@ -2001,18 +2003,18 @@ const saveBudgetPreference = async (value) => {
         <div v-if="showCustomFormBuilder" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">Custom Form Builder</h3>
+                    <h3 class="text-lg font-semibold text-gray-800">{{ tr('Constructor de formularios', 'Custom Form Builder') }}</h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="showCustomFormBuilder = false">✕</button>
                 </div>
                 <div class="text-sm text-gray-600 mb-3">
-                    Task: <span class="font-semibold text-gray-800">{{ customFormTask?.title }}</span>
+                    {{ tr('Tarea', 'Task') }}: <span class="font-semibold text-gray-800">{{ customFormTask?.title }}</span>
                 </div>
                 <div class="space-y-2 max-h-[55vh] overflow-auto pr-1">
                     <div v-for="(field, idx) in customFormFields" :key="idx" class="grid grid-cols-12 gap-2 items-center">
                         <input
                             v-model="field.label"
                             class="col-span-4 rounded border border-gray-300 px-2 py-1 text-sm"
-                            placeholder="Label"
+                            :placeholder="tr('Etiqueta', 'Label')"
                         />
                         <input
                             v-model="field.key"
@@ -2030,7 +2032,7 @@ const saveBudgetPreference = async (value) => {
                         <label class="col-span-1 flex items-center justify-center">
                             <input type="checkbox" v-model="field.required" class="rounded border-gray-300 text-blue-600" />
                         </label>
-                        <button type="button" class="col-span-1 text-xs text-red-600" @click="removeCustomFormField(idx)">Remove</button>
+                        <button type="button" class="col-span-1 text-xs text-red-600" @click="removeCustomFormField(idx)">{{ tr('Eliminar', 'Remove') }}</button>
                     </div>
                 </div>
                 <div class="mt-3">
@@ -2040,8 +2042,8 @@ const saveBudgetPreference = async (value) => {
                 </div>
                 <div v-if="customFormError" class="mt-2 text-xs text-red-600">{{ customFormError }}</div>
                 <div class="mt-5 flex justify-end gap-2">
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="showCustomFormBuilder = false">Cancel</button>
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="saveCustomFormDefinition">Save Form</button>
+                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="showCustomFormBuilder = false">{{ tr('Cancelar', 'Cancel') }}</button>
+                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="saveCustomFormDefinition">{{ tr('Guardar formulario', 'Save Form') }}</button>
                 </div>
             </div>
         </div>
@@ -2050,11 +2052,11 @@ const saveBudgetPreference = async (value) => {
             <div class="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-gray-800">
-                        {{ activeFormTask.title }} Form
+                        {{ activeFormTask.title }} {{ tr('Formulario', 'Form') }}
                     </h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="closeTaskForm">✕</button>
                 </div>
-                <div v-if="formLoading" class="text-sm text-gray-500">Loading...</div>
+                <div v-if="formLoading" class="text-sm text-gray-500">{{ tr('Cargando...', 'Loading...') }}</div>
                 <div v-else-if="formError" class="text-sm text-red-500">{{ formError }}</div>
                 <div v-else-if="formSchema?.fields?.length" class="space-y-4">
                     <div v-for="field in formSchema.fields" :key="field.key" class="space-y-1">
@@ -2079,27 +2081,27 @@ const saveBudgetPreference = async (value) => {
                             v-model="formData[field.key]"
                             class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                         >
-                            <option value="" disabled>Select...</option>
+                            <option value="" disabled>{{ tr('Selecciona...', 'Select...') }}</option>
                             <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
                         </select>
                         <label v-else-if="field.type === 'checkbox'" class="flex items-center gap-2 text-sm text-gray-700">
                             <input type="checkbox" v-model="formData[field.key]" class="rounded border-gray-300 text-blue-600" />
-                            {{ field.help || 'Yes' }}
+                            {{ field.help || tr('Sí', 'Yes') }}
                         </label>
-                        <div v-else class="text-xs text-gray-500">Unsupported field type: {{ field.type }}</div>
+                        <div v-else class="text-xs text-gray-500">{{ tr('Tipo de campo no compatible', 'Unsupported field type') }}: {{ field.type }}</div>
                     </div>
                     <div v-if="activeFormTaskKey === 'camp_reservation'" class="rounded-lg border bg-gray-50 p-3 space-y-2">
-                        <div class="text-sm font-semibold text-gray-800">Venue Cost (Budget Entry)</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ tr('Costo del lugar (partida de presupuesto)', 'Venue Cost (Budget Entry)') }}</div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
                             <input
                                 v-model="formData.venue_type"
                                 class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                                placeholder="Venue type (camping site, salon rental, sport field...)"
+                                :placeholder="tr('Tipo de lugar (campamento, salón, cancha...)', 'Venue type (camping site, salon rental, sport field...)')"
                             />
                             <input
                                 v-model="formData.venue_unit_label"
                                 class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                                placeholder="Unit label (spots, cabins, hours...)"
+                                :placeholder="tr('Etiqueta de unidad (espacios, cabañas, horas...)', 'Unit label (spots, cabins, hours...)')"
                             />
                             <input
                                 v-model.number="formData.venue_qty"
@@ -2107,7 +2109,7 @@ const saveBudgetPreference = async (value) => {
                                 min="0"
                                 step="1"
                                 class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                                placeholder="Quantity"
+                                :placeholder="tr('Cantidad', 'Quantity')"
                             />
                             <input
                                 v-model.number="formData.venue_unit_cost"
@@ -2115,7 +2117,7 @@ const saveBudgetPreference = async (value) => {
                                 min="0"
                                 step="0.01"
                                 class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                                placeholder="Unit cost"
+                                :placeholder="tr('Costo unitario', 'Unit cost')"
                             />
                             <input
                                 :value="formData.venue_expected_total"
@@ -2123,12 +2125,12 @@ const saveBudgetPreference = async (value) => {
                                 min="0"
                                 step="0.01"
                                 class="w-full rounded border border-gray-300 px-3 py-2 text-sm md:col-span-2"
-                                placeholder="Expected total (optional if qty x unit cost is provided)"
+                                :placeholder="tr('Total esperado (opcional si ya hay cantidad x costo)', 'Expected total (optional if qty x unit cost is provided)')"
                                 @input="onVenueExpectedTotalInput($event.target.value)"
                             />
                             <div class="md:col-span-2 flex items-center justify-between text-xs text-gray-500">
                                 <span>
-                                    Auto total from qty × unit cost:
+                                    {{ tr('Total automático de cantidad × costo unitario', 'Auto total from qty × unit cost:') }}
                                     <span class="font-semibold text-gray-700">${{ computedVenueTotal().toFixed(2) }}</span>
                                 </span>
                                 <button
@@ -2142,9 +2144,9 @@ const saveBudgetPreference = async (value) => {
                         </div>
                     </div>
                 </div>
-                <div v-else class="text-sm text-gray-500">No form fields available for this task.</div>
+                <div v-else class="text-sm text-gray-500">{{ tr('No hay campos de formulario para esta tarea.', 'No form fields available for this task.') }}</div>
                 <div class="mt-6 flex justify-end gap-2">
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="closeTaskForm">Close</button>
+                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="closeTaskForm">{{ tr('Cerrar', 'Close') }}</button>
                     <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" :disabled="formLoading" @click="saveTaskForm">
                         Save
                     </button>

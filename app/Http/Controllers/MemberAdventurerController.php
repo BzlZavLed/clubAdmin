@@ -16,6 +16,7 @@ use App\Support\ClubHelper;
 use App\Models\TempMemberPathfinder;
 use App\Models\ClassMemberPathfinder;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 use DB;
 use Auth;
@@ -169,93 +170,67 @@ class MemberAdventurerController extends Controller
     {
         $user = Auth::user();
         $club = ClubHelper::clubForUser($user, $id);
-
-        $memberRows = \App\Models\Member::where('club_id', $id)
-            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
-            ->get();
-
-        $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->all();
-        $pathfinderMemberIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id')->all();
-        $tempPathfinderIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id_data')->all();
-
-        $pathfinderAssignments = ClassMemberPathfinder::whereIn('member_id', $pathfinderMemberIds)
-            ->with(['clubClass:id,club_id,class_order,class_name'])
-            ->get()
-            ->groupBy('member_id');
-
-        $adventurers = MemberAdventurer::whereIn('id', $adventurerIds)
-            ->where('status', 'active')
-            ->with(['classAssignments.clubClass'])
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($m) use ($memberRows) {
-                $memberId = optional($memberRows->firstWhere('id_data', $m->id))->id;
-                $m->member_id = $memberId;
-                return $m;
-            });
-
-        $pathfinderRows = \App\Models\TempMemberPathfinder::whereIn('id', $tempPathfinderIds)->get()
-            ->map(function ($row) use ($memberRows, $pathfinderAssignments) {
-                $memberId = optional($memberRows->firstWhere('id_data', $row->id))->id;
-                $age = null;
-                if ($row->dob) {
-                    $age = Carbon::parse($row->dob)->age;
-                }
-
-                $assignments = [];
-                if ($memberId && isset($pathfinderAssignments[$memberId])) {
-                    $assignments = $pathfinderAssignments[$memberId]
-                        ->map(function ($a) {
-                            return [
-                                'id' => $a->id,
-                                'member_id' => $a->member_id,
-                                'club_class_id' => $a->club_class_id,
-                                'role' => $a->role,
-                                'assigned_at' => optional($a->assigned_at)->toDateString(),
-                                'finished_at' => optional($a->finished_at)->toDateString(),
-                                'active' => (bool)$a->active,
-                                'club_class' => $a->clubClass ? [
-                                    'id' => $a->clubClass->id,
-                                    'class_name' => $a->clubClass->class_name,
-                                    'class_order' => $a->clubClass->class_order,
-                                ] : null,
-                            ];
-                        })
-                        ->values()
-                        ->all();
-                }
-
-                return [
-                    'id' => $row->id,
-                    'member_id' => $memberId,
-                    'member_type' => 'temp_pathfinder',
-                    'applicant_name' => $row->nombre,
-                    'birthdate' => $row->dob,
-                    'age' => $age,
-                    'grade' => null,
-                    'mailing_address' => null,
-                    'cell_number' => $row->phone,
-                    'emergency_contact' => null,
-                    'investiture_classes' => [],
-                    'allergies' => null,
-                    'physical_restrictions' => null,
-                    'health_history' => null,
-                    'parent_name' => $row->father_name,
-                    'parent_cell' => $row->father_phone,
-                    'home_address' => null,
-                    'email_address' => $row->email,
-                    'signature' => null,
-                    'status' => 'active',
-                    'class_assignments' => $assignments,
-                ];
-            });
-
-        $members = $adventurers->concat($pathfinderRows)->values();
+        $members = $this->buildMembersPayloadForClub((int) $club->id);
 
         return response()->json([
             'club' => $club,
             'members' => $members,
         ]);
+    }
+
+    public function classSummaryPdf(Request $request, $id)
+    {
+        $user = Auth::user();
+        $club = ClubHelper::clubForUser($user, $id);
+
+        $options = [
+            'include_contact' => $request->boolean('include_contact'),
+            'include_parent' => $request->boolean('include_parent'),
+            'include_dob' => $request->boolean('include_dob'),
+            'include_address' => $request->boolean('include_address'),
+        ];
+
+        $members = $this->buildMembersPayloadForClub((int) $club->id);
+        $classes = ClubClass::query()
+            ->where('club_id', $club->id)
+            ->orderBy('class_order')
+            ->orderBy('class_name')
+            ->get(['id', 'class_name', 'class_order']);
+
+        $this->attachAssignedStaffNamesToClasses($classes);
+
+        $classBuckets = $classes->map(function ($class) use ($members) {
+            $classMembers = collect($members)
+                ->filter(function ($member) use ($class) {
+                    $currentClassId = (int) ($member['current_class_id'] ?? 0);
+                    if ($currentClassId > 0) {
+                        return $currentClassId === (int) $class->id;
+                    }
+                    $assignments = collect($member['class_assignments'] ?? []);
+                    return $assignments->contains(fn ($a) => !empty($a['active']) && (int) ($a['club_class_id'] ?? 0) === (int) $class->id);
+                })
+                ->sortBy(fn ($member) => mb_strtolower((string) ($member['applicant_name'] ?? '')))
+                ->values();
+
+            return [
+                'id' => $class->id,
+                'class_name' => $class->class_name,
+                'class_order' => $class->class_order,
+                'assigned_staff_name' => $class->assigned_staff_name ?? '—',
+                'members' => $classMembers,
+            ];
+        })->values();
+
+        $pdf = Pdf::loadView('pdf.class_members_summary', [
+            'club' => $club,
+            'classes' => $classBuckets,
+            'options' => $options,
+            'generatedAt' => now()->toDateTimeString(),
+        ]);
+
+        $filename = 'class-members-summary-' . $club->id . '-' . now()->format('Ymd-His') . '.pdf';
+
+        return $pdf->download($filename);
     }
     public function exportWord($id, DocumentExportService $exportService)
     {
@@ -468,6 +443,131 @@ class MemberAdventurerController extends Controller
         }
 
         return response()->json(['message' => 'Unsupported member type'], 422);
+    }
+
+    protected function buildMembersPayloadForClub(int $clubId)
+    {
+        $memberRows = \App\Models\Member::where('club_id', $clubId)
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->get();
+
+        $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->all();
+        $pathfinderMemberIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id')->all();
+        $tempPathfinderIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id_data')->all();
+
+        $pathfinderAssignments = ClassMemberPathfinder::whereIn('member_id', $pathfinderMemberIds)
+            ->with(['clubClass:id,club_id,class_order,class_name'])
+            ->get()
+            ->groupBy('member_id');
+
+        $adventurers = MemberAdventurer::whereIn('id', $adventurerIds)
+            ->where('status', 'active')
+            ->with(['classAssignments.clubClass'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($m) use ($memberRows) {
+                $memberRow = $memberRows->firstWhere('id_data', $m->id);
+                $memberId = optional($memberRow)->id;
+                $m->member_id = $memberId;
+                $m->current_class_id = optional($memberRow)->class_id;
+                return $m;
+            });
+
+        $pathfinderRows = TempMemberPathfinder::whereIn('id', $tempPathfinderIds)->get()
+            ->map(function ($row) use ($memberRows, $pathfinderAssignments) {
+                $memberRow = $memberRows->firstWhere('id_data', $row->id);
+                $memberId = optional($memberRow)->id;
+                $age = null;
+                if ($row->dob) {
+                    $age = Carbon::parse($row->dob)->age;
+                }
+
+                $assignments = [];
+                if ($memberId && isset($pathfinderAssignments[$memberId])) {
+                    $assignments = $pathfinderAssignments[$memberId]
+                        ->map(function ($a) {
+                            return [
+                                'id' => $a->id,
+                                'member_id' => $a->member_id,
+                                'club_class_id' => $a->club_class_id,
+                                'role' => $a->role,
+                                'assigned_at' => optional($a->assigned_at)->toDateString(),
+                                'finished_at' => optional($a->finished_at)->toDateString(),
+                                'active' => (bool) $a->active,
+                                'club_class' => $a->clubClass ? [
+                                    'id' => $a->clubClass->id,
+                                    'class_name' => $a->clubClass->class_name,
+                                    'class_order' => $a->clubClass->class_order,
+                                ] : null,
+                            ];
+                        })
+                        ->values()
+                        ->all();
+                }
+
+                return [
+                    'id' => $row->id,
+                    'member_id' => $memberId,
+                    'current_class_id' => optional($memberRow)->class_id,
+                    'member_type' => 'temp_pathfinder',
+                    'applicant_name' => $row->nombre,
+                    'birthdate' => $row->dob,
+                    'age' => $age,
+                    'grade' => null,
+                    'mailing_address' => null,
+                    'cell_number' => $row->phone,
+                    'emergency_contact' => null,
+                    'investiture_classes' => [],
+                    'allergies' => null,
+                    'physical_restrictions' => null,
+                    'health_history' => null,
+                    'parent_name' => $row->father_name,
+                    'parent_cell' => $row->father_phone,
+                    'home_address' => null,
+                    'email_address' => $row->email,
+                    'signature' => null,
+                    'status' => 'active',
+                    'class_assignments' => $assignments,
+                ];
+            });
+
+        return $adventurers->concat($pathfinderRows)->values();
+    }
+
+    protected function attachAssignedStaffNamesToClasses($classes): void
+    {
+        if ($classes->isEmpty()) {
+            return;
+        }
+
+        $classIds = $classes->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $staffRecords = Staff::query()
+            ->whereIn('assigned_class', $classIds)
+            ->with('user:id,name')
+            ->get(['id', 'id_data', 'assigned_class', 'type', 'user_id']);
+
+        $namesByClass = [];
+        foreach ($staffRecords as $staff) {
+            $name = $staff->user?->name ?? null;
+            if (!$name) {
+                $detail = ClubHelper::staffDetail($staff);
+                $name = $detail['name'] ?? null;
+            }
+            if ($name) {
+                $classId = (int) $staff->assigned_class;
+                if (!isset($namesByClass[$classId])) {
+                    $namesByClass[$classId] = [];
+                }
+                $namesByClass[$classId][] = $name;
+            }
+        }
+
+        foreach ($classes as $class) {
+            $names = $namesByClass[(int) $class->id] ?? [];
+            $class->assigned_staff_name = !empty($names)
+                ? implode(', ', collect($names)->unique()->values()->all())
+                : '—';
+        }
     }
 
     /* private function generateMemberDoc(MemberAdventurer $member, string $outputDir): string

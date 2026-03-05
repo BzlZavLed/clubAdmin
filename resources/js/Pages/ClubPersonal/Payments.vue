@@ -2,6 +2,7 @@
 import PathfinderLayout from "@/Layouts/PathfinderLayout.vue";
 import { ref, computed, watch, onMounted } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
+import { useLocale } from '@/Composables/useLocale'
 import {
     CreditCardIcon,
     UserIcon,
@@ -11,6 +12,7 @@ import {
     ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
 import { fetchAssignedMembersByStaff, createClubPayment } from '@/Services/api';
+const { locale, tr } = useLocale()
 // ----- Props from controller::index -----
 const props = defineProps({
     auth_user: { type: Object, required: true },
@@ -44,40 +46,16 @@ onMounted(async () => {
     }
 });
 
-const applyPrefill = () => {
-    if (prefillApplied.value) return
-    const prefill = props.prefill || {}
-    if (!prefill.concept_id && !prefill.member_id) return
-
-    const concept = (props.concepts || []).find(c => Number(c.id) === Number(prefill.concept_id))
-    if (concept) {
-        selectedConceptId.value = concept.id
-        form.payment_concept_id = concept.id
-    }
-
-    if (prefill.member_id) {
-        selectedMemberId.value = Number(prefill.member_id)
-    }
-
-    if (prefill.amount) {
-        form.amount_paid = String(prefill.amount)
-    }
-
-    prefillApplied.value = true
-}
-
-watch(() => props.concepts, applyPrefill, { immediate: true })
-
 // ----- Helpers -----
 const scopeLabel = (sc) => {
-    if (!sc) return 'No scope'
+    if (!sc) return tr('Sin alcance', 'No scope')
     switch (sc.scope_type) {
-        case 'club_wide': return `Club wide (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'class': return `Class: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
-        case 'staff_wide': return `Staff wide (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'member': return `Member: ${sc.member?.applicant_name ?? sc.member_id ?? '—'}`
-        case 'staff': return `Staff: ${sc.staff?.name ?? sc.staff_id ?? '—'}`
-        default: return 'Unknown scope'
+        case 'club_wide': return `${tr('Todo el club', 'Club wide')} (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'class': return `${tr('Clase', 'Class')}: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
+        case 'staff_wide': return `${tr('Todo el personal', 'Staff wide')} (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'member': return `${tr('Miembro', 'Member')}: ${sc.member?.applicant_name ?? sc.member_id ?? '—'}`
+        case 'staff': return `${tr('Staff', 'Staff')}: ${sc.staff?.name ?? sc.staff_id ?? '—'}`
+        default: return tr('Alcance desconocido', 'Unknown scope')
     }
 }
 
@@ -85,7 +63,7 @@ const formatISODateLocal = (val) => {
     if (!val) return '—'
     const [y, m, d] = String(val).slice(0, 10).split('-').map(Number)
     const dt = new Date(y, m - 1, d) // treat as local calendar day
-    return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }).format(dt)
+    return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'es-ES', { year: 'numeric', month: 'short', day: '2-digit' }).format(dt)
 }
 
 // ----- Selection State -----
@@ -112,6 +90,30 @@ const form = useForm({
     check_image: null,
     notes: '',
 })
+
+const applyPrefill = () => {
+    if (prefillApplied.value) return
+    const prefill = props.prefill || {}
+    if (!prefill.concept_id && !prefill.member_id) return
+
+    const concept = (props.concepts || []).find(c => Number(c.id) === Number(prefill.concept_id))
+    if (concept) {
+        selectedConceptId.value = concept.id
+        form.payment_concept_id = concept.id
+    }
+
+    if (prefill.member_id) {
+        selectedMemberId.value = Number(prefill.member_id)
+    }
+
+    if (prefill.amount) {
+        form.amount_paid = String(prefill.amount)
+    }
+
+    prefillApplied.value = true
+}
+
+watch(() => props.concepts, applyPrefill, { immediate: true })
 
 watch(selectedConceptId, (id) => {
     if (customConceptMode.value) return
@@ -180,7 +182,7 @@ const submit = async () => {
             })
         } else {
             console.error(err)
-            form.setError('form', 'Unexpected error. Please try again.')
+            form.setError('form', tr('Error inesperado. Inténtalo de nuevo.', 'Unexpected error. Please try again.'))
         }
     } finally {
         submitting.value = false
@@ -224,10 +226,10 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
             <header class="px-4 pt-5 pb-3 sm:px-6">
                 <div class="flex items-center gap-3">
                     <CreditCardIcon class="h-6 w-6 text-gray-700" />
-                    <h1 class="text-lg font-semibold text-gray-900">Club Payments</h1>
+                    <h1 class="text-lg font-semibold text-gray-900">{{ tr('Pagos del club', 'Club Payments') }}</h1>
                 </div>
                 <p class="mt-1 text-sm text-gray-600">
-                    {{ club?.club_name }} • Signed in as <strong>{{ auth_user?.name }}</strong>
+                    {{ club?.club_name }} • {{ tr('Sesión iniciada como', 'Signed in as') }} <strong>{{ auth_user?.name }}</strong>
                 </p>
             </header>
 
@@ -235,14 +237,14 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
             <main class="px-4 pb-24 sm:px-6">
                 <!-- Form card -->
                 <section class="rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-sm">
-                    <h2 class="text-base font-semibold text-gray-900">Record a payment</h2>
-                    <p class="mt-0.5 text-sm text-gray-600">Select the member and concept. Expected amount and details
-                        will
-                        preload.</p>
+                    <h2 class="text-base font-semibold text-gray-900">{{ tr('Registrar pago', 'Record a payment') }}</h2>
+                    <p class="mt-0.5 text-sm text-gray-600">
+                        {{ tr('Selecciona miembro y concepto. El monto esperado y los detalles se precargan.', 'Select the member and concept. Expected amount and details will preload.') }}
+                    </p>
 
                     <!-- Member -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Member</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Miembro', 'Member') }}</label>
                         <div v-if="form.payment_type === 'initial'" class="mt-1 text-xs text-gray-500">
                             Saldo inicial no requiere miembro.
                         </div>
@@ -250,7 +252,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                             <select v-model="selectedMemberId"
                                 :disabled="form.payment_type === 'initial'"
                                 class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                                <option :value="null" disabled>Select a member…</option>
+                                <option :value="null" disabled>{{ tr('Selecciona un miembro…', 'Select a member…') }}</option>
                                 <option v-for="m in assignedMembers" :key="m.id" :value="m.id">
                                     {{ m.applicant_name }}
                                 </option>
@@ -265,38 +267,38 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <div class="mt-4 flex items-center gap-2 text-sm">
                         <label class="inline-flex items-center gap-2">
                             <input type="checkbox" v-model="customConceptMode" class="text-blue-600 focus:ring-blue-500" />
-                            <span>Custom concept</span>
+                            <span>{{ tr('Concepto personalizado', 'Custom concept') }}</span>
                         </label>
-                        <span v-if="customConceptMode || form.payment_type === 'initial'" class="text-xs text-gray-500">Posts to club_budget</span>
+                        <span v-if="customConceptMode || form.payment_type === 'initial'" class="text-xs text-gray-500">{{ tr('Se registra en club_budget', 'Posts to club_budget') }}</span>
                     </div>
 
                     <!-- Concept -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Payment concept</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Concepto de pago', 'Payment concept') }}</label>
                         <select v-if="!customConceptMode && form.payment_type !== 'initial'" v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Select a concept…</option>
+                            <option :value="null" disabled>{{ tr('Selecciona un concepto…', 'Select a concept…') }}</option>
                             <option v-for="c in concepts" :key="c.id" :value="c.id">
                                 {{ c.concept }} • {{ c.amount ?? '—' }}
                             </option>
                         </select>
                         <input v-else v-model="customConceptText" type="text"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="E.g. special class activity" />
+                            :placeholder="tr('Ej. actividad especial de clase', 'E.g. special class activity')" />
                         <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept && !customConceptMode && form.payment_type !== 'initial'">
-                            <span class="font-medium">Scope:</span>
+                            <span class="font-medium">{{ tr('Alcance', 'Scope') }}:</span>
                             <span>
                                 <!-- first (only) scope -->
-                                {{ selectedConcept.scopes?.[0] ? scopeLabel(selectedConcept.scopes[0]) : 'No scope' }}
+                                {{ selectedConcept.scopes?.[0] ? scopeLabel(selectedConcept.scopes[0]) : tr('Sin alcance', 'No scope') }}
                             </span>
                             <span class="ml-2">•</span>
                             <span class="ml-2">
-                                <span class="font-medium">Expected:</span>
+                                <span class="font-medium">{{ tr('Esperado', 'Expected') }}:</span>
                                 {{ selectedConceptExpected || '—' }}
                             </span>
                             <span class="ml-2">•</span>
                             <span class="ml-2">
-                                <span class="font-medium">Due by:</span>
+                                <span class="font-medium">{{ tr('Fecha límite', 'Due by') }}:</span>
                                 {{ formatISODateLocal(selectedConcept.payment_expected_by) }}
                             </span>
                         </div>
@@ -308,11 +310,11 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <!-- Amount / Date -->
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Amount paid</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Monto pagado', 'Amount paid') }}</label>
                             <div class="mt-1 relative">
                                 <input v-model="form.amount_paid" type="number" step="0.01" min="0"
                                     class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                    placeholder="0.00" />
+                                    :placeholder="tr('0.00', '0.00')" />
                             </div>
                             <div v-if="form.errors.amount_paid" class="mt-1 text-sm text-red-600">
                                 {{ form.errors.amount_paid }}
@@ -320,7 +322,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Payment date</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha de pago', 'Payment date') }}</label>
                             <div class="mt-1 relative">
                                 <input v-model="form.payment_date" type="date"
                                     class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
@@ -333,7 +335,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Payment Type -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Payment type</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Tipo de pago', 'Payment type') }}</label>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                             <label v-for="t in payment_types.filter(pt => pt !== 'initial')" :key="t" class="inline-flex items-center gap-2">
                                 <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t"
@@ -348,17 +350,17 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Conditional fields -->
                     <div v-if="form.payment_type === 'zelle'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Zelle phone</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Teléfono Zelle', 'Zelle phone') }}</label>
                         <input v-model="form.zelle_phone" type="text" inputmode="tel"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="(555) 555-5555" />
+                            :placeholder="tr('(555) 555-5555', '(555) 555-5555')" />
                         <div v-if="form.errors.zelle_phone" class="mt-1 text-sm text-red-600">
                             {{ form.errors.zelle_phone }}
                         </div>
                     </div>
 
                     <div v-if="form.payment_type === 'check'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Check photo</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Foto del cheque', 'Check photo') }}</label>
                         <div class="mt-1 flex items-center gap-3">
                             <input type="file" accept="image/*" @change="onCheckFileChange"
                                 class="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-50" />
@@ -370,17 +372,17 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Notes -->
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Notes (optional)</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Notas (opcional)', 'Notes (optional)') }}</label>
                         <textarea v-model="form.notes" rows="2"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="Any remarks about this payment…"></textarea>
+                            :placeholder="tr('Observaciones sobre este pago…', 'Any remarks about this payment…')"></textarea>
                     </div>
 
                     <!-- Submit -->
                     <div class="mt-5 flex items-center justify-end gap-3">
                         <button type="button" @click="submit" :disabled="submitting"
                             class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                            <span>{{ submitting ? 'Saving…' : 'Save payment' }}</span>
+                            <span>{{ submitting ? tr('Guardando…', 'Saving…') : tr('Guardar pago', 'Save payment') }}</span>
                         </button>
                     </div>
 
@@ -396,11 +398,11 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                 <!-- Recent payments (with search/filter by payer name) -->
                 <section class="mt-6">
                     <div class="flex items-center justify-between gap-2">
-                        <h3 class="text-sm font-semibold text-gray-900">Recent payments</h3>
+                        <h3 class="text-sm font-semibold text-gray-900">{{ tr('Pagos recientes', 'Recent payments') }}</h3>
 
                         <!-- Search box -->
                         <div class="relative w-64">
-                            <input v-model="searchTerm" type="text" placeholder="Search by name or concept"
+                            <input v-model="searchTerm" type="text" :placeholder="tr('Buscar por nombre o concepto', 'Search by name or concept')"
                                 class="w-full rounded-lg border border-gray-300 py-1.5 pl-3 pr-8 text-sm focus:border-blue-500 focus:ring-blue-500" />
                             <svg class="pointer-events-none absolute right-2 top-2.5 h-4 w-4 text-gray-400" fill="none"
                                 viewBox="0 0 24 24" stroke="currentColor">
@@ -413,10 +415,10 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                     <!-- Top meta -->
                     <div v-if="(props.payments || []).length"
                         class="mt-2 flex items-center justify-between text-xs text-gray-600">
-                        <div>Showing {{ filteredPayments.length ? startIdx + 1 : 0 }}–{{ endIdx }} of {{
+                        <div>{{ tr('Mostrando', 'Showing') }} {{ filteredPayments.length ? startIdx + 1 : 0 }}–{{ endIdx }} {{ tr('de', 'of') }} {{
                             filteredPayments.length }}</div>
                         <div class="flex items-center gap-2">
-                            <label class="hidden sm:block">Per page</label>
+                            <label class="hidden sm:block">{{ tr('Por página', 'Per page') }}</label>
                             <select v-model.number="pageSize"
                                 class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
                                 <option :value="5">5</option>
@@ -427,7 +429,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
                     </div>
 
-                    <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">No payments yet.</div>
+                    <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">{{ tr('Aún no hay pagos.', 'No payments yet.') }}</div>
 
                     <ul v-else class="mt-2 divide-y divide-gray-200 rounded-2xl border border-gray-200">
                         <li v-for="p in pagedPayments" :key="p.id" class="p-3 sm:p-4">
@@ -449,25 +451,25 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                         <span v-if="Number(p.balance_due_after ?? 0) > 0"
                                             class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
                                             title="Remaining balance after this payment">
-                                            Pending ${{ Number(p.balance_due_after).toFixed(2) }}
+                                            {{ tr('Pendiente', 'Pending') }} ${{ Number(p.balance_due_after).toFixed(2) }}
                                         </span>
                                         <span v-else
                                             class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                                            Paid in full
+                                            {{ tr('Pagado completo', 'Paid in full') }}
                                         </span>
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
                                         <b>{{ p.concept?.concept ?? p.concept_text ?? '—' }}</b>
-                                        • Expected: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
-                                        <span v-if="p.account_label || p.pay_to"> • Account: {{ p.account_label ?? p.pay_to }}</span>
-                                        • Paid: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
-                                        • Date: {{ formatISODateLocal(p.payment_date) }}
+                                        • {{ tr('Esperado', 'Expected') }}: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
+                                        <span v-if="p.account_label || p.pay_to"> • {{ tr('Cuenta', 'Account') }}: {{ p.account_label ?? p.pay_to }}</span>
+                                        • {{ tr('Pagado', 'Paid') }}: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
+                                        • {{ tr('Fecha', 'Date') }}: {{ formatISODateLocal(p.payment_date) }}
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
-                                        Received by: {{ p.received_by?.name ?? '—' }}
-                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • Zelle: {{
+                                        {{ tr('Recibido por', 'Received by') }}: {{ p.received_by?.name ?? '—' }}
+                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • {{ tr('Zelle', 'Zelle') }}: {{
                                             p.zelle_phone }}</span>
                                     </div>
 
@@ -499,17 +501,17 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         <button
                             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="page <= 1" @click="go(page - 1)">
-                            Prev
+                            {{ tr('Anterior', 'Prev') }}
                         </button>
 
                         <div class="text-xs text-gray-600">
-                            Page {{ page }} of {{ totalPages }}
+                            {{ tr('Página', 'Page') }} {{ page }} {{ tr('de', 'of') }} {{ totalPages }}
                         </div>
 
                         <button
                             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="page >= totalPages" @click="go(page + 1)">
-                            Next
+                            {{ tr('Siguiente', 'Next') }}
                         </button>
                     </div>
                 </section>

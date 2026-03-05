@@ -63,6 +63,7 @@ class ClubPaymentController extends Controller
                 ];
             })
             ->values();
+        $assignedMemberIds = $assignedMembers->pluck('id')->map(fn ($id) => (int) $id)->filter()->values()->all();
 
         $concepts = PaymentConcept::query()
             ->where('club_id', $club->id)
@@ -102,6 +103,12 @@ class ClubPaymentController extends Controller
 
         $recent = Payment::query()
             ->where('club_id', $club->id)
+            ->whereNotNull('member_id')
+            ->when(
+                !empty($assignedMemberIds),
+                fn ($q) => $q->whereIn('member_id', $assignedMemberIds),
+                fn ($q) => $q->whereRaw('1 = 0')
+            )
             ->latest()
             ->take(25)
             ->with([

@@ -32,6 +32,10 @@ const props = defineProps({
     integration_config: {
         type: Object,
         default: null
+    },
+    class_requirements_by_class: {
+        type: Object,
+        default: () => ({})
     }
 })
 const { showToast } = useGeneral()
@@ -249,6 +253,7 @@ const exportMessage = computed(() => {
 const planForm = ref({
     workplan_event_id: null,
     class_id: null,
+    investiture_requirement_id: null,
     type: 'plan',
     title: '',
     description: '',
@@ -260,6 +265,10 @@ const planEvents = computed(() => {
     return [...events.value]
         .filter(ev => ['sabbath', 'sunday', 'special'].includes(ev.meeting_type))
         .sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)))
+})
+
+const upcomingPlanEvents = computed(() => {
+    return planEvents.value.filter(ev => normalizeDate(ev.date) >= todayIso)
 })
 
 const staffProfile = ref(null)
@@ -303,6 +312,13 @@ const classesOptions = computed(() => {
         }
     })
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+})
+
+const selectedClassRequirements = computed(() => {
+    const classId = planForm.value.class_id || userClassId.value
+    if (!classId) return []
+    const entry = props.class_requirements_by_class?.[String(classId)]
+    return entry?.requirements || []
 })
 
 const departmentsOptions = computed(() => props.integration_config?.departments || [])
@@ -858,12 +874,16 @@ function planStatusClass(status) {
 }
 
 function addOrUpdatePlanInEvents(plan) {
+    const normalizedPlan = {
+        ...plan,
+        investitureRequirement: plan.investitureRequirement || plan.investiture_requirement || null
+    }
     events.value = events.value.map(ev => {
-        if (ev.id !== plan.workplan_event_id) return ev
+        if (ev.id !== normalizedPlan.workplan_event_id) return ev
         const existing = ev.classPlans || []
-        const updatedPlans = existing.some(p => p.id === plan.id)
-            ? existing.map(p => (p.id === plan.id ? plan : p))
-            : [...existing, plan]
+        const updatedPlans = existing.some(p => p.id === normalizedPlan.id)
+            ? existing.map(p => (p.id === normalizedPlan.id ? normalizedPlan : p))
+            : [...existing, normalizedPlan]
         return { ...ev, classPlans: updatedPlans }
     })
 }
@@ -874,6 +894,7 @@ function selectMeeting(ev) {
     planForm.value = {
         workplan_event_id: ev.id,
         class_id: userClassId.value,
+        investiture_requirement_id: null,
         type: 'plan',
         title: '',
         description: '',
@@ -906,6 +927,7 @@ async function savePlan() {
         planForm.value = {
             workplan_event_id: selectedEvent.value.id,
             class_id: userClassId.value,
+            investiture_requirement_id: null,
             type: 'plan',
             title: '',
             description: '',
@@ -971,6 +993,7 @@ function editPlan(plan) {
     planForm.value = {
         workplan_event_id: plan.workplan_event_id,
         class_id: plan.class_id || userClassId.value,
+        investiture_requirement_id: plan.investiture_requirement_id || plan.investitureRequirement?.id || plan.investiture_requirement?.id || null,
         type: plan.type || 'plan',
         title: plan.title || '',
         description: plan.description || '',
@@ -1007,8 +1030,12 @@ onMounted(() => {
     }
 })
 
-watch(planEvents, (list) => {
+watch(upcomingPlanEvents, (list) => {
     if (!selectedEvent.value && list.length) {
+        selectMeeting(list[0])
+        return
+    }
+    if (selectedEvent.value && list.length && !list.some(ev => ev.id === selectedEvent.value.id)) {
         selectMeeting(list[0])
     }
     if (!list.length) selectedEvent.value = null
@@ -1023,6 +1050,12 @@ watch(isStaff, (val) => {
 watch(userClassId, (val) => {
     if (isStaff.value && val) {
         classFilter.value = val
+    }
+})
+
+watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
+    if (!newClassId || String(newClassId) !== String(oldClassId)) {
+        planForm.value.investiture_requirement_id = null
     }
 })
 </script>
@@ -1122,9 +1155,9 @@ watch(userClassId, (val) => {
                     <div class="grid md:grid-cols-2 gap-4">
                         <div class="rounded-lg p-3 border bg-white space-y-2">
                             <h4 class="font-semibold text-gray-800 text-sm">Fechas de reunion</h4>
-                            <div v-if="planEvents.length" class="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                            <div v-if="upcomingPlanEvents.length" class="space-y-2 max-h-[360px] overflow-y-auto pr-1">
                                 <button
-                                    v-for="ev in planEvents"
+                                    v-for="ev in upcomingPlanEvents"
                                     :key="'plan-ev-' + ev.id"
                                     class="w-full text-left rounded-md p-3 transition shadow-sm"
                                     :class="meetingCardClass(ev)"
@@ -1170,6 +1203,26 @@ watch(userClassId, (val) => {
                                 <div>
                                     <label class="block text-sm text-gray-700">Objetivo / Descripcion</label>
                                     <textarea v-model="planForm.description" rows="3" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff"></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-700">Requisito de investidura (opcional)</label>
+                                    <select
+                                        v-model="planForm.investiture_requirement_id"
+                                        class="w-full border rounded px-3 py-2 text-sm"
+                                        :disabled="!isStaff || !selectedClassRequirements.length"
+                                    >
+                                        <option :value="null">Sin requisito vinculado</option>
+                                        <option
+                                            v-for="req in selectedClassRequirements"
+                                            :key="`req-${req.id}`"
+                                            :value="req.id"
+                                        >
+                                            {{ req.sort_order ? `${req.sort_order}. ` : '' }}{{ req.title }}
+                                        </option>
+                                    </select>
+                                    <p v-if="!selectedClassRequirements.length" class="text-xs text-gray-500 mt-1">
+                                        Esta clase no tiene requisitos activos configurados.
+                                    </p>
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
@@ -1752,6 +1805,7 @@ watch(userClassId, (val) => {
                         <div><span class="font-semibold">Fecha solicitada:</span> {{ normalizeDate(planDetail.requested_date) || '—' }}</div>
                         <div><span class="font-semibold">Ubicacion alternativa:</span> {{ planDetail.location_override || '—' }}</div>
                         <div><span class="font-semibold">Clase:</span> {{ planDetail.class?.class_name || '—' }}</div>
+                        <div><span class="font-semibold">Requisito vinculado:</span> {{ planDetail.investitureRequirement?.title || planDetail.investiture_requirement?.title || '—' }}</div>
                         <div><span class="font-semibold">Personal:</span> {{ planDetail.staff?.name || planDetail.staff?.user?.name || '—' }}</div>
                         <div>
                             <span class="font-semibold">Estado:</span>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClassPlan;
+use App\Models\ClassInvestitureRequirement;
 use App\Models\Staff;
 use App\Models\WorkplanEvent;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ class ClassPlanController extends Controller
         $event = WorkplanEvent::with('workplan')->findOrFail($data['workplan_event_id']);
 
         $this->authorizeStaffClub($staff, $event);
+        $this->assertRequirementBelongsToClass($data);
 
         $requiresApproval = array_key_exists('requires_approval', $data)
             ? (bool) $data['requires_approval']
@@ -36,7 +38,7 @@ class ClassPlanController extends Controller
 
         return response()->json([
             'message' => 'Plan created',
-            'plan' => $plan->load(['class', 'staff.user'])
+            'plan' => $plan->load(['class', 'staff.user', 'investitureRequirement'])
         ]);
     }
 
@@ -51,6 +53,7 @@ class ClassPlanController extends Controller
         }
 
         $data = $this->validatePlan($request, false);
+        $this->assertRequirementBelongsToClass($data, $plan);
         $requiresApproval = array_key_exists('requires_approval', $data)
             ? (bool) $data['requires_approval']
             : $plan->requires_approval;
@@ -61,7 +64,7 @@ class ClassPlanController extends Controller
         $plan->status = $status;
         $plan->save();
 
-        return response()->json(['message' => 'Plan updated', 'plan' => $plan->load(['class', 'staff.user'])]);
+        return response()->json(['message' => 'Plan updated', 'plan' => $plan->load(['class', 'staff.user', 'investitureRequirement'])]);
     }
 
     public function destroy(Request $request, ClassPlan $plan)
@@ -96,7 +99,7 @@ class ClassPlanController extends Controller
             $plan->authorized_at = null;
         }
         $plan->save();
-        return response()->json(['message' => 'Status updated', 'plan' => $plan->load(['class', 'staff.user'])]);
+        return response()->json(['message' => 'Status updated', 'plan' => $plan->load(['class', 'staff.user', 'investitureRequirement'])]);
     }
 
     private function validatePlan(Request $request, bool $requireEvent = true): array
@@ -104,6 +107,7 @@ class ClassPlanController extends Controller
         return $request->validate([
             'workplan_event_id' => [$requireEvent ? 'required' : 'sometimes', 'exists:workplan_events,id'],
             'class_id' => ['nullable', 'exists:club_classes,id'],
+            'investiture_requirement_id' => ['nullable', 'exists:class_investiture_requirements,id'],
             'type' => ['required', 'in:plan,outing'],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -111,6 +115,27 @@ class ClassPlanController extends Controller
             'location_override' => ['nullable', 'string', 'max:255'],
             'requires_approval' => ['nullable', 'boolean'],
         ]);
+    }
+
+    private function assertRequirementBelongsToClass(array $data, ?ClassPlan $existingPlan = null): void
+    {
+        $requirementId = $data['investiture_requirement_id'] ?? null;
+        if (!$requirementId) {
+            return;
+        }
+
+        $classId = $data['class_id'] ?? $existingPlan?->class_id;
+        if (!$classId) {
+            abort(422, 'Select a class before linking an investiture requirement.');
+        }
+
+        $matchesClass = ClassInvestitureRequirement::query()
+            ->where('id', $requirementId)
+            ->where('club_class_id', $classId)
+            ->exists();
+        if (!$matchesClass) {
+            abort(422, 'The selected requirement does not belong to the selected class.');
+        }
     }
 
     private function authorizeStaffClub(Staff $staff, WorkplanEvent $event): void

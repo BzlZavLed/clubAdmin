@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import axios from 'axios'
 import { Link } from '@inertiajs/vue3'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     participants: {
@@ -43,6 +44,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['updated', 'finish-list'])
+const { tr } = useLocale()
 const highlightIds = ref(new Set())
 const selectedParticipantIds = ref([])
 
@@ -349,14 +351,14 @@ const updateStatus = async (participant, status, refreshAfter = true) => {
 }
 
 const removeParticipant = async (participant) => {
-    if (!confirm(`Remove ${participant.participant_name}?`)) return
+    if (!confirm(tr(`¿Eliminar a ${participant.participant_name}?`, `Remove ${participant.participant_name}?`))) return
     await axios.delete(route('event-participants.destroy', { eventParticipant: participant.id }))
     await refresh()
 }
 
 const confirmAll = async () => {
     if (!props.participants.length) return
-    if (!confirm('Confirm all participants?')) return
+    if (!confirm(tr('¿Confirmar todos los participantes?', 'Confirm all participants?'))) return
     for (const participant of props.participants) {
         if (participant.status === 'confirmed') continue
         await updateStatus(participant, 'confirmed', false)
@@ -366,7 +368,7 @@ const confirmAll = async () => {
 
 const deleteAll = async () => {
     if (!props.participants.length) return
-    if (!confirm('Remove all participants? This cannot be undone.')) return
+    if (!confirm(tr('¿Eliminar todos los participantes? Esta acción no se puede deshacer.', 'Remove all participants? This cannot be undone.'))) return
     for (const participant of props.participants) {
         await axios.delete(route('event-participants.destroy', { eventParticipant: participant.id }))
     }
@@ -375,7 +377,7 @@ const deleteAll = async () => {
 
 const deleteSelected = async () => {
     if (!selectedParticipantIds.value.length) return
-    if (!confirm('Remove selected participants?')) return
+    if (!confirm(tr('¿Eliminar participantes seleccionados?', 'Remove selected participants?'))) return
     for (const id of selectedParticipantIds.value) {
         await axios.delete(route('event-participants.destroy', { eventParticipant: id }))
     }
@@ -385,7 +387,7 @@ const deleteSelected = async () => {
 
 const confirmSelected = async () => {
     if (!selectedParticipantIds.value.length) return
-    if (!confirm('Confirm selected participants?')) return
+    if (!confirm(tr('¿Confirmar participantes seleccionados?', 'Confirm selected participants?'))) return
     for (const participant of props.participants.filter((p) => selectedParticipantIds.value.includes(p.id))) {
         if (participant.status === 'confirmed') continue
         await updateStatus(participant, 'confirmed', false)
@@ -400,119 +402,119 @@ const confirmSelected = async () => {
         <div class="bg-white rounded-lg border p-4 space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
                 <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">Participant Type</div>
+                    <div class="text-xs font-semibold text-gray-600 mb-1">{{ tr('Tipo de participante', 'Participant Type') }}</div>
                     <select v-model="participantType" class="w-full border rounded px-2 py-1 text-sm">
-                        <option value="club_member">Club Member</option>
-                        <option value="club_staff">Club Staff</option>
-                        <option value="club_parent">Club Parent</option>
-                        <option value="driver">Driver</option>
-                        <option value="invitee">Invitee</option>
-                        <option value="other">Other</option>
+                        <option value="club_member">{{ tr('Miembro del club', 'Club Member') }}</option>
+                        <option value="club_staff">{{ tr('Personal del club', 'Club Staff') }}</option>
+                        <option value="club_parent">{{ tr('Padre del club', 'Club Parent') }}</option>
+                        <option value="driver">{{ tr('Conductor', 'Driver') }}</option>
+                        <option value="invitee">{{ tr('Invitado', 'Invitee') }}</option>
+                        <option value="other">{{ tr('Otro', 'Other') }}</option>
                     </select>
                 </div>
                 <div v-if="participantType === 'club_member'">
-                    <div class="text-xs font-semibold text-gray-600 mb-1">Member Selection Mode</div>
+                    <div class="text-xs font-semibold text-gray-600 mb-1">{{ tr('Modo de selección de miembros', 'Member Selection Mode') }}</div>
                     <select v-model="memberSelectMode" class="w-full border rounded px-2 py-1 text-sm">
-                        <option value="manual">Select Members</option>
-                        <option value="class">By Class</option>
-                        <option value="club">Whole Club</option>
+                        <option value="manual">{{ tr('Seleccionar miembros', 'Select Members') }}</option>
+                        <option value="class">{{ tr('Por clase', 'By Class') }}</option>
+                        <option value="club">{{ tr('Todo el club', 'Whole Club') }}</option>
                     </select>
                 </div>
             </div>
 
             <div v-if="participantType === 'club_member' && memberSelectMode === 'manual'" class="space-y-2">
-                <div class="text-xs font-semibold text-gray-600">Members</div>
+                <div class="text-xs font-semibold text-gray-600">{{ tr('Miembros', 'Members') }}</div>
                 <select v-model="selectedMemberIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                     <option v-for="member in availableMembers" :key="member.member_id" :value="member.member_id">
                         {{ member.applicant_name }} ({{ classNameById.get(member.class_id) || 'Class —' }})
                     </option>
                 </select>
                 <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addMembersManual">
-                    Add Selected Members
+                    {{ tr('Agregar miembros seleccionados', 'Add Selected Members') }}
                 </button>
             </div>
 
             <div v-if="participantType === 'club_member' && memberSelectMode === 'class'" class="space-y-2">
-                <div class="text-xs font-semibold text-gray-600">Classes</div>
+                <div class="text-xs font-semibold text-gray-600">{{ tr('Clases', 'Classes') }}</div>
                 <select v-model="selectedClassIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                     <option v-for="clubClass in classes" :key="clubClass.id" :value="clubClass.id">
                         {{ clubClass.class_name }}
                     </option>
                 </select>
                 <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addMembersByClass">
-                    Add Members + Parents + Staff
+                    {{ tr('Agregar miembros + padres + personal', 'Add Members + Parents + Staff') }}
                 </button>
             </div>
 
             <div v-if="participantType === 'club_member' && memberSelectMode === 'club'" class="space-y-2">
-                <div class="text-xs text-gray-600">Adds all members, their parents, and class staff.</div>
+                <div class="text-xs text-gray-600">{{ tr('Agrega todos los miembros, sus padres y el personal de clase.', 'Adds all members, their parents, and class staff.') }}</div>
                 <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addMembersWholeClub">
-                    Add Whole Club
+                    {{ tr('Agregar todo el club', 'Add Whole Club') }}
                 </button>
             </div>
 
             <div v-if="participantType === 'club_staff'" class="space-y-2">
-                <div class="text-xs font-semibold text-gray-600">Staff</div>
+                <div class="text-xs font-semibold text-gray-600">{{ tr('Personal', 'Staff') }}</div>
                 <select v-model="selectedStaffIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                     <option v-for="staffMember in availableStaff" :key="staffMember.id" :value="staffMember.id">
                         {{ staffMember.name }} ({{ staffMember.type }})
                     </option>
                 </select>
                 <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addStaff">
-                    Add Staff
+                    {{ tr('Agregar personal', 'Add Staff') }}
                 </button>
             </div>
 
             <div v-if="participantType === 'club_parent'" class="space-y-2">
-                <div class="text-xs font-semibold text-gray-600">Parents</div>
+                <div class="text-xs font-semibold text-gray-600">{{ tr('Padres', 'Parents') }}</div>
                 <select v-model="selectedParentIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                     <option v-for="parent in availableParents" :key="parent.id" :value="parent.id">
                         {{ parent.name }} ({{ parent.email || 'no email' }})
                     </option>
                 </select>
                 <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addParents">
-                    Add Parents
+                    {{ tr('Agregar padres', 'Add Parents') }}
                 </button>
             </div>
 
             <div v-if="['driver','invitee','other'].includes(participantType)" class="border-t pt-3">
-                <div class="text-xs font-semibold text-gray-600 mb-1">Custom Participant</div>
+                <div class="text-xs font-semibold text-gray-600 mb-1">{{ tr('Participante personalizado', 'Custom Participant') }}</div>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
-                    <input v-model="customParticipant.name" class="border rounded px-2 py-1 text-sm" placeholder="Name" />
+                    <input v-model="customParticipant.name" class="border rounded px-2 py-1 text-sm" :placeholder="tr('Nombre', 'Name')" />
                     <select v-model="customParticipant.role" class="border rounded px-2 py-1 text-sm">
-                        <option value="driver">Driver</option>
-                        <option value="invitee">Invitee</option>
-                        <option value="other">Other</option>
-                        <option value="guest">Guest</option>
+                        <option value="driver">{{ tr('Conductor', 'Driver') }}</option>
+                        <option value="invitee">{{ tr('Invitado', 'Invitee') }}</option>
+                        <option value="other">{{ tr('Otro', 'Other') }}</option>
+                        <option value="guest">{{ tr('Huésped', 'Guest') }}</option>
                     </select>
                     <select v-model="customParticipant.status" class="border rounded px-2 py-1 text-sm">
-                        <option value="invited">Invited</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="cancelled">Cancelled</option>
+                        <option value="invited">{{ tr('Invitado', 'Invited') }}</option>
+                        <option value="confirmed">{{ tr('Confirmado', 'Confirmed') }}</option>
+                        <option value="cancelled">{{ tr('Cancelado', 'Cancelled') }}</option>
                     </select>
-                    <input v-model="customParticipant.note" class="border rounded px-2 py-1 text-sm" placeholder="Note (optional)" />
+                    <input v-model="customParticipant.note" class="border rounded px-2 py-1 text-sm" :placeholder="tr('Nota (opcional)', 'Note (optional)')" />
                 </div>
                 <button type="button" class="mt-2 px-3 py-1 rounded text-sm bg-gray-200 text-gray-700" @click="addCustom">
-                    Add Participant
+                    {{ tr('Agregar participante', 'Add Participant') }}
                 </button>
             </div>
         </div>
 
         <div class="bg-white rounded-lg border p-3 flex flex-wrap items-center gap-2 text-xs">
             <button type="button" class="px-2 py-1 rounded bg-blue-600 text-white" @click="emit('finish-list')">
-                Finish List
+                {{ tr('Finalizar lista', 'Finish List') }}
             </button>
             <button type="button" class="px-2 py-1 rounded bg-green-600 text-white" @click="confirmAll">
-                Confirm All
+                {{ tr('Confirmar todos', 'Confirm All') }}
             </button>
             <button type="button" class="px-2 py-1 rounded bg-gray-200 text-gray-700" @click="confirmSelected" :disabled="!selectedParticipantIds.length">
-                Confirm Selected
+                {{ tr('Confirmar seleccionados', 'Confirm Selected') }}
             </button>
             <button type="button" class="px-2 py-1 rounded bg-red-600 text-white" @click="deleteAll">
-                Delete All
+                {{ tr('Eliminar todos', 'Delete All') }}
             </button>
             <button type="button" class="px-2 py-1 rounded bg-red-100 text-red-700" @click="deleteSelected" :disabled="!selectedParticipantIds.length">
-                Delete Selected
+                {{ tr('Eliminar seleccionados', 'Delete Selected') }}
             </button>
         </div>
 
@@ -527,11 +529,11 @@ const confirmSelected = async () => {
                             @change="(e) => { selectedParticipantIds = e.target.checked ? participants.map(p => p.id) : [] }"
                         />
                     </th>
-                    <th class="text-left px-4 py-2">Name</th>
-                    <th class="text-left px-4 py-2">Role</th>
-                    <th class="text-left px-4 py-2">Status</th>
-                    <th class="text-left px-4 py-2">Payment</th>
-                    <th class="text-right px-4 py-2">Actions</th>
+                    <th class="text-left px-4 py-2">{{ tr('Nombre', 'Name') }}</th>
+                    <th class="text-left px-4 py-2">{{ tr('Rol', 'Role') }}</th>
+                    <th class="text-left px-4 py-2">{{ tr('Estado', 'Status') }}</th>
+                    <th class="text-left px-4 py-2">{{ tr('Pago', 'Payment') }}</th>
+                    <th class="text-right px-4 py-2">{{ tr('Acciones', 'Actions') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -555,9 +557,9 @@ const confirmSelected = async () => {
                     <td class="px-4 py-2 capitalize">{{ participant.role }}</td>
                     <td class="px-4 py-2">
                         <select class="border rounded px-2 py-1 text-xs" :value="participant.status" @change="(e) => updateStatus(participant, e.target.value)">
-                            <option value="invited">Invited</option>
-                            <option value="confirmed">Confirmed</option>
-                            <option value="cancelled">Cancelled</option>
+                            <option value="invited">{{ tr('Invitado', 'Invited') }}</option>
+                            <option value="confirmed">{{ tr('Confirmado', 'Confirmed') }}</option>
+                            <option value="cancelled">{{ tr('Cancelado', 'Cancelled') }}</option>
                         </select>
                     </td>
                     <td class="px-4 py-2">
@@ -571,33 +573,33 @@ const confirmSelected = async () => {
                                     'bg-gray-300': paymentStatusFor(participant).status === 'na',
                                 }"
                                 :title="paymentStatusFor(participant).status === 'paid'
-                                    ? 'Partial payment received'
-                                    : (paymentStatusFor(participant).status === 'unpaid' ? 'No payment recorded' : 'Not applicable')"
+                                    ? tr('Pago recibido', 'Partial payment received')
+                                    : (paymentStatusFor(participant).status === 'unpaid' ? tr('Sin pago registrado', 'No payment recorded') : tr('No aplica', 'Not applicable'))"
                             />
                             <span
                                 v-if="paymentStatusFor(participant).status === 'paid' && participant.member_id"
                                 class="text-emerald-600 text-xs"
                             >
-                                Payment submitted
+                                {{ tr('Pago registrado', 'Payment submitted') }}
                             </span>
                             <Link
                                 v-else-if="paymentLinkFor(participant)"
                                 :href="paymentLinkFor(participant)"
                                 class="text-blue-600 hover:text-blue-700"
                             >
-                                Record payment
+                                {{ tr('Registrar pago', 'Record payment') }}
                             </Link>
                             <span v-else class="text-gray-400">—</span>
                         </div>
                     </td>
                     <td class="px-4 py-2 text-right">
                         <button type="button" class="text-xs text-red-600" @click="removeParticipant(participant)">
-                            Remove
+                            {{ tr('Eliminar', 'Remove') }}
                         </button>
                     </td>
                 </tr>
                 <tr v-if="!participants.length">
-                    <td colspan="6" class="px-4 py-6 text-center text-gray-500">No participants yet.</td>
+                    <td colspan="6" class="px-4 py-6 text-center text-gray-500">{{ tr('Aún no hay participantes.', 'No participants yet.') }}</td>
                 </tr>
             </tbody>
         </table>

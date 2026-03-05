@@ -10,6 +10,7 @@ class ClassPlan extends Model
         'workplan_event_id',
         'staff_id',
         'class_id',
+        'investiture_requirement_id',
         'type',
         'requires_approval',
         'status',
@@ -43,5 +44,10 @@ class ClassPlan extends Model
     public function class()
     {
         return $this->belongsTo(ClubClass::class, 'class_id');
+    }
+
+    public function investitureRequirement()
+    {
+        return $this->belongsTo(ClassInvestitureRequirement::class, 'investiture_requirement_id');
     }
 }

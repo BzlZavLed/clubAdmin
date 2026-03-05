@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use App\Models\Staff;
+use App\Models\ClubClass;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -32,9 +33,30 @@ class HandleInertiaRequests extends Middleware
     {
         $user = $request->user()?->load(['church', 'clubs', 'staff.classes', 'staff.club']);
         $staffRecord = $user?->staff;
+        $assignedClassId = null;
+        $assignedClassName = null;
         $assignedClasses = collect();
-        if ($staffRecord && $staffRecord->classes && $staffRecord->classes->count()) {
-            $assignedClasses = $staffRecord->classes->pluck('class_name');
+
+        if ($staffRecord) {
+            $assignedClassId = $staffRecord->assigned_class ?: $staffRecord->classes?->first()?->id;
+            if ($assignedClassId) {
+                $assignedClass = ClubClass::query()
+                    ->where('id', $assignedClassId)
+                    ->first(['id', 'class_name']);
+                $assignedClassName = $assignedClass?->class_name ?: $staffRecord->classes?->first()?->class_name;
+            } else {
+                $assignedClassName = $staffRecord->classes?->first()?->class_name;
+            }
+
+            $assignedClasses = $staffRecord->classes?->pluck('class_name') ?? collect();
+            if ($assignedClassName && !$assignedClasses->contains($assignedClassName)) {
+                $assignedClasses->prepend($assignedClassName);
+            }
+        }
+
+        if ($user) {
+            $request->session()->put('assigned_class_id', $assignedClassId);
+            $request->session()->put('assigned_class_name', $assignedClassName);
         }
 
         return array_merge(parent::share($request), [
@@ -51,8 +73,8 @@ class HandleInertiaRequests extends Middleware
                         'pastor_name' => optional($user->church)->pastor_name,
                         'conference_name' => optional($user->church)->conference,
                         'assigned_classes' => $assignedClasses->values(),
-                        'assigned_class_id' => $staffRecord?->classes?->first()?->id,
-                        'assigned_class_name' => $staffRecord?->classes?->first()?->class_name,
+                        'assigned_class_id' => $assignedClassId,
+                        'assigned_class_name' => $assignedClassName,
                         'clubs' => $user->clubs->map(fn($club) => [
                             'id' => $club->id,
                             'club_name' => $club->club_name,
@@ -63,8 +85,8 @@ class HandleInertiaRequests extends Middleware
                             'id' => $staffRecord->id,
                             'club_id' => $staffRecord->club_id,
                             'club_name' => optional($staffRecord->club)->club_name,
-                            'assigned_class_id' => $staffRecord->classes?->first()?->id,
-                            'assigned_class_name' => $staffRecord->classes?->first()?->class_name,
+                            'assigned_class_id' => $assignedClassId,
+                            'assigned_class_name' => $assignedClassName,
                             'status' => $staffRecord->status,
                         ] : null,
                     ]

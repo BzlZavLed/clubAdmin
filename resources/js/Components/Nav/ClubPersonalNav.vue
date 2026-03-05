@@ -1,7 +1,8 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 import {
     HomeIcon,
     UsersIcon,
@@ -17,19 +18,21 @@ import {
 } from '@heroicons/vue/24/outline'
 
 const { showToast } = useGeneral()
+const { locale, setLocale, tr } = useLocale()
 const page = usePage()
 const showDropdown = ref(false)
 
-const menuItems = [
-    { name: 'Panel', href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
-    { name: 'Event Planner', href: '/events', route: 'events.index', icon: CalendarDaysIcon },
-]
+const menuItems = computed(() => [
+    { name: tr('Panel', 'Dashboard'), href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
+    { name: tr('Planificador de eventos', 'Event Planner'), href: '/events', route: 'events.index', icon: CalendarDaysIcon },
+])
 
-const clubSubItems = [
-    { name: 'Reporte de asistencia', href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
-    { name: 'Pagos', href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
-    { name: 'Plan de trabajo', href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
-]
+const clubSubItems = computed(() => [
+    { name: tr('Reporte de asistencia', 'Attendance Report'), href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
+    { name: tr('Pagos', 'Payments'), href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
+    { name: tr('Plan de trabajo', 'Workplan'), href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
+    { name: tr('Requisitos de investidura', 'Investiture Requirements'), href: '/club-personal/investiture-requirements', route: 'club.personal.investiture-requirements', icon: ChartBarIcon },
+])
 
 const props = defineProps({
     isCollapsed: Boolean,
@@ -48,6 +51,18 @@ watch(
 
 <template>
     <nav class="flex-1 px-2 py-4 space-y-1">
+        <div v-if="!isCollapsed" class="mb-2 px-3">
+            <label class="block text-[11px] font-semibold text-gray-500 mb-1">{{ tr('Idioma', 'Language') }}</label>
+            <select
+                :value="locale"
+                @change="setLocale($event.target.value)"
+                class="w-full rounded border border-gray-300 px-2 py-1 text-xs text-gray-700"
+            >
+                <option value="es">Español</option>
+                <option value="en">English</option>
+            </select>
+        </div>
+
         <!-- Main menu items -->
         <Link v-for="item in menuItems" :key="item.name" :href="item.href"
             class="flex items-center space-x-2 px-3 py-2 rounded hover:bg-gray-100"
@@ -61,7 +76,7 @@ watch(
             <button @click="showDropdown = !showDropdown"
                 class="flex items-center w-full px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100">
                 <UserGroupIcon class="w-5 h-5" />
-                <span v-if="!isCollapsed" class="ml-2">Mi clase</span>
+                <span v-if="!isCollapsed" class="ml-2">{{ tr('Mi clase', 'My class') }}</span>
                 <span class="ml-auto" v-if="!isCollapsed">
                     <component :is="showDropdown ? ChevronDownIcon : ChevronRightIcon" class="w-4 h-4" />
                 </span>

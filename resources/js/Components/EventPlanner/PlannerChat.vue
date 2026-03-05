@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, nextTick, onMounted } from 'vue'
 import axios from 'axios'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     eventId: { type: Number, required: true },
@@ -10,6 +11,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update'])
+const { tr } = useLocale()
 
 const localMessages = ref([...props.messages])
 const input = ref('')
@@ -106,14 +108,14 @@ const parseRentalEstimateMessage = (content) => {
     return {
         intro: intro ? intro.replace(/\.$/, '').trim() : null,
         costRows: [
-            perVehicle ? { label: 'Per Vehicle / Day', value: getValue(perVehicle) } : null,
-            fleetPerDay ? { label: 'Fleet / Day', value: getValue(fleetPerDay) } : null,
-            totalRental ? { label: 'Total Rental', value: getValue(totalRental) } : null,
-            gas ? { label: 'Gas', value: getValue(gas) } : null,
+            perVehicle ? { label: tr('Por vehículo / día', 'Per Vehicle / Day'), value: getValue(perVehicle) } : null,
+            fleetPerDay ? { label: tr('Flota / día', 'Fleet / Day'), value: getValue(fleetPerDay) } : null,
+            totalRental ? { label: tr('Renta total', 'Total Rental'), value: getValue(totalRental) } : null,
+            gas ? { label: tr('Gasolina', 'Gas'), value: getValue(gas) } : null,
         ].filter(Boolean),
         sourceRows: [
-            liveSource ? { label: 'Live Source', value: getValue(liveSource) } : null,
-            fallback ? { label: 'Fallback Source', value: getValue(fallback) } : null,
+            liveSource ? { label: tr('Fuente en vivo', 'Live Source'), value: getValue(liveSource) } : null,
+            fallback ? { label: tr('Fuente de respaldo', 'Fallback Source'), value: getValue(fallback) } : null,
         ].filter(Boolean),
         liveSampleItems: parseLinkedItems(getValue(liveSamples)),
         providerItems: parseLinkedItems(getValue(providers)),
@@ -168,7 +170,7 @@ const send = async () => {
         localMessages.value = data.eventPlan?.conversation_json || localMessages.value
         input.value = ''
     } catch (err) {
-        error.value = err?.response?.data?.message || 'Unable to reach the planner right now.'
+        error.value = err?.response?.data?.message || tr('No se pudo contactar al planificador ahora.', 'Unable to reach the planner right now.')
     } finally {
         sending.value = false
     }
@@ -178,28 +180,28 @@ const send = async () => {
 <template>
     <div class="bg-white rounded-lg border p-4 space-y-4">
         <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <div class="font-semibold">SerpAPI Monthly Usage</div>
+            <div class="font-semibold">{{ tr('Uso mensual de SerpAPI', 'SerpAPI Monthly Usage') }}</div>
             <div class="mt-1">
-                Used {{ Number(props.serpApiUsage?.used || 0) }} / {{ Number(props.serpApiUsage?.limit || 0) }}
+                {{ tr('Usado', 'Used') }} {{ Number(props.serpApiUsage?.used || 0) }} / {{ Number(props.serpApiUsage?.limit || 0) }}
                 <span class="mx-1">•</span>
-                Remaining {{ Number(props.serpApiUsage?.remaining || 0) }}
+                {{ tr('Restante', 'Remaining') }} {{ Number(props.serpApiUsage?.remaining || 0) }}
                 <span v-if="props.serpApiUsage?.month" class="mx-1">•</span>
-                <span v-if="props.serpApiUsage?.month">Month {{ props.serpApiUsage.month }}</span>
+                <span v-if="props.serpApiUsage?.month">{{ tr('Mes', 'Month') }} {{ props.serpApiUsage.month }}</span>
             </div>
         </div>
 
         <details class="bg-gray-50 border rounded-md p-3 text-xs text-gray-700">
-            <summary class="font-semibold text-gray-800 cursor-pointer">Available tools</summary>
+            <summary class="font-semibold text-gray-800 cursor-pointer">{{ tr('Herramientas disponibles', 'Available tools') }}</summary>
             <ul class="list-disc pl-4 space-y-1 mt-2">
-                <li><span class="font-medium">update_event_spine</span> — Update title, dates, location, status.</li>
-                <li><span class="font-medium">update_plan_section</span> — Add or revise a section of the plan outline.</li>
-                <li><span class="font-medium">create_tasks</span> — Create tasks with due dates and assignees.</li>
-                <li><span class="font-medium">create_budget_items</span> — Add budget line items and costs.</li>
-                <li><span class="font-medium">set_missing_items</span> — Track missing plan requirements.</li>
-                <li><span class="font-medium">add_participants</span> — Add participants and roles.</li>
-                <li><span class="font-medium">find_recommended_places</span> — Find recommended places near the church address.</li>
-                <li><span class="font-medium">find_rental_agencies</span> — Find nearby car/van/bus rental agencies.</li>
-                <li><span class="font-medium">estimate_rental_costs</span> — Estimate rental costs per day and total.</li>
+                <li><span class="font-medium">update_event_spine</span> — {{ tr('Actualiza título, fechas, ubicación y estado.', 'Update title, dates, location, status.') }}</li>
+                <li><span class="font-medium">update_plan_section</span> — {{ tr('Agrega o ajusta una sección del plan.', 'Add or revise a section of the plan outline.') }}</li>
+                <li><span class="font-medium">create_tasks</span> — {{ tr('Crea tareas con fechas límite y responsables.', 'Create tasks with due dates and assignees.') }}</li>
+                <li><span class="font-medium">create_budget_items</span> — {{ tr('Agrega partidas de presupuesto y costos.', 'Add budget line items and costs.') }}</li>
+                <li><span class="font-medium">set_missing_items</span> — {{ tr('Lleva control de requisitos faltantes.', 'Track missing plan requirements.') }}</li>
+                <li><span class="font-medium">add_participants</span> — {{ tr('Agrega participantes y roles.', 'Add participants and roles.') }}</li>
+                <li><span class="font-medium">find_recommended_places</span> — {{ tr('Busca lugares recomendados cerca de la iglesia.', 'Find recommended places near the church address.') }}</li>
+                <li><span class="font-medium">find_rental_agencies</span> — {{ tr('Busca agencias cercanas de renta de autos/vans/bus.', 'Find nearby car/van/bus rental agencies.') }}</li>
+                <li><span class="font-medium">estimate_rental_costs</span> — {{ tr('Estima costos de renta por día y total.', 'Estimate rental costs per day and total.') }}</li>
             </ul>
         </details>
         <div ref="messagesRef" class="space-y-3 max-h-80 overflow-y-auto">
@@ -232,7 +234,7 @@ const send = async () => {
                             </div>
 
                             <div v-if="parseRentalEstimateMessage(msg.content).liveSampleItems.length" class="space-y-1">
-                                <div class="text-[11px] uppercase tracking-wide text-gray-500">Live Quote Samples</div>
+                                <div class="text-[11px] uppercase tracking-wide text-gray-500">{{ tr('Muestras de cotizaciones en vivo', 'Live Quote Samples') }}</div>
                                 <ul class="space-y-1">
                                     <li
                                         v-for="(item, itemIdx) in parseRentalEstimateMessage(msg.content).liveSampleItems"
@@ -246,7 +248,7 @@ const send = async () => {
                             </div>
 
                             <div v-if="parseRentalEstimateMessage(msg.content).providerItems.length" class="space-y-1">
-                                <div class="text-[11px] uppercase tracking-wide text-gray-500">Rental Providers</div>
+                                <div class="text-[11px] uppercase tracking-wide text-gray-500">{{ tr('Proveedores de renta', 'Rental Providers') }}</div>
                                 <ul class="space-y-1">
                                     <li
                                         v-for="(item, itemIdx) in parseRentalEstimateMessage(msg.content).providerItems"
@@ -267,28 +269,28 @@ const send = async () => {
                         <div v-for="place in msg.places" :key="place.place_id || place.name" class="border rounded-md bg-white p-2 text-xs text-gray-700">
                             <div class="font-semibold text-gray-900">{{ place.name }}</div>
                             <div v-if="place.address || place.vicinity" class="text-gray-600">{{ place.address || place.vicinity }}</div>
-                            <div v-if="place.rating" class="text-gray-600">Rating: {{ place.rating }}<span v-if="place.user_ratings_total"> ({{ place.user_ratings_total }} reviews)</span></div>
-                            <div v-if="place.international_phone_number || place.formatted_phone_number" class="text-gray-600">Phone: {{ place.international_phone_number || place.formatted_phone_number }}</div>
+                            <div v-if="place.rating" class="text-gray-600">{{ tr('Calificación', 'Rating') }}: {{ place.rating }}<span v-if="place.user_ratings_total"> ({{ place.user_ratings_total }} {{ tr('reseñas', 'reviews') }})</span></div>
+                            <div v-if="place.international_phone_number || place.formatted_phone_number" class="text-gray-600">{{ tr('Teléfono', 'Phone') }}: {{ place.international_phone_number || place.formatted_phone_number }}</div>
                             <div v-if="place.distance_text || place.duration_text" class="text-gray-600">
-                                <span v-if="place.distance_text">Distance: {{ place.distance_text }}</span>
+                                <span v-if="place.distance_text">{{ tr('Distancia', 'Distance') }}: {{ place.distance_text }}</span>
                                 <span v-if="place.distance_text && place.duration_text"> • </span>
-                                <span v-if="place.duration_text">ETA: {{ place.duration_text }}</span>
+                                <span v-if="place.duration_text">{{ tr('ETA', 'ETA') }}: {{ place.duration_text }}</span>
                             </div>
-                            <a v-if="placeMapLink(place)" :href="placeMapLink(place)" target="_blank" rel="noopener noreferrer" class="inline-block mt-1 text-xs text-blue-600 underline">Open in Maps</a>
+                            <a v-if="placeMapLink(place)" :href="placeMapLink(place)" target="_blank" rel="noopener noreferrer" class="inline-block mt-1 text-xs text-blue-600 underline">{{ tr('Abrir en Maps', 'Open in Maps') }}</a>
                         </div>
                     </div>
                 </div>
             </div>
-            <div v-if="!localMessages.length" class="text-sm text-gray-500">Start the conversation with the planner.</div>
+            <div v-if="!localMessages.length" class="text-sm text-gray-500">{{ tr('Inicia la conversación con el planificador.', 'Start the conversation with the planner.') }}</div>
         </div>
 
         <div class="border-t pt-3 space-y-2">
             <textarea ref="inputRef" v-model="input" rows="3" class="w-full border rounded px-3 py-2 text-sm"
-                placeholder="Ask the planner to build tasks, budgets, or fill in missing items..."></textarea>
+                :placeholder="tr('Pídele al planificador crear tareas, presupuestos o completar pendientes...', 'Ask the planner to build tasks, budgets, or fill in missing items...')"></textarea>
             <div class="flex items-center justify-between">
                 <div class="text-xs text-red-600" v-if="error">{{ error }}</div>
                 <button @click="send" :disabled="sending" class="px-4 py-2 bg-green-600 text-white rounded text-sm">
-                    {{ sending ? 'Sending...' : 'Send' }}
+                    {{ sending ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
                 </button>
             </div>
         </div>

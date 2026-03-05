@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     sections: {
@@ -9,6 +10,7 @@ const props = defineProps({
 })
 
 const openIndex = ref(null)
+const { tr } = useLocale()
 
 const toggle = (idx) => {
     openIndex.value = openIndex.value === idx ? null : idx
@@ -21,7 +23,7 @@ const toggle = (idx) => {
             <button class="w-full flex items-center justify-between px-4 py-3 text-left"
                 @click="toggle(idx)">
                 <div>
-                    <div class="font-semibold text-gray-800">{{ section.name || 'Section' }}</div>
+                    <div class="font-semibold text-gray-800">{{ section.name || tr('Sección', 'Section') }}</div>
                     <div v-if="section.summary" class="text-sm text-gray-500">{{ section.summary }}</div>
                 </div>
                 <span class="text-sm text-gray-400">{{ openIndex === idx ? '−' : '+' }}</span>
@@ -33,7 +35,7 @@ const toggle = (idx) => {
                         <span v-if="item.detail"> — {{ item.detail }}</span>
                     </li>
                 </ul>
-                <div v-else class="text-gray-500">No details yet.</div>
+                <div v-else class="text-gray-500">{{ tr('Sin detalles aún.', 'No details yet.') }}</div>
             </div>
         </div>
     </div>

@@ -21,6 +21,16 @@ class RepAssistanceAdvMerit extends Model
         'report_id',
         'total',
         'cuota_amount', // Added for cuota amount
+        'requirement_checks_json',
+    ];
+
+    protected $casts = [
+        'asistencia' => 'boolean',
+        'puntualidad' => 'boolean',
+        'uniforme' => 'boolean',
+        'conductor' => 'boolean',
+        'cuota' => 'boolean',
+        'requirement_checks_json' => 'array',
     ];
 
     public function report()

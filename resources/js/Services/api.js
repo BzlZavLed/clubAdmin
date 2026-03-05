@@ -116,6 +116,29 @@ export const createOrUpdateClass = async (classData, isEditing = false) => {
     }
 };
 
+export const createInvestitureRequirement = async (clubClassId, payload) => {
+    const { data } = await axios.post(
+        route("investiture-requirements.store", { clubClass: clubClassId }),
+        payload
+    );
+    return data;
+};
+
+export const updateInvestitureRequirement = async (requirementId, payload) => {
+    const { data } = await axios.put(
+        route("investiture-requirements.update", { investitureRequirement: requirementId }),
+        payload
+    );
+    return data;
+};
+
+export const deleteInvestitureRequirement = async (requirementId) => {
+    const { data } = await axios.delete(
+        route("investiture-requirements.destroy", { investitureRequirement: requirementId })
+    );
+    return data;
+};
+
 export const fetchClubsByChurchId = async (churchId) => {
     const response = await axios.get(route("church.clubs", { churchId }));
     return response.data;
@@ -231,6 +254,14 @@ export const fetchAssignedMembersByStaff = async (staffId) => {
     return response.data;
 };
 
+export const addInvestitureRequirementCompletion = async (payload) => {
+    const { data } = await axios.post(
+        route('club.personal.investiture-requirements.completions.store'),
+        payload
+    );
+    return data;
+};
+
 // Fetch reports by staff ID
 export const fetchReportsByStaffId = async (staffId) => {
     const response = await axios.get(
@@ -270,6 +301,13 @@ export async function checkAssistanceReportToday(staffId, date) {
         `/assistance-reports/check-today/${staffId}?date=${date}`
     );
     return response.data;
+}
+
+export async function fetchAssistanceRequirementActivities(date) {
+    const { data } = await axios.get(route('club.assistance_report.activities'), {
+        params: { date },
+    });
+    return data;
 }
 
 export const filterAssistanceReports = (payload) => {

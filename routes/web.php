@@ -36,6 +36,8 @@ use App\Http\Controllers\EventVehicleController;
 use App\Http\Controllers\EventPlannerController;
 use App\Http\Controllers\EventPlaceOptionController;
 use App\Http\Controllers\TaskFormController;
+use App\Http\Controllers\ClassInvestitureRequirementController;
+use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -86,6 +88,12 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
     Route::get('/club-personal/workplan/data', [WorkplanController::class, 'data'])->name('club.personal.workplan.data');
     Route::get('/club-personal/workplan/ics', [WorkplanController::class, 'ics'])->name('club.personal.workplan.ics');
     Route::get('/club-personal/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('club.personal.workplan.class-plans.pdf');
+    Route::get('/club-personal/investiture-requirements', [ClubPersonalInvestitureProgressController::class, 'index'])
+        ->name('club.personal.investiture-requirements');
+    Route::get('/club-personal/investiture-requirements/pdf', [ClubPersonalInvestitureProgressController::class, 'pdf'])
+        ->name('club.personal.investiture-requirements.pdf');
+    Route::post('/club-personal/investiture-requirements/completions', [ClubPersonalInvestitureProgressController::class, 'storeCompletion'])
+        ->name('club.personal.investiture-requirements.completions.store');
     Route::post('/club-personal/class-plans', [\App\Http\Controllers\ClassPlanController::class, 'store'])->name('club.personal.class-plans.store');
     Route::put('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'update'])->name('club.personal.class-plans.update');
     Route::delete('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'destroy'])->name('club.personal.class-plans.destroy');
@@ -324,6 +332,12 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         'update' => 'club-classes.update',
         'destroy' => 'club-classes.destroy',
     ]);
+    Route::post('/club-classes/{clubClass}/investiture-requirements', [ClassInvestitureRequirementController::class, 'store'])
+        ->name('investiture-requirements.store');
+    Route::put('/investiture-requirements/{investitureRequirement}', [ClassInvestitureRequirementController::class, 'update'])
+        ->name('investiture-requirements.update');
+    Route::delete('/investiture-requirements/{investitureRequirement}', [ClassInvestitureRequirementController::class, 'destroy'])
+        ->name('investiture-requirements.destroy');
 
     Route::get('/church/{churchId}/clubs', [ClubController::class, 'getClubsByChurchId'])->name('church.clubs');
     Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
@@ -331,6 +345,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
     Route::get('/clubs/{id}/members', [MemberAdventurerController::class, 'byClub'])->name('clubs.members');
+    Route::get('/clubs/{id}/members/class-summary-pdf', [MemberAdventurerController::class, 'classSummaryPdf'])->name('clubs.members.class-summary-pdf');
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
     Route::post('/members/export-zip', [ExportController::class, 'exportZip'])->name('members.export-zip');
@@ -444,6 +459,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::get('/staff/{staffId}/assigned-members', [StaffAdventurerController::class, 'getAssignedMembersByStaff']);
     Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId'])->name('clubs.classes');
+    Route::get('/club-class-reports/pdf', [ClubClassController::class, 'pdf'])->name('club-classes.pdf');
+    Route::get('/club-class-reports/pdf-with-requirements', [ClubClassController::class, 'pdfWithRequirements'])->name('club-classes.pdf-with-requirements');
 
     //Reports
     Route::get('/pdf-assistance-reports/{id}/{date}/pdf', [ReportController::class, 'generateAssistancePDF'])->name('asistance-report.pdf');
@@ -463,14 +480,21 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::get('/club-personal/dashboard', function () {
+        $user = Auth::user();
+        if ($user) {
+            $user->setAttribute('assigned_class_id', session('assigned_class_id'));
+            $user->setAttribute('assigned_class_name', session('assigned_class_name'));
+        }
         return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
-            'auth_user' => Auth::user()
+            'auth_user' => $user
         ]);
     })->name('clubPersonal.dashboard');
 
 
     Route::get('/club-personal/assistance-report', [AssistanceReportController::class, 'index'])
         ->name('club.assistance_report');
+    Route::get('/club-personal/assistance-report/activities', [AssistanceReportController::class, 'requirementActivities'])
+        ->name('club.assistance_report.activities');
 
     Route::get('/club-personal/payments', [ClubPaymentController::class, 'index'])
         ->name('club.payments.index');

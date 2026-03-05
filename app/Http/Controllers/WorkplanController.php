@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Club;
+use App\Models\ClubClass;
 use App\Models\Member;
 use App\Models\Staff;
 use App\Models\Workplan;
@@ -49,7 +50,7 @@ class WorkplanController extends Controller
                     'rules',
                     'events' => function ($query) {
                         $query->with(['classPlans' => function ($q) {
-                            $q->with(['staff.user', 'class']);
+                            $q->with(['staff.user', 'class', 'investitureRequirement']);
                         }])->orderBy('date')->orderBy('start_time');
                     }
                 ]);
@@ -61,6 +62,9 @@ class WorkplanController extends Controller
             'workplan' => $workplan,
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
+            'class_requirements_by_class' => $selectedClubId
+                ? $this->classRequirementsByClass((int) $selectedClubId)
+                : [],
             'integration_config' => $selectedClubId
                 ? ClubIntegrationConfig::where('club_id', $selectedClubId)->first()
                 : null,
@@ -266,7 +270,7 @@ class WorkplanController extends Controller
                     'rules',
                     'events' => function ($query) {
                         $query->with(['classPlans' => function ($q) {
-                            $q->with(['staff.user', 'class']);
+                            $q->with(['staff.user', 'class', 'investitureRequirement']);
                         }])->orderBy('date')->orderBy('start_time');
                     }
                 ]);
@@ -278,6 +282,9 @@ class WorkplanController extends Controller
             'selected_club_id' => $selectedClubId,
             'workplan' => $this->filterPlansForParent($workplan, $user),
             'memberships' => [],
+            'class_requirements_by_class' => $selectedClubId
+                ? $this->classRequirementsByClass((int) $selectedClubId)
+                : [],
             'integration_config' => $selectedClubId
                 ? ClubIntegrationConfig::where('club_id', $selectedClubId)->first()
                 : null,
@@ -728,7 +735,7 @@ class WorkplanController extends Controller
         $workplan = $workplan->load([
             'events' => function ($q) {
                 $q->with(['classPlans' => function ($cp) {
-                    $cp->with(['class', 'staff.user']);
+                    $cp->with(['class', 'staff.user', 'investitureRequirement']);
                 }])->orderBy('date')->orderBy('start_time');
             },
             'club',
@@ -791,6 +798,34 @@ class WorkplanController extends Controller
     {
         $escaped = str_replace(['\\', ';', ',', "\n", "\r"], ['\\\\', '\;', '\,', '\n', ''], $value);
         return $escaped;
+    }
+
+    private function classRequirementsByClass(int $clubId): array
+    {
+        $classes = ClubClass::query()
+            ->where('club_id', $clubId)
+            ->with(['investitureRequirements' => function ($query) {
+                $query->where('is_active', true)->orderBy('sort_order')->orderBy('id');
+            }])
+            ->get(['id', 'class_name']);
+
+        $byClass = [];
+        foreach ($classes as $class) {
+            $byClass[(string) $class->id] = [
+                'class_id' => $class->id,
+                'class_name' => $class->class_name,
+                'requirements' => $class->investitureRequirements->map(function ($req) {
+                    return [
+                        'id' => $req->id,
+                        'title' => $req->title,
+                        'description' => $req->description,
+                        'sort_order' => $req->sort_order,
+                    ];
+                })->values()->all(),
+            ];
+        }
+
+        return $byClass;
     }
 
     private function validatePayload(Request $request): array

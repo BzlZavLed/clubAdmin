@@ -31,4 +31,9 @@ class ClubClass extends Model
     {
         return $this->belongsToMany(Staff::class, 'class_staff', 'club_class_id', 'staff_id');
     }
+
+    public function investitureRequirements()
+    {
+        return $this->hasMany(ClassInvestitureRequirement::class)->orderBy('sort_order')->orderBy('id');
+    }
 }

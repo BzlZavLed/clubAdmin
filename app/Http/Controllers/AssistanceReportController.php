@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\ClubClass;
 use App\Models\Club;
 use App\Models\Staff;
+use App\Models\ClassPlan;
 use App\Support\ClubHelper;
 use Inertia\Inertia;
 
@@ -15,46 +16,14 @@ class AssistanceReportController extends Controller
     public function index()
     {
         $user = Auth::user();
-
-        // Step 1: Confirm staff record exists (staff table, fallback by email)
-        $staff = Staff::with('classes')
-            ->where('user_id', $user->id)
-            ->first();
-        if (!$staff) {
-            $staff = Staff::whereHas('user', function ($q) use ($user) {
-                $q->where('email', $user->email);
-            })->with('classes')->first();
-        }
-
-        if (!$staff) {
+        [$staff, $assignedClass, $assignedClassId] = $this->resolveStaffAndClass($user);
+        if (!$staff || !$assignedClass || !$assignedClassId) {
             return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
                 'auth_user' => $user,
                 'staff' => $staff,
                 'toast' => [
                     'type' => 'error',
-                    'message' => 'You are not registered as a staff member.'
-                ]
-            ]);
-        }
-
-        // Step 2: Confirm class assigned (staff.assigned_class or first from pivot)
-        $assignedClassId = $staff->assigned_class;
-        if (!$assignedClassId && $staff->classes && $staff->classes->count()) {
-            $assignedClassId = $staff->classes->first()->id;
-        }
-
-        $assignedClass = null;
-        if ($assignedClassId) {
-            $assignedClass = ClubClass::find($assignedClassId);
-        }
-
-        if (!$assignedClassId || !$assignedClass) {
-            return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
-                'auth_user' => $user,
-                'staff' => $staff,
-                'toast' => [
-                    'type' => 'error',
-                    'message' => 'No class assigned to you'
+                    'message' => !$staff ? 'You are not registered as a staff member.' : 'No class assigned to you'
                 ]
             ]);
         }
@@ -81,7 +50,80 @@ class AssistanceReportController extends Controller
             'staff' => $staff,
             'assigned_class' => ['id' => $assignedClass->id, 'name' => $assignedClass->class_name],
             'assigned_members' => $assignedMembers,
+            'planned_requirement_activities' => $this->plannedRequirementActivities((int) $staff->id, (int) $assignedClassId, now()->toDateString()),
         ]);
     }
-    
+
+    public function requirementActivities(Request $request)
+    {
+        $validated = $request->validate([
+            'date' => ['required', 'date'],
+        ]);
+
+        $user = Auth::user();
+        [$staff, $assignedClass, $assignedClassId] = $this->resolveStaffAndClass($user);
+        if (!$staff || !$assignedClass || !$assignedClassId) {
+            abort(422, 'No class assigned to current staff.');
+        }
+
+        return response()->json([
+            'date' => $validated['date'],
+            'activities' => $this->plannedRequirementActivities((int) $staff->id, (int) $assignedClassId, $validated['date']),
+        ]);
+    }
+
+    private function resolveStaffAndClass($user): array
+    {
+        $staff = Staff::with('classes')
+            ->where('user_id', $user->id)
+            ->first();
+        if (!$staff) {
+            $staff = Staff::whereHas('user', function ($q) use ($user) {
+                $q->where('email', $user->email);
+            })->with('classes')->first();
+        }
+        if (!$staff) {
+            return [null, null, null];
+        }
+
+        $assignedClassId = $staff->assigned_class;
+        if (!$assignedClassId && $staff->classes && $staff->classes->count()) {
+            $assignedClassId = $staff->classes->first()->id;
+        }
+
+        $assignedClass = $assignedClassId ? ClubClass::find($assignedClassId) : null;
+        if (!$assignedClassId || !$assignedClass) {
+            return [$staff, null, null];
+        }
+
+        return [$staff, $assignedClass, $assignedClassId];
+    }
+
+    private function plannedRequirementActivities(int $staffId, int $classId, string $date): array
+    {
+        $plans = ClassPlan::query()
+            ->with(['event:id,date,title,meeting_type', 'investitureRequirement:id,title,description,sort_order'])
+            ->where('staff_id', $staffId)
+            ->where('class_id', $classId)
+            ->whereNotNull('investiture_requirement_id')
+            ->whereIn('status', ['approved', 'submitted', 'changes_requested'])
+            ->where(function ($query) use ($date) {
+                $query->whereDate('requested_date', $date)
+                    ->orWhereHas('event', fn ($q) => $q->whereDate('date', $date));
+            })
+            ->orderBy('id')
+            ->get();
+
+        return $plans->map(function ($plan) {
+            return [
+                'id' => $plan->id,
+                'title' => $plan->title,
+                'requirement_id' => $plan->investitureRequirement?->id,
+                'requirement_title' => $plan->investitureRequirement?->title,
+                'requirement_sort_order' => $plan->investitureRequirement?->sort_order,
+                'event_title' => $plan->event?->title,
+                'event_date' => optional($plan->event?->date)->toDateString(),
+            ];
+        })->values()->all();
+    }
 }

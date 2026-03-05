@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import axios from 'axios'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     eventId: { type: Number, required: true },
@@ -12,6 +13,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['updated'])
+const { tr } = useLocale()
 
 const localDocs = ref([...props.documents])
 const form = ref({
@@ -220,10 +222,10 @@ const removeDoc = async (doc) => {
         <div class="bg-white rounded-lg border p-4 space-y-3">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <select v-model="form.docType" class="border rounded px-3 py-2 text-sm">
-                    <option value="">Select document type</option>
+                    <option value="">{{ tr('Selecciona tipo de documento', 'Select document type') }}</option>
                     <option v-for="option in docTypeOptions" :key="option" :value="option">{{ option }}</option>
                 </select>
-                <input v-model="form.title" class="border rounded px-3 py-2 text-sm" placeholder="Title" />
+                <input v-model="form.title" class="border rounded px-3 py-2 text-sm" :placeholder="tr('Título', 'Title')" />
                 <input type="file" @change="onFileChange" class="text-sm" />
             </div>
             <div v-if="formErrors.title" class="text-xs text-red-600">
@@ -238,7 +240,7 @@ const removeDoc = async (doc) => {
 
             <div v-if="isMemberDoc(form.docType)" class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">Participants</div>
+                    <div class="text-xs font-semibold text-gray-600 mb-1">{{ tr('Participantes', 'Participants') }}</div>
                     <select v-model="form.participantIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                         <option v-for="participant in memberOptions" :key="participant.id" :value="participant.id">
                             {{ participant.label }}
@@ -246,23 +248,23 @@ const removeDoc = async (doc) => {
                     </select>
                 </div>
                 <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">Staff</div>
+                    <div class="text-xs font-semibold text-gray-600 mb-1">{{ tr('Personal', 'Staff') }}</div>
                     <select v-model="form.staffIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                         <option v-for="staffMember in staffOptions" :key="staffMember.label" :value="staffMember.id" :disabled="staffMember.disabled">
-                            {{ staffMember.label }}{{ staffMember.disabled ? ' (no linked staff record)' : '' }}
+                            {{ staffMember.label }}{{ staffMember.disabled ? tr(' (sin registro de personal vinculado)', ' (no linked staff record)') : '' }}
                         </option>
                     </select>
                 </div>
                 <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">Parents</div>
+                    <div class="text-xs font-semibold text-gray-600 mb-1">{{ tr('Padres', 'Parents') }}</div>
                     <select v-model="form.parentIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                         <option v-for="parent in parentOptions" :key="parent.label" :value="parent.id" :disabled="parent.disabled">
-                            {{ parent.label }}{{ parent.disabled ? ' (no linked parent record)' : '' }}
+                            {{ parent.label }}{{ parent.disabled ? tr(' (sin registro de padre vinculado)', ' (no linked parent record)') : '' }}
                         </option>
                     </select>
                 </div>
                 <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">Other Participants</div>
+                    <div class="text-xs font-semibold text-gray-600 mb-1">{{ tr('Otros participantes', 'Other Participants') }}</div>
                     <select v-model="form.otherParticipantIds" multiple class="w-full border rounded px-2 py-1 text-sm">
                         <option v-for="other in otherOptions" :key="other.id" :value="other.id">
                             {{ other.label }}
@@ -273,7 +275,7 @@ const removeDoc = async (doc) => {
             <div v-if="isDriverLicense" class="mt-3">
                 <div class="text-xs font-semibold text-gray-600 mb-1">Driver (license)</div>
                 <select v-model="form.driverParticipantId" class="w-full border rounded px-2 py-1 text-sm">
-                    <option value="">Select driver</option>
+                    <option value="">{{ tr('Selecciona conductor', 'Select driver') }}</option>
                     <option v-for="driver in driverOptions" :key="driver.id" :value="driver.id">
                         {{ driver.label }}
                     </option>
@@ -281,7 +283,7 @@ const removeDoc = async (doc) => {
             </div>
 
             <button @click="upload" :disabled="uploading" class="px-4 py-2 bg-blue-600 text-white rounded text-sm">
-                {{ uploading ? 'Uploading...' : 'Upload document' }}
+                {{ uploading ? tr('Subiendo...', 'Uploading...') : tr('Subir documento', 'Upload document') }}
             </button>
         </div>
 
@@ -289,11 +291,11 @@ const removeDoc = async (doc) => {
             <table class="min-w-full text-sm">
                 <thead class="bg-gray-50 text-gray-600">
                     <tr>
-                        <th class="text-left px-4 py-2">Title</th>
-                        <th class="text-left px-4 py-2">Type</th>
-                        <th class="text-left px-4 py-2">Participant</th>
-                        <th class="text-left px-4 py-2">File</th>
-                        <th class="text-right px-4 py-2">Actions</th>
+                        <th class="text-left px-4 py-2">{{ tr('Título', 'Title') }}</th>
+                        <th class="text-left px-4 py-2">{{ tr('Tipo', 'Type') }}</th>
+                        <th class="text-left px-4 py-2">{{ tr('Participante', 'Participant') }}</th>
+                        <th class="text-left px-4 py-2">{{ tr('Archivo', 'File') }}</th>
+                        <th class="text-right px-4 py-2">{{ tr('Acciones', 'Actions') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -312,16 +314,16 @@ const removeDoc = async (doc) => {
                                 rel="noopener noreferrer"
                                 class="text-blue-600 text-sm"
                             >
-                                Open
+                                {{ tr('Abrir', 'Open') }}
                             </a>
                             <span v-else class="text-gray-400 text-sm">—</span>
                         </td>
                         <td class="px-4 py-2 text-right">
-                            <button @click="removeDoc(doc)" class="text-red-600 text-sm">Delete</button>
+                            <button @click="removeDoc(doc)" class="text-red-600 text-sm">{{ tr('Eliminar', 'Delete') }}</button>
                         </td>
                     </tr>
                     <tr v-if="!localDocs.length">
-                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">No documents yet.</td>
+                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">{{ tr('Aún no hay documentos.', 'No documents yet.') }}</td>
                     </tr>
                 </tbody>
             </table>
