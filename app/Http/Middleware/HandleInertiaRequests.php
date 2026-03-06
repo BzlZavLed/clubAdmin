@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Inertia\Middleware;
 use App\Models\Staff;
 use App\Models\ClubClass;
+use App\Models\Club;
+use App\Models\Church;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -59,6 +61,21 @@ class HandleInertiaRequests extends Middleware
             $request->session()->put('assigned_class_name', $assignedClassName);
         }
 
+        $isSuperadmin = $user?->profile_type === 'superadmin';
+        $effectiveChurchId = $isSuperadmin
+            ? $request->session()->get('superadmin_context.church_id')
+            : $user?->church_id;
+        $effectiveClubId = $isSuperadmin
+            ? $request->session()->get('superadmin_context.club_id')
+            : $user?->club_id;
+
+        $effectiveChurch = $effectiveChurchId
+            ? Church::query()->where('id', $effectiveChurchId)->first(['id', 'church_name'])
+            : null;
+        $effectiveClub = $effectiveClubId
+            ? Club::query()->where('id', $effectiveClubId)->first(['id', 'club_name', 'church_id'])
+            : null;
+
         return array_merge(parent::share($request), [
             'auth' => [
                 'user' => fn() => $user
@@ -67,9 +84,10 @@ class HandleInertiaRequests extends Middleware
                         'name' => $user->name,
                         'profile_type' => $user->profile_type,
                         'sub_role' => $user->sub_role,
-                        'church_id' => $user->church_id,
-                        'church_name' => $user->church_name,
-                        'club_id' => $user->club_id,
+                        'church_id' => $effectiveChurchId ?: $user->church_id,
+                        'church_name' => $effectiveChurch?->church_name ?: $user->church_name,
+                        'club_id' => $effectiveClubId ?: $user->club_id,
+                        'club_name' => $effectiveClub?->club_name ?: null,
                         'pastor_name' => optional($user->church)->pastor_name,
                         'conference_name' => optional($user->church)->conference,
                         'assigned_classes' => $assignedClasses->values(),
@@ -93,6 +111,12 @@ class HandleInertiaRequests extends Middleware
                     : null,
                 'is_in_club' => fn() => session('is_in_club', false),
                 'user_club_ids' => fn() => session('user_club_ids', []),
+                'superadmin_context' => fn() => $isSuperadmin ? [
+                    'church_id' => $effectiveChurchId ? (int) $effectiveChurchId : null,
+                    'church_name' => $effectiveChurch?->church_name,
+                    'club_id' => $effectiveClubId ? (int) $effectiveClubId : null,
+                    'club_name' => $effectiveClub?->club_name,
+                ] : null,
             ],
         ]);
     }

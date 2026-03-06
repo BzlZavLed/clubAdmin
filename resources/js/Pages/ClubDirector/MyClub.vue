@@ -1,5 +1,5 @@
 <script setup>
-import { useForm } from '@inertiajs/vue3'
+import { useForm, router } from '@inertiajs/vue3'
 import CreateClassModal from '@/Components/CreateClassModal.vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useAuth } from '@/Composables/useAuth'
@@ -24,6 +24,10 @@ const props = defineProps({
     churches: {
         type: Array,
         default: () => []
+    },
+    superadmin_context: {
+        type: Object,
+        default: null
     }
 })
 
@@ -48,7 +52,11 @@ const showRequirementFormByClass = ref({})
 
 // 🧠 Derived data
 const church_name = user.value.church_name || 'Iglesia desconocida'
-const clubId = ref(user.value.club_id || null)
+const clubId = ref(
+    isSuperadmin.value
+        ? (props.superadmin_context?.club_id || null)
+        : (user.value.club_id || null)
+)
 
 const clubStaff = computed(() => {
     return clubs.value[0]?.staff_adventurers ?? []
@@ -100,8 +108,11 @@ const fetchClubs = async () => {
         const data = await fetchClubsByUserId(user.value.id)
         clubs.value = Array.isArray(data) ? data : []
         hasClub.value = clubs.value.length > 0
-        if (!clubId.value && clubs.value.length) {
+        if (!clubId.value && clubs.value.length && !isSuperadmin.value) {
             clubId.value = clubs.value[0].id
+        }
+        if (isSuperadmin.value && props.superadmin_context?.club_id) {
+            clubId.value = Number(props.superadmin_context.club_id)
         }
         if (!selectedClubId.value && clubId.value) {
             selectedClubId.value = clubId.value
@@ -270,15 +281,21 @@ const removeRequirement = async (requirementId) => {
 }
 
 // 🧠 Select club (director choosing one)
-const selectClub = async (clubId) => {
+const selectClub = async (nextClubId) => {
     try {
-        await selectUserClub(clubId, user.value.id)
+        await selectUserClub(nextClubId, user.value.id)
         showToast('Club seleccionado correctamente')
+        clubId.value = Number(nextClubId)
+        selectedClubId.value = Number(nextClubId)
         await router.reload({ only: ['auth'] })
-        refreshPage()
+        if (!isSuperadmin.value) {
+            refreshPage()
+        }
     } catch (error) {
         console.error('Failed to select club:', error)
-        refreshPage()
+        if (!isSuperadmin.value) {
+            refreshPage()
+        }
     }
 }
 
@@ -339,6 +356,14 @@ const startCreatingClub = () => {
         conference_region: '',
         club_type: ''
     })
+}
+
+const onSuperadminClubChange = async () => {
+    if (!selectedClubId.value) {
+        clubId.value = null
+        return
+    }
+    await selectClub(Number(selectedClubId.value))
 }
 
 
@@ -553,6 +578,25 @@ onMounted(fetchClubs);
 <template>
     <PathfinderLayout>
         <template #title>Mi club</template>
+
+        <div v-if="isSuperadmin" class="mb-4 rounded border bg-white p-4 space-y-3">
+            <p class="text-sm font-semibold text-gray-800">Contexto Superadmin</p>
+            <div class="flex flex-col md:flex-row gap-2 md:items-center">
+                <select
+                    v-model="selectedClubId"
+                    class="border rounded px-3 py-2 text-sm min-w-[260px]"
+                    @change="onSuperadminClubChange"
+                >
+                    <option value="">Selecciona un club existente</option>
+                    <option v-for="club in clubs" :key="club.id" :value="club.id">
+                        {{ club.club_name }} - {{ club.church_name || 'Sin iglesia' }}
+                    </option>
+                </select>
+                <button type="button" class="px-3 py-2 rounded bg-blue-600 text-white text-sm" @click="startCreatingClub">
+                    Crear nuevo club
+                </button>
+            </div>
+        </div>
 
         <div v-if="isEditing || addClub || (clubs.length === 0 && !clubId)" class="space-y-6">
             <p class="text-gray-700">

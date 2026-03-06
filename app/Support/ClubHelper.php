@@ -18,6 +18,28 @@ class ClubHelper
      */
     public static function clubIdsForUser($user): Collection
     {
+        if (($user?->profile_type ?? null) === 'superadmin') {
+            $contextClubId = session('superadmin_context.club_id');
+            $contextChurchId = session('superadmin_context.church_id');
+
+            if ($contextClubId) {
+                return collect([(int) $contextClubId]);
+            }
+
+            if ($contextChurchId) {
+                return Club::query()
+                    ->where('church_id', (int) $contextChurchId)
+                    ->pluck('id')
+                    ->unique()
+                    ->values();
+            }
+
+            return Club::query()
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
         $pivotIds = $user?->clubs?->pluck('id') ?? collect();
         $explicit = $user?->club_id ? collect([$user->club_id]) : collect();
 

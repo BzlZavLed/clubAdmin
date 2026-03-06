@@ -38,6 +38,7 @@ use App\Http\Controllers\EventPlaceOptionController;
 use App\Http\Controllers\TaskFormController;
 use App\Http\Controllers\ClassInvestitureRequirementController;
 use App\Http\Controllers\ClubPersonalInvestitureProgressController;
+use App\Http\Controllers\SuperAdminContextController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -128,9 +129,28 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
 // 🟥 Superadmin Protected Routes
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function () {
-    Route::get('/super-admin/dashboard', fn() => Inertia::render('SuperAdmin/Dashboard', [
-        'auth_user' => auth()->user(),
-    ]))->name('superadmin.dashboard');
+    Route::get('/super-admin/dashboard', function () {
+        $selectedChurchId = session('superadmin_context.church_id');
+        $selectedClubId = session('superadmin_context.club_id');
+
+        return Inertia::render('SuperAdmin/Dashboard', [
+            'auth_user' => auth()->user(),
+            'churches' => Church::query()
+                ->select('id', 'church_name')
+                ->orderBy('church_name')
+                ->get(),
+            'clubs' => Club::query()
+                ->select('id', 'club_name', 'church_id')
+                ->orderBy('club_name')
+                ->get(),
+            'context' => [
+                'church_id' => $selectedChurchId ? (int) $selectedChurchId : null,
+                'club_id' => $selectedClubId ? (int) $selectedClubId : null,
+            ],
+        ]);
+    })->name('superadmin.dashboard');
+    Route::post('/super-admin/context', [SuperAdminContextController::class, 'set'])
+        ->name('superadmin.context.set');
     Route::get('/super-admin/churches/manage', fn() => Inertia::render('Church/ChurchForm'))->name('superadmin.churches.manage');
     Route::get('/super-admin/clubs', fn() => Inertia::render('SuperAdmin/Clubs', [
         'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
@@ -188,13 +208,25 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     Route::get(
         '/club-director/my-club',
-        fn() =>
-        Inertia::render('ClubDirector/MyClub', [
-            'auth_user' => auth()->user(),
-            'churches' => Church::select('id', 'church_name', 'pastor_name', 'conference')
-                ->orderBy('church_name')
-                ->get(),
-        ])
+        function () {
+            $user = auth()->user();
+            $isSuperadmin = $user?->profile_type === 'superadmin';
+
+            return Inertia::render('ClubDirector/MyClub', [
+                'auth_user' => $user,
+                'churches' => Church::select('id', 'church_name', 'pastor_name', 'conference')
+                    ->orderBy('church_name')
+                    ->get(),
+                'superadmin_context' => $isSuperadmin ? [
+                    'church_id' => session('superadmin_context.church_id')
+                        ? (int) session('superadmin_context.church_id')
+                        : null,
+                    'club_id' => session('superadmin_context.club_id')
+                        ? (int) session('superadmin_context.club_id')
+                        : null,
+                ] : null,
+            ]);
+        }
     )->name('club.my-club');
 
     Route::get(

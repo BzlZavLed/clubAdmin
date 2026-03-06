@@ -258,6 +258,30 @@ class ClubController extends Controller
 
     public function getByUser(User $user)
     {
+        $authUser = auth()->user();
+        if (!$authUser) {
+            abort(401);
+        }
+
+        if ($authUser->profile_type !== 'superadmin' && (int) $authUser->id !== (int) $user->id) {
+            abort(403, 'Not allowed to load clubs for another user.');
+        }
+
+        if ($authUser->profile_type === 'superadmin' && (int) $authUser->id === (int) $user->id) {
+            $query = Club::query()
+                ->with(['clubClasses.investitureRequirements', 'staffAdventurers'])
+                ->orderBy('club_name');
+
+            $contextChurchId = session('superadmin_context.church_id');
+            if ($contextChurchId) {
+                $query->where('church_id', (int) $contextChurchId);
+            }
+
+            $clubs = $query->get();
+
+            return response()->json($this->attachStaffAssignments($clubs));
+        }
+
         $clubIds = ClubHelper::clubIdsForUser($user);
 
         $clubs = Club::whereIn('id', $clubIds)
@@ -314,7 +338,34 @@ class ClubController extends Controller
             'user_id' => 'required|exists:users,id',
         ]);
 
+        $authUser = $request->user();
         $user = User::findOrFail($validated['user_id']);
+
+        if (!$authUser) {
+            abort(401);
+        }
+
+        if ($authUser->profile_type !== 'superadmin' && (int) $authUser->id !== (int) $user->id) {
+            abort(403, 'Not allowed to change another user club.');
+        }
+
+        if ($authUser->profile_type === 'superadmin' && (int) $authUser->id === (int) $user->id) {
+            $club = Club::query()
+                ->where('id', (int) $validated['club_id'])
+                ->firstOrFail(['id', 'club_name', 'church_id']);
+
+            $request->session()->put('superadmin_context.club_id', $club->id);
+            $request->session()->put('superadmin_context.church_id', $club->church_id);
+
+            return response()->json([
+                'message' => 'Club selected successfully.',
+                'context' => [
+                    'club_id' => $club->id,
+                    'club_name' => $club->club_name,
+                    'church_id' => $club->church_id,
+                ],
+            ]);
+        }
 
         DB::table('club_user')->updateOrInsert(
             ['user_id' => $user->id, 'club_id' => $validated['club_id']],
