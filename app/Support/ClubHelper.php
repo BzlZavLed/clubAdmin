@@ -6,7 +6,7 @@ use App\Models\Club;
 use App\Models\Staff;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
-use App\Models\TempMemberPathfinder;
+use App\Models\MemberPathfinder;
 use App\Models\StaffAdventurer;
 use App\Models\TempStaffPathfinder;
 use Illuminate\Support\Collection;
@@ -126,9 +126,9 @@ class ClubHelper
             ->get(['id', 'applicant_name'])
             ->keyBy('id');
 
-        $pathfinderNames = TempMemberPathfinder::query()
+        $pathfinderNames = MemberPathfinder::query()
             ->whereIn('id', $pathfinderIds)
-            ->get(['id', 'nombre'])
+            ->get(['id', 'applicant_name'])
             ->keyBy('id');
 
         return $memberRows
@@ -137,7 +137,7 @@ class ClubHelper
                 if ($m->type === 'adventurers') {
                     $name = $adventurerNames[$m->id_data]->applicant_name ?? null;
                 } elseif (in_array($m->type, ['temp_pathfinder', 'pathfinders'], true)) {
-                    $name = $pathfinderNames[$m->id_data]->nombre ?? null;
+                    $name = $pathfinderNames[$m->id_data]->applicant_name ?? null;
                 }
 
                 return [
@@ -194,12 +194,12 @@ class ClubHelper
         }
 
         if (in_array($type, ['temp_pathfinder', 'pathfinders'], true) && $idData) {
-            $row = TempMemberPathfinder::query()->find($idData);
+            $row = MemberPathfinder::query()->find($idData);
             return [
                 'member_id' => $member->id,
                 'type' => $type,
                 'id_data' => $idData,
-                'name' => $row?->nombre,
+                'name' => $row?->applicant_name,
             ];
         }
 

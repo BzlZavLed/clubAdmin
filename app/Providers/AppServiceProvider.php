@@ -14,7 +14,7 @@ use App\Observers\AuditLogObserver;
 use App\Models\User;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
-use App\Models\TempMemberPathfinder;
+use App\Models\MemberPathfinder;
 use App\Models\Staff;
 use App\Models\TempStaffPathfinder;
 use App\Models\Church;
@@ -65,7 +65,7 @@ class AppServiceProvider extends ServiceProvider
             User::class,
             Member::class,
             MemberAdventurer::class,
-            TempMemberPathfinder::class,
+            MemberPathfinder::class,
             Staff::class,
             StaffAdventurer::class,
             TempStaffPathfinder::class,

@@ -1,13 +1,13 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { useForm } from '@inertiajs/vue3'
 import MemberRegistrationModal from '@/Components/MemberRegistrationModal.vue'
+import PathfinderMemberRegistrationModal from '@/Components/PathfinderMemberRegistrationModal.vue'
 import DeleteMemberModal from '@/Components/DeleteMemberModal.vue'
 import { 
     PlusIcon,
     MinusIcon,
-    UserPlusIcon,
+    PencilIcon,
     DocumentArrowDownIcon,
     TrashIcon,
     ArrowPathIcon 
@@ -24,8 +24,6 @@ import {
     deleteMemberById,
     bulkDeleteMembers,
     downloadMemberZip,
-    fetchTempMembersPathfinder,
-    createTempMemberPathfinder,
 } from '@/Services/api'
 
 // ✅ Auth context
@@ -38,7 +36,9 @@ const selectedClub = ref(null)
 const members = ref([])
 const clubClasses = ref([])
 const expandedRows = ref(new Set())
-const showRegistrationForm = ref(false)
+const showAdventurerRegistrationModal = ref(false)
+const showPathfinderRegistrationModal = ref(false)
+const editingMember = ref(null)
 const registrationFormSection = ref(null)
 const showDeleteModal = ref(false)
 const deletingMember = ref(null)
@@ -51,46 +51,8 @@ const classSummaryPdfOptions = ref({
     include_dob: false,
     include_address: false
 })
-const tempMembers = ref([])
-const tempMemberForm = ref({
-    club_id: '',
-    nombre: '',
-    dob: '',
-    phone: '',
-    email: '',
-    father_name: '',
-    father_phone: '',
-})
-
 const activeTabClass = 'border-b-2 border-blue-600 text-blue-600 font-semibold pb-2'
 const inactiveTabClass = 'text-gray-500 hover:text-gray-700 pb-2'
-
-// Member registration form
-const memberForm = useForm({
-    club_id: '',
-    club_name: '',
-    director_name: '',
-    church_name: '',
-
-    applicant_name: '',
-    birthdate: '',
-    age: '',
-    grade: '',
-    mailing_address: '',
-    cell_number: '',
-    emergency_contact: '',
-
-    investiture_classes: [],
-    allergies: '',
-    physical_restrictions: '',
-    health_history: '',
-
-    parent_name: '',
-    parent_cell: '',
-    home_address: '',
-    email_address: '',
-    signature: ''
-})
 
 // Fetch clubs
 const fetchClubs = async () => {
@@ -131,54 +93,8 @@ const fetchClasses = async (clubId) => {
 // On club selection
 const onClubChange = async () => {
     if (selectedClub.value) {
-        memberForm.club_id = selectedClub.value.id
-        memberForm.club_name = selectedClub.value.club_name
-        memberForm.director_name = selectedClub.value.director_name
-        memberForm.church_name = selectedClub.value.church_name
-
         await fetchMembers(selectedClub.value.id)
         await fetchClasses(selectedClub.value.id)
-        if (selectedClub.value.club_type === 'pathfinders') {
-            await loadTempMembers(selectedClub.value.id)
-        } else {
-            tempMembers.value = []
-        }
-
-
-    }
-}
-
-const loadTempMembers = async (clubId) => {
-    try {
-        tempMembers.value = await fetchTempMembersPathfinder(clubId)
-    } catch (err) {
-        console.error('Failed to load temp members', err)
-        tempMembers.value = []
-    }
-}
-
-const saveTempMember = async () => {
-    try {
-        tempMemberForm.value.club_id = selectedClub.value?.id || ''
-        if (!tempMemberForm.value.club_id) {
-            showToast('Selecciona un club primero', 'error')
-            return
-        }
-        await createTempMemberPathfinder(tempMemberForm.value)
-        showToast('Miembro temporal guardado', 'success')
-        await loadTempMembers(tempMemberForm.value.club_id)
-        tempMemberForm.value = {
-            club_id: selectedClub.value?.id || '',
-            nombre: '',
-            dob: '',
-            phone: '',
-            email: '',
-            father_name: '',
-            father_phone: '',
-        }
-    } catch (err) {
-        console.error('Failed to save temp member', err)
-        showToast('No se pudo guardar el miembro temporal', 'error')
     }
 }
 
@@ -186,6 +102,20 @@ const saveTempMember = async () => {
 const deleteMember = (member) => {
     deletingMember.value = member
     showDeleteModal.value = true
+}
+
+const editMember = (member) => {
+    if (!selectedClub.value) return
+    editingMember.value = member
+    showAdventurerRegistrationModal.value = false
+    showPathfinderRegistrationModal.value = false
+
+    if (member.member_type === 'temp_pathfinder') {
+        showPathfinderRegistrationModal.value = true
+        return
+    }
+
+    showAdventurerRegistrationModal.value = true
 }
 
 const handleMemberDelete = async ({ id, notes }) => {
@@ -279,16 +209,33 @@ const toggleSelectMember = (id) => {
 }
 
 // Misc
-const downloadWord = (memberId) => {
-    window.open(`/members/${memberId}/export-word`, '_blank')
+const downloadWord = (member) => {
+    if (member.member_type === 'temp_pathfinder') {
+        window.open(`/members/${member.id}/export-pathfinder-pdf`, '_blank')
+        return
+    }
+
+    window.open(`/members/${member.id}/export-word`, '_blank')
 }
 
 const toggleRegistrationForm = async () => {
-    showRegistrationForm.value = !showRegistrationForm.value
-    if (showRegistrationForm.value) {
-        await nextTick()
-        registrationFormSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (!selectedClub.value) {
+        showToast('Selecciona un club primero', 'error')
+        return
     }
+
+    showAdventurerRegistrationModal.value = false
+    showPathfinderRegistrationModal.value = false
+    editingMember.value = null
+
+    if (selectedClub.value.club_type === 'pathfinders') {
+        showPathfinderRegistrationModal.value = true
+        return
+    }
+
+    showAdventurerRegistrationModal.value = true
+    await nextTick()
+    registrationFormSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // Computed filters
@@ -298,6 +245,24 @@ const displayAge = (age) => {
     if (Number.isNaN(n) || n < 0) return '—'
     return Math.floor(n)
 }
+
+const lastCompletedDisplay = (member) => {
+    if (member.member_type === 'temp_pathfinder') {
+        if (!member.current_class_id) return 'Unassigned'
+        const currentClass = clubClasses.value.find(c => String(c.id) === String(member.current_class_id))
+        return currentClass?.class_name || 'Unassigned'
+    }
+
+    if (Array.isArray(member.investiture_classes) && member.investiture_classes.length) {
+        return member.investiture_classes.join(', ')
+    }
+
+    return '—'
+}
+
+const progressColumnLabel = computed(() =>
+    selectedClub.value?.club_type === 'pathfinders' ? 'Clase actual' : 'Ultima completada'
+)
 
 const unassignedMembers = computed(() =>
     members.value.filter(member =>
@@ -386,68 +351,6 @@ onMounted(fetchClubs)
                 </select>
             </div>
 
-            <!-- Pathfinder temp members -->
-            <div v-if="selectedTab === 'members' && selectedClub && selectedClub.club_type === 'pathfinders'" class="mb-8 border rounded p-4 bg-amber-50">
-                <h2 class="font-semibold text-amber-800 mb-3">Miembros temporales de Conquistadores</h2>
-                <div class="grid md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Nombre</label>
-                        <input v-model="tempMemberForm.nombre" type="text" class="w-full border rounded p-2" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Fecha de nacimiento</label>
-                        <input v-model="tempMemberForm.dob" type="date" class="w-full border rounded p-2" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Telefono</label>
-                        <input v-model="tempMemberForm.phone" type="text" class="w-full border rounded p-2" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Correo del padre/madre</label>
-                        <input v-model="tempMemberForm.email" type="email" class="w-full border rounded p-2" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Nombre del padre/madre</label>
-                        <input v-model="tempMemberForm.father_name" type="text" class="w-full border rounded p-2" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Telefono del padre/madre</label>
-                        <input v-model="tempMemberForm.father_phone" type="text" class="w-full border rounded p-2" />
-                    </div>
-                </div>
-                <div class="mt-3">
-                    <button @click="saveTempMember" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar miembro temporal</button>
-                </div>
-
-                <div class="mt-4 overflow-x-auto">
-                    <table class="min-w-full text-sm border">
-                        <thead class="bg-amber-100">
-                            <tr>
-                                <th class="p-2 text-left">Nombre</th>
-                                <th class="p-2 text-left">DOB</th>
-                                <th class="p-2 text-left">Telefono</th>
-                                <th class="p-2 text-left">Email</th>
-                                <th class="p-2 text-left">Padre/madre</th>
-                                <th class="p-2 text-left">Telefono padre/madre</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-if="!tempMembers.length">
-                                <td colspan="6" class="p-3 text-center text-gray-500">No hay miembros temporales</td>
-                            </tr>
-                            <tr v-for="tm in tempMembers" :key="tm.id" class="border-t">
-                                <td class="p-2">{{ tm.nombre }}</td>
-                                <td class="p-2">{{ tm.dob || '—' }}</td>
-                                <td class="p-2">{{ tm.phone || '—' }}</td>
-                                <td class="p-2">{{ tm.email || '—' }}</td>
-                                <td class="p-2">{{ tm.father_name || '—' }}</td>
-                                <td class="p-2">{{ tm.father_phone || '—' }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
             <!-- Tab 1: Members Table -->
             <div v-if="selectedTab === 'members' && selectedClub">
                 <div class="flex items-center justify-between mb-4">
@@ -472,7 +375,7 @@ onMounted(fetchClubs)
                             <th class="p-2 text-left"></th>
                             <th class="p-2 text-left">Nombre</th>
                             <th class="p-2 text-left">Direccion</th>
-                            <th class="p-2 text-left">Ultima completada</th>
+                            <th class="p-2 text-left">{{ progressColumnLabel }}</th>
                             <th class="p-2 text-left">Celular del padre</th>
                             <th class="p-2 text-left">Acciones</th>
                         </tr>
@@ -488,11 +391,7 @@ onMounted(fetchClubs)
                                 </td>
                                 <td class="p-2 font-semibold">{{ member.applicant_name }}</td>
                                 <td class="p-2">{{ member.home_address }}</td>
-                                <td class="p-2">
-                                    <span v-if="Array.isArray(member.investiture_classes)">
-                                        {{ member.investiture_classes.join(', ') }}
-                                    </span>
-                                </td>
+                                <td class="p-2">{{ lastCompletedDisplay(member) }}</td>
                                 <td class="p-2">{{ member.parent_cell }}</td>
                                 <td class="p-2">
                                     <button class="text-green-600 hover:underline" @click="toggleExpanded(member.id)">
@@ -501,13 +400,18 @@ onMounted(fetchClubs)
                                         class="w-4 h-4 inline"
                                         />
                                     </button> &nbsp;&nbsp;
+                                    <button class="text-blue-600 hover:underline"
+                                        @click="editMember(member)">
+                                        <PencilIcon class="w-4 h-4 inline" />
+                                    </button>
+                                    &nbsp;&nbsp;
                                     <button class="text-red-600 hover:underline"
                                         @click="deleteMember(member)">
                                         <TrashIcon class="w-4 h-4 inline" />
                                     </button>
                                     &nbsp;&nbsp;
                                     <button class="text-blue-600 hover:underline"
-                                        @click="downloadWord(member.id)">  
+                                        @click="downloadWord(member)">  
                                         <DocumentArrowDownIcon class="w-4 h-4 inline" />
                                     </button>
 
@@ -518,7 +422,42 @@ onMounted(fetchClubs)
                             <!-- Expandable Child Row -->
                             <tr v-if="expandedRows.has(member.id)" class="bg-gray-50 border-t">
                                 <td colspan="6" class="p-4">
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
+                                    <div v-if="member.member_type === 'temp_pathfinder'" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
+                                        <div><strong>Fecha de nacimiento:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
+                                        <div><strong>Edad:</strong> {{ member.age ?? '—' }}</div>
+                                        <div><strong>Grado:</strong> {{ member.grade || '—' }}</div>
+                                        <div><strong>Escuela:</strong> {{ member.school || '—' }}</div>
+                                        <div><strong>Direccion:</strong> {{ member.mailing_address || '—' }}</div>
+                                        <div><strong>Ciudad/Estado/Zip:</strong> {{ [member.city, member.state, member.zip].filter(Boolean).join(', ') || '—' }}</div>
+                                        <div><strong>Telefono:</strong> {{ member.cell_number || '—' }}</div>
+                                        <div><strong>Email:</strong> {{ member.email_address || '—' }}</div>
+                                        <div><strong>Padre/Guardian:</strong> {{ member.father_guardian_name || '—' }}</div>
+                                        <div><strong>Email Padre/Guardian:</strong> {{ member.father_guardian_email || '—' }}</div>
+                                        <div><strong>Telefono Padre/Guardian:</strong> {{ member.father_guardian_phone || '—' }}</div>
+                                        <div><strong>Madre/Guardian:</strong> {{ member.mother_guardian_name || '—' }}</div>
+                                        <div><strong>Email Madre/Guardian:</strong> {{ member.mother_guardian_email || '—' }}</div>
+                                        <div><strong>Telefono Madre/Guardian:</strong> {{ member.mother_guardian_phone || '—' }}</div>
+                                        <div><strong>Contacto de emergencia:</strong> {{ member.emergency_contact_name || member.emergency_contact || '—' }}</div>
+                                        <div><strong>Telefono de emergencia:</strong> {{ member.emergency_contact_phone || '—' }}</div>
+                                        <div><strong>Medico primario:</strong> {{ member.physician_name || '—' }}</div>
+                                        <div><strong>Telefono del medico:</strong> {{ member.physician_phone || '—' }}</div>
+                                        <div><strong>Seguro medico:</strong> {{ member.insurance_provider || '—' }}</div>
+                                        <div><strong>Numero de poliza:</strong> {{ member.insurance_number || '—' }}</div>
+                                        <div><strong>Historial de salud:</strong> {{ member.health_history || '—' }}</div>
+                                        <div><strong>Discapacidades:</strong> {{ member.disabilities || '—' }}</div>
+                                        <div><strong>Alergias a medicamentos:</strong> {{ member.medication_allergies || '—' }}</div>
+                                        <div><strong>Alergias a alimentos:</strong> {{ member.food_allergies || '—' }}</div>
+                                        <div><strong>Consideraciones dieteticas:</strong> {{ member.dietary_considerations || '—' }}</div>
+                                        <div><strong>Restricciones fisicas:</strong> {{ member.physical_restrictions || '—' }}</div>
+                                        <div><strong>Vacunas / shot records:</strong> {{ member.immunization_notes || '—' }}</div>
+                                        <div><strong>Medicamentos actuales:</strong> {{ member.current_medications || '—' }}</div>
+                                        <div class="md:col-span-2"><strong>Personas autorizadas para recoger:</strong> {{ Array.isArray(member.pickup_authorized_people) && member.pickup_authorized_people.length ? member.pickup_authorized_people.join(', ') : '—' }}</div>
+                                        <div><strong>Consentimiento firmado:</strong> {{ member.consent_acknowledged ? 'Si' : 'No' }}</div>
+                                        <div><strong>Permiso de foto/video:</strong> {{ member.photo_release ? 'Si' : 'No' }}</div>
+                                        <div><strong>Firma:</strong> {{ member.signature || '—' }}</div>
+                                        <div><strong>Fecha de firma:</strong> {{ member.signed_at ? formatDate(member.signed_at) : '—' }}</div>
+                                    </div>
+                                    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
                                         <div><strong>Fecha de nacimiento:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
                                         <div><strong>Edad:</strong> {{ member.age ?? '—' }}</div>
                                         <div><strong>Grado:</strong> {{ member.grade ?? '—' }}</div>
@@ -541,7 +480,7 @@ onMounted(fetchClubs)
                 <div class="mt-6 text-center">
                     <button @click="toggleRegistrationForm"
                         class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                        {{ showRegistrationForm ? 'Ocultar formulario' : 'Registrar nuevo miembro' }}
+                        Registrar nuevo miembro
                     </button>
                 </div>
             </div>
@@ -662,8 +601,10 @@ onMounted(fetchClubs)
 
 
             <!-- MODALS -->
-            <MemberRegistrationModal :show="showRegistrationForm" :clubs="clubs" :selectedClub="selectedClub"
-                @close="showRegistrationForm = false" @submitted="fetchMembers(selectedClub.id)" />
+            <MemberRegistrationModal :show="showAdventurerRegistrationModal" :clubs="clubs" :selectedClub="selectedClub" :editing-member="editingMember"
+                @close="showAdventurerRegistrationModal = false; editingMember = null" @submitted="fetchMembers(selectedClub.id); editingMember = null" />
+            <PathfinderMemberRegistrationModal :show="showPathfinderRegistrationModal" :selectedClub="selectedClub" :editing-member="editingMember"
+                @close="showPathfinderRegistrationModal = false; editingMember = null" @submitted="fetchMembers(selectedClub.id); editingMember = null" />
             <DeleteMemberModal :show="showDeleteModal" :memberId="deletingMember?.id"
                 :memberName="deletingMember?.applicant_name" @cancel="showDeleteModal = false"
                 @confirm="handleMemberDelete" />

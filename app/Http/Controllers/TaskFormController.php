@@ -7,7 +7,7 @@ use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\TaskFormResponse;
 use App\Models\TaskFormSchema;
-use App\Models\TempMemberPathfinder;
+use App\Models\MemberPathfinder;
 use Illuminate\Http\Request;
 
 class TaskFormController extends Controller
@@ -152,8 +152,8 @@ class TaskFormController extends Controller
             ->get(['id', 'applicant_name', 'emergency_contact', 'cell_number', 'allergies', 'health_history', 'physical_restrictions'])
             ->keyBy('id');
 
-        $pathfinders = TempMemberPathfinder::whereIn('id', $pathfinderIds)
-            ->get(['id', 'nombre', 'father_name', 'father_phone'])
+        $pathfinders = MemberPathfinder::whereIn('id', $pathfinderIds)
+            ->get(['id', 'applicant_name', 'father_guardian_name', 'father_guardian_phone'])
             ->keyBy('id');
 
         $contactLines = [];
@@ -184,9 +184,9 @@ class TaskFormController extends Controller
                 }
             } elseif ($member && in_array($member->type, ['temp_pathfinder', 'pathfinders'], true)) {
                 $detail = $pathfinders->get($member->id_data);
-                $name = $detail->nombre ?? $name;
-                $father = $detail->father_name ?? '—';
-                $phone = $detail->father_phone ?? '—';
+                $name = $detail->applicant_name ?? $name;
+                $father = $detail->father_guardian_name ?? '—';
+                $phone = $detail->father_guardian_phone ?? '—';
                 $contactLines[] = "{$name} — Father: {$father} (Phone: {$phone})";
             } else {
                 $contactLines[] = "{$name} — Emergency Contact: — (Phone: —)";

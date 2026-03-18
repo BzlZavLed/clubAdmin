@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\TempMemberPathfinder;
+use App\Models\MemberPathfinder;
 use App\Models\TempStaffPathfinder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,7 +17,7 @@ class TempPathfinderController extends Controller
     public function listMembers($clubId)
     {
         $this->authorizeClub($clubId);
-        $rows = TempMemberPathfinder::where('club_id', $clubId)->orderByDesc('id')->get();
+        $rows = MemberPathfinder::where('club_id', $clubId)->orderByDesc('id')->get();
         return response()->json($rows);
     }
 
@@ -38,7 +38,7 @@ class TempPathfinderController extends Controller
 
         return DB::transaction(function () use ($data) {
             // Create temp row first
-            $row = TempMemberPathfinder::create($data);
+            $row = MemberPathfinder::create($data);
 
             // Create member pointing to temp row id_data
             $member = \App\Models\Member::create([
@@ -52,10 +52,8 @@ class TempPathfinderController extends Controller
             ]);
 
             // Link back the temp row to the member id (if column exists)
-            if (Schema::hasColumn('temp_member_pathfinder', 'member_id')) {
-                $row->member_id = $member->id;
-                $row->save();
-            }
+            $row->member_id = $member->id;
+            $row->save();
 
             return response()->json($row, 201);
         });

@@ -380,6 +380,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/clubs/{id}/members/class-summary-pdf', [MemberAdventurerController::class, 'classSummaryPdf'])->name('clubs.members.class-summary-pdf');
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
+    Route::get('/members/{id}/export-pathfinder-pdf', [MemberAdventurerController::class, 'exportPathfinderPdf'])->name('members.export-pathfinder-pdf');
     Route::post('/members/export-zip', [ExportController::class, 'exportZip'])->name('members.export-zip');
     Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember'])->name('members.assign');
     Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment'])->name('members.assignment.undo');
@@ -489,6 +490,7 @@ Route::middleware(['auth'])->group(function () {
     //Update password
     Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
+    Route::put('/members/{id}', [MemberAdventurerController::class, 'update'])->name('members.update');
     Route::get('/staff/{staffId}/assigned-members', [StaffAdventurerController::class, 'getAssignedMembersByStaff']);
     Route::get('/clubs/{clubId}/classes', [ClubClassController::class, 'getByClubId'])->name('clubs.classes');
     Route::get('/club-class-reports/pdf', [ClubClassController::class, 'pdf'])->name('club-classes.pdf');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MemberAdventurer;
+use App\Models\MemberPathfinder;
 use App\Models\Club;
 use Illuminate\Http\Request;
 use PhpOffice\PhpWord\TemplateProcessor;
@@ -13,7 +14,6 @@ use App\Models\Member;
 use App\Models\ClubClass;
 use App\Models\Staff;
 use App\Support\ClubHelper;
-use App\Models\TempMemberPathfinder;
 use App\Models\ClassMemberPathfinder;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -36,21 +36,49 @@ class MemberAdventurerController extends Controller
             $validated = $request->validate([
                 'applicant_name' => 'required|string|max:255',
                 'birthdate' => 'required|date',
-                'cell_number' => 'required|string',
-                'email_address' => 'required|email',
-                'parent_name' => 'required|string|max:255',
-                'parent_cell' => 'required|string|max:255',
+                'grade' => 'nullable|string|max:50',
+                'mailing_address' => 'nullable|string|max:255',
+                'city' => 'nullable|string|max:255',
+                'state' => 'nullable|string|max:50',
+                'zip' => 'nullable|string|max:30',
+                'school' => 'nullable|string|max:255',
+                'cell_number' => 'nullable|string|max:50',
+                'email_address' => 'nullable|email|max:255',
+                'father_guardian_name' => 'required|string|max:255',
+                'father_guardian_email' => 'nullable|email|max:255',
+                'father_guardian_phone' => 'required|string|max:50',
+                'mother_guardian_name' => 'nullable|string|max:255',
+                'mother_guardian_email' => 'nullable|email|max:255',
+                'mother_guardian_phone' => 'nullable|string|max:50',
+                'pickup_authorized_people' => 'nullable|array',
+                'pickup_authorized_people.*' => 'string|max:255',
+                'consent_acknowledged' => 'nullable|boolean',
+                'photo_release' => 'nullable|boolean',
+                'health_history' => 'nullable|string',
+                'disabilities' => 'nullable|string',
+                'medication_allergies' => 'nullable|string',
+                'food_allergies' => 'nullable|string',
+                'dietary_considerations' => 'nullable|string',
+                'physical_restrictions' => 'nullable|string',
+                'immunization_notes' => 'nullable|string',
+                'current_medications' => 'nullable|string',
+                'physician_name' => 'nullable|string|max:255',
+                'physician_phone' => 'nullable|string|max:50',
+                'emergency_contact_name' => 'nullable|string|max:255',
+                'emergency_contact_phone' => 'nullable|string|max:50',
+                'insurance_provider' => 'nullable|string|max:255',
+                'insurance_number' => 'nullable|string|max:255',
+                'parent_guardian_signature' => 'nullable|string|max:255',
+                'signed_at' => 'nullable|date',
             ]);
 
-            $tempMember = TempMemberPathfinder::create([
-                'club_id' => $club->id,
-                'nombre' => $validated['applicant_name'],
-                'dob' => $validated['birthdate'],
-                'phone' => $validated['cell_number'],
-                'email' => $validated['email_address'],
-                'father_name' => $validated['parent_name'],
-                'father_phone' => $validated['parent_cell'],
-            ]);
+            $validated['club_id'] = $club->id;
+            $validated['club_name'] = $club->club_name ?? null;
+            $validated['director_name'] = $club->director_name ?? null;
+            $validated['church_name'] = $club->church_name ?? null;
+            $validated['status'] = 'active';
+
+            $tempMember = MemberPathfinder::create($validated);
 
             $member = Member::create([
                 'type' => 'temp_pathfinder',
@@ -129,6 +157,103 @@ class MemberAdventurerController extends Controller
         ]);
 
         return response()->json(['message' => 'Member deleted.']);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $validatedClub = $request->validate([
+            'club_id' => 'required|exists:clubs,id',
+        ]);
+
+        $club = Club::findOrFail($validatedClub['club_id']);
+        $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
+        if (!in_array((int) $club->id, $allowedClubIds, true)) {
+            abort(403, 'Unauthorized');
+        }
+
+        $clubType = strtolower($club->club_type ?? '');
+
+        if ($clubType === 'pathfinders') {
+            $validated = $request->validate([
+                'applicant_name' => 'required|string|max:255',
+                'birthdate' => 'required|date',
+                'grade' => 'nullable|string|max:50',
+                'mailing_address' => 'nullable|string|max:255',
+                'city' => 'nullable|string|max:255',
+                'state' => 'nullable|string|max:50',
+                'zip' => 'nullable|string|max:30',
+                'school' => 'nullable|string|max:255',
+                'cell_number' => 'nullable|string|max:50',
+                'email_address' => 'nullable|email|max:255',
+                'father_guardian_name' => 'required|string|max:255',
+                'father_guardian_email' => 'nullable|email|max:255',
+                'father_guardian_phone' => 'required|string|max:50',
+                'mother_guardian_name' => 'nullable|string|max:255',
+                'mother_guardian_email' => 'nullable|email|max:255',
+                'mother_guardian_phone' => 'nullable|string|max:50',
+                'pickup_authorized_people' => 'nullable|array',
+                'pickup_authorized_people.*' => 'string|max:255',
+                'consent_acknowledged' => 'nullable|boolean',
+                'photo_release' => 'nullable|boolean',
+                'health_history' => 'nullable|string',
+                'disabilities' => 'nullable|string',
+                'medication_allergies' => 'nullable|string',
+                'food_allergies' => 'nullable|string',
+                'dietary_considerations' => 'nullable|string',
+                'physical_restrictions' => 'nullable|string',
+                'immunization_notes' => 'nullable|string',
+                'current_medications' => 'nullable|string',
+                'physician_name' => 'nullable|string|max:255',
+                'physician_phone' => 'nullable|string|max:50',
+                'emergency_contact_name' => 'nullable|string|max:255',
+                'emergency_contact_phone' => 'nullable|string|max:50',
+                'insurance_provider' => 'nullable|string|max:255',
+                'insurance_number' => 'nullable|string|max:255',
+                'parent_guardian_signature' => 'nullable|string|max:255',
+                'signed_at' => 'nullable|date',
+            ]);
+
+            $validated['club_name'] = $club->club_name ?? null;
+            $validated['director_name'] = $club->director_name ?? null;
+            $validated['church_name'] = $club->church_name ?? null;
+
+            $member = MemberPathfinder::findOrFail($id);
+            $member->update($validated);
+
+            return redirect()->back()->with('success', 'Pathfinder member updated successfully.');
+        }
+
+        $validated = $request->validate([
+            'club_name' => 'required|string|max:255',
+            'director_name' => 'required|string|max:255',
+            'church_name' => 'required|string|max:255',
+            'applicant_name' => 'required|string|max:255',
+            'birthdate' => 'required|date',
+            'age' => 'required|integer|min:1|max:99',
+            'grade' => 'required|string|max:20',
+            'mailing_address' => 'required|string',
+            'cell_number' => 'required|string',
+            'emergency_contact' => 'required|string',
+            'investiture_classes' => 'nullable|array',
+            'allergies' => 'nullable|string',
+            'physical_restrictions' => 'nullable|string',
+            'health_history' => 'nullable|string',
+            'parent_name' => 'required|string|max:255',
+            'parent_cell' => 'required|string|max:255',
+            'home_address' => 'required|string',
+            'email_address' => 'required|email',
+            'signature' => 'required|string|max:255',
+        ]);
+
+        $validated['club_id'] = $club->id;
+        $validated['club_name'] = $club->club_name ?? $validated['club_name'];
+        $validated['director_name'] = $club->director_name ?? $validated['director_name'];
+        $validated['church_name'] = $club->church_name ?? $validated['church_name'];
+
+        $member = MemberAdventurer::findOrFail($id);
+        $member->update($validated);
+
+        return redirect()->back()->with('success', 'Adventurer member updated successfully.');
     }
 
     public function updateForParent(Request $request, $id)
@@ -244,6 +369,22 @@ class MemberAdventurerController extends Controller
         $outputPath = $exportService->generateMemberDoc($member, $outputDir);
 
         return response()->download($outputPath)->deleteFileAfterSend(true);
+    }
+
+    public function exportPathfinderPdf($id)
+    {
+        $member = MemberPathfinder::findOrFail($id);
+        $club = $member->club;
+
+        $pdf = Pdf::loadView('pdf.pathfinder_application', [
+            'member' => $member,
+            'club' => $club,
+            'generatedAt' => now()->toDateTimeString(),
+        ])->setPaper('letter', 'portrait');
+
+        $filename = 'pathfinder-application-' . Str::slug($member->applicant_name ?: 'member') . '.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function assignMember(Request $request)
@@ -473,13 +614,13 @@ class MemberAdventurerController extends Controller
                 return $m;
             });
 
-        $pathfinderRows = TempMemberPathfinder::whereIn('id', $tempPathfinderIds)->get()
+        $pathfinderRows = MemberPathfinder::whereIn('id', $tempPathfinderIds)->get()
             ->map(function ($row) use ($memberRows, $pathfinderAssignments) {
                 $memberRow = $memberRows->firstWhere('id_data', $row->id);
                 $memberId = optional($memberRow)->id;
                 $age = null;
-                if ($row->dob) {
-                    $age = Carbon::parse($row->dob)->age;
+                if ($row->birthdate) {
+                    $age = Carbon::parse($row->birthdate)->age;
                 }
 
                 $assignments = [];
@@ -510,23 +651,49 @@ class MemberAdventurerController extends Controller
                     'member_id' => $memberId,
                     'current_class_id' => optional($memberRow)->class_id,
                     'member_type' => 'temp_pathfinder',
-                    'applicant_name' => $row->nombre,
-                    'birthdate' => $row->dob,
+                    'applicant_name' => $row->applicant_name,
+                    'birthdate' => $row->birthdate,
                     'age' => $age,
-                    'grade' => null,
-                    'mailing_address' => null,
-                    'cell_number' => $row->phone,
-                    'emergency_contact' => null,
+                    'grade' => $row->grade,
+                    'mailing_address' => $row->mailing_address,
+                    'cell_number' => $row->cell_number,
+                    'emergency_contact' => $row->emergency_contact_name,
                     'investiture_classes' => [],
-                    'allergies' => null,
-                    'physical_restrictions' => null,
-                    'health_history' => null,
-                    'parent_name' => $row->father_name,
-                    'parent_cell' => $row->father_phone,
-                    'home_address' => null,
-                    'email_address' => $row->email,
-                    'signature' => null,
-                    'status' => 'active',
+                    'allergies' => collect([$row->medication_allergies, $row->food_allergies])->filter()->implode(' | ') ?: null,
+                    'physical_restrictions' => $row->physical_restrictions,
+                    'health_history' => $row->health_history,
+                    'parent_name' => $row->father_guardian_name ?: $row->mother_guardian_name,
+                    'parent_cell' => $row->father_guardian_phone ?: $row->mother_guardian_phone,
+                    'home_address' => $row->mailing_address,
+                    'email_address' => $row->email_address,
+                    'signature' => $row->parent_guardian_signature,
+                    'status' => $row->status ?? 'active',
+                    'city' => $row->city,
+                    'state' => $row->state,
+                    'zip' => $row->zip,
+                    'school' => $row->school,
+                    'father_guardian_name' => $row->father_guardian_name,
+                    'father_guardian_email' => $row->father_guardian_email,
+                    'father_guardian_phone' => $row->father_guardian_phone,
+                    'mother_guardian_name' => $row->mother_guardian_name,
+                    'mother_guardian_email' => $row->mother_guardian_email,
+                    'mother_guardian_phone' => $row->mother_guardian_phone,
+                    'pickup_authorized_people' => $row->pickup_authorized_people ?? [],
+                    'consent_acknowledged' => (bool) $row->consent_acknowledged,
+                    'photo_release' => (bool) $row->photo_release,
+                    'disabilities' => $row->disabilities,
+                    'medication_allergies' => $row->medication_allergies,
+                    'food_allergies' => $row->food_allergies,
+                    'dietary_considerations' => $row->dietary_considerations,
+                    'immunization_notes' => $row->immunization_notes,
+                    'current_medications' => $row->current_medications,
+                    'physician_name' => $row->physician_name,
+                    'physician_phone' => $row->physician_phone,
+                    'emergency_contact_name' => $row->emergency_contact_name,
+                    'emergency_contact_phone' => $row->emergency_contact_phone,
+                    'insurance_provider' => $row->insurance_provider,
+                    'insurance_number' => $row->insurance_number,
+                    'signed_at' => $row->signed_at,
                     'class_assignments' => $assignments,
                 ];
             });

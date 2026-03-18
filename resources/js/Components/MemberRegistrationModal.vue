@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 
-const props = defineProps(['show', 'clubs', 'selectedClub'])
+const props = defineProps(['show', 'clubs', 'selectedClub', 'editingMember'])
 const emit = defineEmits(['close', 'submitted'])
 
 const selectedClub = ref(props.selectedClub)
@@ -56,10 +56,48 @@ const fillClubFields = () => {
     }
 }
 
+const resetToDefaults = () => {
+    form.reset()
+    form.clearErrors()
+    showError.value = false
+    sameAsHomeAddress.value = false
+    fillClubFields()
+}
+
+const populateForEdit = (member) => {
+    if (!member) {
+        resetToDefaults()
+        return
+    }
+
+    fillClubFields()
+    form.applicant_name = member.applicant_name || ''
+    form.birthdate = member.birthdate ? String(member.birthdate).slice(0, 10) : ''
+    form.age = member.age ?? ''
+    form.grade = member.grade || ''
+    form.mailing_address = member.mailing_address || ''
+    form.cell_number = member.cell_number || ''
+    form.emergency_contact = member.emergency_contact || ''
+    form.investiture_classes = Array.isArray(member.investiture_classes) ? [...member.investiture_classes] : []
+    form.allergies = member.allergies || ''
+    form.physical_restrictions = member.physical_restrictions || ''
+    form.health_history = member.health_history || ''
+    form.parent_name = member.parent_name || ''
+    form.parent_cell = member.parent_cell || ''
+    form.home_address = member.home_address || ''
+    form.email_address = member.email_address || ''
+    form.signature = member.signature || ''
+}
+
 watch(() => props.selectedClub, () => {
     selectedClub.value = props.selectedClub
     fillClubFields()
 }, { immediate: true })
+
+watch(() => props.show, (isOpen) => {
+    if (!isOpen) return
+    populateForEdit(props.editingMember)
+})
 
 watch(() => form.birthdate, (newDate) => {
     if (newDate) {
@@ -79,7 +117,7 @@ watch(() => form.birthdate, (newDate) => {
 })
 
 const onSubmit = () => {
-    form.post('/members', {
+    const requestOptions = {
         preserveScroll: true,
         onSuccess: () => {
             emit('submitted')
@@ -89,7 +127,14 @@ const onSubmit = () => {
             console.error(errors)
             showError.value = errors
         }
-    })
+    }
+
+    if (props.editingMember?.id) {
+        form.put(`/members/${props.editingMember.id}`, requestOptions)
+        return
+    }
+
+    form.post('/members', requestOptions)
 }
 
 function formatPhoneNumber(value) {
@@ -116,16 +161,19 @@ function onParentCellNumberInput(event) {
 <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6 max-h-[90vh] overflow-y-auto">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold">Register New Adventurer Member</h2>
+            <h2 class="text-xl font-bold">{{ editingMember ? 'Editar Miembro Aventurero' : 'Register New Adventurer Member' }}</h2>
             <button @click="$emit('close')" class="text-red-500 hover:text-red-700 text-lg font-bold">&times;</button>
         </div>
 
         <form @submit.prevent="onSubmit" class="space-y-4">
             <div>
-                <label class="block mb-1">Select Club</label>
-                <select v-model="selectedClub" @change="fillClubFields" class="w-full p-2 border rounded">
-                    <option v-for="club in clubs" :key="club.id" :value="club">{{ club.club_name }}</option>
-                </select>
+                <label class="block mb-1">Selected Club</label>
+                <input
+                    :value="selectedClub ? `${selectedClub.club_name} (${selectedClub.club_type})` : ''"
+                    type="text"
+                    class="w-full p-2 border rounded bg-gray-50"
+                    readonly
+                />
             </div>
 
             <div><label>Applicant Name</label><input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" /></div>
@@ -171,7 +219,7 @@ function onParentCellNumberInput(event) {
             </div>
 
             <div class="flex justify-end">
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Submit</button>
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">{{ editingMember ? 'Guardar cambios' : 'Submit' }}</button>
             </div>
         </form>
     </div>

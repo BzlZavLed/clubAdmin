@@ -8,7 +8,7 @@ use App\Models\MemberAdventurer;
 use App\Models\User;
 use Illuminate\Http\Request;
 use App\Models\Member;
-use App\Models\TempMemberPathfinder;
+use App\Models\MemberPathfinder;
 use Carbon\Carbon;
 
 class ParentMemberController extends Controller
@@ -52,7 +52,7 @@ class ParentMemberController extends Controller
                 ->pluck('id_data')
                 ->all();
 
-            $emailMatchedTemps = TempMemberPathfinder::whereRaw('LOWER(email) = ?', [$parentEmail])
+            $emailMatchedTemps = MemberPathfinder::whereRaw('LOWER(email_address) = ?', [$parentEmail])
                 ->whereNotIn('id', $linkedTempIds)
                 ->get();
 
@@ -98,7 +98,7 @@ class ParentMemberController extends Controller
                 return $child;
             });
 
-        $pathfinderRows = TempMemberPathfinder::whereIn('id', $pathfinderIds)->get();
+        $pathfinderRows = MemberPathfinder::whereIn('id', $pathfinderIds)->get();
         $pathfinderChildren = $pathfinderRows->map(function ($row) use ($memberLinks, $clubMap) {
             $member = $memberLinks->firstWhere('id_data', $row->id);
             return [
@@ -107,21 +107,21 @@ class ParentMemberController extends Controller
                 'member_type' => 'temp_pathfinder',
                 'club_id' => $member?->club_id,
                 'club_name' => $member?->club_id ? ($clubMap[$member->club_id] ?? null) : null,
-                'applicant_name' => $row->nombre,
-                'birthdate' => $row->dob,
-                'age' => $row->dob ? Carbon::parse($row->dob)->age : null,
+                'applicant_name' => $row->applicant_name,
+                'birthdate' => $row->birthdate,
+                'age' => $row->birthdate ? Carbon::parse($row->birthdate)->age : null,
                 'grade' => null,
                 'mailing_address' => null,
-                'cell_number' => $row->phone,
+                'cell_number' => $row->cell_number,
                 'emergency_contact' => null,
                 'investiture_classes' => [],
                 'allergies' => null,
                 'physical_restrictions' => null,
                 'health_history' => null,
-                'parent_name' => $row->father_name,
-                'parent_cell' => $row->father_phone,
+                'parent_name' => $row->father_guardian_name,
+                'parent_cell' => $row->father_guardian_phone,
                 'home_address' => null,
-                'email_address' => $row->email,
+                'email_address' => $row->email_address,
                 'signature' => null,
                 'status' => 'active',
             ];
@@ -194,15 +194,15 @@ class ParentMemberController extends Controller
             });
 
         // Pathfinder temp: match on father_name OR email
-        $pathfinderCandidates = TempMemberPathfinder::query()
+        $pathfinderCandidates = MemberPathfinder::query()
             ->whereIn('club_id', $clubIds)
             ->whereNotIn('id', $linkedTempIds)
             ->where(function ($q) use ($parentName, $parentEmail) {
-                $q->whereRaw('LOWER(father_name) = ?', [$parentName])
-                    ->orWhereRaw('LOWER(email) = ?', [$parentEmail]);
+                $q->whereRaw('LOWER(father_guardian_name) = ?', [$parentName])
+                    ->orWhereRaw('LOWER(email_address) = ?', [$parentEmail]);
             })
             ->when($searchName !== '', function ($q) use ($searchName) {
-                $q->whereRaw('LOWER(nombre) LIKE ?', ['%' . $searchName . '%']);
+                $q->whereRaw('LOWER(applicant_name) LIKE ?', ['%' . $searchName . '%']);
             })
             ->limit(20)
             ->get()
@@ -210,7 +210,7 @@ class ParentMemberController extends Controller
                 return [
                     'member_type' => 'temp_pathfinder',
                     'id_data' => $row->id,
-                    'display_name' => $row->nombre,
+                    'display_name' => $row->applicant_name,
                     'club_id' => $row->club_id,
                     'detail' => 'Pathfinder (temp)',
                 ];
@@ -261,7 +261,7 @@ class ParentMemberController extends Controller
             $member->parent_id = $parent->id;
             $member->save();
         } else {
-            $exists = TempMemberPathfinder::findOrFail($data['id_data']);
+            $exists = MemberPathfinder::findOrFail($data['id_data']);
             $member = Member::firstOrCreate(
                 [
                     'type' => 'temp_pathfinder',
@@ -314,7 +314,7 @@ class ParentMemberController extends Controller
                 'parent_cell' => 'required|string|max:255',
             ]);
 
-            $tempMember = TempMemberPathfinder::findOrFail($id);
+            $tempMember = MemberPathfinder::findOrFail($id);
 
             $link = Member::where('type', 'temp_pathfinder')
                 ->where('id_data', $tempMember->id)
@@ -322,12 +322,12 @@ class ParentMemberController extends Controller
                 ->firstOrFail();
 
             $tempMember->update([
-                'nombre' => $validated['applicant_name'],
-                'dob' => $validated['birthdate'],
-                'phone' => $validated['cell_number'],
-                'email' => $validated['email_address'],
-                'father_name' => $validated['parent_name'],
-                'father_phone' => $validated['parent_cell'],
+                'applicant_name' => $validated['applicant_name'],
+                'birthdate' => $validated['birthdate'],
+                'cell_number' => $validated['cell_number'],
+                'email_address' => $validated['email_address'],
+                'father_guardian_name' => $validated['parent_name'],
+                'father_guardian_phone' => $validated['parent_cell'],
             ]);
 
             return redirect()->back()->with('success', 'Child updated.');
