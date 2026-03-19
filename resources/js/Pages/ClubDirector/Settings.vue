@@ -22,6 +22,7 @@ const props = defineProps({
 })
 
 const { showToast } = useGeneral()
+const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin')
 const selectedClubId = ref(props.selected_club_id || props.auth_user?.club_id || (props.clubs?.[0]?.id ?? ''))
 const inviteCode = ref(props.integration_config?.invite_code || '')
 const catalog = ref(
@@ -123,12 +124,15 @@ async function saveConfig() {
                         <h2 class="text-lg font-semibold text-gray-800">Integracion con mychurchadmin.net</h2>
                         <p class="text-sm text-gray-600">Usa un codigo de invitacion para obtener el catalogo y guardarlo para tu club.</p>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div v-if="canSelectClub" class="flex items-center gap-2">
                         <label class="text-sm text-gray-700">Club</label>
                         <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm">
                             <option value="">Selecciona un club</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
+                    </div>
+                    <div v-else class="text-sm text-gray-700">
+                        Club activo: <strong>{{ clubs.find(club => String(club.id) === String(selectedClubId))?.club_name || props.auth_user?.club_name || '—' }}</strong>
                     </div>
                 </div>
 

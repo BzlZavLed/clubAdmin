@@ -14,6 +14,32 @@ use Illuminate\Support\Collection;
 class ClubHelper
 {
     /**
+     * Clubs the user can operate on as full models.
+     */
+    public static function clubsForUser($user): Collection
+    {
+        if (!$user) {
+            return collect();
+        }
+
+        if (($user->profile_type ?? null) === 'superadmin') {
+            return Club::query()
+                ->orderBy('club_name')
+                ->get(['id', 'club_name', 'club_type', 'church_id', 'church_name', 'user_id']);
+        }
+
+        $clubIds = self::clubIdsForUser($user);
+        if ($clubIds->isEmpty()) {
+            return collect();
+        }
+
+        return Club::query()
+            ->whereIn('id', $clubIds)
+            ->orderBy('club_name')
+            ->get(['id', 'club_name', 'club_type', 'church_id', 'church_name', 'user_id']);
+    }
+
+    /**
      * Collect club ids the user can operate on: owned, pivot, explicit club_id.
      */
     public static function clubIdsForUser($user): Collection
@@ -50,6 +76,48 @@ class ClubHelper
             ->pluck('id')
             ->unique()
             ->values();
+    }
+
+    /**
+     * Resolve the active club context for a user.
+     */
+    public static function activeClubForUser($user): ?Club
+    {
+        if (!$user) {
+            return null;
+        }
+
+        if (($user->profile_type ?? null) === 'superadmin') {
+            $contextClubId = session('superadmin_context.club_id');
+
+            if ($contextClubId) {
+                return Club::query()->find($contextClubId, ['id', 'club_name', 'club_type', 'church_id', 'church_name', 'user_id']);
+            }
+
+            return null;
+        }
+
+        $clubs = self::clubsForUser($user);
+        if ($clubs->isEmpty()) {
+            return null;
+        }
+
+        $sessionClubId = session('club_context.club_id');
+        if ($sessionClubId) {
+            $sessionClub = $clubs->firstWhere('id', (int) $sessionClubId);
+            if ($sessionClub) {
+                return $sessionClub;
+            }
+        }
+
+        if ($user->club_id) {
+            $explicit = $clubs->firstWhere('id', (int) $user->club_id);
+            if ($explicit) {
+                return $explicit;
+            }
+        }
+
+        return $clubs->first();
     }
 
     /**

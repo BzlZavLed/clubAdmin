@@ -6,6 +6,7 @@ import { ArrowPathIcon, BanknotesIcon, ExclamationTriangleIcon } from '@heroicon
 import { fetchExpenses, createExpense, uploadExpenseReceipt, uploadReimbursementReceipt, markExpenseReimbursed } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { compressImage } from '@/Utils/imageCompression'
+import { useAuth } from '@/Composables/useAuth'
 
 const payToOptions = ref([])
 const expenses = ref([])
@@ -21,6 +22,13 @@ const reimbursePayToByExpense = ref({})
 const expensePage = ref(1)
 const expensePageSize = ref(10)
 const { showToast } = useGeneral()
+const { user } = useAuth()
+const canSelectClub = computed(() => user.value?.profile_type === 'superadmin')
+const activeClubName = computed(() =>
+    clubs.value.find(c => String(c.id) === String(form.club_id))?.club_name
+    || user.value?.club_name
+    || '—'
+)
 const MAX_RECEIPT_MB = 5
 const MAX_RECEIPT_BYTES = MAX_RECEIPT_MB * 1024 * 1024
 const MAX_RECEIPT_DIM = 1600
@@ -367,9 +375,16 @@ const markReimbursed = async (expense) => {
                 <div class="mt-4 grid gap-4 md:grid-cols-2">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Club</label>
-                        <select v-model="form.club_id" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                        <select v-if="canSelectClub" v-model="form.club_id" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
                         </select>
+                        <input
+                            v-else
+                            :value="activeClubName"
+                            type="text"
+                            readonly
+                            class="mt-1 w-full rounded border-gray-300 bg-gray-50 py-2 text-sm text-gray-700"
+                        />
                         <div v-if="form.errors.club_id" class="mt-1 text-sm text-red-600">{{ form.errors.club_id }}</div>
                     </div>
 

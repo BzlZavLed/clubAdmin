@@ -1,6 +1,7 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ref, computed, onMounted, nextTick } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import MemberRegistrationModal from '@/Components/MemberRegistrationModal.vue'
 import PathfinderMemberRegistrationModal from '@/Components/PathfinderMemberRegistrationModal.vue'
 import DeleteMemberModal from '@/Components/DeleteMemberModal.vue'
@@ -17,7 +18,6 @@ import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import { formatDate } from '@/Helpers/general'
 import {
-    fetchClubsByIds,
     fetchMembersByClub,
     fetchClubClasses,
     assignMemberToClass,
@@ -31,6 +31,9 @@ import {
 // ✅ Auth context
 const { user, userClubIds } = useAuth()
 const { toast, showToast } = useGeneral()
+const page = usePage()
+const superadminContext = computed(() => page.props.auth?.superadmin_context ?? null)
+const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
 
 // State
 const clubs = ref([])
@@ -61,7 +64,25 @@ const inactiveTabClass = 'text-gray-500 hover:text-gray-700 pb-2'
 // Fetch clubs
 const fetchClubs = async () => {
     try {
-        clubs.value = await fetchClubsByIds(user.value.clubs.map(club => club.id))
+        clubs.value = Array.isArray(user.value?.clubs) ? user.value.clubs : []
+
+        if (!clubs.value.length) {
+            selectedClub.value = null
+            members.value = []
+            clubClasses.value = []
+            return
+        }
+
+        const contextClubId = superadminContext.value?.club_id
+        const preferredClub = contextClubId
+            ? clubs.value.find(club => String(club.id) === String(contextClubId))
+            : null
+
+        selectedClub.value = preferredClub || selectedClub.value || clubs.value[0]
+
+        if (selectedClub.value?.id) {
+            await onClubChange()
+        }
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
         showToast('Error al cargar clubes', 'error')
@@ -372,7 +393,7 @@ onMounted(fetchClubs)
             </div>
 
             <!-- Club Selector -->
-            <div class="max-w-xl mb-6">
+            <div v-if="isSuperadmin" class="max-w-xl mb-6">
                 <label class="block mb-1 font-medium text-gray-700">Selecciona un club</label>
                 <select v-model="selectedClub" @change="onClubChange" class="w-full p-2 border rounded">
                     <option disabled value="">-- Selecciona un club --</option>
@@ -380,6 +401,9 @@ onMounted(fetchClubs)
                         {{ club.club_name }} ({{ club.club_type }})
                     </option>
                 </select>
+            </div>
+            <div v-else-if="selectedClub" class="mb-6 rounded border bg-white px-4 py-3 text-sm text-gray-700">
+                Club activo: <strong>{{ selectedClub.club_name }}</strong>
             </div>
 
             <!-- Tab 1: Members Table -->

@@ -130,21 +130,15 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function () {
     Route::get('/super-admin/dashboard', function () {
-        $selectedChurchId = session('superadmin_context.church_id');
         $selectedClubId = session('superadmin_context.club_id');
 
         return Inertia::render('SuperAdmin/Dashboard', [
             'auth_user' => auth()->user(),
-            'churches' => Church::query()
-                ->select('id', 'church_name')
-                ->orderBy('church_name')
-                ->get(),
             'clubs' => Club::query()
                 ->select('id', 'club_name', 'church_id')
                 ->orderBy('club_name')
                 ->get(),
             'context' => [
-                'church_id' => $selectedChurchId ? (int) $selectedChurchId : null,
                 'club_id' => $selectedClubId ? (int) $selectedClubId : null,
             ],
         ]);
@@ -373,6 +367,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     Route::get('/church/{churchId}/clubs', [ClubController::class, 'getClubsByChurchId'])->name('church.clubs');
     Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
+    Route::post('/clubs/{club}/attach-director', [ClubController::class, 'attachDirector'])->name('club.attach-director');
+    Route::post('/clubs/{club}/detach-director', [ClubController::class, 'detachDirector'])->name('club.detach-director');
 
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
@@ -534,6 +530,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/club-personal/payments', [ClubPaymentController::class, 'index'])
         ->name('club.payments.index');
     Route::post('/club-personal/payments', [ClubPaymentController::class, 'store'])->name('club.payments.store');
+    Route::put('/club-personal/payments/{payment}', [ClubPaymentController::class, 'update'])->name('club.payments.update');
 
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 

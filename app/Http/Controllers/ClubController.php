@@ -13,9 +13,33 @@ use App\Models\Staff;
 use App\Models\StaffAdventurer;
 use App\Models\Account;
 use App\Support\ClubHelper;
+use Illuminate\Http\Exceptions\HttpResponseException;
 class ClubController extends Controller
 {
     use AuthorizesRequests;
+
+    protected function enforceChurchClubTypeRule(int $churchId, string $clubType, ?int $ignoreClubId = null): void
+    {
+        if (!in_array($clubType, ['adventurers', 'pathfinders'], true)) {
+            return;
+        }
+
+        $query = Club::query()
+            ->withoutGlobalScopes()
+            ->where('church_id', $churchId)
+            ->where('club_type', $clubType)
+            ->where('status', 'active');
+
+        if ($ignoreClubId) {
+            $query->where('id', '!=', $ignoreClubId);
+        }
+
+        if ($query->exists()) {
+            throw new HttpResponseException(response()->json([
+                'message' => 'Esta iglesia ya tiene un club activo de este tipo.',
+            ], 422));
+        }
+    }
 
     public function storeBySuperadmin(Request $request)
     {
@@ -36,6 +60,8 @@ class ClubController extends Controller
 
         $church = Church::findOrFail($validated['church_id']);
         $director = User::findOrFail($validated['director_user_id']);
+
+        $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type']);
 
         if ($director->profile_type !== 'club_director') {
             return back()->withErrors([
@@ -90,6 +116,8 @@ class ClubController extends Controller
 
         $church = Church::findOrFail($validated['church_id']);
         $director = User::findOrFail($validated['director_user_id']);
+
+        $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type'], (int) $club->id);
 
         if ($director->profile_type !== 'club_director') {
             return back()->withErrors([
@@ -173,6 +201,20 @@ class ClubController extends Controller
         if (!in_array(auth()->user()->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403, 'Only club directors or superadmin can create a club.');
         }
+
+        $authUser = auth()->user();
+        if ($authUser?->profile_type === 'club_director') {
+            $ownedClubCount = Club::query()
+                ->where('user_id', $authUser->id)
+                ->count();
+
+            if ($ownedClubCount >= 2) {
+                return response()->json([
+                    'message' => 'Un director no puede tener mas de 2 clubes asignados.',
+                ], 422);
+            }
+        }
+
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
             'church_name' => 'required|string|max:255',
@@ -184,6 +226,8 @@ class ClubController extends Controller
             'club_type' => 'required|in:adventurers,pathfinders,master_guide',
             'church_id' => 'required|exists:churches,id',
         ]);
+
+        $this->enforceChurchClubTypeRule((int) $validated['church_id'], $validated['club_type']);
 
         $club = Club::create(array_merge($validated, [
             'user_id' => auth()->id(),
@@ -372,12 +416,177 @@ class ClubController extends Controller
             ['status' => 'active', 'updated_at' => now()]
         );
 
+        $club = Club::query()
+            ->where('id', (int) $validated['club_id'])
+            ->firstOrFail(['id', 'club_name', 'church_id', 'church_name']);
+
+        $request->session()->put('club_context.club_id', $club->id);
+        $request->session()->put('club_context.church_id', $club->church_id);
+
         $user->club_id = $validated['club_id'];
+        $user->church_id = $club->church_id;
+        $user->church_name = $club->church_name;
         $user->save();
 
         $user->load(['clubs.clubClasses', 'church', 'clubs.staffAdventurers']);
 
-        return response()->json(['message' => 'Club selected successfully.']);
+        return response()->json([
+            'message' => 'Club selected successfully.',
+            'context' => [
+                'club_id' => $club->id,
+                'club_name' => $club->club_name,
+                'church_id' => $club->church_id,
+            ],
+        ]);
+    }
+
+    public function attachDirector(Request $request, Club $club)
+    {
+        $user = $request->user();
+        if (!$user || !in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
+            abort(403, 'Only club directors or superadmin can attach to a club.');
+        }
+
+        $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $targetUser = User::findOrFail((int) $request->input('user_id'));
+        if ($user->profile_type !== 'superadmin' && (int) $user->id !== (int) $targetUser->id) {
+            abort(403, 'Not allowed to attach another user.');
+        }
+
+        if ($targetUser->profile_type !== 'club_director') {
+            return response()->json([
+                'message' => 'Solo usuarios con perfil club_director pueden adjuntarse a clubes.',
+            ], 422);
+        }
+
+        if ($targetUser->church_id && (int) $targetUser->church_id !== (int) $club->church_id) {
+            return response()->json([
+                'message' => 'Solo puedes adjuntarte a clubes de tu misma iglesia.',
+            ], 422);
+        }
+
+        $currentClubCount = DB::table('club_user')
+            ->where('user_id', $targetUser->id)
+            ->where('status', 'active')
+            ->count();
+
+        if ($currentClubCount >= 2 && !DB::table('club_user')->where('user_id', $targetUser->id)->where('club_id', $club->id)->exists()) {
+            return response()->json([
+                'message' => 'Un director no puede tener mas de 2 clubes asignados.',
+            ], 422);
+        }
+
+        DB::table('club_user')->updateOrInsert(
+            ['user_id' => $targetUser->id, 'club_id' => $club->id],
+            ['status' => 'active', 'updated_at' => now(), 'created_at' => now()]
+        );
+
+        if ((int) ($targetUser->club_id ?? 0) !== (int) $club->id) {
+            $targetUser->club_id = $club->id;
+            $targetUser->church_id = $club->church_id;
+            $targetUser->church_name = $club->church_name;
+            $targetUser->save();
+        }
+
+        $request->session()->put('club_context.club_id', $club->id);
+        $request->session()->put('club_context.church_id', $club->church_id);
+
+        return response()->json([
+            'message' => 'Director adjuntado al club correctamente.',
+            'context' => [
+                'club_id' => $club->id,
+                'club_name' => $club->club_name,
+                'church_id' => $club->church_id,
+            ],
+        ]);
+    }
+
+    public function detachDirector(Request $request, Club $club)
+    {
+        $user = $request->user();
+        if (!$user || !in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
+            abort(403, 'Only club directors or superadmin can detach from a club.');
+        }
+
+        $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $targetUser = User::findOrFail((int) $request->input('user_id'));
+        if ($user->profile_type !== 'superadmin' && (int) $user->id !== (int) $targetUser->id) {
+            abort(403, 'Not allowed to detach another user.');
+        }
+
+        $isLinked = DB::table('club_user')
+            ->where('user_id', $targetUser->id)
+            ->where('club_id', $club->id)
+            ->where('status', 'active')
+            ->exists();
+
+        if (!$isLinked) {
+            return response()->json([
+                'message' => 'Este director no esta vinculado activamente a este club.',
+            ], 422);
+        }
+
+        $activeDirectors = User::query()
+            ->select('users.id', 'users.name')
+            ->join('club_user', 'club_user.user_id', '=', 'users.id')
+            ->where('club_user.club_id', $club->id)
+            ->where('club_user.status', 'active')
+            ->where('users.profile_type', 'club_director')
+            ->where('users.status', 'active')
+            ->get();
+
+        if ($activeDirectors->count() <= 1) {
+            return response()->json([
+                'message' => 'No puedes desvincularte hasta que otro director este vinculado a este club.',
+            ], 422);
+        }
+
+        DB::table('club_user')
+            ->where('user_id', $targetUser->id)
+            ->where('club_id', $club->id)
+            ->delete();
+
+        $replacementDirector = $activeDirectors
+            ->firstWhere('id', '!=', $targetUser->id);
+
+        if ((int) $club->user_id === (int) $targetUser->id && $replacementDirector) {
+            $club->user_id = $replacementDirector->id;
+            $club->director_name = $replacementDirector->name;
+            $club->save();
+        }
+
+        $remainingClubIds = DB::table('club_user')
+            ->where('user_id', $targetUser->id)
+            ->where('status', 'active')
+            ->pluck('club_id');
+
+        $remainingClub = $remainingClubIds->isNotEmpty()
+            ? Club::query()->whereIn('id', $remainingClubIds)->orderBy('club_name')->first(['id', 'church_id', 'church_name'])
+            : null;
+
+        $targetUser->club_id = $remainingClub?->id;
+        $targetUser->church_id = $remainingClub?->church_id;
+        $targetUser->church_name = $remainingClub?->church_name;
+        $targetUser->save();
+
+        if ((int) ($request->session()->get('club_context.club_id') ?? 0) === (int) $club->id) {
+            $request->session()->put('club_context.club_id', $remainingClub?->id);
+            $request->session()->put('club_context.church_id', $remainingClub?->church_id);
+        }
+
+        return response()->json([
+            'message' => 'Director desvinculado del club correctamente.',
+            'context' => [
+                'club_id' => $remainingClub?->id,
+                'church_id' => $remainingClub?->church_id,
+            ],
+        ]);
     }
 
     /**

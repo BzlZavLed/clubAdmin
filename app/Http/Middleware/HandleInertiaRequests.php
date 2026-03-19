@@ -8,6 +8,7 @@ use App\Models\Staff;
 use App\Models\ClubClass;
 use App\Models\Club;
 use App\Models\Church;
+use App\Support\ClubHelper;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -62,18 +63,24 @@ class HandleInertiaRequests extends Middleware
         }
 
         $isSuperadmin = $user?->profile_type === 'superadmin';
-        $effectiveChurchId = $isSuperadmin
+        $availableClubs = $user ? ClubHelper::clubsForUser($user) : collect();
+        $activeClub = $user ? ClubHelper::activeClubForUser($user) : null;
+        $effectiveClubId = $activeClub?->id ?: ($isSuperadmin ? $request->session()->get('superadmin_context.club_id') : ($request->session()->get('club_context.club_id') ?: $user?->club_id));
+        $effectiveChurchId = $activeClub?->church_id ?: ($isSuperadmin
             ? $request->session()->get('superadmin_context.church_id')
-            : $user?->church_id;
-        $effectiveClubId = $isSuperadmin
-            ? $request->session()->get('superadmin_context.club_id')
-            : $user?->club_id;
+            : ($request->session()->get('club_context.church_id') ?: $user?->church_id));
 
         $effectiveChurch = $effectiveChurchId
             ? Church::query()->where('id', $effectiveChurchId)->first(['id', 'church_name'])
             : null;
-        $effectiveClub = $effectiveClubId
-            ? Club::query()->where('id', $effectiveClubId)->first(['id', 'club_name', 'church_id'])
+        $effectiveClub = $activeClub ?: ($effectiveClubId
+            ? Club::query()->where('id', $effectiveClubId)->first(['id', 'club_name', 'club_type', 'church_id', 'church_name'])
+            : null);
+        $primaryDirectorClub = $user && in_array($user->profile_type, ['club_director', 'superadmin'], true)
+            ? Club::query()
+                ->where('user_id', $user->id)
+                ->orderBy('club_name')
+                ->first(['id', 'club_name', 'club_type', 'church_id', 'church_name'])
             : null;
 
         return array_merge(parent::share($request), [
@@ -88,15 +95,17 @@ class HandleInertiaRequests extends Middleware
                         'church_name' => $effectiveChurch?->church_name ?: $user->church_name,
                         'club_id' => $effectiveClubId ?: $user->club_id,
                         'club_name' => $effectiveClub?->club_name ?: null,
+                        'club_type' => $effectiveClub?->club_type ?: null,
                         'pastor_name' => optional($user->church)->pastor_name,
                         'conference_name' => optional($user->church)->conference,
                         'assigned_classes' => $assignedClasses->values(),
                         'assigned_class_id' => $assignedClassId,
                         'assigned_class_name' => $assignedClassName,
-                        'clubs' => $user->clubs->map(fn($club) => [
+                        'clubs' => $availableClubs->map(fn($club) => [
                             'id' => $club->id,
                             'club_name' => $club->club_name,
                             'club_type' => $club->club_type,
+                            'church_id' => $club->church_id,
                             'church_name' => $club->church_name,
                         ]),
                         'staff' => $staffRecord ? [
@@ -109,6 +118,37 @@ class HandleInertiaRequests extends Middleware
                         ] : null,
                     ]
                     : null,
+                'active_club' => fn() => $effectiveClub ? [
+                    'id' => $effectiveClub->id,
+                    'club_name' => $effectiveClub->club_name,
+                    'club_type' => $effectiveClub->club_type,
+                    'church_id' => $effectiveClub->church_id,
+                    'church_name' => $effectiveClub->church_name,
+                ] : null,
+                'active_church' => fn() => $effectiveChurch ? [
+                    'id' => $effectiveChurch->id,
+                    'church_name' => $effectiveChurch->church_name,
+                ] : null,
+                'primary_director_club' => fn() => $primaryDirectorClub ? [
+                    'id' => $primaryDirectorClub->id,
+                    'club_name' => $primaryDirectorClub->club_name,
+                    'club_type' => $primaryDirectorClub->club_type,
+                    'church_id' => $primaryDirectorClub->church_id,
+                    'church_name' => $primaryDirectorClub->church_name,
+                ] : null,
+                'available_clubs' => fn() => $availableClubs->map(fn($club) => [
+                    'id' => $club->id,
+                    'club_name' => $club->club_name,
+                    'club_type' => $club->club_type,
+                    'church_id' => $club->church_id,
+                    'church_name' => $club->church_name,
+                ])->values(),
+                'club_context' => fn() => !$isSuperadmin ? [
+                    'church_id' => $effectiveChurchId ? (int) $effectiveChurchId : null,
+                    'church_name' => $effectiveChurch?->church_name,
+                    'club_id' => $effectiveClubId ? (int) $effectiveClubId : null,
+                    'club_name' => $effectiveClub?->club_name,
+                ] : null,
                 'is_in_club' => fn() => session('is_in_club', false),
                 'user_club_ids' => fn() => session('user_club_ids', []),
                 'superadmin_context' => fn() => $isSuperadmin ? [
@@ -116,6 +156,13 @@ class HandleInertiaRequests extends Middleware
                     'church_name' => $effectiveChurch?->church_name,
                     'club_id' => $effectiveClubId ? (int) $effectiveClubId : null,
                     'club_name' => $effectiveClub?->club_name,
+                    'available_clubs' => $availableClubs->map(fn($club) => [
+                        'id' => $club->id,
+                        'club_name' => $club->club_name,
+                        'club_type' => $club->club_type,
+                        'church_id' => $club->church_id,
+                        'church_name' => $club->church_name,
+                    ])->values(),
                 ] : null,
             ],
         ]);

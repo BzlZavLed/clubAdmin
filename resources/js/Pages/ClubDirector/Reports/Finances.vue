@@ -4,6 +4,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { FunnelIcon, ArrowPathIcon } from '@heroicons/vue/24/outline'
 import axios from 'axios'
 import { fetchFinancialReportBootstrap } from '@/Services/api'
+import { useAuth } from '@/Composables/useAuth'
 
 // ─────────────────────────────────────
 // UI / Filter state
@@ -35,6 +36,8 @@ const staff = ref([])        // [{ id, name }]
 const scopeTypes = ref([])   // catalog: [{ value, label }]
 const payTo = ref([])        // catalog: [{ value, label }]
 const loadError = ref(null)
+const { user } = useAuth()
+const canSelectClub = computed(() => user.value?.profile_type === 'superadmin')
 
 // ─────────────────────────────────────
 /** Helpers */
@@ -321,12 +324,15 @@ watch(selectedClubId, async (id, old) => {
             <header class="pt-5 pb-3 flex items-center gap-3">
                 <FunnelIcon class="h-6 w-6 text-gray-700" />
                 <h1 class="text-lg font-semibold text-gray-900">Reporte financiero</h1>
-                <div class="ml-auto flex items-center gap-2 text-sm">
+                <div v-if="canSelectClub" class="ml-auto flex items-center gap-2 text-sm">
                     <label class="text-gray-700">Club:</label>
                     <select v-model="selectedClubId"
                         class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
                         <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
                     </select>
+                </div>
+                <div v-else class="ml-auto text-sm text-gray-700">
+                    Club: <strong>{{ clubs.find(c => String(c.id) === String(selectedClubId))?.club_name || '—' }}</strong>
                 </div>
             </header>
 

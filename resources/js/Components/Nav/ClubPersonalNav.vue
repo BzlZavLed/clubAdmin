@@ -29,7 +29,7 @@ const menuItems = computed(() => [
 
 const clubSubItems = computed(() => [
     { name: tr('Reporte de asistencia', 'Attendance Report'), href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
-    { name: tr('Pagos', 'Payments'), href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
+    { name: tr('Ingresos', 'Income'), href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
     { name: tr('Plan de trabajo', 'Workplan'), href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
     { name: tr('Requisitos de investidura', 'Investiture Requirements'), href: '/club-personal/investiture-requirements', route: 'club.personal.investiture-requirements', icon: ChartBarIcon },
 ])

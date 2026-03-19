@@ -17,6 +17,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
+use Illuminate\Http\JsonResponse;
 
 class ClubPaymentController extends Controller
 {
@@ -174,7 +175,7 @@ class ClubPaymentController extends Controller
 
         // Inertia response (point to your page component)
         return Inertia::render('ClubPersonal/Payments', [
-            'auth_user' => ['id' => $user->id, 'name' => $user->name],
+            'auth_user' => ['id' => $user->id, 'name' => $user->name, 'profile_type' => $user->profile_type],
             'user' => $user,
             'clubs' => Club::all(['id', 'club_name']),
             'staff' => $staff ?? [],
@@ -312,7 +313,7 @@ class ClubPaymentController extends Controller
         }
 
         return Inertia::render('ClubDirector/Payments', [
-            'auth_user' => ['id' => $user->id, 'name' => $user->name],
+            'auth_user' => ['id' => $user->id, 'name' => $user->name, 'profile_type' => $user->profile_type],
             'user' => $user,
             'club' => ['id' => $club->id, 'club_name' => $club->club_name],
             'clubs' => $clubsForUser,
@@ -491,6 +492,126 @@ class ClubPaymentController extends Controller
         return response()->json(['message' => 'Payment recorded', 'data' => $payment], 201);
     }
 
+    public function update(Request $request, Payment $payment): JsonResponse
+    {
+        $user = $request->user();
+        if (!in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
+            return response()->json(['message' => 'Solo directores o superadmin pueden editar pagos registrados.'], 403);
+        }
+
+        $allowedClubIds = ClubHelper::clubIdsForUser($user);
+        if (!$allowedClubIds->contains((int) $payment->club_id)) {
+            abort(403, 'You cannot edit payments for this club.');
+        }
+
+        $validated = $request->validate([
+            'amount_paid' => ['required', 'numeric', 'min:0.01'],
+            'payment_date' => ['required', 'date'],
+            'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'initial'])],
+            'zelle_phone' => ['nullable', 'string', 'max:32'],
+            'check_image' => ['nullable', 'image', 'max:4096'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        if ($validated['payment_type'] === 'zelle' && empty($validated['zelle_phone'])) {
+            return response()->json(['message' => 'Zelle payments require a phone number.'], 422);
+        }
+
+        $concept = $payment->payment_concept_id
+            ? PaymentConcept::query()->find($payment->payment_concept_id)
+            : null;
+
+        $expected = $payment->expected_amount !== null ? (float) $payment->expected_amount : ($concept?->amount !== null ? (float) $concept->amount : null);
+        $newAmount = (float) $validated['amount_paid'];
+
+        if ($expected !== null && $expected > 0) {
+            $otherPaid = Payment::query()
+                ->where('club_id', $payment->club_id)
+                ->where('payment_concept_id', $payment->payment_concept_id)
+                ->where('id', '!=', $payment->id)
+                ->when($payment->member_id, fn ($q) => $q->where('member_id', $payment->member_id))
+                ->when($payment->staff_id, fn ($q) => $q->where('staff_id', $payment->staff_id))
+                ->sum('amount_paid');
+
+            $maxAllowed = max($expected - (float) $otherPaid, 0.0);
+            if ($newAmount > $maxAllowed) {
+                return response()->json([
+                    'errors' => [
+                        'amount_paid' => ['El monto excede el saldo pendiente para este concepto.'],
+                    ],
+                ], 422);
+            }
+        }
+
+        $oldAmount = (float) $payment->amount_paid;
+        $oldCheckImagePath = $payment->check_image_path;
+        $zellePhone = $validated['payment_type'] === 'zelle' ? $validated['zelle_phone'] : null;
+        $nextCheckImagePath = $payment->check_image_path;
+        $deleteOldCheckImage = false;
+
+        if ($validated['payment_type'] !== 'check') {
+            $nextCheckImagePath = null;
+            $deleteOldCheckImage = !empty($payment->check_image_path);
+        } elseif ($request->hasFile('check_image')) {
+            $nextCheckImagePath = $request->file('check_image')->store('payments/checks', 'public');
+            $deleteOldCheckImage = !empty($payment->check_image_path) && $payment->check_image_path !== $nextCheckImagePath;
+        }
+
+        $account = $payment->account;
+        if (!$account) {
+            $account = Account::firstOrCreate(
+                ['club_id' => $payment->club_id, 'pay_to' => $payment->pay_to ?: 'club_budget'],
+                ['label' => Str::title(str_replace('_', ' ', $payment->pay_to ?: 'club_budget')), 'balance' => 0]
+            );
+        }
+
+        DB::transaction(function () use ($payment, $validated, $newAmount, $zellePhone, $nextCheckImagePath, $oldAmount, $account, $expected) {
+            $payment->fill([
+                'amount_paid' => $newAmount,
+                'payment_date' => $validated['payment_date'],
+                'payment_type' => $validated['payment_type'],
+                'zelle_phone' => $zellePhone,
+                'check_image_path' => $nextCheckImagePath,
+                'notes' => $validated['notes'] ?? null,
+                'expected_amount' => $expected,
+            ]);
+            $payment->save();
+
+            $delta = round($newAmount - $oldAmount, 2);
+            if ($delta > 0) {
+                $account->increment('balance', $delta);
+            } elseif ($delta < 0) {
+                $account->decrement('balance', abs($delta));
+            }
+        });
+
+        if ($deleteOldCheckImage && $oldCheckImagePath) {
+            try {
+                Storage::disk('public')->delete($oldCheckImagePath);
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $this->recalculatePaymentBalances($payment->fresh());
+
+        $payment = $payment->fresh();
+        $payment->load([
+            'member:id,type,id_data',
+            'staff:id,type,id_data,user_id',
+            'staff.user:id,name',
+            'concept:id,concept,amount',
+            'account:id,club_id,pay_to,label',
+            'receivedBy:id,name',
+        ]);
+
+        $detailMember = ClubHelper::memberDetail($payment->member);
+        $detailStaff = ClubHelper::staffDetail($payment->staff);
+        $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
+        $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
+
+        return response()->json(['message' => 'Payment updated', 'data' => $payment]);
+    }
+
 
     /**
      * Helper to pull the active club from the session/user.
@@ -504,5 +625,32 @@ class ClubPaymentController extends Controller
 
         // Placeholder: adjust to your app
         return Club::where('id', auth()->user()->club_id)->firstOrFail();
+    }
+
+    protected function recalculatePaymentBalances(Payment $payment): void
+    {
+        if (!$payment->payment_concept_id || $payment->expected_amount === null) {
+            $payment->update(['balance_due_after' => null]);
+            return;
+        }
+
+        $expected = (float) $payment->expected_amount;
+        $runningPaid = 0.0;
+
+        Payment::query()
+            ->where('club_id', $payment->club_id)
+            ->where('payment_concept_id', $payment->payment_concept_id)
+            ->when($payment->member_id, fn ($q) => $q->where('member_id', $payment->member_id))
+            ->when($payment->staff_id, fn ($q) => $q->where('staff_id', $payment->staff_id))
+            ->orderBy('payment_date')
+            ->orderBy('id')
+            ->get()
+            ->each(function (Payment $row) use (&$runningPaid, $expected) {
+                $runningPaid += (float) $row->amount_paid;
+                $row->update([
+                    'expected_amount' => $expected,
+                    'balance_due_after' => max($expected - $runningPaid, 0.0),
+                ]);
+            });
     }
 }

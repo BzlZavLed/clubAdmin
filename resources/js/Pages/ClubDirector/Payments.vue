@@ -11,7 +11,7 @@ import {
     ArrowPathIcon,
     UserGroupIcon
 } from '@heroicons/vue/24/outline'
-import { createClubPayment } from '@/Services/api'
+import { createClubPayment, updateClubPayment } from '@/Services/api'
 
 const props = defineProps({
     auth_user: { type: Object, required: true },
@@ -26,6 +26,8 @@ const props = defineProps({
     payment_types: { type: Array, required: true },
     prefill: { type: Object, default: () => ({}) },
 })
+const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin')
+const canEditPayments = computed(() => ['club_director', 'superadmin'].includes(props.auth_user?.profile_type))
 const allowedClubs = computed(() => {
     const userClubId = props.auth_user?.club_id
         ? Number(props.auth_user.club_id)
@@ -143,6 +145,30 @@ const form = useForm({
     check_image: null,
     notes: '',
 })
+
+const editForm = useForm({
+    amount_paid: '',
+    payment_date: new Date().toISOString().slice(0, 10),
+    payment_type: 'cash',
+    zelle_phone: '',
+    check_image: null,
+    notes: '',
+})
+const editingPaymentId = ref(null)
+const editCheckPreviewUrl = ref(null)
+const createAmountNumber = computed(() => {
+    if (form.amount_paid === '' || form.amount_paid === null) return null
+    const parsed = Number(form.amount_paid)
+    return Number.isFinite(parsed) ? parsed : null
+})
+const showCreateZeroWarning = computed(() => createAmountNumber.value !== null && createAmountNumber.value <= 0)
+const editAmountNumber = computed(() => {
+    if (editForm.amount_paid === '' || editForm.amount_paid === null) return null
+    const parsed = Number(editForm.amount_paid)
+    return Number.isFinite(parsed) ? parsed : null
+})
+const showEditZeroWarning = computed(() => editAmountNumber.value !== null && editAmountNumber.value <= 0)
+const editingPayment = computed(() => (props.payments || []).find(p => Number(p.id) === Number(editingPaymentId.value)) || null)
 
 watch(selectedConceptId, (id) => {
     if (customConceptMode.value) return
@@ -288,6 +314,14 @@ watch(() => form.payment_type, (t) => {
     }
 })
 
+watch(() => editForm.payment_type, (t) => {
+    if (t !== 'zelle') editForm.zelle_phone = ''
+    if (t !== 'check') {
+        editForm.check_image = null
+        editCheckPreviewUrl.value = editingPayment.value?.check_image_path ? `/storage/${editingPayment.value.check_image_path}` : null
+    }
+})
+
 // File handling
 const checkPreviewUrl = ref(null)
 const onCheckFileChange = (e) => {
@@ -296,9 +330,19 @@ const onCheckFileChange = (e) => {
     checkPreviewUrl.value = file ? URL.createObjectURL(file) : null
 }
 
+const onEditCheckFileChange = (e) => {
+    const file = e.target.files?.[0]
+    editForm.check_image = file || null
+    editCheckPreviewUrl.value = file ? URL.createObjectURL(file) : null
+}
+
 const submitting = ref(false)
 const submit = async () => {
     form.clearErrors()
+    if (createAmountNumber.value !== null && createAmountNumber.value <= 0) {
+        form.setError('amount_paid', 'No se recomienda registrar pagos en 0.00. Corrige el monto antes de guardar.')
+        return
+    }
     if (!form.club_id && props.clubs?.length) {
         form.club_id = props.clubs[0].id
     }
@@ -364,6 +408,50 @@ const submit = async () => {
     }
 }
 
+const startEditPayment = (payment) => {
+    editingPaymentId.value = payment.id
+    editCheckPreviewUrl.value = payment.check_image_path ? `/storage/${payment.check_image_path}` : null
+    editForm.clearErrors()
+    editForm.amount_paid = String(payment.amount_paid ?? '')
+    editForm.payment_date = payment.payment_date ? String(payment.payment_date).slice(0, 10) : new Date().toISOString().slice(0, 10)
+    editForm.payment_type = payment.payment_type || 'cash'
+    editForm.zelle_phone = payment.zelle_phone || ''
+    editForm.check_image = null
+    editForm.notes = payment.notes || ''
+}
+
+const cancelEditPayment = () => {
+    editingPaymentId.value = null
+    editCheckPreviewUrl.value = null
+    editForm.reset()
+    editForm.clearErrors()
+}
+
+const submitEditPayment = async () => {
+    if (!editingPaymentId.value) return
+    editForm.clearErrors()
+    if (editAmountNumber.value !== null && editAmountNumber.value <= 0) {
+        editForm.setError('amount_paid', 'No se recomienda registrar pagos en 0.00. Corrige el monto antes de guardar.')
+        return
+    }
+
+    try {
+        await updateClubPayment(editingPaymentId.value, editForm.data())
+        cancelEditPayment()
+        router.reload({ only: ['payments'] })
+    } catch (err) {
+        if (err?.response?.status === 422) {
+            const errs = err.response.data.errors || {}
+            Object.entries(errs).forEach(([field, messages]) => {
+                editForm.setError(field, Array.isArray(messages) ? messages[0] : messages)
+            })
+        } else {
+            console.error(err)
+            editForm.setError('form', 'Error inesperado. Intenta de nuevo.')
+        }
+    }
+}
+
 // Searching/pagination of recent payments
 const searchTerm = ref('')
 const pageSize = ref(10)
@@ -401,18 +489,21 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
             <header class="px-4 pt-5 pb-3 sm:px-6">
                 <div class="flex items-center gap-3">
                     <CreditCardIcon class="h-6 w-6 text-gray-700" />
-                    <h1 class="text-lg font-semibold text-gray-900">Pagos del director</h1>
+                    <h1 class="text-lg font-semibold text-gray-900">Pagos (Director)</h1>
                 </div>
                 <div class="mt-2 flex flex-col sm:flex-row sm:items-center sm:gap-4">
                     <p class="text-sm text-gray-600">
                         Sesion iniciada como <strong>{{ auth_user?.name }}</strong>
                     </p>
-                    <div class="flex items-center gap-2 text-sm">
+                    <div v-if="canSelectClub" class="flex items-center gap-2 text-sm">
                         <label class="text-gray-700">Club:</label>
                         <select v-model="form.club_id"
                             class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="c in allowedClubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
                         </select>
+                    </div>
+                    <div v-else class="text-sm text-gray-700">
+                        Club: <strong>{{ allowedClubs.find(c => Number(c.id) === Number(form.club_id))?.club_name || props.club?.club_name || '—' }}</strong>
                     </div>
                 </div>
             </header>
@@ -536,6 +627,9 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                     placeholder="0.00" />
                                 <CurrencyDollarIcon
                                     class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                            </div>
+                            <div v-if="showCreateZeroWarning" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                Registrar pagos en 0.00 no es recomendable. Verifica el monto antes de guardar.
                             </div>
                             <div v-if="form.errors.amount_paid" class="mt-1 text-sm text-red-600">
                                 {{ form.errors.amount_paid }}
@@ -687,6 +781,119 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                                     <div class="text-xs text-gray-600">
                                         {{ formatISODateLocal(p.payment_date) }}
                                     </div>
+                                    <button
+                                        v-if="canEditPayments"
+                                        type="button"
+                                        class="mt-2 text-xs font-medium text-blue-600 hover:underline"
+                                        @click="startEditPayment(p)"
+                                    >
+                                        Editar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div v-if="editingPaymentId === p.id" class="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                                <div class="mb-3 text-sm font-semibold text-gray-900">Editar pago</div>
+                                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Monto pagado</label>
+                                        <input
+                                            v-model="editForm.amount_paid"
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                        />
+                                        <div v-if="showEditZeroWarning" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                            Registrar pagos en 0.00 no es recomendable. Corrige el monto antes de guardar.
+                                        </div>
+                                        <div v-if="editForm.errors.amount_paid" class="mt-1 text-sm text-red-600">
+                                            {{ editForm.errors.amount_paid }}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Fecha de pago</label>
+                                        <input
+                                            v-model="editForm.payment_date"
+                                            type="date"
+                                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                        />
+                                        <div v-if="editForm.errors.payment_date" class="mt-1 text-sm text-red-600">
+                                            {{ editForm.errors.payment_date }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4">
+                                    <label class="block text-sm font-medium text-gray-700">Tipo de pago</label>
+                                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                                        <label v-for="t in payment_types" :key="`edit-${p.id}-${t}`" class="inline-flex items-center gap-2">
+                                            <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t" v-model="editForm.payment_type" />
+                                            <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? 'Saldo inicial' : t }}</span>
+                                        </label>
+                                    </div>
+                                    <div v-if="editForm.errors.payment_type" class="mt-1 text-sm text-red-600">
+                                        {{ editForm.errors.payment_type }}
+                                    </div>
+                                </div>
+
+                                <div v-if="editForm.payment_type === 'zelle'" class="mt-4">
+                                    <label class="block text-sm font-medium text-gray-700">Telefono Zelle</label>
+                                    <input
+                                        v-model="editForm.zelle_phone"
+                                        type="text"
+                                        inputmode="tel"
+                                        class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                        placeholder="(555) 555-5555"
+                                    />
+                                    <div v-if="editForm.errors.zelle_phone" class="mt-1 text-sm text-red-600">
+                                        {{ editForm.errors.zelle_phone }}
+                                    </div>
+                                </div>
+
+                                <div v-if="editForm.payment_type === 'check'" class="mt-4">
+                                    <label class="block text-sm font-medium text-gray-700">Foto del cheque</label>
+                                    <div class="mt-1 flex items-center gap-3">
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            @change="onEditCheckFileChange"
+                                            class="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-50"
+                                        />
+                                        <PhotoIcon v-if="!editCheckPreviewUrl" class="h-6 w-6 text-gray-400" />
+                                        <img v-if="editCheckPreviewUrl" :src="editCheckPreviewUrl" alt="Check preview" class="h-10 w-auto rounded border" />
+                                    </div>
+                                </div>
+
+                                <div class="mt-4">
+                                    <label class="block text-sm font-medium text-gray-700">Notas</label>
+                                    <textarea
+                                        v-model="editForm.notes"
+                                        rows="2"
+                                        class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                        placeholder="Observaciones sobre este pago…"
+                                    ></textarea>
+                                </div>
+
+                                <div v-if="editForm.errors.form" class="mt-3 text-sm text-red-600">
+                                    {{ editForm.errors.form }}
+                                </div>
+
+                                <div class="mt-4 flex items-center justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-white"
+                                        @click="cancelEditPayment"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                        @click="submitEditPayment"
+                                    >
+                                        Guardar cambios
+                                    </button>
                                 </div>
                             </div>
                         </li>

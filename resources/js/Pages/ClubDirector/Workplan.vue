@@ -44,7 +44,7 @@ const isDirector = computed(() => props.auth_user?.profile_type === 'club_direct
 const isSuperadmin = computed(() => props.auth_user?.profile_type === 'superadmin')
 const isStaff = computed(() => props.auth_user?.profile_type === 'club_personal')
 const isReadOnly = computed(() => !isDirector.value)
-const canSelectClub = computed(() => isDirector.value || isSuperadmin.value)
+const canSelectClub = computed(() => isSuperadmin.value)
 const selectedClubId = ref(props.selected_club_id || props.auth_user?.club_id || (props.clubs?.[0]?.id ?? ''))
 const hasClubSelected = computed(() => Boolean(selectedClubId.value))
 
@@ -1430,7 +1430,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
 
             <div v-else class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded">
                 <p>Selecciona un club para ver o administrar su plan de trabajo.</p>
-                <div v-if="clubs.length" class="mt-2">
+                <div v-if="canSelectClub && clubs.length" class="mt-2">
                     <p class="text-sm font-medium">Clubes disponibles:</p>
                     <div class="mt-1 max-w-md">
                         <select
@@ -1445,6 +1445,9 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         </select>
                     </div>
                 </div>
+                <p v-else-if="!canSelectClub" class="mt-2 text-sm">
+                    No hay un club activo disponible para esta vista.
+                </p>
                 <p v-else class="mt-2 text-sm">No hay clubes creados en el sistema.</p>
             </div>
 

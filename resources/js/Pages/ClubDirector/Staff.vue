@@ -15,7 +15,6 @@ import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import {
-    fetchClubsByUserId,
     fetchStaffByClubId,
     createStaffUser,
     approveStaff,
@@ -37,9 +36,10 @@ const subRoles = page.props.sub_roles;
 
 
 // ✅ Auth & general utilities
-const { user } = useAuth()
+const { user, activeClub, availableClubs } = useAuth()
 const churchId = computed(() => user.value?.church_id || null)
 const userId = computed(() => user.value?.id || null)
+const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
 const changePasswordUserId = ref(null)
 const club_name = computed(() => user.value?.clubs[0]?.club_name || '')
 const { toast, showToast } = useGeneral()
@@ -183,8 +183,12 @@ watch(staff, (newVal) => {
 // ✅ Fetch club(s)
 const fetchClubs = async () => {
     try {
-        const data = await fetchClubsByUserId(user.value.id)
-        clubs.value = Array.isArray(data) ? data : []
+        clubs.value = Array.isArray(availableClubs.value) ? availableClubs.value : []
+        const preferredClubId = activeClub.value?.id || user.value?.club_id || null
+        selectedClub.value = clubs.value.find(club => String(club.id) === String(preferredClubId)) || clubs.value[0] || null
+        if (selectedClub.value?.id) {
+            await fetchStaff(selectedClub.value.id, churchId.value)
+        }
         showToast('Clubes cargados')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
@@ -488,7 +492,7 @@ onMounted(fetchClubs)
     <PathfinderLayout>
         <div class="p-8">
             <h1 class="text-xl font-bold mb-4">Personal</h1>
-            <div class="max-w-xl mb-6">
+            <div v-if="isSuperadmin" class="max-w-xl mb-6">
                 <label class="block mb-1 font-medium text-gray-700">Selecciona un club</label>
                 <select v-model="selectedClub"
                     @change="() => { if (selectedClub) { fetchStaff(selectedClub.id, churchId) } }"
@@ -505,6 +509,9 @@ onMounted(fetchClubs)
                     El modulo de personal solo esta disponible para clubes de Aventureros.
                 </p>
 
+            </div>
+            <div v-else-if="selectedClub" class="mb-6 rounded border bg-white px-4 py-3 text-sm text-gray-700">
+                Club activo: <strong>{{ selectedClub.club_name }}</strong>
             </div>
 
                 <div v-if="selectedClub" class="max-w-5xl mx-auto">

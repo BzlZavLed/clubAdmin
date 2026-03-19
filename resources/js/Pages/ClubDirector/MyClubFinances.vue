@@ -22,6 +22,7 @@ import {
 // 🧠 Auth state
 const { user } = useAuth()
 const { showToast } = useGeneral()
+const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
 const clubs = ref([])
 const hasClub = ref(false)
 
@@ -650,10 +651,13 @@ onMounted(async () => {
                     <!-- Choose club -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Aplica al club</label>
-                        <select v-model="conceptClubId" class="w-full mt-1 p-2 border rounded" :disabled="isEditingConcept">
+                        <select v-if="isSuperadmin" v-model="conceptClubId" class="w-full mt-1 p-2 border rounded" :disabled="isEditingConcept">
                             <option value="">Selecciona un club</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
+                        <div v-else class="w-full mt-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                            {{ conceptClubName || '—' }}
+                        </div>
                     </div>
 
                     <div class="grid md:grid-cols-2 gap-4">
@@ -780,11 +784,14 @@ onMounted(async () => {
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'club_wide' || pcForm.scopes[0].scope_type === 'staff_wide'">
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Club</label>
-                                    <select v-model="pcForm.scopes[0].club_id" class="w-full p-2 border rounded">
+                                    <select v-if="isSuperadmin" v-model="pcForm.scopes[0].club_id" class="w-full p-2 border rounded">
                                         <option :value="null">Seleccionar club</option>
                                         <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}
                                         </option>
                                     </select>
+                                    <div v-else class="w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                                        {{ conceptClubName || '—' }}
+                                    </div>
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'class'">

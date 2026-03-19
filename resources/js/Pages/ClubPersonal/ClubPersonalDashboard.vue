@@ -56,6 +56,7 @@ const selectedEvent = ref(null)
 const planLocationSuggestions = ref([])
 const planLocationLoading = ref(false)
 let planLocationTimer = null
+const canSelectWorkplanClub = computed(() => page.props.auth?.user?.profile_type === 'superadmin')
 const tempStaffForm = ref({
     staff_name: '',
     staff_dob: '',
@@ -352,10 +353,13 @@ const applyPlanLocation = (item) => {
                         <p class="text-sm text-gray-600">{{ tr('Calendario de solo lectura de reuniones y eventos del club.', 'Read-only calendar of club-wide meetings and events.') }}</p>
                         <div class="flex items-center gap-2">
                             <label class="text-sm text-gray-700">{{ tr('Club', 'Club') }}</label>
-                            <select v-model="selectedWorkplanClubId" class="border rounded px-3 py-1 text-sm" @change="handleWorkplanClubChange">
+                            <select v-if="canSelectWorkplanClub" v-model="selectedWorkplanClubId" class="border rounded px-3 py-1 text-sm" @change="handleWorkplanClubChange">
                                 <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
                                 <option v-for="club in workplanClubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                             </select>
+                            <span v-else class="text-sm font-semibold text-gray-800">
+                                {{ workplanClubs.find(club => String(club.id) === String(selectedWorkplanClubId))?.club_name || '—' }}
+                            </span>
                         </div>
                     </div>
                     <div class="flex flex-col items-start gap-2">
@@ -384,7 +388,7 @@ const applyPlanLocation = (item) => {
                     />
                     
                 </div>
-                <div v-else class="text-sm text-gray-600">{{ tr('Selecciona un club para ver su plan de trabajo.', 'Select a club to view its workplan.') }}</div>
+                <div v-else class="text-sm text-gray-600">{{ tr('No hay un club activo para ver su plan de trabajo.', 'There is no active club available to view its workplan.') }}</div>
             </div>
 
             

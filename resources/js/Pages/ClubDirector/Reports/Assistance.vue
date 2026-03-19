@@ -17,13 +17,13 @@ import PathfinderLayout from "@/Layouts/PathfinderLayout.vue";
 import {
     fetchMembersByClub,
     fetchClubClasses,
-    fetchClubsByIds,
     filterAssistanceReports,
 } from "@/Services/api";
 import { ref, onMounted, computed,nextTick } from "vue";
 import html2pdf from 'html2pdf.js'
 import { useAuth } from "@/Composables/useAuth";
 import { useGeneral } from "@/Composables/useGeneral";
+import { usePage } from "@inertiajs/vue3";
 
 const selectedClub = ref(null);
 const members = ref([]);
@@ -43,6 +43,9 @@ const reportRef = ref(null)
 const { user, userClubIds } = useAuth();
 const { toast, showToast } = useGeneral();
 const reports = ref([]);
+const page = usePage();
+const superadminContext = computed(() => page.props.auth?.superadmin_context ?? null);
+const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin');
 
 const onClubChange = async () => {
     if (selectedClub.value) {
@@ -80,9 +83,25 @@ const fetchClasses = async (clubId) => {
 // Fetch clubs
 const fetchClubs = async () => {
     try {
-        clubs.value = await fetchClubsByIds(
-            user.value.clubs.map((club) => club.id)
-        );
+        clubs.value = Array.isArray(user.value?.clubs) ? user.value.clubs : [];
+
+        if (!clubs.value.length) {
+            selectedClub.value = null;
+            members.value = [];
+            clubClasses.value = [];
+            return;
+        }
+
+        const contextClubId = superadminContext.value?.club_id;
+        const preferredClub = contextClubId
+            ? clubs.value.find((club) => String(club.id) === String(contextClubId))
+            : null;
+
+        selectedClub.value = preferredClub || selectedClub.value || clubs.value[0];
+
+        if (selectedClub.value?.id) {
+            await onClubChange();
+        }
     } catch (error) {
         console.error("Failed to fetch clubs:", error);
         showToast("Error al cargar clubes", "error");
@@ -296,7 +315,7 @@ onMounted(() => {
             <!-- Form Container -->
             <div class="grid gap-6 sm:grid-cols-2 md:grid-cols-3">
                 <!-- Select Club -->
-                <div class="col-span-full sm:col-span-1">
+                <div v-if="isSuperadmin" class="col-span-full sm:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-1"
                         >Selecciona un club</label
                     >
@@ -314,6 +333,9 @@ onMounted(() => {
                             {{ club.club_name }} ({{ club.club_type }})
                         </option>
                     </select>
+                </div>
+                <div v-else-if="selectedClub" class="col-span-full sm:col-span-1 rounded border bg-white px-3 py-2 text-sm text-gray-700">
+                    Club activo: <strong>{{ selectedClub.club_name }}</strong>
                 </div>
 
                 <!-- Select Report Type -->

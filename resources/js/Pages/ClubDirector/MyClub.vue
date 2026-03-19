@@ -9,8 +9,11 @@ import { computed, ref, watch, onMounted } from 'vue'
 
 import {
     fetchClubsByUserId,
+    fetchClubsByChurchId,
     deleteClubById,
     selectUserClub,
+    attachDirectorToClub,
+    detachDirectorFromClub,
     createClub,
     updateClub as updateClubApi,
     deleteClassById,
@@ -34,6 +37,9 @@ const props = defineProps({
 // 🧠 Auth state
 const { user } = useAuth()
 const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
+const directorClubCount = computed(() => new Set((clubs.value || []).map(club => Number(club.id))).size)
+const canCreateAnotherClub = computed(() => isSuperadmin.value || directorClubCount.value < 2)
+const clubLimitReached = computed(() => !isSuperadmin.value && directorClubCount.value >= 2)
 
 const { showToast } = useGeneral()
 const today = new Date().toISOString().split("T")[0]
@@ -43,6 +49,7 @@ const isEditing = ref(false)
 const addClub = ref(false)
 const editingClubId = ref(null)
 const clubs = ref([])
+const churchClubs = ref([])
 const showClassModal = ref(false)
 const classToEdit = ref(null)
 const hasClub = ref(false)
@@ -93,6 +100,27 @@ const filteredClubs = computed(() => {
         ? clubs.value.filter(club => club.id === selectedClubId.value)
         : clubs.value
 })
+const churchClubTypes = computed(() => new Set(
+    churchClubs.value
+        .map(club => club.club_type)
+        .filter(type => ['adventurers', 'pathfinders'].includes(type))
+))
+const missingChurchClubTypes = computed(() =>
+    ['adventurers', 'pathfinders'].filter(type => !churchClubTypes.value.has(type))
+)
+const eligibleAttachClubs = computed(() =>
+    churchClubs.value.filter(club =>
+        ['adventurers', 'pathfinders'].includes(club.club_type) &&
+        !clubs.value.some(ownedClub => Number(ownedClub.id) === Number(club.id))
+    )
+)
+const canUnlinkFromClub = computed(() => clubs.value.length > 0)
+const mustAttachInsteadOfCreate = computed(() =>
+    !isSuperadmin.value &&
+    canCreateAnotherClub.value &&
+    missingChurchClubTypes.value.length === 0 &&
+    eligibleAttachClubs.value.length > 0
+)
 
 watch(() => clubForm.church_id, (churchId) => {
     if (!isSuperadmin.value) return
@@ -117,6 +145,12 @@ const fetchClubs = async () => {
         if (!selectedClubId.value && clubId.value) {
             selectedClubId.value = clubId.value
         }
+        if (!isSuperadmin.value && user.value?.church_id) {
+            const churchData = await fetchClubsByChurchId(user.value.church_id)
+            churchClubs.value = Array.isArray(churchData) ? churchData : []
+        } else {
+            churchClubs.value = []
+        }
         showToast('Clubes cargados correctamente')
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
@@ -130,10 +164,11 @@ const submitClub = async () => {
         await createClub(clubForm)
         showToast('Club creado correctamente')
         addClub.value = false
-        fetchClubs()
+        await fetchClubs()
+        await router.reload({ only: ['auth'] })
     } catch (error) {
         console.error(error)
-        showToast('No se pudo crear el club', 'error')
+        showToast(error?.response?.data?.message || 'No se pudo crear el club', 'error')
     }
 }
 
@@ -336,6 +371,14 @@ const exportClassesPdf = (withRequirements = false) => {
 
 // 🧠 Start new form
 const startCreatingClub = () => {
+    if (!canCreateAnotherClub.value) {
+        showToast('Ya tienes el maximo de 2 clubes asignados.', 'error')
+        return
+    }
+    if (mustAttachInsteadOfCreate.value) {
+        showToast('Tu iglesia ya tiene ambos tipos de club. Debes adjuntarte al club existente disponible.', 'error')
+        return
+    }
     addClub.value = true
     clubForm.reset()
     const selected = props.churches.find(ch => Number(ch.id) === Number(clubForm.church_id))
@@ -356,6 +399,9 @@ const startCreatingClub = () => {
         conference_region: '',
         club_type: ''
     })
+    if (!isSuperadmin.value && missingChurchClubTypes.value.length === 1) {
+        clubForm.club_type = missingChurchClubTypes.value[0]
+    }
 }
 
 const onSuperadminClubChange = async () => {
@@ -364,6 +410,33 @@ const onSuperadminClubChange = async () => {
         return
     }
     await selectClub(Number(selectedClubId.value))
+}
+
+const attachToExistingClub = async (club) => {
+    try {
+        await attachDirectorToClub(club.id, user.value.id)
+        showToast('Ahora estas vinculado a este club como director')
+        await fetchClubs()
+        await router.reload({ only: ['auth'] })
+    } catch (error) {
+        console.error('Failed to attach to existing club:', error)
+        showToast(error?.response?.data?.message || 'No se pudo adjuntar al club', 'error')
+    }
+}
+
+const unlinkFromClub = async (club) => {
+    const confirmed = window.confirm(`¿Seguro que deseas desvincularte del club ${club.club_name}?`)
+    if (!confirmed) return
+
+    try {
+        await detachDirectorFromClub(club.id, user.value.id)
+        showToast('Te desvinculaste del club correctamente')
+        await fetchClubs()
+        await router.reload({ only: ['auth'] })
+    } catch (error) {
+        console.error('Failed to detach from club:', error)
+        showToast(error?.response?.data?.message || 'No se pudo desvincular del club', 'error')
+    }
 }
 
 
@@ -592,9 +665,49 @@ onMounted(fetchClubs);
                         {{ club.club_name }} - {{ club.church_name || 'Sin iglesia' }}
                     </option>
                 </select>
-                <button type="button" class="px-3 py-2 rounded bg-blue-600 text-white text-sm" @click="startCreatingClub">
+                <button
+                    v-if="canCreateAnotherClub"
+                    type="button"
+                    class="px-3 py-2 rounded bg-blue-600 text-white text-sm"
+                    @click="startCreatingClub"
+                >
                     Crear nuevo club
                 </button>
+            </div>
+            <p v-if="clubLimitReached" class="text-xs text-amber-700">Este director ya tiene el maximo de 2 clubes asignados.</p>
+        </div>
+
+        <div v-else class="mb-4 rounded border bg-white p-4 space-y-3">
+            <p class="text-sm font-semibold text-gray-800">Gestion de clubes</p>
+            <p v-if="mustAttachInsteadOfCreate" class="text-sm text-amber-700">
+                Esta iglesia ya tiene clubes de Aventureros y Conquistadores. En lugar de crear otro club, puedes adjuntarte al club existente que aun no diriges.
+            </p>
+            <p v-else-if="missingChurchClubTypes.length && canCreateAnotherClub" class="text-sm text-gray-600">
+                Puedes crear un club nuevo para el tipo faltante:
+                <strong>{{ missingChurchClubTypes.join(', ') }}</strong>.
+            </p>
+            <p v-else-if="clubLimitReached" class="text-sm text-amber-700">
+                Ya alcanzaste el maximo de 2 clubes asignados.
+            </p>
+
+            <div v-if="mustAttachInsteadOfCreate" class="space-y-2">
+                <div
+                    v-for="club in eligibleAttachClubs"
+                    :key="club.id"
+                    class="flex flex-col gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-3 md:flex-row md:items-center md:justify-between"
+                >
+                    <div>
+                        <div class="font-medium text-gray-900">{{ club.club_name }}</div>
+                        <div class="text-sm text-gray-600 capitalize">{{ club.club_type }} | {{ club.church_name }}</div>
+                    </div>
+                    <button
+                        type="button"
+                        class="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+                        @click="attachToExistingClub(club)"
+                    >
+                        Adjuntarme como director
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -695,6 +808,13 @@ onMounted(fetchClubs);
                                 <td class="p-2">{{ club.creation_date }}</td>
                                 <td class="p-2 space-x-2">
                                     <button @click="editClub(club)" class="text-blue-600 hover:underline">Editar</button>
+                                    <button
+                                        v-if="!isSuperadmin"
+                                        @click="unlinkFromClub(club)"
+                                        class="text-amber-600 hover:underline"
+                                    >
+                                        Desvincularme
+                                    </button>
                                     <button @click="deleteClub(club.id)"
                                         class="text-red-600 hover:underline">Eliminar</button>
                                 </td>
@@ -702,10 +822,18 @@ onMounted(fetchClubs);
                         </tbody>
                     </table>
                     <div class="mt-4">
-                        <button @click="startCreatingClub"
+                        <button
+                            v-if="canCreateAnotherClub && !mustAttachInsteadOfCreate"
+                            @click="startCreatingClub"
                             class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
                             + Crear club
                         </button>
+                        <p v-else-if="mustAttachInsteadOfCreate" class="text-sm text-amber-700">
+                            Tu iglesia ya tiene ambos tipos de club. Adjuntate al club existente disponible para completar tus 2 clubes.
+                        </p>
+                        <p v-else-if="clubLimitReached" class="text-sm text-amber-700">
+                            Ya tienes el maximo de 2 clubes asignados.
+                        </p>
                     </div>
                 </div>
             </details>

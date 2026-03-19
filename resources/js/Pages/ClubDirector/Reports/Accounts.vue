@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import { fetchFinancialReportBootstrap, fetchFinancialAccountBalances, uploadReimbursementReceipt } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { compressImage } from '@/Utils/imageCompression'
+import { useAuth } from '@/Composables/useAuth'
 
 const payTo = ref([])
 const accountBalances = ref([])
@@ -20,6 +21,8 @@ const selectedClubId = ref(null)
 const uploadingReimbursementId = ref(null)
 const reimbursementReceiptInputs = ref({})
 const { showToast } = useGeneral()
+const { user } = useAuth()
+const canSelectClub = computed(() => user.value?.profile_type === 'superadmin')
 
 const MAX_RECEIPT_MB = 5
 const MAX_RECEIPT_BYTES = MAX_RECEIPT_MB * 1024 * 1024
@@ -149,10 +152,13 @@ watch(selectedClubId, async (id, old) => {
                     <div class="flex flex-wrap items-center gap-2">
                         <div class="flex items-center gap-2 text-sm">
                             <label class="text-gray-700">Club:</label>
-                            <select v-model="selectedClubId"
+                            <select v-if="canSelectClub" v-model="selectedClubId"
                                 class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
                                 <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
                             </select>
+                            <strong v-else class="text-gray-700">
+                                {{ clubs.find(c => String(c.id) === String(selectedClubId))?.club_name || '—' }}
+                            </strong>
                         </div>
                         <button @click="() => loadBootstrap(selectedClubId)" :disabled="loading"
                             class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">

@@ -190,6 +190,18 @@ export const selectUserClub = async (clubId, userId) => {
     });
 };
 
+export const attachDirectorToClub = async (clubId, userId) => {
+    return await axios.post(route("club.attach-director", clubId), {
+        user_id: userId,
+    });
+};
+
+export const detachDirectorFromClub = async (clubId, userId) => {
+    return await axios.post(route("club.detach-director", clubId), {
+        user_id: userId,
+    });
+};
+
 export const createClub = async (payload) => {
     return await axios.post(route("club.store"), payload);
 };
@@ -373,6 +385,19 @@ export const createClubPayment = async (payload) => {
     });
 
     return await axios.post(route("club.payments.store"), fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+    });
+};
+
+export const updateClubPayment = async (paymentId, payload) => {
+    const fd = new FormData();
+    Object.entries(payload).forEach(([k, v]) => {
+        if (v === undefined || v === null) return;
+        fd.append(k, v);
+    });
+    fd.append('_method', 'PUT');
+
+    return await axios.post(route("club.payments.update", { payment: paymentId }), fd, {
         headers: { "Content-Type": "multipart/form-data" },
     });
 };

@@ -5,12 +5,17 @@ import ClubDirectorNav from '@/Components/Nav/ClubDirectorNav.vue'
 import SuperAdminNav from '@/Components/Nav/SuperAdminNav.vue'
 import ClubPersonalNav from '@/Components/Nav/ClubPersonalNav.vue'
 import ParentNav from '@/Components/Nav/ParentNav.vue'
+import SuperadminClubContextBar from '@/Components/SuperadminClubContextBar.vue'
 
 const isCollapsed = ref(false)
 const isMobileOpen = ref(false)
 const isMobile = ref(false)
 const page = usePage()
 const user = computed(() => page.props.auth?.user ?? null)
+const primaryDirectorClub = computed(() => page.props.auth?.primary_director_club ?? null)
+const activeClub = computed(() => page.props.auth?.active_club ?? null)
+const sidebarClubLabel = computed(() => primaryDirectorClub.value?.club_name || activeClub.value?.club_name || null)
+const sidebarClubCaption = computed(() => primaryDirectorClub.value?.club_name ? 'Director principal' : 'Club activo')
 
 const logout = () => {
     if (!user.value) return
@@ -93,6 +98,15 @@ const mainOffsetClass = computed(() => {
 
         <!-- Navigation by Role -->
         <component :is="getNavComponent()" />
+
+        <div v-if="user && !navCollapsed" class="mx-3 mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Sesion</p>
+            <p class="mt-1 text-sm font-semibold text-gray-900 truncate">{{ user.name }}</p>
+            <p v-if="sidebarClubLabel" class="mt-2 text-xs text-gray-500">{{ sidebarClubCaption }}</p>
+            <p v-if="sidebarClubLabel" class="text-sm text-gray-800 truncate">{{ sidebarClubLabel }}</p>
+        </div>
+
+        <SuperadminClubContextBar :compact="true" :collapsed="navCollapsed" />
 
         <!-- Logout -->
         <div class="px-4 py-4 border-t mt-auto">

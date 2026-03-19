@@ -49,12 +49,6 @@ const menuItems = [
         icon: UsersIcon,
         children: [
             {
-                name: 'Event Planner',
-                href: '/events',
-                route: 'events.index',
-                icon: CalendarDaysIcon
-            },
-            {
                 name: 'Administración',
                 href: '/club-director/my-club',
                 route: 'club.my-club',
@@ -67,7 +61,7 @@ const menuItems = [
                 icon: CurrencyDollarIcon
             },
             {
-                name: 'Pagos',
+                name: 'Ingresos',
                 href: '/club-director/payments',
                 route: 'club.director.payments',
                 icon: BanknotesIcon
@@ -82,6 +76,12 @@ const menuItems = [
                 name: 'Plan de trabajo',
                 href: '/club-director/workplan',
                 route: 'club.workplan',
+                icon: CalendarDaysIcon
+            },
+            {
+                name: 'Event Planner',
+                href: '/events',
+                route: 'events.index',
                 icon: CalendarDaysIcon
             }
         ]
