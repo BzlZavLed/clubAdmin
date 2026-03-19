@@ -702,7 +702,7 @@ const setFormMode = (mode) => {
             </header>
 
             <main class="px-4 pb-24 sm:px-6">
-                <section class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                <section class="space-y-6">
                     <div class="rounded-2xl border border-gray-200 p-4 shadow-sm sm:p-5">
                         <div class="flex flex-col gap-4 border-b border-gray-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -810,6 +810,63 @@ const setFormMode = (mode) => {
                                         {{ form.errors.payment_type }}
                                     </div>
                                 </div>
+
+                                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Importe</label>
+                                        <div class="mt-1 relative">
+                                            <input
+                                                v-model="form.amount_paid"
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                @blur="syncAmountToRemaining"
+                                                class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                                placeholder="0.00"
+                                            />
+                                            <CurrencyDollarIcon class="pointer-events-none absolute left-2 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                                        </div>
+                                        <div v-if="showCreateZeroWarning" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                            Registrar pagos en 0.00 no es recomendable. Verifica el importe antes de guardar.
+                                        </div>
+                                        <div v-if="selectedConceptIsReusable && !customConceptMode && form.payment_type !== 'initial'" class="mt-2">
+                                            <span
+                                                class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800"
+                                                title="Cada registro debe cobrarse por el importe completo del concepto."
+                                            >
+                                                Concepto reutilizable
+                                            </span>
+                                        </div>
+                                        <div v-if="form.errors.amount_paid" class="mt-1 text-sm text-red-600">
+                                            {{ form.errors.amount_paid }}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Fecha</label>
+                                        <div class="mt-1 relative">
+                                            <input
+                                                v-model="form.payment_date"
+                                                type="date"
+                                                class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                            />
+                                            <CalendarDaysIcon class="pointer-events-none absolute left-2 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                                        </div>
+                                        <div v-if="form.errors.payment_date" class="mt-1 text-sm text-red-600">
+                                            {{ form.errors.payment_date }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Notas</label>
+                                    <textarea
+                                        v-model="form.notes"
+                                        rows="3"
+                                        class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                        placeholder="Observaciones sobre este ingreso…"
+                                    ></textarea>
+                                </div>
                             </div>
 
                             <div class="space-y-4">
@@ -847,48 +904,6 @@ const setFormMode = (mode) => {
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700">Importe</label>
-                                        <div class="mt-1 relative">
-                                            <input
-                                                v-model="form.amount_paid"
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                @blur="syncAmountToRemaining"
-                                                class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                                placeholder="0.00"
-                                            />
-                                            <CurrencyDollarIcon class="pointer-events-none absolute left-2 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                                        </div>
-                                        <div v-if="showCreateZeroWarning" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                                            Registrar pagos en 0.00 no es recomendable. Verifica el importe antes de guardar.
-                                        </div>
-                                        <div v-if="selectedConceptIsReusable && !customConceptMode && form.payment_type !== 'initial'" class="mt-1 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                                            Este concepto es reutilizable. Cada registro debe cobrarse por el importe completo del concepto.
-                                        </div>
-                                        <div v-if="form.errors.amount_paid" class="mt-1 text-sm text-red-600">
-                                            {{ form.errors.amount_paid }}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700">Fecha</label>
-                                        <div class="mt-1 relative">
-                                            <input
-                                                v-model="form.payment_date"
-                                                type="date"
-                                                class="w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                            />
-                                            <CalendarDaysIcon class="pointer-events-none absolute left-2 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                                        </div>
-                                        <div v-if="form.errors.payment_date" class="mt-1 text-sm text-red-600">
-                                            {{ form.errors.payment_date }}
-                                        </div>
-                                    </div>
-                                </div>
-
                                 <div v-if="form.payment_type === 'zelle'">
                                     <label class="block text-sm font-medium text-gray-700">Telefono Zelle</label>
                                     <input
@@ -916,16 +931,6 @@ const setFormMode = (mode) => {
                                         <img v-if="checkPreviewUrl" :src="checkPreviewUrl" alt="Check preview" class="h-10 w-auto rounded border" />
                                     </div>
                                 </div>
-
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">Notas</label>
-                                    <textarea
-                                        v-model="form.notes"
-                                        rows="3"
-                                        class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        placeholder="Observaciones sobre este ingreso…"
-                                    ></textarea>
-                                </div>
                             </div>
                         </div>
 
@@ -948,7 +953,7 @@ const setFormMode = (mode) => {
                         </div>
                     </div>
 
-                    <aside class="space-y-4">
+                    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <div class="rounded-2xl border border-gray-200 p-4 shadow-sm">
                             <h3 class="text-sm font-semibold text-gray-900">Guia rapida</h3>
                             <ul class="mt-3 space-y-2 text-sm text-gray-600">
@@ -976,7 +981,7 @@ const setFormMode = (mode) => {
                                 </div>
                             </dl>
                         </div>
-                    </aside>
+                    </div>
                 </section>
 
                 <section class="mt-6">
