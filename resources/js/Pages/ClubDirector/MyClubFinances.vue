@@ -76,6 +76,7 @@ const pcForm = useForm({
     concept: '',
     payment_expected_by: '', // yyyy-mm-dd
     amount: null,          // <--- add
+    reusable: false,
     type: 'mandatory',       // mandatory|optional
     pay_to: 'club_budget',   // church_budget|club_budget|conference|reimbursement_to
     payee_type: null,        // 'App\\Models\\MemberAdventurer' | 'App\\Models\\StaffAdventurer' | null
@@ -207,6 +208,7 @@ async function deleteConcept(id) {
 function resetConceptForm(keepClub = true) {
     pcForm.reset()
     pcForm.type = 'mandatory'
+    pcForm.reusable = false
     pcForm.pay_to = payToOptions.value[0]?.value ?? null
     pcForm.status = 'active'
     pcForm.scopes = []
@@ -238,6 +240,8 @@ function resetConceptForm(keepClub = true) {
 
     pcForm.concept = pc.concept
     pcForm.payment_expected_by = (pc.payment_expected_by || '').slice(0, 10) // YYYY-MM-DD
+    pcForm.amount = pc.amount ?? null
+    pcForm.reusable = Boolean(pc.reusable)
     pcForm.type = pc.type
     pcForm.pay_to = pc.pay_to
     pcForm.status = pc.status
@@ -691,6 +695,23 @@ onMounted(async () => {
                             </select>
                         </div>
 
+                        <div class="md:col-span-2 rounded border border-gray-200 bg-gray-50 px-3 py-3">
+                            <label class="inline-flex items-start gap-3">
+                                <input
+                                    id="pc-reusable"
+                                    v-model="pcForm.reusable"
+                                    type="checkbox"
+                                    class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span>
+                                    <span class="block text-sm font-medium text-gray-700">Reusar</span>
+                                    <span class="block text-xs text-gray-500">
+                                        Si esta activo, el concepto puede cobrarse varias veces al mismo pagador y cada cobro debe ser por el importe completo.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
                             <select v-model="pcForm.status" class="w-full mt-1 p-2 border rounded">
@@ -869,6 +890,7 @@ onMounted(async () => {
                                 <div class="mt-2 text-xs text-gray-600">
                                     <div><span class="font-medium text-gray-700">Vence:</span> {{ formatISODate(pc.payment_expected_by) }}</div>
                                     <div><span class="font-medium text-gray-700">Tipo:</span> {{ pc.type }}</div>
+                                    <div><span class="font-medium text-gray-700">Reusar:</span> {{ pc.reusable ? 'Si' : 'No' }}</div>
                                     <div><span class="font-medium text-gray-700">Pagar a:</span> {{ pc.pay_to }}</div>
                                     <div><span class="font-medium text-gray-700">Estado:</span> {{ pc.status }}</div>
                                     <div>
@@ -912,6 +934,7 @@ onMounted(async () => {
                                     <th class="p-2 text-left">Club</th>
                                     <th class="p-2 text-left">Vence</th>
                                     <th class="p-2 text-left">Tipo</th>
+                                    <th class="p-2 text-left">Reusar</th>
                                     <th class="p-2 text-left">Pagar a</th>
                                     <th class="p-2 text-left">Estado</th>
                                     <th class="p-2 text-left">Alcances</th>
@@ -928,6 +951,7 @@ onMounted(async () => {
                                     <td class="p-2">{{ pc.club?.club_name ?? conceptClubName }}</td>
                                     <td class="p-2">{{ formatISODate(pc.payment_expected_by) }}</td>
                                     <td class="p-2 capitalize">{{ pc.type }}</td>
+                                    <td class="p-2">{{ pc.reusable ? 'Si' : 'No' }}</td>
                                     <td class="p-2 capitalize">{{ pc.pay_to }}</td>
                                     <td class="p-2 capitalize">{{ pc.status }}</td>
                                     <td class="p-2">

@@ -101,7 +101,7 @@ class ClubPaymentController extends Controller
                 },
             ])
             ->orderByDesc('created_at')
-            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id']);
+            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id', 'reusable']);
 
         $recent = Payment::query()
             ->where('club_id', $club->id)
@@ -117,7 +117,7 @@ class ClubPaymentController extends Controller
                 'member:id,type,id_data',
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
-                'concept:id,concept,amount',
+                'concept:id,concept,amount,reusable',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
             ])
@@ -151,6 +151,7 @@ class ClubPaymentController extends Controller
                         'id' => $p->concept->id,
                         'concept' => $p->concept->concept,
                         'amount' => $p->concept->amount,
+                        'reusable' => (bool) $p->concept->reusable,
                     ] : null,
                     'received_by' => $p->receivedBy ? [
                         'id' => $p->receivedBy->id,
@@ -248,7 +249,7 @@ class ClubPaymentController extends Controller
                 },
             ])
             ->orderByDesc('created_at')
-            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id']);
+            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id', 'reusable']);
 
         $accounts = Account::query()
             ->whereIn('club_id', $clubIds)
@@ -263,7 +264,7 @@ class ClubPaymentController extends Controller
                 'member:id,type,id_data',
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
-                'concept:id,concept,amount',
+                'concept:id,concept,amount,reusable',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
             ])
@@ -297,6 +298,7 @@ class ClubPaymentController extends Controller
                         'id' => $p->concept->id,
                         'concept' => $p->concept->concept,
                         'amount' => $p->concept->amount,
+                        'reusable' => (bool) $p->concept->reusable,
                     ] : null,
                     'received_by' => $p->receivedBy ? [
                         'id' => $p->receivedBy->id,
@@ -413,6 +415,8 @@ class ClubPaymentController extends Controller
             $expected = null;
         }
 
+        $isReusableConcept = (bool) ($concept?->reusable);
+
         $account = Account::query()
             ->where('club_id', $clubId)
             ->where('pay_to', $payTo)
@@ -445,7 +449,7 @@ class ClubPaymentController extends Controller
 
         $remainingBefore = $expected !== null ? max($expected - $priorPaid, 0.0) : null;
 
-        if ($expected !== null && $expected > 0 && $remainingBefore !== null && $remainingBefore <= 0) {
+        if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $remainingBefore <= 0) {
             return response()->json([
                 'errors' => [
                     'payment_concept_id' => ['Este concepto ya fue pagado completamente para este pagador.'],
@@ -454,11 +458,18 @@ class ClubPaymentController extends Controller
         }
 
         $amountPaid = (float) $validated['amount_paid'];
-        if ($expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
+        if ($isReusableConcept && $expected !== null && $expected > 0 && abs($amountPaid - $expected) > 0.0001) {
+            return response()->json([
+                'errors' => [
+                    'amount_paid' => ['Los conceptos reutilizables deben cobrarse por el importe completo del concepto.'],
+                ],
+            ], 422);
+        }
+        if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
             $amountPaid = $remainingBefore;
         }
 
-        $balanceAfter = $expected !== null ? max($expected - ($priorPaid + $amountPaid), 0.0) : null;
+        $balanceAfter = ($isReusableConcept || $expected === null) ? null : max($expected - ($priorPaid + $amountPaid), 0.0);
 
         if ($validated['payment_type'] === 'zelle' && empty($validated['zelle_phone'])) {
             return response()->json(['message' => 'Zelle payments require a phone number.'], 422);
@@ -503,7 +514,7 @@ class ClubPaymentController extends Controller
             'member:id,type,id_data',
             'staff:id,type,id_data,user_id',
             'staff.user:id,name',
-            'concept:id,concept,amount',
+            'concept:id,concept,amount,reusable',
             'receivedBy:id,name',
         ]);
 
@@ -545,9 +556,18 @@ class ClubPaymentController extends Controller
             : null;
 
         $expected = $payment->expected_amount !== null ? (float) $payment->expected_amount : ($concept?->amount !== null ? (float) $concept->amount : null);
+        $isReusableConcept = (bool) ($concept?->reusable);
         $newAmount = (float) $validated['amount_paid'];
 
-        if ($expected !== null && $expected > 0) {
+        if ($isReusableConcept && $expected !== null && $expected > 0 && abs($newAmount - $expected) > 0.0001) {
+            return response()->json([
+                'errors' => [
+                    'amount_paid' => ['Los conceptos reutilizables deben cobrarse por el importe completo del concepto.'],
+                ],
+            ], 422);
+        }
+
+        if (!$isReusableConcept && $expected !== null && $expected > 0) {
             $otherPaid = Payment::query()
                 ->where('club_id', $payment->club_id)
                 ->where('payment_concept_id', $payment->payment_concept_id)
@@ -597,6 +617,7 @@ class ClubPaymentController extends Controller
                 'check_image_path' => $nextCheckImagePath,
                 'notes' => $validated['notes'] ?? null,
                 'expected_amount' => $expected,
+                'balance_due_after' => $isReusableConcept ? null : $payment->balance_due_after,
             ]);
             $payment->save();
 
@@ -622,7 +643,7 @@ class ClubPaymentController extends Controller
             'member:id,type,id_data',
             'staff:id,type,id_data,user_id',
             'staff.user:id,name',
-            'concept:id,concept,amount',
+            'concept:id,concept,amount,reusable',
             'account:id,club_id,pay_to,label',
             'receivedBy:id,name',
         ]);
@@ -691,6 +712,21 @@ class ClubPaymentController extends Controller
             return;
         }
 
+        $concept = PaymentConcept::query()->find($payment->payment_concept_id);
+        if ($concept?->reusable) {
+            Payment::query()
+                ->where('club_id', $payment->club_id)
+                ->where('payment_concept_id', $payment->payment_concept_id)
+                ->when($payment->member_id, fn ($q) => $q->where('member_id', $payment->member_id))
+                ->when($payment->staff_id, fn ($q) => $q->where('staff_id', $payment->staff_id))
+                ->update([
+                    'expected_amount' => $payment->expected_amount,
+                    'balance_due_after' => null,
+                ]);
+
+            return;
+        }
+
         $expected = (float) $payment->expected_amount;
         $runningPaid = 0.0;
 
@@ -714,6 +750,7 @@ class ClubPaymentController extends Controller
     protected function completedPaymentTargets(Collection $concepts): array
     {
         $expectedByConcept = $concepts
+            ->reject(fn ($concept) => (bool) $concept->reusable)
             ->filter(fn ($concept) => $concept->amount !== null && (float) $concept->amount > 0)
             ->mapWithKeys(fn ($concept) => [(int) $concept->id => (float) $concept->amount]);
 

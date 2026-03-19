@@ -151,7 +151,7 @@ class ReportController extends Controller
                 }
             ])
             ->orderBy('concept')
-            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id']);
+            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id', 'reusable']);
 
         $scopes = PaymentConceptScope::query()
             ->whereNull('deleted_at')
@@ -301,7 +301,7 @@ class ReportController extends Controller
                         'member:id,type,id_data',
                         'staff:id,type,id_data,user_id',
                         'staff.user:id,name',
-                        'concept:id,concept,amount',
+                        'concept:id,concept,amount,reusable',
                         'receivedBy:id,name',
                     ])
                     ->orderBy('payment_date')->orderBy('id');
@@ -331,7 +331,13 @@ class ReportController extends Controller
                 return response()->json([
                     'data' => [
                         'mode' => 'concept',
-                        'concept' => ['id' => $concept->id, 'concept' => $concept->concept, 'amount' => $concept->amount, 'payment_expected_by' => $concept->payment_expected_by],
+                        'concept' => [
+                            'id' => $concept->id,
+                            'concept' => $concept->concept,
+                            'amount' => $concept->amount,
+                            'payment_expected_by' => $concept->payment_expected_by,
+                            'reusable' => (bool) $concept->reusable,
+                        ],
                         'payments' => $paginate ? $page : $rows,
                         'summary' => $summary,
                     ]
@@ -510,7 +516,7 @@ class ReportController extends Controller
 
                 $scopeRows = $baseScopeQ
                     ->with([
-                        'concept:id,concept,amount,payment_expected_by,type,club_id',
+                        'concept:id,concept,amount,payment_expected_by,type,club_id,reusable',
                         'club:id,club_name',
                         'class:id,class_name',
                         'member:id,applicant_name',
@@ -558,7 +564,7 @@ class ReportController extends Controller
 
                 $concepts = PaymentConcept::query()
                     ->whereIn('id', $allConceptIds)
-                    ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id'])
+                    ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id', 'reusable'])
                     ->keyBy('id');
 
                 $paymentsQ = Payment::query()
@@ -595,6 +601,7 @@ class ReportController extends Controller
                                 'amount' => $concepts[$cid]->amount ?? null,
                                 'payment_expected_by' => $concepts[$cid]->payment_expected_by ?? null,
                                 'type' => $concepts[$cid]->type ?? null,
+                                'reusable' => (bool) ($concepts[$cid]->reusable ?? false),
                             ],
                             'payments' => $rows,
                             'summary' => $this->buildSummaryFromRows($rows)
@@ -690,11 +697,17 @@ class ReportController extends Controller
         });
 
         $chargeSummaries = $groups->map(function ($paymentsForCharge) {
+            $isReusable = (bool) data_get($paymentsForCharge->first(), 'concept.reusable', false);
+            if ($isReusable) {
+                return ['expected' => 0.0, 'paid' => (float) $paymentsForCharge->sum('amount_paid'), 'remaining' => 0.0, 'countable' => false];
+            }
             $expected = (float) $paymentsForCharge->max('expected_amount');
             $paid = (float) $paymentsForCharge->sum('amount_paid');
             $remaining = max($expected - $paid, 0.0);
-            return ['expected' => $expected, 'paid' => $paid, 'remaining' => $remaining];
+            return ['expected' => $expected, 'paid' => $paid, 'remaining' => $remaining, 'countable' => true];
         });
+
+        $countableChargeSummaries = $chargeSummaries->filter(fn ($row) => !empty($row['countable']));
 
         $byType = $rows->groupBy('payment_type')
             ->mapWithKeys(fn($g, $t) => [$t => (float) $g->sum('amount_paid')])
@@ -706,10 +719,10 @@ class ReportController extends Controller
 
         return [
             'payments_count' => $rows->count(),
-            'charges_count' => $chargeSummaries->count(),
+            'charges_count' => $countableChargeSummaries->count(),
             'amount_paid_sum' => $totalPaid,
-            'expected_sum' => (float) $chargeSummaries->sum('expected'),
-            'balance_remaining' => (float) $chargeSummaries->sum('remaining'),
+            'expected_sum' => (float) $countableChargeSummaries->sum('expected'),
+            'balance_remaining' => (float) $countableChargeSummaries->sum('remaining'),
             'by_payment_type' => $byType,
         ];
     }

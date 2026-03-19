@@ -114,13 +114,14 @@ const payeeLabelPrefix = {
 }
 const completedPaymentTargetSet = computed(() => new Set(props.completed_payment_targets || []))
 const paymentTotalsMap = computed(() => props.payment_totals || {})
+const selectedConceptIsReusable = computed(() => Boolean(selectedConcept.value?.reusable))
 
 const payeeOptions = computed(() => {
     const options = []
     const seenIds = new Set()
     const pushOption = (option) => {
         if (!option?.id) return
-        if (!customConceptMode.value && option.scopeId && selectedConceptId.value) {
+        if (!customConceptMode.value && !selectedConceptIsReusable.value && option.scopeId && selectedConceptId.value) {
             const completionKey = buildCompletedTargetKey(selectedConceptId.value, option.type, option.id)
             if (completedPaymentTargetSet.value.has(completionKey)) {
                 return
@@ -235,6 +236,7 @@ const selectedPayeePaymentTotal = computed(() => {
     return Number(paymentTotalsMap.value[key] ?? 0)
 })
 const selectedRemainingAmount = computed(() => {
+    if (selectedConceptIsReusable.value) return null
     if (customConceptMode.value || form.payment_type === 'initial') return null
     const expected = Number(selectedConceptExpected.value ?? 0)
     if (!Number.isFinite(expected) || expected <= 0) return null
@@ -250,6 +252,10 @@ const modeDescription = computed(() => customConceptMode.value
 const syncAmountToRemaining = () => {
     if (customConceptMode.value || form.payment_type === 'initial') return
     if (!selectedConceptId.value || !selectedPayeeKey.value) return
+    if (selectedConceptIsReusable.value) {
+        form.amount_paid = String(Number(selectedConceptExpected.value ?? 0).toFixed(2))
+        return
+    }
     if (selectedRemainingAmount.value === null || selectedRemainingAmount.value === undefined) return
     const currentAmount = Number(form.amount_paid)
     const remainingAmount = Number(selectedRemainingAmount.value)
@@ -346,6 +352,10 @@ watch([selectedRemainingAmount, selectedPayeeKey, selectedConceptId, customConce
     if (isManual || paymentType === 'initial') return
     if (!conceptId || !payeeKey) {
         form.amount_paid = ''
+        return
+    }
+    if (selectedConceptIsReusable.value) {
+        form.amount_paid = String(Number(selectedConceptExpected.value ?? 0).toFixed(2))
         return
     }
     if (remaining === null || remaining === undefined) {
@@ -818,6 +828,10 @@ const setFormMode = (mode) => {
                                             <div class="text-xs text-blue-700">Esperado</div>
                                             <div class="text-sm font-medium text-gray-900">{{ selectedConceptExpected || '—' }}</div>
                                         </div>
+                                        <div v-if="selectedConcept && !customConceptMode">
+                                            <div class="text-xs text-blue-700">Reusar</div>
+                                            <div class="text-sm font-medium text-gray-900">{{ selectedConceptIsReusable ? 'Si' : 'No' }}</div>
+                                        </div>
                                         <div v-if="selectedRemainingAmount !== null">
                                             <div class="text-xs text-blue-700">Pendiente</div>
                                             <div class="text-sm font-medium text-gray-900">${{ Number(selectedRemainingAmount).toFixed(2) }}</div>
@@ -850,6 +864,9 @@ const setFormMode = (mode) => {
                                         </div>
                                         <div v-if="showCreateZeroWarning" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                                             Registrar pagos en 0.00 no es recomendable. Verifica el importe antes de guardar.
+                                        </div>
+                                        <div v-if="selectedConceptIsReusable && !customConceptMode && form.payment_type !== 'initial'" class="mt-1 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                                            Este concepto es reutilizable. Cada registro debe cobrarse por el importe completo del concepto.
                                         </div>
                                         <div v-if="form.errors.amount_paid" class="mt-1 text-sm text-red-600">
                                             {{ form.errors.amount_paid }}
@@ -1006,7 +1023,11 @@ const setFormMode = (mode) => {
                                             {{ p.account_label ?? p.pay_to }}
                                         </span>
 
-                                        <span v-if="Number(p.balance_due_after ?? 0) > 0"
+                                        <span v-if="p.concept?.reusable"
+                                            class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-800">
+                                            Reutilizable
+                                        </span>
+                                        <span v-else-if="Number(p.balance_due_after ?? 0) > 0"
                                             class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
                                             title="Saldo restante despues de este pago">
                                             Pendiente ${{ Number(p.balance_due_after).toFixed(2) }}

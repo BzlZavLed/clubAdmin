@@ -718,6 +718,7 @@ class ClubController extends Controller
                 'concept'             => $payload['concept'],
                 'payment_expected_by' => $payload['payment_expected_by'] ?? null,
                 'amount'              => $payload['amount'],       // <--
+                'reusable'            => (bool) ($payload['reusable'] ?? false),
                 'type'                => $payload['type'],
                 'pay_to'              => $payload['pay_to'],
                 'payee_type'          => $payload['payee_type'] ?? null,
@@ -835,6 +836,7 @@ class ClubController extends Controller
             'concept'              => [$create ? 'required' : 'sometimes', 'string', 'max:255'],
             'payment_expected_by'  => [$create ? 'nullable' : 'sometimes', 'date'],
             'amount'               => [$create ? 'required' : 'sometimes', 'numeric', 'min:0', 'max:999999.99'], // <--
+            'reusable'             => ['sometimes', 'boolean'],
             'type'                 => [$create ? 'required' : 'sometimes', Rule::in(['mandatory','optional'])],
             'pay_to'               => [$create ? 'required' : 'sometimes', 'string', 'max:255'],
             'payee_type'           => ['nullable','string','max:255'],
