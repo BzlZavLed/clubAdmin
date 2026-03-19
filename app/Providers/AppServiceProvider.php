@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
+use App\Models\MemberPathfinderInsuranceCard;
 use App\Models\Staff;
 use App\Models\TempStaffPathfinder;
 use App\Models\Church;
@@ -66,6 +67,7 @@ class AppServiceProvider extends ServiceProvider
             Member::class,
             MemberAdventurer::class,
             MemberPathfinder::class,
+            MemberPathfinderInsuranceCard::class,
             Staff::class,
             StaffAdventurer::class,
             TempStaffPathfinder::class,

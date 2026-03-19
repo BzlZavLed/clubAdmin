@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\MemberAdventurer;
+use App\Models\MemberPathfinder;
 use App\Models\StaffAdventurer;
 use Str;
 use Log;
@@ -20,6 +21,7 @@ class ExportController extends Controller
             'staff' => $request->input('staff_adventurer_ids', []),
             default => [],
         };
+        $clubType = strtolower((string) $request->input('club_type', ''));
 
         if (!is_array($ids) || empty($ids)) {
             return response()->json(['error' => 'No IDs provided.'], 400);
@@ -27,7 +29,7 @@ class ExportController extends Controller
         
 
         $model = match ($type) {
-            'member' => MemberAdventurer::class,
+            'member' => $clubType === 'pathfinders' ? MemberPathfinder::class : MemberAdventurer::class,
             'staff' => StaffAdventurer::class,
             default => null,
         };
@@ -36,7 +38,9 @@ class ExportController extends Controller
             return response()->json(['error' => 'Invalid export type.'], 400);
         }
 
-        $records = $model::whereIn('id', $ids)->get();
+        $records = $type === 'member' && $clubType === 'pathfinders'
+            ? $model::with('insuranceCard')->whereIn('id', $ids)->get()
+            : $model::whereIn('id', $ids)->get();
         if ($records->isEmpty()) {
             return response()->json(['error' => 'No records found for provided IDs.'], 404);
         }
@@ -45,10 +49,16 @@ class ExportController extends Controller
 
         mkdir($tempDir, 0775, true);
 
+        $extension = 'docx';
         foreach ($records as $record) {
             try {
                 if ($type === 'member') {
-                    $exportService->generateMemberDoc($record, $tempDir);
+                    if ($clubType === 'pathfinders') {
+                        $exportService->generatePathfinderPdf($record, $tempDir);
+                        $extension = 'pdf';
+                    } else {
+                        $exportService->generateMemberDoc($record, $tempDir);
+                    }
                 } else {
                     $exportService->generateStaffDoc($record, $tempDir);
                 }
@@ -59,13 +69,13 @@ class ExportController extends Controller
 
         $zip = new \ZipArchive;
         if ($zip->open($zipPath, \ZipArchive::CREATE) === TRUE) {
-            foreach (glob("$tempDir/*.docx") as $file) {
+            foreach (glob("$tempDir/*.{$extension}") as $file) {
                 $zip->addFile($file, basename($file));
             }
             $zip->close();
         }
 
-        foreach (glob("$tempDir/*.docx") as $file) {
+        foreach (glob("$tempDir/*.{$extension}") as $file) {
             unlink($file);
         }
         rmdir($tempDir);

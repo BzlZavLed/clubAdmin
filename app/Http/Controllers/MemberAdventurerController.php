@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
+use App\Models\MemberPathfinderInsuranceCard;
 use App\Models\Club;
 use Illuminate\Http\Request;
 use PhpOffice\PhpWord\TemplateProcessor;
@@ -17,6 +18,7 @@ use App\Support\ClubHelper;
 use App\Models\ClassMemberPathfinder;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Storage;
 
 use DB;
 use Auth;
@@ -373,7 +375,7 @@ class MemberAdventurerController extends Controller
 
     public function exportPathfinderPdf($id)
     {
-        $member = MemberPathfinder::findOrFail($id);
+        $member = MemberPathfinder::with('insuranceCard')->findOrFail($id);
         $club = $member->club;
 
         $pdf = Pdf::loadView('pdf.pathfinder_application', [
@@ -385,6 +387,46 @@ class MemberAdventurerController extends Controller
         $filename = 'pathfinder-application-' . Str::slug($member->applicant_name ?: 'member') . '.pdf';
 
         return $pdf->download($filename);
+    }
+
+    public function uploadPathfinderInsuranceCard(Request $request, $id)
+    {
+        $member = MemberPathfinder::with('insuranceCard')->findOrFail($id);
+        $clubId = $member->club_id ?: $member->member?->club_id;
+        $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($value) => (int) $value)->all();
+
+        if ($clubId && !in_array((int) $clubId, $allowedClubIds, true)) {
+            abort(403, 'Unauthorized');
+        }
+
+        $validated = $request->validate([
+            'insurance_card_image' => 'required|image|max:10240',
+        ]);
+
+        $oldPath = $member->insuranceCard?->path;
+        $oldDisk = $member->insuranceCard?->disk ?: 'public';
+
+        $path = $validated['insurance_card_image']->store('pathfinder-insurance-cards', 'public');
+
+        $insuranceCard = MemberPathfinderInsuranceCard::updateOrCreate(
+            ['member_pathfinder_id' => $member->id],
+            [
+                'disk' => 'public',
+                'path' => $path,
+                'original_name' => $validated['insurance_card_image']->getClientOriginalName(),
+                'mime_type' => $validated['insurance_card_image']->getClientMimeType(),
+                'uploaded_by' => Auth::id(),
+            ]
+        );
+
+        if ($oldPath && $oldPath !== $path) {
+            Storage::disk($oldDisk)->delete($oldPath);
+        }
+
+        return response()->json([
+            'message' => 'Insurance card uploaded successfully.',
+            'insurance_card_url' => $insuranceCard->url,
+        ]);
     }
 
     public function assignMember(Request $request)
@@ -614,7 +656,7 @@ class MemberAdventurerController extends Controller
                 return $m;
             });
 
-        $pathfinderRows = MemberPathfinder::whereIn('id', $tempPathfinderIds)->get()
+        $pathfinderRows = MemberPathfinder::with('insuranceCard')->whereIn('id', $tempPathfinderIds)->get()
             ->map(function ($row) use ($memberRows, $pathfinderAssignments) {
                 $memberRow = $memberRows->firstWhere('id_data', $row->id);
                 $memberId = optional($memberRow)->id;
@@ -693,6 +735,7 @@ class MemberAdventurerController extends Controller
                     'emergency_contact_phone' => $row->emergency_contact_phone,
                     'insurance_provider' => $row->insurance_provider,
                     'insurance_number' => $row->insurance_number,
+                    'insurance_card_url' => $row->insuranceCard?->url,
                     'signed_at' => $row->signed_at,
                     'class_assignments' => $assignments,
                 ];

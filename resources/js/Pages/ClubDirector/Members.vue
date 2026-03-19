@@ -8,6 +8,7 @@ import {
     PlusIcon,
     MinusIcon,
     PencilIcon,
+    CameraIcon,
     DocumentArrowDownIcon,
     TrashIcon,
     ArrowPathIcon 
@@ -24,6 +25,7 @@ import {
     deleteMemberById,
     bulkDeleteMembers,
     downloadMemberZip,
+    uploadPathfinderInsuranceCard,
 } from '@/Services/api'
 
 // ✅ Auth context
@@ -42,6 +44,8 @@ const editingMember = ref(null)
 const registrationFormSection = ref(null)
 const showDeleteModal = ref(false)
 const deletingMember = ref(null)
+const insuranceUploadInput = ref(null)
+const insuranceUploadMember = ref(null)
 const selectedMemberIds = ref(new Set())
 const selectAll = ref(false)
 const selectedTab = ref('members')
@@ -118,6 +122,33 @@ const editMember = (member) => {
     showAdventurerRegistrationModal.value = true
 }
 
+const triggerInsuranceUpload = (member) => {
+    insuranceUploadMember.value = member
+    insuranceUploadInput.value?.click()
+}
+
+const onInsuranceCardSelected = async (event) => {
+    const file = event.target.files?.[0]
+    const member = insuranceUploadMember.value
+
+    if (!file || !member) {
+        if (event.target) event.target.value = ''
+        return
+    }
+
+    try {
+        await uploadPathfinderInsuranceCard(member.id, file)
+        showToast('Tarjeta de seguro cargada', 'success')
+        await fetchMembers(selectedClub.value.id)
+    } catch (error) {
+        console.error('Failed to upload insurance card', error)
+        showToast('No se pudo cargar la tarjeta de seguro', 'error')
+    } finally {
+        insuranceUploadMember.value = null
+        if (event.target) event.target.value = ''
+    }
+}
+
 const handleMemberDelete = async ({ id, notes }) => {
     try {
         await deleteMemberById(id, notes)
@@ -158,7 +189,7 @@ const handleBulkAction = async (action, type = null) => {
 
     if (action === 'download') {
         try {
-            await downloadMemberZip(ids, type)
+            await downloadMemberZip(ids, selectedClub.value?.club_type || null)
         } catch (err) {
             console.error(`Failed to download ${type} ZIP:`, err)
         }
@@ -405,6 +436,11 @@ onMounted(fetchClubs)
                                         <PencilIcon class="w-4 h-4 inline" />
                                     </button>
                                     &nbsp;&nbsp;
+                                    <button v-if="member.member_type === 'temp_pathfinder'" class="text-amber-600 hover:underline"
+                                        @click="triggerInsuranceUpload(member)">
+                                        <CameraIcon class="w-4 h-4 inline" />
+                                    </button>
+                                    <span v-if="member.member_type === 'temp_pathfinder'">&nbsp;&nbsp;</span>
                                     <button class="text-red-600 hover:underline"
                                         @click="deleteMember(member)">
                                         <TrashIcon class="w-4 h-4 inline" />
@@ -443,6 +479,13 @@ onMounted(fetchClubs)
                                         <div><strong>Telefono del medico:</strong> {{ member.physician_phone || '—' }}</div>
                                         <div><strong>Seguro medico:</strong> {{ member.insurance_provider || '—' }}</div>
                                         <div><strong>Numero de poliza:</strong> {{ member.insurance_number || '—' }}</div>
+                                        <div class="md:col-span-2">
+                                            <strong>Tarjeta de seguro:</strong>
+                                            <span v-if="member.insurance_card_url">
+                                                <a :href="member.insurance_card_url" target="_blank" rel="noopener" class="text-blue-600 hover:underline">Ver imagen</a>
+                                            </span>
+                                            <span v-else>—</span>
+                                        </div>
                                         <div><strong>Historial de salud:</strong> {{ member.health_history || '—' }}</div>
                                         <div><strong>Discapacidades:</strong> {{ member.disabilities || '—' }}</div>
                                         <div><strong>Alergias a medicamentos:</strong> {{ member.medication_allergies || '—' }}</div>
@@ -608,6 +651,14 @@ onMounted(fetchClubs)
             <DeleteMemberModal :show="showDeleteModal" :memberId="deletingMember?.id"
                 :memberName="deletingMember?.applicant_name" @cancel="showDeleteModal = false"
                 @confirm="handleMemberDelete" />
+            <input
+                ref="insuranceUploadInput"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                class="hidden"
+                @change="onInsuranceCardSelected"
+            />
         </div>
     </PathfinderLayout>
 </template>

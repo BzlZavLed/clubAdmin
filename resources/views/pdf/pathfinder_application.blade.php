@@ -57,6 +57,15 @@
             font-size: 11px;
             font-weight: 700;
         }
+        .insurance-card-wrap { margin-top: 12px; page-break-inside: avoid; text-align: center; }
+        .insurance-card-title { font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+        .insurance-card-img {
+            width: auto;
+            height: auto;
+            max-width: 500px;
+            max-height: 260px;
+            border: 1px solid #555;
+        }
     </style>
 </head>
 <body>
@@ -68,6 +77,7 @@
         $yesNo = fn ($value) => $value ? 'Yes' : 'No';
         $checkbox = fn ($value) => $value ? 'X' : '';
         $logoPath = public_path('images/pathfinder.webp');
+        $insuranceCardPath = $member->insuranceCard?->path ? storage_path('app/public/' . ltrim($member->insuranceCard->path, '/')) : null;
     @endphp
 
     <div class="header">
@@ -237,5 +247,12 @@
     <div class="footer-warning">
         Form must be filled out/reviewed, signed, and dated each year for the applicant to be officially recognized by Chesapeake Conference of Seventh-day Adventists.
     </div>
+
+    @if($insuranceCardPath && file_exists($insuranceCardPath))
+        <div class="insurance-card-wrap">
+            <div class="insurance-card-title">Insurance Card Attachment</div>
+            <img src="{{ $insuranceCardPath }}" alt="Insurance Card" class="insurance-card-img">
+        </div>
+    @endif
 </body>
 </html>

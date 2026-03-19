@@ -95,6 +95,11 @@ class MemberPathfinder extends Model
         return $this->belongsTo(Member::class);
     }
 
+    public function insuranceCard()
+    {
+        return $this->hasOne(MemberPathfinderInsuranceCard::class, 'member_pathfinder_id');
+    }
+
     public function getNombreAttribute(): ?string
     {
         return $this->applicant_name;

@@ -2,7 +2,9 @@
 namespace App\Services;
 
 use App\Models\MemberAdventurer;
+use App\Models\MemberPathfinder;
 use App\Models\StaffAdventurer;
+use Barryvdh\DomPDF\Facade\Pdf;
 use PhpOffice\PhpWord\TemplateProcessor;
 use Illuminate\Support\Str;
 
@@ -155,6 +157,26 @@ class DocumentExportService
         return $outputPath;
     }
 
+    public function generatePathfinderPdf(MemberPathfinder $member, string $outputDir): string
+    {
+        if (!file_exists($outputDir)) {
+            mkdir($outputDir, 0775, true);
+        }
+
+        $pdf = Pdf::loadView('pdf.pathfinder_application', [
+            'member' => $member,
+            'club' => $member->club,
+            'generatedAt' => now()->toDateTimeString(),
+        ])->setPaper('letter', 'portrait');
+
+        $filename = 'pathfinder_application_' . Str::slug($member->applicant_name ?: 'member') . '.pdf';
+        $outputPath = $outputDir . '/' . $filename;
+
+        file_put_contents($outputPath, $pdf->output());
+
+        return $outputPath;
+    }
+
     private function getTemplatePath(string $file): string
     {
         $candidates = [
@@ -172,4 +194,3 @@ class DocumentExportService
         throw new \RuntimeException("Template file {$file} not found. Checked: " . implode(', ', $candidates));
     }
 }
-

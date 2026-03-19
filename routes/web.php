@@ -381,6 +381,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
     Route::get('/members/{id}/export-pathfinder-pdf', [MemberAdventurerController::class, 'exportPathfinderPdf'])->name('members.export-pathfinder-pdf');
+    Route::post('/members/{id}/insurance-card', [MemberAdventurerController::class, 'uploadPathfinderInsuranceCard'])->name('members.pathfinder.insurance-card.upload');
     Route::post('/members/export-zip', [ExportController::class, 'exportZip'])->name('members.export-zip');
     Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember'])->name('members.assign');
     Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment'])->name('members.assignment.undo');

@@ -63,11 +63,12 @@ export const bulkDeleteMembers = async (ids, note = "Bulk deleted") => {
     }
 };
 
-export const downloadMemberZip = async (ids) => {
+export const downloadMemberZip = async (ids, clubType = null) => {
     const response = await axios.post(
         route("members.export-zip"),
         {
             member_ids: ids,
+            club_type: clubType,
         },
         { responseType: "blob" }
     );
@@ -80,6 +81,19 @@ export const downloadMemberZip = async (ids) => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
+};
+
+export const uploadPathfinderInsuranceCard = async (memberId, file) => {
+    const fd = new FormData();
+    fd.append("insurance_card_image", file);
+
+    const { data } = await axios.post(
+        route("members.pathfinder.insurance-card.upload", memberId),
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } }
+    );
+
+    return data;
 };
 
 export const downloadStaffZip = async (ids) => {
