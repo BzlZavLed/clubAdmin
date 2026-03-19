@@ -107,9 +107,13 @@ class ReportController extends Controller
 
         // Allow selecting club via query param
         $club = $this->resolveClubForUser($user, $request->input('club_id'));
-        $clubs = Club::where('user_id', $user->id)
-            ->orderBy('club_name')
-            ->get(['id', 'club_name']);
+        $clubs = ClubHelper::clubsForUser($user)
+            ->sortBy('club_name')
+            ->values()
+            ->map(fn ($club) => [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+            ]);
 
 
         // --- Catalogs: Scope Types ---
@@ -231,7 +235,7 @@ class ReportController extends Controller
      */
     protected function resolveClubFromUser($user): Club
     {
-        return Club::where('id', $user->club_id)->firstOrFail();
+        return ClubHelper::clubForUser($user);
     }
 
     /**
@@ -239,18 +243,7 @@ class ReportController extends Controller
      */
     protected function resolveClubForUser($user, $clubId = null): Club
     {
-        $query = Club::where('user_id', $user->id);
-        if ($clubId) {
-            $query->where('id', $clubId);
-        }
-
-        $club = $query->first();
-
-        if (!$club) {
-            $club = Club::where('user_id', $user->id)->firstOrFail();
-        }
-
-        return $club;
+        return ClubHelper::clubForUser($user, $clubId);
     }
 
     public function financialReport(Request $request)

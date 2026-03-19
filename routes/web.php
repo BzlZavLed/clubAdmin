@@ -531,6 +531,7 @@ Route::middleware(['auth'])->group(function () {
         ->name('club.payments.index');
     Route::post('/club-personal/payments', [ClubPaymentController::class, 'store'])->name('club.payments.store');
     Route::put('/club-personal/payments/{payment}', [ClubPaymentController::class, 'update'])->name('club.payments.update');
+    Route::delete('/club-personal/payments/{payment}', [ClubPaymentController::class, 'destroy'])->name('club.payments.destroy');
 
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 

@@ -402,6 +402,10 @@ export const updateClubPayment = async (paymentId, payload) => {
     });
 };
 
+export const deleteClubPayment = async (paymentId) => {
+    return await axios.delete(route("club.payments.destroy", { payment: paymentId }));
+};
+
 // Director Financial Report — bootstrap data
 export const fetchFinancialReportBootstrap = async (clubId = null) => {
     const { data } = await axios.get(route('financial.preload'), {

@@ -48,7 +48,7 @@ class ParentMemberController extends Controller
             }
 
             $linkedTempIds = Member::where('parent_id', $parentId)
-                ->where('type', 'temp_pathfinder')
+                ->whereIn('type', ['temp_pathfinder', 'pathfinders'])
                 ->pluck('id_data')
                 ->all();
 
@@ -59,7 +59,7 @@ class ParentMemberController extends Controller
             foreach ($emailMatchedTemps as $temp) {
                 $member = Member::firstOrCreate(
                     [
-                        'type' => 'temp_pathfinder',
+                        'type' => 'pathfinders',
                         'id_data' => $temp->id,
                     ],
                     [
@@ -264,7 +264,7 @@ class ParentMemberController extends Controller
             $exists = MemberPathfinder::findOrFail($data['id_data']);
             $member = Member::firstOrCreate(
                 [
-                    'type' => 'temp_pathfinder',
+                    'type' => 'pathfinders',
                     'id_data' => $exists->id,
                 ],
                 [
@@ -316,7 +316,7 @@ class ParentMemberController extends Controller
 
             $tempMember = MemberPathfinder::findOrFail($id);
 
-            $link = Member::where('type', 'temp_pathfinder')
+            $link = Member::whereIn('type', ['temp_pathfinder', 'pathfinders'])
                 ->where('id_data', $tempMember->id)
                 ->where('parent_id', $parentId)
                 ->firstOrFail();

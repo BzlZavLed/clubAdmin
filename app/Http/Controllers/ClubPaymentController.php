@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 
 class ClubPaymentController extends Controller
 {
@@ -158,6 +159,9 @@ class ClubPaymentController extends Controller
                 ];
             });
 
+        $completedPaymentTargets = $this->completedPaymentTargets($concepts);
+        $paymentTotals = $this->paymentTotalsByConceptTarget($concepts);
+
         // If you still want to serve JSON to API/XHR callers:
         if ($request->wantsJson()) {
             return response()->json([
@@ -167,6 +171,8 @@ class ClubPaymentController extends Controller
                     'assigned_class' => $assignedClass ? ['id' => $assignedClass->id, 'name' => $assignedClass->class_name] : null,
                     'concepts' => $concepts,
                     'payments' => $recent,
+                    'completed_payment_targets' => $completedPaymentTargets,
+                    'payment_totals' => $paymentTotals,
                     'payment_types' => ['zelle', 'cash', 'check', 'initial'],
                 ]
             ]);
@@ -185,6 +191,8 @@ class ClubPaymentController extends Controller
             'assigned_members' => $assignedMembers,
             'concepts' => $concepts,
             'payments' => $recent,
+            'completed_payment_targets' => $completedPaymentTargets,
+            'payment_totals' => $paymentTotals,
             'payment_types' => ['zelle', 'cash', 'check', 'initial'],
             'prefill' => $request->only(['club_id', 'concept_id', 'member_id', 'staff_id', 'amount']),
         ]);
@@ -297,6 +305,9 @@ class ClubPaymentController extends Controller
                 ];
             });
 
+        $completedPaymentTargets = $this->completedPaymentTargets($concepts);
+        $paymentTotals = $this->paymentTotalsByConceptTarget($concepts);
+
         if ($request->wantsJson()) {
             return response()->json([
                 'data' => [
@@ -307,6 +318,8 @@ class ClubPaymentController extends Controller
                     'concepts' => $concepts,
                     'accounts' => $accounts,
                     'payments' => $recent,
+                    'completed_payment_targets' => $completedPaymentTargets,
+                    'payment_totals' => $paymentTotals,
                     'payment_types' => ['zelle', 'cash', 'check', 'initial'],
                 ]
             ]);
@@ -322,6 +335,8 @@ class ClubPaymentController extends Controller
             'concepts' => $concepts,
             'accounts' => $accounts,
             'payments' => $recent,
+            'completed_payment_targets' => $completedPaymentTargets,
+            'payment_totals' => $paymentTotals,
             'payment_types' => ['zelle', 'cash', 'check', 'initial'],
             'prefill' => $request->only(['club_id', 'concept_id', 'member_id', 'staff_id', 'amount']),
         ]);
@@ -429,6 +444,14 @@ class ClubPaymentController extends Controller
         }
 
         $remainingBefore = $expected !== null ? max($expected - $priorPaid, 0.0) : null;
+
+        if ($expected !== null && $expected > 0 && $remainingBefore !== null && $remainingBefore <= 0) {
+            return response()->json([
+                'errors' => [
+                    'payment_concept_id' => ['Este concepto ya fue pagado completamente para este pagador.'],
+                ],
+            ], 422);
+        }
 
         $amountPaid = (float) $validated['amount_paid'];
         if ($expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
@@ -612,6 +635,41 @@ class ClubPaymentController extends Controller
         return response()->json(['message' => 'Payment updated', 'data' => $payment]);
     }
 
+    public function destroy(Request $request, Payment $payment): JsonResponse
+    {
+        $user = $request->user();
+        if ($user?->profile_type !== 'club_director') {
+            return response()->json(['message' => 'Solo el director puede eliminar pagos registrados.'], 403);
+        }
+
+        $allowedClubIds = ClubHelper::clubIdsForUser($user);
+        if (!$allowedClubIds->contains((int) $payment->club_id)) {
+            abort(403, 'You cannot delete payments for this club.');
+        }
+
+        $receiptPath = $payment->check_image_path;
+        $account = $payment->account;
+        $deletedPaymentSnapshot = clone $payment;
+
+        DB::transaction(function () use ($payment, $account) {
+            if ($account) {
+                $account->decrement('balance', (float) $payment->amount_paid);
+            }
+            $payment->delete();
+        });
+
+        if ($receiptPath) {
+            try {
+                Storage::disk('public')->delete($receiptPath);
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $this->recalculatePaymentBalances($deletedPaymentSnapshot);
+
+        return response()->json(['message' => 'Payment deleted']);
+    }
+
 
     /**
      * Helper to pull the active club from the session/user.
@@ -630,7 +688,6 @@ class ClubPaymentController extends Controller
     protected function recalculatePaymentBalances(Payment $payment): void
     {
         if (!$payment->payment_concept_id || $payment->expected_amount === null) {
-            $payment->update(['balance_due_after' => null]);
             return;
         }
 
@@ -652,5 +709,62 @@ class ClubPaymentController extends Controller
                     'balance_due_after' => max($expected - $runningPaid, 0.0),
                 ]);
             });
+    }
+
+    protected function completedPaymentTargets(Collection $concepts): array
+    {
+        $expectedByConcept = $concepts
+            ->filter(fn ($concept) => $concept->amount !== null && (float) $concept->amount > 0)
+            ->mapWithKeys(fn ($concept) => [(int) $concept->id => (float) $concept->amount]);
+
+        if ($expectedByConcept->isEmpty()) {
+            return [];
+        }
+
+        return Payment::query()
+            ->whereIn('payment_concept_id', $expectedByConcept->keys())
+            ->selectRaw('payment_concept_id, member_id, staff_id, COALESCE(SUM(amount_paid), 0) as total_paid')
+            ->groupBy('payment_concept_id', 'member_id', 'staff_id')
+            ->get()
+            ->filter(function ($row) use ($expectedByConcept) {
+                $expected = (float) ($expectedByConcept[(int) $row->payment_concept_id] ?? 0);
+                return $expected > 0 && (float) $row->total_paid >= $expected;
+            })
+            ->map(function ($row) {
+                if ($row->member_id) {
+                    return sprintf('%d|member|%d', $row->payment_concept_id, $row->member_id);
+                }
+                if ($row->staff_id) {
+                    return sprintf('%d|staff|%d', $row->payment_concept_id, $row->staff_id);
+                }
+                return null;
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function paymentTotalsByConceptTarget(Collection $concepts): array
+    {
+        $conceptIds = $concepts->pluck('id')->map(fn ($id) => (int) $id)->filter()->values();
+        if ($conceptIds->isEmpty()) {
+            return [];
+        }
+
+        return Payment::query()
+            ->whereIn('payment_concept_id', $conceptIds)
+            ->selectRaw('payment_concept_id, member_id, staff_id, COALESCE(SUM(amount_paid), 0) as total_paid')
+            ->groupBy('payment_concept_id', 'member_id', 'staff_id')
+            ->get()
+            ->mapWithKeys(function ($row) {
+                if ($row->member_id) {
+                    return [sprintf('%d|member|%d', $row->payment_concept_id, $row->member_id) => (float) $row->total_paid];
+                }
+                if ($row->staff_id) {
+                    return [sprintf('%d|staff|%d', $row->payment_concept_id, $row->staff_id) => (float) $row->total_paid];
+                }
+                return [];
+            })
+            ->all();
     }
 }

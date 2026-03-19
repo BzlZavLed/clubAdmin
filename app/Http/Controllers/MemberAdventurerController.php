@@ -83,7 +83,7 @@ class MemberAdventurerController extends Controller
             $tempMember = MemberPathfinder::create($validated);
 
             $member = Member::create([
-                'type' => 'temp_pathfinder',
+                'type' => 'pathfinders',
                 'id_data' => $tempMember->id,
                 'club_id' => $club->id,
                 'class_id' => null,

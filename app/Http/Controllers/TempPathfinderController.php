@@ -42,7 +42,7 @@ class TempPathfinderController extends Controller
 
             // Create member pointing to temp row id_data
             $member = \App\Models\Member::create([
-                'type' => 'temp_pathfinder',
+                'type' => 'pathfinders',
                 'club_id' => $data['club_id'],
                 'id_data' => $row->id,
                 'class_id' => null,
