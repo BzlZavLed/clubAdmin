@@ -11,7 +11,7 @@ import {
     ArrowPathIcon,
     UserGroupIcon
 } from '@heroicons/vue/24/outline'
-import { createClubPayment, updateClubPayment, deleteClubPayment } from '@/Services/api'
+import { createClubPayment, updateClubPayment, deleteClubPayment, downloadBulkReceipts } from '@/Services/api'
 
 const props = defineProps({
     auth_user: { type: Object, required: true },
@@ -23,6 +23,7 @@ const props = defineProps({
     concepts: { type: Array, required: true },
     accounts: { type: Array, default: () => [] },
     payments: { type: Array, required: true },
+    pending_receipts: { type: Array, default: () => [] },
     completed_payment_targets: { type: Array, default: () => [] },
     payment_totals: { type: Object, default: () => ({}) },
     payment_types: { type: Array, required: true },
@@ -67,6 +68,18 @@ const formatISODateLocal = (val) => {
     const [y, m, d] = String(val).slice(0, 10).split('-').map(Number)
     const dt = new Date(y, m - 1, d)
     return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }).format(dt)
+}
+const formatDateTimeLocal = (val) => {
+    if (!val) return 'Nunca'
+    const dt = new Date(val)
+    if (Number.isNaN(dt.getTime())) return 'Nunca'
+    return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(dt)
 }
 
 // Selection state
@@ -248,6 +261,32 @@ const modeDescription = computed(() => customConceptMode.value
     ? 'Registra un ingreso manual para una cuenta del club.'
     : 'Selecciona un concepto y el sistema calcula el pendiente por pagador.'
 )
+const pendingReceiptGroups = computed(() => {
+    const groups = new Map()
+
+    ;(props.pending_receipts || []).forEach((receipt) => {
+        const payerName = receipt.member_name || receipt.staff_name || 'Sin nombre'
+        const payerType = receipt.member_name ? 'member' : (receipt.staff_name ? 'staff' : 'unknown')
+        const key = `${payerType}:${payerName}`
+
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                payer_name: payerName,
+                payer_type: payerType,
+                label: payerName,
+                total_amount: 0,
+                receipts: [],
+            })
+        }
+
+        const group = groups.get(key)
+        group.receipts.push(receipt)
+        group.total_amount += Number(receipt.amount_paid || 0)
+    })
+
+    return Array.from(groups.values()).sort((a, b) => a.payer_name.localeCompare(b.payer_name))
+})
 
 const syncAmountToRemaining = () => {
     if (customConceptMode.value || form.payment_type === 'initial') return
@@ -503,11 +542,37 @@ const onEditCheckFileChange = (e) => {
 }
 
 const reloadPaymentData = () => router.reload({
-    only: ['payments', 'completed_payment_targets', 'payment_totals', 'concepts'],
+    only: ['payments', 'pending_receipts', 'completed_payment_targets', 'payment_totals', 'concepts'],
     preserveScroll: true,
 })
 
 const submitting = ref(false)
+const bulkDownloadKey = ref(null)
+const showPendingReceipts = ref(false)
+
+const slugifyLabel = (value) => String(value || 'payment-receipts')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'payment-receipts'
+
+const downloadReceiptGroup = async (group) => {
+    bulkDownloadKey.value = group.key
+    try {
+        await downloadBulkReceipts(
+            group.receipts.map(receipt => receipt.id),
+            `recibos-${slugifyLabel(group.label)}`
+        )
+        window.setTimeout(() => {
+            reloadPaymentData()
+        }, 1500)
+    } finally {
+        bulkDownloadKey.value = null
+    }
+}
+
 const submit = async () => {
     form.clearErrors()
     if (createAmountNumber.value !== null && createAmountNumber.value <= 0) {
@@ -990,6 +1055,103 @@ const setFormMode = (mode) => {
                     </div>
                 </section>
 
+                <section class="mt-6 rounded-2xl border border-amber-200 bg-amber-50/40 p-4 shadow-sm">
+                    <button
+                        type="button"
+                        class="flex w-full items-center justify-between gap-3 text-left"
+                        @click="showPendingReceipts = !showPendingReceipts"
+                    >
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">Recibos pendientes de enviar</h3>
+                            <p class="mt-1 text-xs text-gray-600">Recibos que requieren seguimiento manual por miembro o falta de correo.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="text-xs font-medium text-amber-800">
+                                {{ props.pending_receipts.length }} pendientes
+                            </div>
+                            <span class="text-xs font-semibold text-amber-900">
+                                {{ showPendingReceipts ? 'Ocultar' : 'Mostrar' }}
+                            </span>
+                        </div>
+                    </button>
+
+                    <div v-if="!props.pending_receipts.length" class="mt-3 text-sm text-gray-600">
+                        No hay recibos pendientes de envio manual.
+                    </div>
+
+                    <div v-else-if="showPendingReceipts" class="mt-4 space-y-4">
+                        <div
+                            v-for="group in pendingReceiptGroups"
+                            :key="group.key"
+                            class="overflow-hidden rounded-2xl border border-amber-200/80 bg-white/80"
+                        >
+                            <div class="flex flex-col gap-3 border-b border-amber-200/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <div class="font-semibold text-gray-900">{{ group.payer_name }}</div>
+                                    <div class="mt-1 text-xs text-gray-500">
+                                        {{ group.receipts.length }} recibo(s) pendientes · ${{ group.total_amount.toFixed(2) }}
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="bulkDownloadKey === group.key"
+                                    @click="downloadReceiptGroup(group)"
+                                >
+                                    {{ bulkDownloadKey === group.key ? 'Preparando ZIP...' : 'Descargar todos' }}
+                                </button>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full text-sm text-gray-700">
+                                    <thead class="bg-amber-50/60">
+                                        <tr>
+                                            <th class="px-3 py-2 text-left font-semibold">Recibo</th>
+                                            <th class="px-3 py-2 text-left font-semibold">Concepto</th>
+                                            <th class="px-3 py-2 text-left font-semibold">Correo</th>
+                                            <th class="px-3 py-2 text-left font-semibold">Motivo</th>
+                                            <th class="px-3 py-2 text-left font-semibold">Ultima descarga</th>
+                                            <th class="px-3 py-2 text-left font-semibold">Accion</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="receipt in group.receipts" :key="receipt.id" class="border-t border-amber-200/70">
+                                            <td class="px-3 py-2">
+                                                <div class="font-medium text-gray-900">{{ receipt.receipt_number }}</div>
+                                                <div class="text-xs text-gray-500">{{ receipt.payment_date || receipt.issued_at || '—' }}</div>
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                <div>{{ receipt.concept_name || '—' }}</div>
+                                                <div class="text-xs text-gray-500">${{ Number(receipt.amount_paid || 0).toFixed(2) }}</div>
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                {{ receipt.issued_to_email || 'Sin correo' }}
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                                                    {{ receipt.reason }}
+                                                </span>
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                {{ formatDateTimeLocal(receipt.last_downloaded_at) }}
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
+                                                    Descargar
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else class="mt-3 text-sm text-amber-900">
+                        La lista de recibos pendientes esta colapsada.
+                    </div>
+                </section>
+
                 <section class="mt-6">
                     <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
@@ -1102,6 +1264,9 @@ const setFormMode = (mode) => {
                                         >
                                             Eliminar
                                         </button>
+                                    </div>
+                                    <div v-if="p.receipt?.id" class="mt-1 text-[11px] text-gray-500">
+                                        Ultima descarga: {{ formatDateTimeLocal(p.receipt.last_downloaded_at) }}
                                     </div>
                                 </div>
                             </div>

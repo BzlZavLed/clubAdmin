@@ -5,41 +5,64 @@ namespace App\Http\Controllers;
 use App\Models\PaymentReceipt;
 use App\Support\ClubHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class PaymentReceiptController extends Controller
 {
     public function download(Request $request, PaymentReceipt $receipt)
     {
-        $receipt->loadMissing([
-            'club:id,club_name,church_name',
-            'payment.club:id,club_name,church_name',
-            'payment.member:id,type,id_data,parent_id',
-            'payment.staff:id,type,id_data,user_id',
-            'payment.concept:id,concept,amount,reusable',
-            'payment.account:id,club_id,pay_to,label',
-            'payment.receivedBy:id,name,email',
-            'parentUser:id,name,email',
-            'staffUser:id,name,email',
+        $receipt = $this->loadReceiptContext($receipt);
+        $this->authorizeReceipt($request->user(), $receipt);
+        $this->markAsDownloaded(collect([$receipt]));
+
+        return $this->makeReceiptPdf($receipt)->download("{$receipt->receipt_number}.pdf");
+    }
+
+    public function downloadBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'receipt_ids' => ['required', 'array', 'min:1'],
+            'receipt_ids.*' => ['integer', 'exists:payment_receipts,id'],
+            'label' => ['nullable', 'string', 'max:120'],
         ]);
 
-        $this->authorizeReceipt($request->user(), $receipt);
+        $receipts = PaymentReceipt::query()
+            ->whereIn('id', $validated['receipt_ids'])
+            ->get()
+            ->map(fn ($receipt) => $this->loadReceiptContext($receipt))
+            ->values();
 
-        $payment = $receipt->payment;
-        $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
-        $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
+        abort_if($receipts->isEmpty(), 404);
 
-        $pdf = Pdf::loadView('pdf.payment_receipt', [
-            'receipt' => $receipt,
-            'payment' => $payment,
-            'club' => $receipt->club ?? $payment?->club,
-            'member_name' => $memberDetail['name'] ?? null,
-            'staff_name' => $staffDetail['name'] ?? null,
-            'recipient_name' => $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? '—',
-            'recipient_email' => $receipt->issued_to_email,
-        ])->setPaper('a4');
+        foreach ($receipts as $receipt) {
+            $this->authorizeReceipt($request->user(), $receipt);
+        }
 
-        return $pdf->download("{$receipt->receipt_number}.pdf");
+        $this->markAsDownloaded($receipts);
+
+        $zipName = Str::slug($validated['label'] ?: 'payment-receipts');
+        $zipPath = storage_path('app/temp/' . uniqid($zipName . '-', true) . '.zip');
+        if (!is_dir(dirname($zipPath))) {
+            mkdir(dirname($zipPath), 0775, true);
+        }
+
+        $zip = new \ZipArchive;
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            abort(500, 'No se pudo crear el ZIP de recibos.');
+        }
+
+        foreach ($receipts as $receipt) {
+            $zip->addFromString(
+                "{$receipt->receipt_number}.pdf",
+                $this->makeReceiptPdf($receipt)->output()
+            );
+        }
+
+        $zip->close();
+
+        return response()->download($zipPath, "{$zipName}.zip")->deleteFileAfterSend(true);
     }
 
     public function parentIndex(Request $request)
@@ -97,6 +120,7 @@ class PaymentReceiptController extends Controller
             'delivery_status' => $receipt->delivery_status,
             'issued_to_type' => $receipt->issued_to_type,
             'issued_to_email' => $receipt->issued_to_email,
+            'last_downloaded_at' => optional($receipt->last_downloaded_at)->toDateTimeString(),
             'club_name' => $receipt->club?->club_name,
             'amount_paid' => $payment?->amount_paid,
             'payment_date' => optional($payment?->payment_date)->toDateString(),
@@ -106,6 +130,22 @@ class PaymentReceiptController extends Controller
             'staff_name' => $staffDetail['name'] ?? null,
             'download_url' => route('payment-receipts.download', $receipt),
         ];
+    }
+
+    protected function markAsDownloaded($receipts): void
+    {
+        $ids = collect($receipts)
+            ->pluck('id')
+            ->filter()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        PaymentReceipt::query()
+            ->whereIn('id', $ids)
+            ->update(['last_downloaded_at' => Carbon::now()]);
     }
 
     protected function authorizeReceipt($user, PaymentReceipt $receipt): void
@@ -134,5 +174,39 @@ class PaymentReceiptController extends Controller
         }
 
         abort(403);
+    }
+
+    protected function loadReceiptContext(PaymentReceipt $receipt): PaymentReceipt
+    {
+        $receipt->loadMissing([
+            'club:id,club_name,church_name',
+            'payment.club:id,club_name,church_name',
+            'payment.member:id,type,id_data,parent_id',
+            'payment.staff:id,type,id_data,user_id',
+            'payment.concept:id,concept,amount,reusable',
+            'payment.account:id,club_id,pay_to,label',
+            'payment.receivedBy:id,name,email',
+            'parentUser:id,name,email',
+            'staffUser:id,name,email',
+        ]);
+
+        return $receipt;
+    }
+
+    protected function makeReceiptPdf(PaymentReceipt $receipt)
+    {
+        $payment = $receipt->payment;
+        $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
+        $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
+
+        return Pdf::loadView('pdf.payment_receipt', [
+            'receipt' => $receipt,
+            'payment' => $payment,
+            'club' => $receipt->club ?? $payment?->club,
+            'member_name' => $memberDetail['name'] ?? null,
+            'staff_name' => $staffDetail['name'] ?? null,
+            'recipient_name' => $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? '—',
+            'recipient_email' => $receipt->issued_to_email,
+        ])->setPaper('a4');
     }
 }

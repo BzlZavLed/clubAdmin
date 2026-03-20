@@ -22,11 +22,13 @@ class PaymentReceipt extends Model
         'issued_at',
         'delivered_at',
         'delivery_status',
+        'last_downloaded_at',
     ];
 
     protected $casts = [
         'issued_at' => 'datetime',
         'delivered_at' => 'datetime',
+        'last_downloaded_at' => 'datetime',
     ];
 
     public function payment()

@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\ClubClass;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
+use App\Models\PaymentReceipt;
 use App\Models\Staff;
 use App\Support\ClubHelper;
 use App\Services\PaymentReceiptService;
@@ -125,7 +126,7 @@ class ClubPaymentController extends Controller
                 'concept:id,concept,amount,reusable',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
-                'receipt:id,payment_id,receipt_number',
+                'receipt:id,payment_id,receipt_number,last_downloaded_at',
             ])
             ->get()
             ->map(function ($p) {
@@ -166,6 +167,7 @@ class ClubPaymentController extends Controller
                     'receipt' => $p->receipt ? [
                         'id' => $p->receipt->id,
                         'receipt_number' => $p->receipt->receipt_number,
+                        'last_downloaded_at' => optional($p->receipt->last_downloaded_at)->toDateTimeString(),
                     ] : null,
                 ];
             });
@@ -277,7 +279,7 @@ class ClubPaymentController extends Controller
                 'concept:id,concept,amount,reusable',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
-                'receipt:id,payment_id,receipt_number',
+                'receipt:id,payment_id,receipt_number,last_downloaded_at',
             ])
             ->get()
             ->map(function ($p) {
@@ -318,12 +320,14 @@ class ClubPaymentController extends Controller
                     'receipt' => $p->receipt ? [
                         'id' => $p->receipt->id,
                         'receipt_number' => $p->receipt->receipt_number,
+                        'last_downloaded_at' => optional($p->receipt->last_downloaded_at)->toDateTimeString(),
                     ] : null,
                 ];
             });
 
         $completedPaymentTargets = $this->completedPaymentTargets($concepts);
         $paymentTotals = $this->paymentTotalsByConceptTarget($concepts);
+        $pendingReceipts = $this->pendingManualReceiptsForClub($club->id);
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -335,6 +339,7 @@ class ClubPaymentController extends Controller
                     'concepts' => $concepts,
                     'accounts' => $accounts,
                     'payments' => $recent,
+                    'pending_receipts' => $pendingReceipts,
                     'completed_payment_targets' => $completedPaymentTargets,
                     'payment_totals' => $paymentTotals,
                     'payment_types' => ['zelle', 'cash', 'check', 'initial'],
@@ -352,6 +357,7 @@ class ClubPaymentController extends Controller
             'concepts' => $concepts,
             'accounts' => $accounts,
             'payments' => $recent,
+            'pending_receipts' => $pendingReceipts,
             'completed_payment_targets' => $completedPaymentTargets,
             'payment_totals' => $paymentTotals,
             'payment_types' => ['zelle', 'cash', 'check', 'initial'],
@@ -915,6 +921,56 @@ class ClubPaymentController extends Controller
                 }
                 return [];
             })
+            ->all();
+    }
+
+    protected function pendingManualReceiptsForClub(int $clubId): array
+    {
+        return PaymentReceipt::query()
+            ->where('club_id', $clubId)
+            ->where('delivery_status', 'pending')
+            ->where(function ($query) {
+                $query->whereIn('issued_to_type', ['member_unlinked', 'staff_unlinked'])
+                    ->orWhereNull('issued_to_email');
+            })
+            ->with([
+                'payment:id,club_id,member_id,staff_id,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',
+                'payment.member:id,type,id_data,parent_id',
+                'payment.staff:id,type,id_data,user_id',
+                'payment.concept:id,concept,amount,reusable',
+            ])
+            ->latest('issued_at')
+            ->get()
+            ->map(function (PaymentReceipt $receipt) {
+                $payment = $receipt->payment;
+                $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
+                $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
+
+                $reason = match (true) {
+                    $receipt->issued_to_type === 'member_unlinked' => 'Sin padre vinculado',
+                    $receipt->issued_to_type === 'staff_unlinked' => 'Staff sin cuenta vinculada',
+                    empty($receipt->issued_to_email) && $receipt->issued_to_type === 'parent' => 'Padre sin correo',
+                    empty($receipt->issued_to_email) && $receipt->issued_to_type === 'staff' => 'Staff sin correo',
+                    default => 'Entrega manual requerida',
+                };
+
+                return [
+                    'id' => $receipt->id,
+                    'receipt_number' => $receipt->receipt_number,
+                    'issued_at' => optional($receipt->issued_at)->toDateString(),
+                    'issued_to_type' => $receipt->issued_to_type,
+                    'issued_to_email' => $receipt->issued_to_email,
+                    'last_downloaded_at' => optional($receipt->last_downloaded_at)->toDateTimeString(),
+                    'member_name' => $memberDetail['name'] ?? null,
+                    'staff_name' => $staffDetail['name'] ?? null,
+                    'concept_name' => $payment?->concept?->concept ?? $payment?->concept_text,
+                    'amount_paid' => (float) ($payment?->amount_paid ?? 0),
+                    'payment_date' => optional($payment?->payment_date)->toDateString(),
+                    'reason' => $reason,
+                    'download_url' => route('payment-receipts.download', $receipt),
+                ];
+            })
+            ->values()
             ->all();
     }
 }

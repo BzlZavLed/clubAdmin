@@ -22,6 +22,54 @@ export const fetchStaffReceipts = async () => {
     return response.data;
 };
 
+export const downloadBulkReceipts = async (receiptIds, label = "payment-receipts") => {
+    const csrf = document
+        .querySelector('meta[name="csrf-token"]')
+        ?.getAttribute("content");
+
+    const iframeName = `receipt-download-${Date.now()}`;
+    const iframe = document.createElement("iframe");
+    iframe.name = iframeName;
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = route("payment-receipts.download-bulk");
+    form.target = iframeName;
+    form.style.display = "none";
+
+    if (csrf) {
+        const csrfInput = document.createElement("input");
+        csrfInput.type = "hidden";
+        csrfInput.name = "_token";
+        csrfInput.value = csrf;
+        form.appendChild(csrfInput);
+    }
+
+    const labelInput = document.createElement("input");
+    labelInput.type = "hidden";
+    labelInput.name = "label";
+    labelInput.value = label;
+    form.appendChild(labelInput);
+
+    receiptIds.forEach((id) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "receipt_ids[]";
+        input.value = id;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+
+    window.setTimeout(() => {
+        form.remove();
+        iframe.remove();
+    }, 4000);
+};
+
 export const assignMemberToClass = async ({ memberId, classId }) => {
     return await axios.post(route("members.assign"), {
         member_id: memberId,

@@ -130,6 +130,7 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/payment-receipts/{receipt}/download', [PaymentReceiptController::class, 'download'])->name('payment-receipts.download');
+    Route::post('/payment-receipts/download-bulk', [PaymentReceiptController::class, 'downloadBulk'])->name('payment-receipts.download-bulk');
 });
 
 // ---------------------------------
