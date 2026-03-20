@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import WorkplanCalendar from '@/Components/WorkplanCalendar.vue'
-import { fetchParentWorkplan } from '@/Services/api'
+import { fetchParentWorkplan, fetchParentReceipts } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 
@@ -23,6 +23,7 @@ const showPasswordModal = ref(false)
 const changePasswordUserId = ref(null)
 const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value }) : '#')
 const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value }) : '#')
+const receipts = ref([])
 
 const cleanDate = (val) => {
     if (!val) return '—'
@@ -53,6 +54,16 @@ const load = async (clubId = null) => {
     }
 }
 
+const loadReceipts = async () => {
+    try {
+        const payload = await fetchParentReceipts()
+        receipts.value = payload.data || []
+    } catch (e) {
+        console.error(e)
+        showToast('No se pudieron cargar los recibos', 'error')
+    }
+}
+
 const changeClub = async () => {
     if (!selectedClubId.value) return
     await load(selectedClubId.value)
@@ -76,6 +87,7 @@ const openPasswordModal = () => {
 
 onMounted(() => {
     load()
+    loadReceipts()
 })
 </script>
 
@@ -126,6 +138,30 @@ onMounted(() => {
                     />
                 </div>
                 <div v-else class="text-sm text-gray-600">No se encontró plan de trabajo para tus clubes.</div>
+            </div>
+
+            <div class="bg-white border rounded shadow-sm p-4 space-y-3">
+                <div class="space-y-1">
+                    <h3 class="text-lg font-semibold text-gray-800">Mis recibos</h3>
+                    <p class="text-sm text-gray-600">Recibos emitidos por pagos de tus hijos.</p>
+                </div>
+                <div v-if="!receipts.length" class="text-sm text-gray-600">Aun no hay recibos disponibles.</div>
+                <div v-else class="space-y-2">
+                    <div v-for="receipt in receipts" :key="receipt.id" class="flex flex-col gap-2 rounded border border-gray-200 p-3 md:flex-row md:items-center md:justify-between">
+                        <div class="text-sm">
+                            <div class="font-semibold text-gray-900">{{ receipt.receipt_number }}</div>
+                            <div class="text-gray-600">
+                                {{ receipt.member_name || receipt.staff_name || '—' }} • {{ receipt.concept_name || '—' }}
+                            </div>
+                            <div class="text-xs text-gray-500">
+                                {{ receipt.payment_date || '—' }} • ${{ Number(receipt.amount_paid || 0).toFixed(2) }} • {{ receipt.club_name || '—' }}
+                            </div>
+                        </div>
+                        <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
+                            Descargar recibo
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
 

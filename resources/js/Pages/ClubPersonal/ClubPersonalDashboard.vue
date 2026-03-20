@@ -13,7 +13,8 @@ import {
     fetchReportsByStaffId,
     fetchReportByIdAndDate,
     fetchPersonalWorkplan,
-    createTempStaffPathfinder
+    createTempStaffPathfinder,
+    fetchStaffReceipts
 } from "@/Services/api";
 import { ArrowDownTrayIcon, CalendarDaysIcon } from "@heroicons/vue/24/outline";
 import { ArrowTurnLeftUpIcon } from "@heroicons/vue/24/solid";
@@ -53,6 +54,7 @@ const planForm = ref({
     location_override: ''
 })
 const selectedEvent = ref(null)
+const receipts = ref([])
 const planLocationSuggestions = ref([])
 const planLocationLoading = ref(false)
 let planLocationTimer = null
@@ -149,13 +151,24 @@ const loadStaffReports = async (staffId) => {
         showToast(tr('Error cargando reportes', 'Error loading reports'), 'error');
     }
 }
+
+const loadReceipts = async () => {
+    try {
+        const payload = await fetchStaffReceipts()
+        receipts.value = payload.data || []
+    } catch (error) {
+        console.error("Failed to load receipts", error)
+    }
+}
 onMounted(async () => {
     fetchStaffRecordMethod();
+    loadReceipts();
 
 });
 watch(createStaffModalVisible, (visible) => {
     if (!visible) {
         fetchStaffRecordMethod();
+        loadReceipts();
     }
 })
 
@@ -170,6 +183,7 @@ watch(tempStaffModalVisible, (visible) => {
             club_id: selectedClub.value?.id || ''
         }
         fetchStaffRecordMethod();
+        loadReceipts();
     }
 })
 
@@ -389,6 +403,30 @@ const applyPlanLocation = (item) => {
                     
                 </div>
                 <div v-else class="text-sm text-gray-600">{{ tr('No hay un club activo para ver su plan de trabajo.', 'There is no active club available to view its workplan.') }}</div>
+            </div>
+
+            <div class="bg-white border rounded shadow-sm p-4">
+                <div class="space-y-1 mb-3">
+                    <h2 class="text-xl font-semibold text-gray-800">{{ tr('Mis recibos', 'My Receipts') }}</h2>
+                    <p class="text-sm text-gray-600">{{ tr('Pagos registrados a tu nombre.', 'Payments recorded under your name.') }}</p>
+                </div>
+                <div v-if="!receipts.length" class="text-sm text-gray-600">
+                    {{ tr('Aun no hay recibos disponibles.', 'No receipts are available yet.') }}
+                </div>
+                <div v-else class="space-y-2">
+                    <div v-for="receipt in receipts" :key="receipt.id" class="flex flex-col gap-2 rounded border border-gray-200 p-3 md:flex-row md:items-center md:justify-between">
+                        <div class="text-sm">
+                            <div class="font-semibold text-gray-900">{{ receipt.receipt_number }}</div>
+                            <div class="text-gray-600">{{ receipt.concept_name || '—' }}</div>
+                            <div class="text-xs text-gray-500">
+                                {{ receipt.payment_date || '—' }} • ${{ Number(receipt.amount_paid || 0).toFixed(2) }} • {{ receipt.club_name || '—' }}
+                            </div>
+                        </div>
+                        <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
+                            {{ tr('Descargar recibo', 'Download receipt') }}
+                        </a>
+                    </div>
+                </div>
             </div>
 
             

@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\PaymentConcept;
 use App\Models\Staff;
 use App\Support\ClubHelper;
+use App\Services\PaymentReceiptService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
@@ -22,6 +23,10 @@ use Illuminate\Support\Collection;
 
 class ClubPaymentController extends Controller
 {
+    public function __construct(protected PaymentReceiptService $paymentReceiptService)
+    {
+    }
+
     // Utility: ensure user can access club
     protected function assertClubAccess(Club $club)
     {
@@ -120,6 +125,7 @@ class ClubPaymentController extends Controller
                 'concept:id,concept,amount,reusable',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
+                'receipt:id,payment_id,receipt_number',
             ])
             ->get()
             ->map(function ($p) {
@@ -156,6 +162,10 @@ class ClubPaymentController extends Controller
                     'received_by' => $p->receivedBy ? [
                         'id' => $p->receivedBy->id,
                         'name' => $p->receivedBy->name,
+                    ] : null,
+                    'receipt' => $p->receipt ? [
+                        'id' => $p->receipt->id,
+                        'receipt_number' => $p->receipt->receipt_number,
                     ] : null,
                 ];
             });
@@ -267,6 +277,7 @@ class ClubPaymentController extends Controller
                 'concept:id,concept,amount,reusable',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
+                'receipt:id,payment_id,receipt_number',
             ])
             ->get()
             ->map(function ($p) {
@@ -303,6 +314,10 @@ class ClubPaymentController extends Controller
                     'received_by' => $p->receivedBy ? [
                         'id' => $p->receivedBy->id,
                         'name' => $p->receivedBy->name,
+                    ] : null,
+                    'receipt' => $p->receipt ? [
+                        'id' => $p->receipt->id,
+                        'receipt_number' => $p->receipt->receipt_number,
                     ] : null,
                 ];
             });
@@ -476,6 +491,93 @@ class ClubPaymentController extends Controller
         }
         $zellePhone = $validated['payment_type'] === 'zelle' ? $validated['zelle_phone'] : null;
 
+        if ($user?->profile_type === 'club_personal') {
+            if ($isInitial) {
+                return response()->json(['message' => 'El personal no puede registrar saldo inicial.'], 403);
+            }
+
+            if (empty($validated['payment_concept_id'])) {
+                return response()->json([
+                    'errors' => [
+                        'payment_concept_id' => ['El personal solo puede registrar pagos sobre conceptos existentes.'],
+                    ],
+                ], 422);
+            }
+
+            if (!$isMember || $isStaff) {
+                return response()->json([
+                    'errors' => [
+                        'member_id' => ['El personal solo puede recibir pagos de miembros asignados.'],
+                    ],
+                ], 422);
+            }
+
+            $staffRecord = Staff::query()
+                ->where('club_id', $clubId)
+                ->where('user_id', $user->id)
+                ->with('classes:id')
+                ->first();
+
+            if (!$staffRecord) {
+                return response()->json(['message' => 'No se encontró un perfil de staff válido para registrar pagos.'], 403);
+            }
+
+            $assignedClassIds = collect([$staffRecord->assigned_class])
+                ->merge($staffRecord->classes->pluck('id'))
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            $allowedMemberIds = collect();
+            foreach ($assignedClassIds as $assignedClassId) {
+                $allowedMemberIds = $allowedMemberIds->merge(
+                    ClubHelper::membersByClubAndClass((int) $clubId, (int) $assignedClassId)->pluck('member_id')
+                );
+            }
+
+            $allowedMemberIds = $allowedMemberIds
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->unique()
+                ->values();
+
+            if (!$allowedMemberIds->contains((int) $validated['member_id'])) {
+                return response()->json([
+                    'errors' => [
+                        'member_id' => ['Solo puedes registrar pagos de miembros de tu clase asignada.'],
+                    ],
+                ], 422);
+            }
+
+            if ($concept) {
+                $allowedScope = $concept->scopes()
+                    ->whereNull('deleted_at')
+                    ->where(function ($query) use ($clubId, $assignedClassIds) {
+                        $query->where(function ($clubWide) use ($clubId) {
+                            $clubWide->where('scope_type', 'club_wide')
+                                ->where('club_id', $clubId);
+                        });
+
+                        if ($assignedClassIds->isNotEmpty()) {
+                            $query->orWhere(function ($classScope) use ($assignedClassIds) {
+                                $classScope->where('scope_type', 'class')
+                                    ->whereIn('class_id', $assignedClassIds);
+                            });
+                        }
+                    })
+                    ->exists();
+
+                if (!$allowedScope) {
+                    return response()->json([
+                        'errors' => [
+                            'payment_concept_id' => ['Ese concepto no está disponible para tu clase o alcance de club.'],
+                        ],
+                    ], 422);
+                }
+            }
+        }
+
         $checkImagePath = null;
         if ($validated['payment_type'] === 'check' && $request->hasFile('check_image')) {
             $checkImagePath = $request->file('check_image')->store('payments/checks', 'public');
@@ -522,6 +624,11 @@ class ClubPaymentController extends Controller
         $detailStaff = ClubHelper::staffDetail($payment->staff);
         $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
         $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
+        $receipt = $this->paymentReceiptService->syncForPayment($payment);
+        $payment->setAttribute('receipt', [
+            'id' => $receipt->id,
+            'receipt_number' => $receipt->receipt_number,
+        ]);
 
         return response()->json(['message' => 'Payment recorded', 'data' => $payment], 201);
     }
@@ -652,6 +759,11 @@ class ClubPaymentController extends Controller
         $detailStaff = ClubHelper::staffDetail($payment->staff);
         $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
         $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
+        $receipt = $this->paymentReceiptService->syncForPayment($payment);
+        $payment->setAttribute('receipt', [
+            'id' => $receipt->id,
+            'receipt_number' => $receipt->receipt_number,
+        ]);
 
         return response()->json(['message' => 'Payment updated', 'data' => $payment]);
     }
@@ -686,6 +798,7 @@ class ClubPaymentController extends Controller
             }
         }
 
+        $this->paymentReceiptService->deleteForPayment($deletedPaymentSnapshot);
         $this->recalculatePaymentBalances($deletedPaymentSnapshot);
 
         return response()->json(['message' => 'Payment deleted']);

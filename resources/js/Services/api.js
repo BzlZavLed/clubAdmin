@@ -12,6 +12,16 @@ export const fetchStaffRecord = async () => {
     return response.data;
 };
 
+export const fetchParentReceipts = async () => {
+    const response = await axios.get(route("parent.receipts.index"));
+    return response.data;
+};
+
+export const fetchStaffReceipts = async () => {
+    const response = await axios.get(route("club.personal.receipts.index"));
+    return response.data;
+};
+
 export const assignMemberToClass = async ({ memberId, classId }) => {
     return await axios.post(route("members.assign"), {
         member_id: memberId,

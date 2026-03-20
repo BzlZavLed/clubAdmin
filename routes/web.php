@@ -39,6 +39,7 @@ use App\Http\Controllers\TaskFormController;
 use App\Http\Controllers\ClassInvestitureRequirementController;
 use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 use App\Http\Controllers\SuperAdminContextController;
+use App\Http\Controllers\PaymentReceiptController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -98,6 +99,7 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
     Route::post('/club-personal/class-plans', [\App\Http\Controllers\ClassPlanController::class, 'store'])->name('club.personal.class-plans.store');
     Route::put('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'update'])->name('club.personal.class-plans.update');
     Route::delete('/club-personal/class-plans/{plan}', [\App\Http\Controllers\ClassPlanController::class, 'destroy'])->name('club.personal.class-plans.destroy');
+    Route::get('/club-personal/receipts', [PaymentReceiptController::class, 'staffIndex'])->name('club.personal.receipts.index');
 });
 
 // ---------------------------------
@@ -123,6 +125,11 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
     Route::get('/parent/workplan/pdf', [WorkplanController::class, 'pdf'])->name('parent.workplan.pdf');
     Route::get('/parent/workplan/ics', [WorkplanController::class, 'ics'])->name('parent.workplan.ics');
     Route::get('/parent/workplan/class-plans/pdf', [WorkplanController::class, 'classPlansPdf'])->name('parent.workplan.class-plans.pdf');
+    Route::get('/parent/receipts', [PaymentReceiptController::class, 'parentIndex'])->name('parent.receipts.index');
+});
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/payment-receipts/{receipt}/download', [PaymentReceiptController::class, 'download'])->name('payment-receipts.download');
 });
 
 // ---------------------------------

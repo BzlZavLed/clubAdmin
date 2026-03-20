@@ -69,8 +69,6 @@ const formatISODateLocal = (val) => {
 // ----- Selection State -----
 const selectedMemberId = ref(null)
 const selectedConceptId = ref(null)
-const customConceptMode = ref(false)
-const customConceptText = ref('')
 const selectedConcept = computed(() => props.concepts.find(c => c.id === selectedConceptId.value) || null)
 const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? '')
 const prefillApplied = ref(false)
@@ -116,21 +114,10 @@ const applyPrefill = () => {
 watch(() => props.concepts, applyPrefill, { immediate: true })
 
 watch(selectedConceptId, (id) => {
-    if (customConceptMode.value) return
     form.payment_concept_id = id ?? null
     // Pre-fill expected amount into amount_paid as a convenience (user can change)
     if (selectedConceptExpected.value && !form.amount_paid) {
         form.amount_paid = String(selectedConceptExpected.value)
-    }
-})
-
-watch(customConceptMode, (val) => {
-    if (val) {
-        selectedConceptId.value = null
-        form.payment_concept_id = null
-        customConceptText.value = ''
-        form.concept_text = ''
-        form.pay_to = 'club_budget'
     }
 })
 
@@ -159,27 +146,24 @@ const submitting = ref(false)
 const submit = async () => {
     submitting.value = true
     form.clearErrors()
-    if (customConceptMode.value && !customConceptText.value) {
-        customConceptText.value = 'Saldo inicial'
-    }
     try {
-        if (customConceptMode.value || form.payment_type === 'initial') {
-            form.payment_concept_id = null
-            form.concept_text = customConceptText.value || 'Saldo inicial'
-            form.pay_to = 'club_budget'
+        if (!selectedConceptId.value) {
+            form.setError('payment_concept_id', tr('Selecciona un concepto válido.', 'Select a valid concept.'))
+            return
         }
         await createClubPayment(form.data())
         form.reset('amount_paid', 'notes', 'check_image', 'zelle_phone')
-        if (customConceptMode.value) {
-            customConceptText.value = ''
-        }
         router.reload({ only: ['payments'] })
     } catch (err) {
         if (err?.response?.status === 422) {
             const errs = err.response.data.errors || {}
-            Object.entries(errs).forEach(([field, messages]) => {
-                form.setError(field, Array.isArray(messages) ? messages[0] : messages)
-            })
+            if (Object.keys(errs).length) {
+                Object.entries(errs).forEach(([field, messages]) => {
+                    form.setError(field, Array.isArray(messages) ? messages[0] : messages)
+                })
+            } else if (err.response.data.message) {
+                form.setError('form', err.response.data.message)
+            }
         } else {
             console.error(err)
             form.setError('form', tr('Error inesperado. Inténtalo de nuevo.', 'Unexpected error. Please try again.'))
@@ -263,29 +247,17 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
                     </div>
 
-                    <!-- Concept mode -->
-                    <div class="mt-4 flex items-center gap-2 text-sm">
-                        <label class="inline-flex items-center gap-2">
-                            <input type="checkbox" v-model="customConceptMode" class="text-blue-600 focus:ring-blue-500" />
-                            <span>{{ tr('Concepto personalizado', 'Custom concept') }}</span>
-                        </label>
-                        <span v-if="customConceptMode || form.payment_type === 'initial'" class="text-xs text-gray-500">{{ tr('Se registra en club_budget', 'Posts to club_budget') }}</span>
-                    </div>
-
                     <!-- Concept -->
                     <div class="mt-4">
                         <label class="block text-sm font-medium text-gray-700">{{ tr('Concepto de pago', 'Payment concept') }}</label>
-                        <select v-if="!customConceptMode && form.payment_type !== 'initial'" v-model="selectedConceptId"
+                        <select v-if="form.payment_type !== 'initial'" v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option :value="null" disabled>{{ tr('Selecciona un concepto…', 'Select a concept…') }}</option>
                             <option v-for="c in concepts" :key="c.id" :value="c.id">
                                 {{ c.concept }} • {{ c.amount ?? '—' }}
                             </option>
                         </select>
-                        <input v-else v-model="customConceptText" type="text"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            :placeholder="tr('Ej. actividad especial de clase', 'E.g. special class activity')" />
-                        <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept && !customConceptMode && form.payment_type !== 'initial'">
+                        <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept && form.payment_type !== 'initial'">
                             <span class="font-medium">{{ tr('Alcance', 'Scope') }}:</span>
                             <span>
                                 <!-- first (only) scope -->
@@ -304,6 +276,9 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                         </div>
                         <div v-if="form.errors.payment_concept_id" class="mt-1 text-sm text-red-600">
                             {{ form.errors.payment_concept_id }}
+                        </div>
+                        <div v-if="form.payment_type !== 'initial'" class="mt-1 text-xs text-gray-500">
+                            {{ tr('Solo puedes usar conceptos de club completo o de tu clase asignada.', 'You can only use club-wide concepts or concepts assigned to your class.') }}
                         </div>
                     </div>
 

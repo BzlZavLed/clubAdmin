@@ -307,12 +307,19 @@ class ClubHelper
             ];
         }
 
-        if (in_array($type, ['temp_pathfinder', 'pathfinders'], true) && $idData) {
-            $row = MemberPathfinder::query()->find($idData);
+        if (in_array($type, ['temp_pathfinder', 'pathfinders'], true)) {
+            $row = MemberPathfinder::query()
+                ->where('member_id', $member->id)
+                ->first();
+
+            if (!$row && $idData) {
+                $row = MemberPathfinder::query()->find($idData);
+            }
+
             return [
                 'member_id' => $member->id,
                 'type' => $type,
-                'id_data' => $idData,
+                'id_data' => $row?->id ?? $idData,
                 'name' => $row?->applicant_name,
             ];
         }

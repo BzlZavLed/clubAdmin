@@ -640,6 +640,12 @@ const deletePaymentRecord = async (payment) => {
     }
 }
 
+const downloadReceipt = (payment) => {
+    const receiptId = payment?.receipt?.id
+    if (!receiptId) return
+    window.open(route('payment-receipts.download', receiptId), '_blank')
+}
+
 // Searching/pagination of recent payments
 const searchTerm = ref('')
 const pageSize = ref(10)
@@ -1072,6 +1078,14 @@ const setFormMode = (mode) => {
                                         {{ formatISODateLocal(p.payment_date) }}
                                     </div>
                                     <div v-if="canEditPayments || canDeletePayments" class="mt-2 flex items-center justify-end gap-3">
+                                        <button
+                                            v-if="p.receipt?.id"
+                                            type="button"
+                                            class="text-xs font-medium text-emerald-700 hover:underline"
+                                            @click="downloadReceipt(p)"
+                                        >
+                                            Recibo
+                                        </button>
                                         <button
                                             v-if="canEditPayments"
                                             type="button"
