@@ -19,6 +19,7 @@ class WorkplanEvent extends Model
         'location',
         'department_id',
         'objective_id',
+        'local_objective_id',
         'is_generated',
         'is_edited',
         'status',
@@ -45,5 +46,10 @@ class WorkplanEvent extends Model
     public function classPlans()
     {
         return $this->hasMany(ClassPlan::class);
+    }
+
+    public function localObjective()
+    {
+        return $this->belongsTo(ClubObjective::class, 'local_objective_id');
     }
 }

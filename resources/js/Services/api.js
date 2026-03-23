@@ -260,6 +260,21 @@ export const detachDirectorFromClub = async (clubId, userId) => {
     });
 };
 
+export const createClubObjective = async (clubId, payload) => {
+    const { data } = await axios.post(route('clubs.objectives.store', { club: clubId }), payload);
+    return data;
+};
+
+export const updateClubObjective = async (clubId, objectiveId, payload) => {
+    const { data } = await axios.put(route('clubs.objectives.update', { club: clubId, objective: objectiveId }), payload);
+    return data;
+};
+
+export const deleteClubObjective = async (clubId, objectiveId) => {
+    const { data } = await axios.delete(route('clubs.objectives.destroy', { club: clubId, objective: objectiveId }));
+    return data;
+};
+
 export const createClub = async (payload) => {
     return await axios.post(route("club.store"), payload);
 };

@@ -33,6 +33,10 @@ const props = defineProps({
         type: Object,
         default: null
     },
+    local_objectives: {
+        type: Array,
+        default: () => []
+    },
     class_requirements_by_class: {
         type: Object,
         default: () => ({})
@@ -101,6 +105,8 @@ const eventForm = ref({
     location: '',
     department_id: null,
     objective_id: null,
+    local_objective_id: null,
+    objective_key: '',
 })
 const locationSuggestions = ref([])
 const locationLoading = ref(false)
@@ -322,7 +328,58 @@ const selectedClassRequirements = computed(() => {
 })
 
 const departmentsOptions = computed(() => props.integration_config?.departments || [])
-const objectivesOptions = computed(() => props.integration_config?.objectives || [])
+const externalObjectivesOptions = computed(() =>
+    (props.integration_config?.objectives || []).map(obj => ({
+        ...obj,
+        key: `external:${obj.id}`,
+        source: 'external',
+        external_objective_id: obj.id,
+    }))
+)
+const localObjectivesOptions = computed(() =>
+    (props.local_objectives || []).map(obj => ({
+        ...obj,
+        key: `local:${obj.id}`,
+        source: 'local',
+    }))
+)
+const objectivesOptions = computed(() => [
+    ...externalObjectivesOptions.value,
+    ...localObjectivesOptions.value,
+])
+
+const getObjectiveKeyFromEvent = (ev) => {
+    if (ev?.local_objective_id) return `local:${ev.local_objective_id}`
+    if (ev?.objective_id) return `external:${ev.objective_id}`
+    return ''
+}
+
+const resolveObjectiveOption = (objectiveKey) => {
+    if (!objectiveKey) return null
+    return objectivesOptions.value.find(option => String(option.key) === String(objectiveKey)) || null
+}
+
+const parseObjectiveSelection = (objectiveKey) => {
+    const option = resolveObjectiveOption(objectiveKey)
+    if (!option) {
+        return {
+            objective_id: null,
+            local_objective_id: null,
+        }
+    }
+
+    if (option.source === 'local') {
+        return {
+            objective_id: option.external_objective_id || null,
+            local_objective_id: option.id,
+        }
+    }
+
+    return {
+        objective_id: option.id,
+        local_objective_id: null,
+    }
+}
 
 const getEventDepartmentId = (ev) => {
     return ev.department_id || exportForm.value.department_id || ''
@@ -334,23 +391,29 @@ const getDepartmentName = (departmentId) => {
 }
 
 const objectiveMatchesDepartment = (objectiveId, departmentId) => {
-    if (!objectiveId || !departmentId) return false
-    const obj = objectivesOptions.value.find(o => String(o.id) === String(objectiveId))
+    const obj = resolveObjectiveOption(objectiveId)
+    if (!obj) return false
+    if (obj.source === 'local' && !obj.department_id) return true
+    if (!departmentId) return obj.source === 'local'
+    if (obj.source === 'local' && !obj.department_id) return true
     if (!obj) return false
     return String(obj.department_id) === String(departmentId)
 }
 
 const objectivesForDepartment = (departmentId) => {
     if (!departmentId) return objectivesOptions.value
-    return objectivesOptions.value.filter(o => String(o.department_id) === String(departmentId))
+    return objectivesOptions.value.filter(o =>
+        !o.department_id || String(o.department_id) === String(departmentId)
+    )
 }
 
 const missingObjectiveEvents = computed(() => {
     return events.value.filter(ev => {
         const deptId = getEventDepartmentId(ev)
-        if (!ev.objective_id) return true
+        const objectiveKey = getObjectiveKeyFromEvent(ev)
+        if (!objectiveKey) return true
         if (!deptId) return true
-        return !objectiveMatchesDepartment(ev.objective_id, deptId)
+        return !objectiveMatchesDepartment(objectiveKey, deptId)
     })
 })
 
@@ -514,6 +577,8 @@ function openEventModal(ev = null, date = null) {
         location: ev?.location || defaultLocation(ev?.meeting_type || 'special'),
         department_id: ev?.department_id ?? null,
         objective_id: ev?.objective_id ?? null,
+        local_objective_id: ev?.local_objective_id ?? null,
+        objective_key: getObjectiveKeyFromEvent(ev),
     }
     locationSuggestions.value = []
     eventModalOpen.value = true
@@ -561,8 +626,9 @@ function openObjectiveModal() {
     objectiveAssignments.value = {}
     missingObjectiveEvents.value.forEach(ev => {
         const deptId = getEventDepartmentId(ev)
-        const matches = objectiveMatchesDepartment(ev.objective_id, deptId)
-        objectiveAssignments.value[ev.id] = matches ? ev.objective_id : ''
+        const objectiveKey = getObjectiveKeyFromEvent(ev)
+        const matches = objectiveMatchesDepartment(objectiveKey, deptId)
+        objectiveAssignments.value[ev.id] = matches ? objectiveKey : ''
     })
     bulkObjectiveId.value = ''
     objectiveTab.value = 'recurrent'
@@ -590,6 +656,7 @@ async function saveObjectivesAndExport() {
     objectiveSaving.value = true
     try {
         for (const ev of missing) {
+            const objectiveSelection = parseObjectiveSelection(objectiveAssignments.value[ev.id] || null)
             const payload = {
                 date: normalizeDate(ev.date),
                 start_time: trimTime(ev.start_time),
@@ -599,7 +666,8 @@ async function saveObjectivesAndExport() {
                 description: ev.description,
                 location: ev.location,
                 department_id: ev.department_id || null,
-                objective_id: objectiveAssignments.value[ev.id] || null,
+                objective_id: objectiveSelection.objective_id,
+                local_objective_id: objectiveSelection.local_objective_id,
             }
             const { event } = await updateWorkplanEvent(ev.id, payload)
             events.value = events.value.map(e => e.id === event.id ? normalizeEvents([event])[0] : e)
@@ -754,7 +822,8 @@ async function saveEvent() {
             ...eventForm.value,
             end_date: eventForm.value.meeting_type === 'special' ? (eventForm.value.end_date || null) : null,
             department_id: eventForm.value.department_id || null,
-            objective_id: eventForm.value.objective_id || null,
+            objective_id: parseObjectiveSelection(eventForm.value.objective_key).objective_id,
+            local_objective_id: parseObjectiveSelection(eventForm.value.objective_key).local_objective_id,
         }
         if (editingEvent.value) {
             const { event } = await updateWorkplanEvent(editingEvent.value.id, payload)
@@ -1548,10 +1617,10 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         </div>
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">Objetivo</label>
-                            <select v-model="eventForm.objective_id" class="w-full border rounded px-3 py-2 text-sm">
+                            <select v-model="eventForm.objective_key" class="w-full border rounded px-3 py-2 text-sm">
                                 <option value="">Seleccionar</option>
-                                <option v-for="obj in objectivesOptions" :key="`obj-${obj.id}`" :value="obj.id">
-                                    {{ obj.name }}
+                                <option v-for="obj in objectivesOptions" :key="`obj-${obj.key}`" :value="obj.key">
+                                    {{ obj.source === 'local' ? `[Local] ${obj.name}` : obj.name }}
                                 </option>
                             </select>
                         </div>
@@ -1709,8 +1778,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             <label class="block text-sm text-gray-600 mb-1">Objetivo general</label>
                             <select v-model="bulkObjectiveId" class="w-full border rounded px-3 py-2 text-sm">
                                 <option value="">Seleccionar</option>
-                                <option v-for="obj in objectivesOptions" :key="`bulk-obj-${obj.id}`" :value="obj.id">
-                                    {{ obj.name }}
+                                <option v-for="obj in objectivesOptions" :key="`bulk-obj-${obj.key}`" :value="obj.key">
+                                    {{ obj.source === 'local' ? `[Local] ${obj.name}` : obj.name }}
                                 </option>
                             </select>
                         </div>
@@ -1765,10 +1834,10 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                                 <option value="">Seleccionar</option>
                                                 <option
                                                     v-for="obj in objectivesForDepartment(getEventDepartmentId(ev))"
-                                                    :key="`obj-${ev.id}-${obj.id}`"
-                                                    :value="obj.id"
+                                                    :key="`obj-${ev.id}-${obj.key}`"
+                                                    :value="obj.key"
                                                 >
-                                                    {{ obj.name }}
+                                                    {{ obj.source === 'local' ? `[Local] ${obj.name}` : obj.name }}
                                                 </option>
                                             </select>
                                         </td>

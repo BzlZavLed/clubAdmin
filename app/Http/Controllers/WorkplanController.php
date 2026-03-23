@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\ClubClass;
+use App\Models\ClubObjective;
 use App\Models\Member;
 use App\Models\Staff;
 use App\Models\Workplan;
@@ -62,6 +63,9 @@ class WorkplanController extends Controller
             'workplan' => $workplan,
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
+            'local_objectives' => $selectedClubId
+                ? ClubObjective::where('club_id', $selectedClubId)->where('status', 'active')->orderBy('name')->get()
+                : [],
             'class_requirements_by_class' => $selectedClubId
                 ? $this->classRequirementsByClass((int) $selectedClubId)
                 : [],
@@ -175,6 +179,7 @@ class WorkplanController extends Controller
             'location' => ['nullable', 'string', 'max:255'],
             'department_id' => ['nullable', 'integer', 'min:0'],
             'objective_id' => ['nullable', 'integer', 'min:0'],
+            'local_objective_id' => ['nullable', 'integer', 'exists:club_objectives,id'],
         ]);
 
         $workplan = $this->getWorkplanForUser($request->user());
@@ -206,6 +211,7 @@ class WorkplanController extends Controller
             'location' => ['nullable', 'string', 'max:255'],
             'department_id' => ['nullable', 'integer', 'min:0'],
             'objective_id' => ['nullable', 'integer', 'min:0'],
+            'local_objective_id' => ['nullable', 'integer', 'exists:club_objectives,id'],
         ]);
 
         $event->fill($payload);
@@ -282,6 +288,9 @@ class WorkplanController extends Controller
             'selected_club_id' => $selectedClubId,
             'workplan' => $this->filterPlansForParent($workplan, $user),
             'memberships' => [],
+            'local_objectives' => $selectedClubId
+                ? ClubObjective::where('club_id', $selectedClubId)->where('status', 'active')->orderBy('name')->get()
+                : [],
             'class_requirements_by_class' => $selectedClubId
                 ? $this->classRequirementsByClass((int) $selectedClubId)
                 : [],
@@ -436,6 +445,7 @@ class WorkplanController extends Controller
         }
         $workplan = $workplan->load([
             'club',
+            'events.localObjective',
             'events' => function ($q) {
                 $q->orderBy('date')->orderBy('start_time');
             },
@@ -454,11 +464,17 @@ class WorkplanController extends Controller
                 if ($id === null) return [];
                 return [(string) $id => (string) data_get($obj, 'name', '')];
             });
+        $localObjectives = ClubObjective::query()
+            ->where('club_id', $selectedClubId)
+            ->where('status', 'active')
+            ->pluck('name', 'id')
+            ->mapWithKeys(fn ($name, $id) => [(string) $id => $name]);
 
         $pdf = Pdf::loadView('pdf.workplan_table', [
             'workplan' => $workplan,
             'departments' => $departments,
             'objectives' => $objectives,
+            'localObjectives' => $localObjectives,
         ])->setPaper('a4', 'landscape');
 
         $filename = 'workplan-table-' . ($workplan->club->club_name ?? 'club') . '.pdf';
@@ -553,6 +569,7 @@ class WorkplanController extends Controller
 
         $workplan->load([
             'club.church',
+            'events.localObjective',
             'events' => function ($q) {
                 $q->where('status', 'active')->orderBy('date')->orderBy('start_time');
             }
@@ -569,15 +586,24 @@ class WorkplanController extends Controller
         $clubType = $club?->club_type ?: 'club';
         $planName = $request->input('plan_name') ?: ('Plan anual ' . ucfirst($clubType) . ' ' . $calendarYear);
         $timezone = $workplan->timezone ?: config('app.timezone');
+        $integrationConfig = ClubIntegrationConfig::where('club_id', $clubId)->first();
+        $externalObjectivesById = collect($integrationConfig?->objectives ?? [])
+            ->filter(fn ($objective) => data_get($objective, 'id') !== null)
+            ->mapWithKeys(fn ($objective) => [(string) data_get($objective, 'id') => $objective]);
 
         $defaultDepartmentId = $request->input('department_id');
         $invalidEvents = [];
-        $events = $workplan->events->map(function ($ev) use ($clubType, $planName, $defaultDepartmentId, &$invalidEvents) {
+        $events = $workplan->events->map(function ($ev) use ($clubType, $planName, $defaultDepartmentId, $externalObjectivesById, &$invalidEvents) {
             $date = $ev->date instanceof Carbon ? $ev->date->toDateString() : (string) $ev->date;
             $endDate = $ev->end_date instanceof Carbon ? $ev->end_date->toDateString() : ($ev->end_date ? (string) $ev->end_date : $date);
             $startTime = $ev->start_time ? substr($ev->start_time, 0, 5) . ':00' : '00:00:00';
             $endTime = $ev->end_time ? substr($ev->end_time, 0, 5) . ':00' : $startTime;
             $departmentId = $ev->department_id ?? $defaultDepartmentId;
+            $resolvedObjectiveId = $ev->objective_id ?: $ev->localObjective?->external_objective_id;
+            $externalObjective = $resolvedObjectiveId ? ($externalObjectivesById->get((string) $resolvedObjectiveId) ?? null) : null;
+            $objectiveName = $ev->localObjective?->name ?: data_get($externalObjective, 'name');
+            $objectiveDescription = $ev->localObjective?->description ?: data_get($externalObjective, 'description');
+            $objectiveEvaluationMetrics = $ev->localObjective?->annual_evaluation_metric ?: data_get($externalObjective, 'evaluation_metrics');
 
             if ($endDate === $date) {
                 $startComparable = $ev->start_time ? substr($ev->start_time, 0, 5) : '';
@@ -603,7 +629,10 @@ class WorkplanController extends Controller
                 'start_at' => $date . 'T' . $startTime,
                 'end_at' => $endDate . 'T' . $endTime,
                 'department_id' => (int) ($departmentId ?? 0),
-                'objective_id' => (int) ($ev->objective_id ?? 0),
+                'objective_id' => (int) ($resolvedObjectiveId ?? 0),
+                'objective_name' => $objectiveName,
+                'objective_description' => $objectiveDescription,
+                'objective_evaluation_metrics' => $objectiveEvaluationMetrics,
                 'is_special' => $ev->meeting_type === 'special',
                 'club_type' => $clubType,
                 'plan_name' => $planName,

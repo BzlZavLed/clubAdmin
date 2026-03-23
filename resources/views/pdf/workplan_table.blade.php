@@ -46,6 +46,7 @@
                     $time = trim($start . ($end ? ' - ' . $end : ''));
                     $departmentName = $event->department_id ? ($departments[(string) $event->department_id] ?? '') : '';
                     $objectiveName = $event->objective_id ? ($objectives[(string) $event->objective_id] ?? '') : '';
+                    $localObjectiveName = $event->local_objective_id ? ($localObjectives[(string) $event->local_objective_id] ?? '') : '';
                 @endphp
                 <tr>
                     <td class="nowrap">{{ optional($event->date)->format('Y-m-d') }}</td>
@@ -53,7 +54,7 @@
                     <td>{{ $event->title ?: '—' }}</td>
                     <td>{{ $event->description ?: '—' }}</td>
                     <td>{{ $event->location ?: '—' }}</td>
-                    <td>{{ $objectiveName ?: ($event->objective_id ? ('ID ' . $event->objective_id) : '—') }}</td>
+                    <td>{{ $objectiveName ?: $localObjectiveName ?: ($event->objective_id ? ('ID ' . $event->objective_id) : '—') }}</td>
                     <td>{{ $departmentName ?: ($event->department_id ? ('ID ' . $event->department_id) : '—') }}</td>
                     <td class="nowrap">{{ $event->meeting_type ? ucfirst($event->meeting_type) : '—' }}</td>
                 </tr>

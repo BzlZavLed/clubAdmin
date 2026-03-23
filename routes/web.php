@@ -377,6 +377,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
     Route::post('/clubs/{club}/attach-director', [ClubController::class, 'attachDirector'])->name('club.attach-director');
     Route::post('/clubs/{club}/detach-director', [ClubController::class, 'detachDirector'])->name('club.detach-director');
+    Route::post('/clubs/{club}/objectives', [\App\Http\Controllers\ClubObjectiveController::class, 'store'])->name('clubs.objectives.store');
+    Route::put('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'update'])->name('clubs.objectives.update');
+    Route::delete('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'destroy'])->name('clubs.objectives.destroy');
 
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');

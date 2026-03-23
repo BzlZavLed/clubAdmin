@@ -16,6 +16,9 @@ import {
     detachDirectorFromClub,
     createClub,
     updateClub as updateClubApi,
+    createClubObjective,
+    updateClubObjective,
+    deleteClubObjective,
     deleteClassById,
     fetchMembersByClub,
     createInvestitureRequirement,
@@ -56,6 +59,9 @@ const hasClub = ref(false)
 const requirementDraftByClass = ref({})
 const editingRequirementByClass = ref({})
 const showRequirementFormByClass = ref({})
+const objectiveDraftByClub = ref({})
+const editingObjectiveByClub = ref({})
+const showObjectiveFormByClub = ref({})
 
 // 🧠 Derived data
 const church_name = user.value.church_name || 'Iglesia desconocida'
@@ -367,6 +373,108 @@ const exportClassesPdf = (withRequirements = false) => {
         ? route(routeName, { club_id: clubId })
         : route(routeName)
     window.open(url, '_blank')
+}
+
+const getClubObjectives = (club) => {
+    if (!Array.isArray(club?.local_objectives)) return []
+    return club.local_objectives
+        .filter(objective => objective.status !== 'inactive')
+        .slice()
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+}
+
+const getObjectiveDraft = (clubId) => {
+    if (!objectiveDraftByClub.value[clubId]) {
+        objectiveDraftByClub.value[clubId] = {
+            name: '',
+            description: '',
+            annual_evaluation_metric: '',
+            external_objective_id: '',
+        }
+    }
+
+    return objectiveDraftByClub.value[clubId]
+}
+
+const startCreateObjective = (clubId) => {
+    showObjectiveFormByClub.value[clubId] = true
+    editingObjectiveByClub.value[clubId] = null
+    objectiveDraftByClub.value[clubId] = {
+        name: '',
+        description: '',
+        annual_evaluation_metric: '',
+        external_objective_id: '',
+    }
+}
+
+const startEditObjective = (clubId, objective) => {
+    showObjectiveFormByClub.value[clubId] = true
+    editingObjectiveByClub.value[clubId] = objective.id
+    objectiveDraftByClub.value[clubId] = {
+        name: objective.name || '',
+        description: objective.description || '',
+        annual_evaluation_metric: objective.annual_evaluation_metric || '',
+        external_objective_id: objective.external_objective_id || '',
+    }
+}
+
+const cancelObjectiveEdit = (clubId) => {
+    showObjectiveFormByClub.value[clubId] = false
+    editingObjectiveByClub.value[clubId] = null
+    objectiveDraftByClub.value[clubId] = {
+        name: '',
+        description: '',
+        annual_evaluation_metric: '',
+        external_objective_id: '',
+    }
+}
+
+const saveObjective = async (club) => {
+    const clubId = club?.id
+    if (!clubId) return
+
+    const draft = getObjectiveDraft(clubId)
+    if (!draft.name?.trim()) {
+        showToast('El objetivo necesita un nombre', 'error')
+        return
+    }
+
+    const payload = {
+        name: draft.name.trim(),
+        annual_evaluation_metric: draft.annual_evaluation_metric?.trim() || null,
+        description: draft.description?.trim() || null,
+        external_objective_id: draft.external_objective_id ? Number(draft.external_objective_id) : null,
+    }
+
+    try {
+        const editingId = editingObjectiveByClub.value[clubId]
+        if (editingId) {
+            await updateClubObjective(clubId, editingId, payload)
+            showToast('Objetivo actualizado')
+        } else {
+            await createClubObjective(clubId, payload)
+            showToast('Objetivo creado')
+        }
+
+        cancelObjectiveEdit(clubId)
+        await fetchClubs()
+    } catch (error) {
+        console.error('Failed to save objective:', error)
+        showToast(error?.response?.data?.message || 'No se pudo guardar el objetivo', 'error')
+    }
+}
+
+const removeObjective = async (clubId, objectiveId) => {
+    if (!confirm('¿Seguro que deseas eliminar este objetivo?')) return
+
+    try {
+        await deleteClubObjective(clubId, objectiveId)
+        showToast('Objetivo eliminado')
+        await fetchClubs()
+    } catch (error) {
+        console.error('Failed to delete objective:', error)
+        showToast(error?.response?.data?.message || 'No se pudo eliminar el objetivo', 'error')
+    }
 }
 
 // 🧠 Start new form
@@ -986,6 +1094,163 @@ onMounted(fetchClubs);
                                     </tr>
                                 </template>
                             </template>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+
+            <details class="border rounded">
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Objetivos</summary>
+                <div class="p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h3 class="text-lg font-bold">Objetivos del club</h3>
+                            <p class="text-sm text-gray-600">Estos objetivos son locales y luego pueden usarse en el plan de trabajo aun si no se importaron desde mychurchadmin.</p>
+                        </div>
+                    </div>
+
+                    <table class="min-w-full border rounded text-left border-collapse">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="border-b px-4 py-2">Club</th>
+                                <th class="border-b px-4 py-2">Objetivos</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="club in filteredClubs" :key="`objectives-${club.id}`" class="border-b align-top">
+                                <td class="px-4 py-3 font-medium text-gray-900">{{ club.club_name }}</td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="text-sm text-gray-600">
+                                            {{ getClubObjectives(club).length }} objetivo(s) local(es)
+                                        </div>
+                                        <button
+                                            type="button"
+                                            class="text-sm text-blue-700 hover:underline"
+                                            @click="startCreateObjective(club.id)"
+                                        >
+                                            + Agregar objetivo
+                                        </button>
+                                    </div>
+
+                                    <ul v-if="getClubObjectives(club).length" class="space-y-2 mb-3">
+                                        <li
+                                            v-for="objective in getClubObjectives(club)"
+                                            :key="objective.id"
+                                            class="border rounded p-3 bg-white"
+                                        >
+                                            <div class="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="text-sm font-medium text-gray-900">{{ objective.name }}</p>
+                                                        <span
+                                                            v-if="objective.external_objective_id"
+                                                            class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
+                                                        >
+                                                            Vinculado a MCA #{{ objective.external_objective_id }}
+                                                        </span>
+                                                        <span
+                                                            v-else
+                                                            class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-800"
+                                                        >
+                                                            Local
+                                                        </span>
+                                                    </div>
+                                                    <p v-if="objective.description" class="text-xs text-gray-600 mt-1">
+                                                        {{ objective.description }}
+                                                    </p>
+                                                    <p v-if="objective.annual_evaluation_metric" class="text-xs text-gray-600 mt-1">
+                                                        <span class="font-medium">Metrica anual:</span> {{ objective.annual_evaluation_metric }}
+                                                    </p>
+                                                </div>
+                                                <div class="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        class="text-xs text-blue-700 hover:underline"
+                                                        @click="startEditObjective(club.id, objective)"
+                                                    >
+                                                        Editar
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="text-xs text-red-700 hover:underline"
+                                                        @click="removeObjective(club.id, objective.id)"
+                                                    >
+                                                        Eliminar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </li>
+                                    </ul>
+                                    <p v-else class="text-xs text-gray-500 mb-3">No hay objetivos locales registrados para este club.</p>
+
+                                    <div v-if="showObjectiveFormByClub[club.id]" class="space-y-3 border rounded bg-gray-50 p-3">
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">Iglesia</label>
+                                                <input
+                                                    :value="club.church_name || '—'"
+                                                    type="text"
+                                                    readonly
+                                                    class="w-full border rounded px-2 py-2 text-sm bg-gray-100 text-gray-600"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">Dpto</label>
+                                                <input
+                                                    :value="club.club_type || '—'"
+                                                    type="text"
+                                                    readonly
+                                                    class="w-full border rounded px-2 py-2 text-sm bg-gray-100 text-gray-600"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">Nombre</label>
+                                                <input
+                                                    v-model="getObjectiveDraft(club.id).name"
+                                                    type="text"
+                                                    placeholder="Nombre del objetivo"
+                                                    class="w-full border rounded px-2 py-2 text-sm"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">Metrica de evaluacion anual</label>
+                                                <input
+                                                    v-model="getObjectiveDraft(club.id).annual_evaluation_metric"
+                                                    type="text"
+                                                    placeholder="Metrica anual"
+                                                    class="w-full border rounded px-2 py-2 text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-600 mb-1">Descripcion</label>
+                                            <textarea
+                                                v-model="getObjectiveDraft(club.id).description"
+                                                rows="3"
+                                                placeholder="Descripcion"
+                                                class="w-full border rounded px-2 py-2 text-sm"
+                                            />
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
+                                                @click="saveObjective(club)"
+                                            >
+                                                {{ editingObjectiveByClub[club.id] ? 'Actualizar' : 'Guardar' }}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="text-xs text-gray-600 hover:underline"
+                                                @click="cancelObjectiveEdit(club.id)"
+                                            >
+                                                Limpiar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>

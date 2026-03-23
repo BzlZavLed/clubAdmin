@@ -55,6 +55,12 @@ class Club extends Model
     {
         return $this->hasMany(Staff::class);
     }
+
+    public function localObjectives()
+    {
+        return $this->hasMany(ClubObjective::class)->orderBy('name');
+    }
+
     public function reportsAssistance()
     {
         return $this->hasMany(RepAssistanceAdv::class, 'club_id');

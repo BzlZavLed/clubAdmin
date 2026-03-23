@@ -329,7 +329,7 @@ class ClubController extends Controller
         $clubIds = ClubHelper::clubIdsForUser($user);
 
         $clubs = Club::whereIn('id', $clubIds)
-            ->with(['clubClasses.investitureRequirements', 'staffAdventurers'])
+            ->with(['clubClasses.investitureRequirements', 'staffAdventurers', 'localObjectives'])
             ->orderBy('club_name')
             ->get();
 
@@ -355,7 +355,7 @@ class ClubController extends Controller
 
     public function getClubsByChurchId($churchId)
     {
-        $clubs = Club::with('clubClasses.investitureRequirements', 'staffAdventurers', 'users:id,name,email')
+        $clubs = Club::with('clubClasses.investitureRequirements', 'staffAdventurers', 'users:id,name,email', 'localObjectives')
             ->where('church_id', $churchId)
             ->orderBy('club_name')
             ->get();
