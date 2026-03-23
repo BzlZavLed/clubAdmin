@@ -24,7 +24,7 @@ const showDropdown = ref(false)
 
 const menuItems = computed(() => [
     { name: tr('Panel', 'Dashboard'), href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
-    { name: tr('Planeador de eventos', 'Planeador de eventos'), href: '/events', route: 'events.index', icon: CalendarDaysIcon },
+    { name: tr('Eventos', 'Eventos'), href: '/events', route: 'events.index', icon: CalendarDaysIcon, badge: 'WIP' },
 ])
 
 const clubSubItems = computed(() => [
@@ -69,6 +69,12 @@ watch(
             :class="route().current(item.route) ? 'bg-yellow-100 text-red-700 font-semibold' : 'text-gray-700'">
         <component :is="item.icon" class="w-5 h-5" />
         <span v-if="!isCollapsed" class="text-sm">{{ item.name }}</span>
+        <span
+            v-if="!isCollapsed && item.badge"
+            class="ml-auto inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+        >
+            {{ item.badge }}
+        </span>
         </Link>
 
         <!-- Dropdown: My Class -->

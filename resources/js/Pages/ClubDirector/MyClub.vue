@@ -99,10 +99,11 @@ const clubForm = useForm({
     club_type: ''
 })
 
-const selectedClubId = ref('')
 const activeClubId = computed(() => {
     if (isSuperadmin.value) {
-        return selectedClubId.value ? Number(selectedClubId.value) : null
+        return props.superadmin_context?.club_id
+            ? Number(props.superadmin_context.club_id)
+            : null
     }
 
     return clubId.value ? Number(clubId.value) : null
@@ -154,9 +155,6 @@ const fetchClubs = async () => {
         }
         if (isSuperadmin.value && props.superadmin_context?.club_id) {
             clubId.value = Number(props.superadmin_context.club_id)
-        }
-        if (!selectedClubId.value && clubId.value) {
-            selectedClubId.value = clubId.value
         }
         if (!isSuperadmin.value && user.value?.church_id) {
             const churchData = await fetchClubsByChurchId(user.value.church_id)
@@ -334,7 +332,6 @@ const selectClub = async (nextClubId) => {
         await selectUserClub(nextClubId, user.value.id)
         showToast('Club seleccionado correctamente')
         clubId.value = Number(nextClubId)
-        selectedClubId.value = Number(nextClubId)
         await router.reload({ only: ['auth'] })
         if (!isSuperadmin.value) {
             refreshPage()
@@ -375,7 +372,7 @@ const exportClassesPdf = (withRequirements = false) => {
     const routeName = withRequirements
         ? 'club-classes.pdf-with-requirements'
         : 'club-classes.pdf'
-    const clubId = selectedClubId.value ? Number(selectedClubId.value) : null
+    const clubId = activeClubId.value ? Number(activeClubId.value) : null
     const url = clubId
         ? route(routeName, { club_id: clubId })
         : route(routeName)
@@ -517,14 +514,6 @@ const startCreatingClub = () => {
     if (!isSuperadmin.value && missingChurchClubTypes.value.length === 1) {
         clubForm.club_type = missingChurchClubTypes.value[0]
     }
-}
-
-const onSuperadminClubChange = async () => {
-    if (!selectedClubId.value) {
-        clubId.value = null
-        return
-    }
-    await selectClub(Number(selectedClubId.value))
 }
 
 const attachToExistingClub = async (club) => {
@@ -769,17 +758,13 @@ onMounted(fetchClubs);
 
         <div v-if="isSuperadmin" class="mb-4 rounded border bg-white p-4 space-y-3">
             <p class="text-sm font-semibold text-gray-800">Contexto Superadmin</p>
-            <div class="flex flex-col md:flex-row gap-2 md:items-center">
-                <select
-                    v-model="selectedClubId"
-                    class="border rounded px-3 py-2 text-sm min-w-[260px]"
-                    @change="onSuperadminClubChange"
-                >
-                    <option value="">Selecciona un club existente</option>
-                    <option v-for="club in clubs" :key="club.id" :value="club.id">
-                        {{ club.club_name }} - {{ club.church_name || 'Sin iglesia' }}
-                    </option>
-                </select>
+            <div class="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
+                <div class="text-sm text-gray-600">
+                    Club activo:
+                    <span class="font-medium text-gray-900">
+                        {{ filteredClubs[0]?.club_name || 'Selecciona un club desde el selector global' }}
+                    </span>
+                </div>
                 <button
                     v-if="canCreateAnotherClub"
                     type="button"

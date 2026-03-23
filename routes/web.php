@@ -347,6 +347,11 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ]);
     })->name('club.reports.accounts');
 
+    Route::get('/club-director/reports/investiture-requirements', [ReportController::class, 'investitureRequirementsReport'])
+        ->name('club.reports.investiture-requirements');
+    Route::get('/club-director/reports/investiture-requirements/pdf', [ReportController::class, 'investitureRequirementsReportPdf'])
+        ->name('club.reports.investiture-requirements.pdf');
+
     // 🟢 API Endpoints
 
     // Clubs

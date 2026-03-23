@@ -54,10 +54,11 @@ const menuItems = [
                 icon: CalendarDaysIcon
             },
             {
-                name: 'Planeador de eventos',
+                name: 'Eventos',
                 href: '/events',
                 route: 'events.index',
-                icon: CalendarDaysIcon
+                icon: CalendarDaysIcon,
+                badge: 'WIP',
             }
         ]
     },
@@ -84,6 +85,12 @@ const menuItems = [
                 href: '/club-director/reports/accounts',
                 route: 'club.reports.accounts',
                 icon: CurrencyDollarIcon
+            },
+            {
+                name: 'Honores / requisitos',
+                href: '/club-director/reports/investiture-requirements',
+                route: 'club.reports.investiture-requirements',
+                icon: ChartBarIcon
             }
             // Add more report types here as needed
         ]
@@ -144,6 +151,12 @@ function toggleDropdown(itemName) {
                         ]">
                     <component :is="child.icon" class="w-4 h-4 text-gray-400 shrink-0" />
                     <span class="ml-2 truncate">{{ child.name }}</span>
+                    <span
+                        v-if="child.badge"
+                        class="ml-2 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                    >
+                        {{ child.badge }}
+                    </span>
                     </Link>
                 </div>
             </div>

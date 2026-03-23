@@ -313,11 +313,14 @@ class ClubController extends Controller
 
         if ($authUser->profile_type === 'superadmin' && (int) $authUser->id === (int) $user->id) {
             $query = Club::query()
-                ->with(['clubClasses.investitureRequirements', 'staffAdventurers'])
+                ->with(['clubClasses.investitureRequirements', 'staffAdventurers', 'localObjectives'])
                 ->orderBy('club_name');
 
+            $contextClubId = session('superadmin_context.club_id');
             $contextChurchId = session('superadmin_context.church_id');
-            if ($contextChurchId) {
+            if ($contextClubId) {
+                $query->where('id', (int) $contextClubId);
+            } elseif ($contextChurchId) {
                 $query->where('church_id', (int) $contextChurchId);
             }
 

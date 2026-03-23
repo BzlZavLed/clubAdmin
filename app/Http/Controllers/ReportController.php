@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ClassInvestitureRequirement;
+use App\Models\ClassPlan;
 use App\Models\RepAssistanceAdv;
+use App\Models\RepAssistanceAdvMerit;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use App\Models\Club;
@@ -24,8 +27,52 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Collection;
 use App\Support\ClubHelper;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
 class ReportController extends Controller
 {
+    public function investitureRequirementsReport(Request $request)
+    {
+        $user = $request->user();
+        $club = $this->resolveClubForUser($user, $request->input('club_id'));
+
+        return Inertia::render('ClubDirector/Reports/InvestitureRequirements', [
+            'auth_user' => $user,
+            'club' => [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+                'club_type' => $club->club_type,
+            ],
+            'classes' => $this->buildClubInvestitureRequirementReport($club),
+        ]);
+    }
+
+    public function investitureRequirementsReportPdf(Request $request)
+    {
+        $user = $request->user();
+        $club = $this->resolveClubForUser($user, $request->input('club_id'));
+        $classes = $this->buildClubInvestitureRequirementReport($club);
+        $showPending = $request->boolean('show_pending');
+        $itemLabelPlural = $club->club_type === 'adventurers' ? 'Honores' : 'Requisitos de investidura';
+        $itemLabelSingular = $club->club_type === 'adventurers' ? 'Honor' : 'Requisito';
+
+        $pdf = Pdf::loadView('pdf.investiture_requirements_report', [
+            'generatedAt' => now()->toDateTimeString(),
+            'club' => [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+                'club_type' => $club->club_type,
+            ],
+            'classes' => $classes,
+            'showPending' => $showPending,
+            'itemLabelPlural' => $itemLabelPlural,
+            'itemLabelSingular' => $itemLabelSingular,
+        ]);
+
+        $filename = 'investiture-requirements-club-' . $club->id . '-' . now()->format('Ymd-His') . '.pdf';
+
+        return $pdf->download($filename);
+    }
+
     public function generateAssistancePDF($id, $date)
     {
         try {
@@ -244,6 +291,176 @@ class ReportController extends Controller
     protected function resolveClubForUser($user, $clubId = null): Club
     {
         return ClubHelper::clubForUser($user, $clubId);
+    }
+
+    protected function buildClubInvestitureRequirementReport(Club $club): array
+    {
+        $classes = ClubClass::query()
+            ->where('club_id', (int) $club->id)
+            ->orderByRaw('COALESCE(class_order, 999999)')
+            ->orderBy('class_name')
+            ->get(['id', 'class_name', 'class_order']);
+
+        return $classes->map(function ($class) use ($club) {
+            $members = ClubHelper::getMembersByClassAndClub((int) $club->id, (int) $class->id)
+                ->filter(fn ($m) => !empty($m['id_data']))
+                ->values();
+            $memberIds = $members->pluck('id_data')->map(fn ($id) => (string) $id)->values();
+            $memberNameById = $members->mapWithKeys(fn ($m) => [(string) $m['id_data'] => ($m['applicant_name'] ?? '—')]);
+
+            $requirements = ClassInvestitureRequirement::query()
+                ->where('club_class_id', (int) $class->id)
+                ->orderByRaw('COALESCE(sort_order, 999999)')
+                ->orderBy('id')
+                ->get(['id', 'club_class_id', 'title', 'description', 'sort_order', 'is_active']);
+
+            $requirementIds = $requirements->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+            $plans = empty($requirementIds)
+                ? collect()
+                : ClassPlan::query()
+                    ->with(['event:id,date'])
+                    ->where('class_id', (int) $class->id)
+                    ->whereNotNull('investiture_requirement_id')
+                    ->whereIn('investiture_requirement_id', $requirementIds)
+                    ->whereIn('status', ['approved', 'submitted', 'changes_requested'])
+                    ->get(['id', 'investiture_requirement_id', 'title', 'requested_date', 'workplan_event_id']);
+
+            $reports = $memberIds->isEmpty()
+                ? collect()
+                : RepAssistanceAdv::query()
+                    ->where('class_id', (int) $class->id)
+                    ->orderBy('date')
+                    ->get(['id', 'date']);
+
+            $reportDateById = $reports->mapWithKeys(fn ($r) => [(int) $r->id => $this->normalizeReportDate($r->date)])->all();
+            $reportIdByDate = $reports->mapWithKeys(fn ($r) => [$this->normalizeReportDate($r->date) => (int) $r->id])->all();
+            $reportIds = $reports->pluck('id')->all();
+
+            $planById = [];
+            $activitiesByRequirement = [];
+            foreach ($plans as $plan) {
+                $meetingDate = $this->normalizeReportDate($plan->requested_date ?? $plan->event?->date);
+                $reportId = $meetingDate ? ($reportIdByDate[$meetingDate] ?? null) : null;
+
+                $payload = [
+                    'id' => (int) $plan->id,
+                    'title' => $plan->title,
+                    'meeting_date' => $meetingDate,
+                    'report_id' => $reportId,
+                    'has_report' => (bool) $reportId,
+                ];
+
+                $planById[(string) $plan->id] = [
+                    'requirement_id' => (int) $plan->investiture_requirement_id,
+                    'plan_title' => $plan->title,
+                    'meeting_date' => $meetingDate,
+                ];
+
+                $activitiesByRequirement[(int) $plan->investiture_requirement_id][] = $payload;
+            }
+
+            $completionMap = [];
+            if (!empty($reportIds) && !empty($planById) && $memberIds->isNotEmpty()) {
+                $merits = RepAssistanceAdvMerit::query()
+                    ->whereIn('report_id', $reportIds)
+                    ->where('asistencia', true)
+                    ->whereIn('mem_adv_id', $memberIds->all())
+                    ->get(['report_id', 'mem_adv_id', 'requirement_checks_json']);
+
+                foreach ($merits as $merit) {
+                    $memberId = (string) $merit->mem_adv_id;
+                    if (!isset($memberNameById[$memberId])) {
+                        continue;
+                    }
+
+                    $checks = is_array($merit->requirement_checks_json) ? $merit->requirement_checks_json : [];
+                    foreach ($checks as $planId => $checked) {
+                        if (!$checked || !isset($planById[(string) $planId])) {
+                            continue;
+                        }
+
+                        $planInfo = $planById[(string) $planId];
+                        $requirementId = (int) $planInfo['requirement_id'];
+                        $date = $reportDateById[(int) $merit->report_id] ?? $planInfo['meeting_date'];
+                        $key = $requirementId . '|' . $memberId;
+
+                        if (!isset($completionMap[$key]) || ($date && $date < $completionMap[$key]['date'])) {
+                            $completionMap[$key] = [
+                                'requirement_id' => $requirementId,
+                                'member_id' => (int) $memberId,
+                                'member_name' => $memberNameById[$memberId],
+                                'date' => $date,
+                                'activity_title' => $planInfo['plan_title'],
+                            ];
+                        }
+                    }
+                }
+            }
+
+            $completionsByRequirement = collect($completionMap)
+                ->groupBy('requirement_id')
+                ->map(function ($rows) {
+                    return collect($rows)
+                        ->sortBy([
+                            ['member_name', 'asc'],
+                            ['date', 'asc'],
+                        ])
+                        ->values()
+                        ->all();
+                });
+
+            $payloadRequirements = $requirements->map(function ($requirement) use ($completionsByRequirement, $activitiesByRequirement, $members) {
+                $rows = $completionsByRequirement->get((int) $requirement->id, []);
+                $activities = collect($activitiesByRequirement[(int) $requirement->id] ?? [])
+                    ->sortByDesc('meeting_date')
+                    ->values()
+                    ->all();
+
+                return [
+                    'id' => (int) $requirement->id,
+                    'title' => $requirement->title,
+                    'description' => $requirement->description,
+                    'sort_order' => $requirement->sort_order,
+                    'is_active' => (bool) $requirement->is_active,
+                    'completed_count' => count($rows),
+                    'pending_count' => max(0, $members->count() - count($rows)),
+                    'activities_count' => count($activities),
+                    'completions' => $rows,
+                ];
+            })->values()->all();
+
+            return [
+                'id' => (int) $class->id,
+                'class_name' => $class->class_name,
+                'class_order' => $class->class_order,
+                'members_count' => $members->count(),
+                'members' => $members->map(fn ($m) => [
+                    'id' => (int) ($m['id_data'] ?? 0),
+                    'name' => $m['applicant_name'] ?? '—',
+                ])->values()->all(),
+                'requirements_count' => count($payloadRequirements),
+                'completed_requirements_count' => collect($payloadRequirements)->where('completed_count', '>', 0)->count(),
+                'requirements' => $payloadRequirements,
+            ];
+        })->values()->all();
+    }
+
+    protected function normalizeReportDate($value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        try {
+            return Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     public function financialReport(Request $request)
