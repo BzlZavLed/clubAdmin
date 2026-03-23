@@ -100,10 +100,17 @@ const clubForm = useForm({
 })
 
 const selectedClubId = ref('')
+const activeClubId = computed(() => {
+    if (isSuperadmin.value) {
+        return selectedClubId.value ? Number(selectedClubId.value) : null
+    }
+
+    return clubId.value ? Number(clubId.value) : null
+})
 
 const filteredClubs = computed(() => {
-    return selectedClubId.value
-        ? clubs.value.filter(club => club.id === selectedClubId.value)
+    return activeClubId.value
+        ? clubs.value.filter(club => Number(club.id) === Number(activeClubId.value))
         : clubs.value
 })
 const churchClubTypes = computed(() => new Set(
@@ -972,13 +979,6 @@ onMounted(fetchClubs);
                             </button>
                         </div>
                     </div>
-                    <select v-model="selectedClubId" class="border rounded mb-6">
-                        <option value="">Todos los clubes</option>
-                        <option v-for="club in clubs" :key="club.id" :value="club.id">
-                            {{ club.club_name }}
-                        </option>
-                    </select>
-
                     <table class="min-w-full border rounded text-left border-collapse">
                         <thead class="bg-gray-100">
                             <tr>
@@ -1007,7 +1007,9 @@ onMounted(fetchClubs);
                                     <tr>
                                         <td colspan="4" class="px-4 py-3 bg-gray-50 border-b">
                                             <div class="flex items-center justify-between mb-2">
-                                                <p class="text-sm font-semibold text-gray-800">Requisitos de investidura</p>
+                                                <p class="text-sm font-semibold text-gray-800">
+                                                    Requisitos de investidura<span v-if="club.club_type === 'adventurers'"> (Honores/Honors)</span>
+                                                </p>
                                                 <button
                                                     type="button"
                                                     class="text-sm text-blue-700 hover:underline"

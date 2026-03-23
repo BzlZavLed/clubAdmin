@@ -28,7 +28,14 @@ const applyFilters = () => {
 
         <div class="space-y-6">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <div class="text-gray-600">{{ tr('Administra los eventos de tu club y planes asistidos por IA.', 'Manage your club events and AI-assisted plans.') }}</div>
+                <div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+                            WIP beta version
+                        </span>
+                    </div>
+                    <div class="mt-1 text-gray-600">{{ tr('Administra los eventos de tu club y planes asistidos por IA.', 'Manage your club events and AI-assisted plans.') }}</div>
+                </div>
                 <Link :href="route('events.create')" class="px-4 py-2 bg-blue-600 text-white rounded text-sm">{{ tr('Crear evento', 'Create Event') }}</Link>
             </div>
 

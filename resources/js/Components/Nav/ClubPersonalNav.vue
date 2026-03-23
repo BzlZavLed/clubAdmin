@@ -24,7 +24,7 @@ const showDropdown = ref(false)
 
 const menuItems = computed(() => [
     { name: tr('Panel', 'Dashboard'), href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
-    { name: tr('Planificador de eventos', 'Event Planner'), href: '/events', route: 'events.index', icon: CalendarDaysIcon },
+    { name: tr('Planeador de eventos', 'Planeador de eventos'), href: '/events', route: 'events.index', icon: CalendarDaysIcon },
 ])
 
 const clubSubItems = computed(() => [

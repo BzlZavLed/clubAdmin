@@ -54,7 +54,7 @@ const menuItems = [
                 icon: CalendarDaysIcon
             },
             {
-                name: 'Event Planner',
+                name: 'Planeador de eventos',
                 href: '/events',
                 route: 'events.index',
                 icon: CalendarDaysIcon
