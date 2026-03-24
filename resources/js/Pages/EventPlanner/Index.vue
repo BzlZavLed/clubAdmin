@@ -17,8 +17,46 @@ const filters = reactive({
 })
 const { tr } = useLocale()
 
+const eventStatusLabel = (status) => {
+    switch (status) {
+        case 'plan_finalized':
+            return tr('Plan finalizado', 'Plan finalized')
+        case 'ongoing':
+            return tr('En curso', 'Ongoing')
+        case 'past':
+            return tr('Pasado', 'Past')
+        case 'draft':
+        default:
+            return tr('Borrador', 'Draft')
+    }
+}
+
+const eventStatusClass = (status) => {
+    switch (status) {
+        case 'plan_finalized':
+            return 'bg-blue-50 text-blue-700'
+        case 'ongoing':
+            return 'bg-emerald-50 text-emerald-700'
+        case 'past':
+            return 'bg-gray-100 text-gray-700'
+        case 'draft':
+        default:
+            return 'bg-amber-50 text-amber-700'
+    }
+}
+
 const applyFilters = () => {
     router.get(route('events.index'), filters, { preserveState: true, replace: true })
+}
+
+const deleteEvent = (event) => {
+    if (!window.confirm(tr('¿Eliminar este evento? Esta acción no se puede deshacer.', 'Delete this event? This action cannot be undone.'))) {
+        return
+    }
+
+    router.delete(route('events.destroy', event.id), {
+        preserveScroll: true,
+    })
 }
 </script>
 
@@ -41,7 +79,13 @@ const applyFilters = () => {
 
             <div class="bg-white rounded-lg border p-4">
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <input v-model="filters.status" class="border rounded px-3 py-2 text-sm" :placeholder="tr('Estado', 'Status')" />
+                    <select v-model="filters.status" class="border rounded px-3 py-2 text-sm">
+                        <option value="">{{ tr('Todos los estados', 'All statuses') }}</option>
+                        <option value="draft">{{ tr('Borrador', 'Draft') }}</option>
+                        <option value="plan_finalized">{{ tr('Plan finalizado', 'Plan finalized') }}</option>
+                        <option value="ongoing">{{ tr('En curso', 'Ongoing') }}</option>
+                        <option value="past">{{ tr('Pasado', 'Past') }}</option>
+                    </select>
                     <input v-model="filters.event_type" class="border rounded px-3 py-2 text-sm" :placeholder="tr('Tipo de evento', 'Event type')" />
                     <input v-model="filters.start_from" type="date" class="border rounded px-3 py-2 text-sm" />
                     <input v-model="filters.start_to" type="date" class="border rounded px-3 py-2 text-sm" />
@@ -68,12 +112,25 @@ const applyFilters = () => {
                             <td class="px-4 py-2 font-medium text-gray-800">{{ event.title }}</td>
                             <td class="px-4 py-2">{{ event.event_type }}</td>
                             <td class="px-4 py-2">{{ new Date(event.start_at).toLocaleDateString() }}</td>
-                            <td class="px-4 py-2 capitalize">{{ event.status }}</td>
+                            <td class="px-4 py-2">
+                                <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold" :class="eventStatusClass(event.effective_status || event.status)">
+                                    {{ eventStatusLabel(event.effective_status || event.status) }}
+                                </span>
+                            </td>
                             <td class="px-4 py-2">
                                 {{ event.plan?.missing_items_json?.length || 0 }}
                             </td>
                             <td class="px-4 py-2 text-right">
-                                <Link :href="route('events.show', event.id)" class="text-blue-600 text-sm">{{ tr('Abrir plan', 'Open Plan') }}</Link>
+                                <div class="inline-flex items-center gap-3">
+                                    <Link :href="route('events.show', event.id)" class="text-blue-600 text-sm">{{ tr('Abrir plan', 'Open Plan') }}</Link>
+                                    <button
+                                        type="button"
+                                        class="text-red-600 text-sm"
+                                        @click="deleteEvent(event)"
+                                    >
+                                        {{ tr('Eliminar', 'Delete') }}
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         <tr v-if="!events.data.length">

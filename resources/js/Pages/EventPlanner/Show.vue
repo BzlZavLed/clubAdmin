@@ -22,6 +22,7 @@ const props = defineProps({
     members: Array,
     classes: Array,
     staff: Array,
+    accounts: Array,
     parents: Array,
     paymentSummary: Object,
     paymentConfig: Object,
@@ -42,6 +43,7 @@ const placeOptionsState = ref(props.placeOptions || [])
 const membersState = ref(props.members || [])
 const classesState = ref(props.classes || [])
 const staffState = ref(props.staff || [])
+const accountsState = ref(props.accounts || [])
 const parentsState = ref(props.parents || [])
 const paymentSummaryState = ref(props.paymentSummary || { total_received: 0, by_member_id: {}, by_staff_id: {} })
 const paymentConfigState = ref(props.paymentConfig || { concept_id: null, concept_label: null, amount: null, is_payable: false })
@@ -73,9 +75,11 @@ const toReservationDateTime = (value) => {
 }
 
 const eventForm = ref({
+    description: eventState.value?.description || '',
     start_at: toLocalInput(eventState.value?.start_at),
     end_at: toLocalInput(eventState.value?.end_at),
     timezone: eventState.value?.timezone || 'America/New_York',
+    status: eventState.value?.status || 'draft',
     is_payable: !!eventState.value?.is_payable,
     payment_amount: eventState.value?.payment_amount ?? '',
 })
@@ -88,11 +92,12 @@ const saveEventBasics = async () => {
     eventFormError.value = ''
     const payload = {
         title: eventState.value.title,
+        description: eventForm.value.description || null,
         event_type: eventState.value.event_type,
         start_at: eventForm.value.start_at,
         end_at: eventForm.value.end_at || null,
         timezone: eventForm.value.timezone,
-        status: eventState.value.status,
+        status: eventForm.value.status,
         budget_estimated_total: eventState.value.budget_estimated_total,
         budget_actual_total: eventState.value.budget_actual_total,
         requires_approval: eventState.value.requires_approval,
@@ -116,6 +121,49 @@ const saveEventBasics = async () => {
             eventFormSaving.value = false
         },
     })
+}
+
+watch(() => props.event, (nextEvent) => {
+    if (!nextEvent) return
+    eventState.value = nextEvent
+    eventForm.value = {
+        ...eventForm.value,
+        description: nextEvent.description || '',
+        start_at: toLocalInput(nextEvent.start_at),
+        end_at: toLocalInput(nextEvent.end_at),
+        timezone: nextEvent.timezone || 'America/New_York',
+        status: nextEvent.status || 'draft',
+        is_payable: !!nextEvent.is_payable,
+        payment_amount: nextEvent.payment_amount ?? '',
+    }
+})
+
+const eventStatusLabel = (status) => {
+    switch (status) {
+        case 'plan_finalized':
+            return tr('Plan finalizado', 'Plan finalized')
+        case 'ongoing':
+            return tr('En curso', 'Ongoing')
+        case 'past':
+            return tr('Pasado', 'Past')
+        case 'draft':
+        default:
+            return tr('Borrador', 'Draft')
+    }
+}
+
+const eventStatusClass = (status) => {
+    switch (status) {
+        case 'plan_finalized':
+            return 'bg-blue-50 text-blue-700'
+        case 'ongoing':
+            return 'bg-emerald-50 text-emerald-700'
+        case 'past':
+            return 'bg-gray-100 text-gray-700'
+        case 'draft':
+        default:
+            return 'bg-amber-50 text-amber-700'
+    }
 }
 
 const recommendations = computed(() => {
@@ -160,10 +208,46 @@ const selectedPlaceDetails = computed(() => {
     }
 })
 
-const checklistTasks = computed(() => (tasksState.value || []).filter((task) => {
-    const meta = task.checklist_json || {}
-    return meta?.source === 'event_checklist'
-}))
+const normalizedTaskTitle = (task) => String(task?.title || '').trim().toLowerCase()
+
+const checklistTasks = computed(() => {
+    const candidates = (tasksState.value || []).filter((task) => {
+        const meta = task?.checklist_json || {}
+        return meta?.source === 'event_checklist' || meta?.source === 'event_type_template'
+    })
+
+    const byTitle = new Map()
+    for (const task of candidates) {
+        const key = normalizedTaskTitle(task)
+        if (!key) continue
+        const current = byTitle.get(key)
+        if (!current) {
+            byTitle.set(key, task)
+            continue
+        }
+
+        const currentMeta = current?.checklist_json || {}
+        const nextMeta = task?.checklist_json || {}
+        const currentPriority = [
+            currentMeta?.source === 'event_type_template' ? 1 : 0,
+            Array.isArray(currentMeta?.custom_form_schema?.fields) ? 1 : 0,
+            current?.status === 'done' ? 1 : 0,
+            Number(current?.id || 0),
+        ].join('-')
+        const nextPriority = [
+            nextMeta?.source === 'event_type_template' ? 1 : 0,
+            Array.isArray(nextMeta?.custom_form_schema?.fields) ? 1 : 0,
+            task?.status === 'done' ? 1 : 0,
+            Number(task?.id || 0),
+        ].join('-')
+
+        if (nextPriority > currentPriority) {
+            byTitle.set(key, task)
+        }
+    }
+
+    return Array.from(byTitle.values())
+})
 
 const permissionSlipStats = computed(() => {
     const kids = (participantsState.value || []).filter((participant) => participant.role === 'kid')
@@ -256,12 +340,91 @@ const permissionSlipNames = computed(() => {
     return Array.from(collectedNames)
 })
 
+const humanizeTaskValue = (value) => {
+    if (typeof value === 'boolean') return value ? tr('Sí', 'Yes') : tr('No', 'No')
+    if (value === null || value === undefined || String(value).trim() === '') return '—'
+    return String(value)
+}
+
+const humanizeTaskKey = (key) => String(key || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+
+const fieldsForTaskSchema = (task) => {
+    const schema = task?.checklist_json?.custom_form_schema
+    return Array.isArray(schema?.fields) ? schema.fields : []
+}
+
+const taskGeneratedOutlineSections = computed(() => {
+    return checklistTasks.value
+        .filter((task) => task.status === 'done' && task?.form_response?.data_json)
+        .map((task) => {
+            const responseData = task.form_response?.data_json || {}
+            const schema = task?.checklist_json?.custom_form_schema || null
+            const fields = fieldsForTaskSchema(task)
+            const fieldMap = new Map(fields.map((field) => [field.key, field.label || humanizeTaskKey(field.key)]))
+
+            if (schema?.mode === 'registry' && Array.isArray(responseData.rows) && responseData.rows.length) {
+                return {
+                    name: task.title,
+                    summary: task.description || tr('Datos recopilados en esta tarea.', 'Data collected in this task.'),
+                    items: responseData.rows.map((row, index) => {
+                        const imageUrls = Object.entries(row || {})
+                            .map(([key, value]) => {
+                                const field = fields.find((entry) => entry.key === key) || null
+                                if (field?.type !== 'image') return null
+                                if (value && typeof value === 'object') return value.url || null
+                                return value || null
+                            })
+                            .filter(Boolean)
+
+                        const detail = Object.entries(row || {})
+                            .filter(([key]) => key !== '_row_id')
+                            .map(([key, value]) => {
+                                const field = fields.find((entry) => entry.key === key) || null
+                                if (field?.type === 'image') return null
+                                return `${fieldMap.get(key) || humanizeTaskKey(key)}: ${formatFieldValue(field, value)}`
+                            })
+                            .filter(Boolean)
+                            .join(' • ')
+
+                        return {
+                            label: `${tr('Registro', 'Row')} ${index + 1}`,
+                            detail,
+                            image_urls: imageUrls,
+                        }
+                    }),
+                }
+            }
+
+            const entries = Object.entries(responseData || {})
+            if (!entries.length) {
+                return null
+            }
+
+            return {
+                name: task.title,
+                summary: task.description || tr('Datos recopilados en esta tarea.', 'Data collected in this task.'),
+                items: entries.map(([key, value]) => ({
+                    label: fieldMap.get(key) || humanizeTaskKey(key),
+                    detail: (fields.find((entry) => entry.key === key) || null)?.type === 'image'
+                        ? ''
+                        : formatFieldValue(fields.find((entry) => entry.key === key) || null, value),
+                    image_url: (fields.find((entry) => entry.key === key) || null)?.type === 'image'
+                        ? (value && typeof value === 'object' ? value.url || '' : value || '')
+                        : null,
+                })),
+            }
+        })
+        .filter(Boolean)
+})
+
 const outlineSections = computed(() => {
     const sections = (planState.value?.plan_json?.sections || [])
         .filter((section) => (section.name || '') !== 'Recommendations')
     const permissionTask = checklistTasks.value.find((task) => isPermissionSlipTask(task))
     if (!permissionTask || permissionTask.status !== 'done') {
-        return sections
+        return [...taskGeneratedOutlineSections.value, ...sections]
     }
 
     const names = permissionSlipNames.value
@@ -271,7 +434,7 @@ const outlineSections = computed(() => {
         items: names.map((name) => ({ label: name })),
     }
 
-    return [permissionSection, ...sections]
+    return [permissionSection, ...taskGeneratedOutlineSections.value, ...sections]
 })
 
 const taskKeyFromTitle = (title) => {
@@ -332,6 +495,23 @@ const isPermissionSlipTask = (task) => {
     return title.includes('permission slip') || title.includes('permission slips')
 }
 
+const hasAiSuggestedForm = (task) => {
+    const customSchema = task?.checklist_json?.custom_form_schema
+    return Array.isArray(customSchema?.fields) && customSchema.fields.length > 0
+}
+
+const openTaskInfoModal = (task) => {
+    taskInfoModal.value = {
+        open: true,
+        title: task?.title || '',
+        description: task?.description || '',
+    }
+}
+
+const closeTaskInfoModal = () => {
+    taskInfoModal.value = { open: false, title: '', description: '' }
+}
+
 const syncMissingItems = async (tasks = checklistTasks.value) => {
     const remaining = tasks
         .filter((task) => task.status !== 'done')
@@ -345,8 +525,46 @@ const syncMissingItems = async (tasks = checklistTasks.value) => {
     planState.value = data.eventPlan
 }
 
+const ensureTaskResponseForCompletion = async (task) => {
+    if (!task?.id || task?.form_response?.data_json) return null
+
+    try {
+        const { data } = await axios.get(route('event-tasks.form.show', { eventTask: task.id }))
+        const schema = data?.schema?.schema_json || null
+        const existingResponse = data?.response || null
+        const prefill = data?.prefill || null
+
+        if (existingResponse?.data_json) {
+            mergeTaskIntoState({
+                ...task,
+                form_response: existingResponse,
+            })
+            return existingResponse
+        }
+
+        const hasPrefill = prefill && typeof prefill === 'object' && Object.keys(prefill).length > 0
+        if (!schema || !hasPrefill) return null
+
+        const { data: responseData } = await axios.put(route('event-tasks.form.update', { eventTask: task.id }), {
+            data_json: prefill,
+        })
+
+        mergeTaskIntoState({
+            ...task,
+            form_response: responseData.response,
+        })
+
+        return responseData.response
+    } catch {
+        return null
+    }
+}
+
 const toggleChecklistTask = async (task) => {
     const nextStatus = task.status === 'done' ? 'todo' : 'done'
+    if (nextStatus === 'done') {
+        await ensureTaskResponseForCompletion(task)
+    }
     const { data } = await axios.put(route('event-tasks.update', { eventTask: task.id }), {
         title: task.title,
         description: task.description,
@@ -355,23 +573,32 @@ const toggleChecklistTask = async (task) => {
         status: nextStatus,
         checklist_json: task.checklist_json,
     })
-    tasksState.value = tasksState.value.map((item) => item.id === task.id ? data.task : item)
+    mergeTaskIntoState(data.task)
     await syncMissingItems()
 }
 
 const newChecklistItem = ref('')
+const editingTaskId = ref(null)
+const editingTaskTitle = ref('')
 const activeFormTask = ref(null)
 const activeFormTaskKey = ref(null)
 const formSchema = ref(null)
 const formData = ref({})
+const registryRows = ref([])
+const registryEditIndex = ref(null)
 const formLoading = ref(false)
 const formError = ref('')
 const showCustomFormBuilder = ref(false)
 const customFormTask = ref(null)
 const customFormFields = ref([])
+const customFormMode = ref('single')
 const customFormError = ref('')
+const customFormSuggesting = ref(false)
 const documentPreset = ref(null)
 const showTransportModal = ref(false)
+const taskInfoModal = ref({ open: false, title: '', description: '' })
+const multiSelectQueries = ref({})
+const formImageUploadingField = ref(null)
 const transportDrivers = ref([])
 const transportLoading = ref(false)
 const transportError = ref('')
@@ -388,6 +615,8 @@ const attendeeToast = ref({ show: false, type: 'success', message: '' })
 const venueTotalEditedManually = ref(false)
 let attendeeToastTimer = null
 
+const isRegistryForm = computed(() => formSchema.value?.mode === 'registry')
+
 const showAttendeeToast = (message, type = 'success') => {
     if (attendeeToastTimer) {
         clearTimeout(attendeeToastTimer)
@@ -396,6 +625,48 @@ const showAttendeeToast = (message, type = 'success') => {
     attendeeToastTimer = setTimeout(() => {
         attendeeToast.value = { show: false, type: 'success', message: '' }
     }, 3200)
+}
+
+const mergeTaskIntoState = (nextTask) => {
+    tasksState.value = tasksState.value.map((item) => {
+        if (item.id !== nextTask.id) return item
+        return {
+            ...item,
+            ...nextTask,
+            form_response: nextTask.form_response ?? item.form_response ?? null,
+        }
+    })
+}
+
+const startTaskTitleEdit = (task) => {
+    editingTaskId.value = task.id
+    editingTaskTitle.value = task.title || ''
+}
+
+const cancelTaskTitleEdit = () => {
+    editingTaskId.value = null
+    editingTaskTitle.value = ''
+}
+
+const saveTaskTitleEdit = async (task) => {
+    const nextTitle = String(editingTaskTitle.value || '').trim()
+    if (!nextTitle || nextTitle === task.title) {
+        cancelTaskTitleEdit()
+        return
+    }
+
+    const { data } = await axios.put(route('event-tasks.update', { eventTask: task.id }), {
+        title: nextTitle,
+        description: task.description,
+        assigned_to_user_id: task.assigned_to_user_id,
+        due_at: task.due_at,
+        status: task.status,
+        checklist_json: task.checklist_json,
+    })
+
+    mergeTaskIntoState(data.task)
+    cancelTaskTitleEdit()
+    await syncMissingItems()
 }
 
 const roundedMoney = (value) => {
@@ -450,18 +721,272 @@ const toSnake = (value) => String(value || '')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
 
+const blankDataFromSchema = (schema) => {
+    const fields = Array.isArray(schema?.fields) ? schema.fields : []
+    return fields.reduce((acc, field) => {
+        if (field.type === 'checkbox') {
+            acc[field.key] = false
+        } else if (field.type === 'select' && field.multiple) {
+            acc[field.key] = []
+        } else {
+            acc[field.key] = ''
+        }
+        return acc
+    }, {})
+}
+
+const buildRegistryRowId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID()
+    }
+
+    return `row_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+const normalizedSchemaFields = (schema) => Array.isArray(schema?.fields) ? schema.fields : []
+
+const taskSchemaFields = (task) => normalizedSchemaFields(task?.checklist_json?.custom_form_schema)
+
+const taskDataSourceTasks = computed(() => {
+    return (tasksState.value || []).filter((task) => {
+        if (!task?.id) return false
+        const responseData = task?.form_response?.data_json
+        if (Array.isArray(responseData?.rows) && responseData.rows.length) return true
+        return responseData && typeof responseData === 'object' && Object.keys(responseData).length > 0
+    })
+})
+
+const taskById = (taskId) => (tasksState.value || []).find((task) => Number(task.id) === Number(taskId)) || null
+
+const taskRowsForSource = (taskId) => {
+    const task = taskById(taskId)
+    if (!task) return []
+
+    const schema = task?.checklist_json?.custom_form_schema || null
+    const responseData = task?.form_response?.data_json || {}
+
+    if (schema?.mode === 'registry' && Array.isArray(responseData.rows)) {
+        return responseData.rows.map((row, index) => ({
+            ...row,
+            _row_id: row?._row_id || `task-${task.id}-row-${index}`,
+        }))
+    }
+
+    if (responseData && typeof responseData === 'object' && Object.keys(responseData).length) {
+        return [{
+            ...responseData,
+            _row_id: responseData?._row_id || `task-${task.id}-single`,
+        }]
+    }
+
+    return []
+}
+
+const taskSourceFieldChoices = (taskId) => {
+    const task = taskById(taskId)
+    if (!task) return []
+
+    const schemaFields = taskSchemaFields(task)
+    if (schemaFields.length) {
+        return schemaFields
+            .filter((field) => field?.key)
+            .map((field) => ({
+                value: field.key,
+                label: field.label || field.key,
+            }))
+    }
+
+    const firstRow = taskRowsForSource(taskId)[0] || {}
+    return Object.keys(firstRow)
+        .filter((key) => key !== '_row_id')
+        .map((key) => ({ value: key, label: humanizeTaskKey(key) }))
+}
+
+const labelForTaskDataRow = (row, labelField) => {
+    const labelValue = labelField ? row?.[labelField] : null
+    if (labelValue !== null && labelValue !== undefined && String(labelValue).trim() !== '') {
+        return String(labelValue)
+    }
+
+    const fallbackKey = Object.keys(row || {}).find((key) => key !== '_row_id' && row?.[key] !== null && row?.[key] !== undefined && String(row?.[key]).trim() !== '')
+    if (fallbackKey) {
+        return String(row[fallbackKey])
+    }
+
+    return tr('Registro', 'Record')
+}
+
+const dynamicOptionsForField = (field) => {
+    const source = field?.source || ''
+    if (source === 'members') {
+        return (membersState.value || []).map((member) => ({
+            value: member.member_id,
+            label: member.applicant_name || member.name || `Member #${member.member_id}`,
+        }))
+    }
+    if (source === 'staff') {
+        return (staffState.value || []).map((staffMember) => ({
+            value: staffMember.id,
+            label: staffMember.name || `Staff #${staffMember.id}`,
+        }))
+    }
+    if (source === 'classes') {
+        return (classesState.value || []).map((clubClass) => ({
+            value: clubClass.id,
+            label: clubClass.class_name || `Class #${clubClass.id}`,
+        }))
+    }
+    if (source === 'participants') {
+        const roleFilter = String(field?.source_config?.participant_role || '').trim().toLowerCase()
+        const statusFilter = String(field?.source_config?.participant_status || '').trim().toLowerCase()
+
+        return (participantsState.value || [])
+            .filter((participant) => {
+                const participantRole = String(participant?.role || '').trim().toLowerCase()
+                const participantStatus = String(participant?.status || '').trim().toLowerCase()
+
+                if (roleFilter && participantRole !== roleFilter) return false
+                if (statusFilter && participantStatus !== statusFilter) return false
+                return true
+            })
+            .map((participant) => {
+            const role = participant?.role ? String(participant.role) : ''
+            const status = participant?.status ? String(participant.status) : ''
+            const suffix = [role, status].filter(Boolean).join(' · ')
+
+            return {
+                value: participant.id,
+                label: suffix
+                    ? `${participant.participant_name || `Participant #${participant.id}`} (${suffix})`
+                    : (participant.participant_name || `Participant #${participant.id}`),
+            }
+            })
+    }
+    if (source === 'task_data') {
+        const taskId = field?.source_config?.task_id
+        const labelField = field?.source_config?.label_field
+        return taskRowsForSource(taskId).map((row) => ({
+            value: row._row_id,
+            label: labelForTaskDataRow(row, labelField),
+        }))
+    }
+
+    return Array.isArray(field?.options)
+        ? field.options.map((option) => ({ value: option, label: option }))
+        : []
+}
+
+const blockedRegistryValuesForField = (field) => {
+    if (!isRegistryForm.value || !field?.source) return new Set()
+
+    return new Set(
+        registryRows.value.flatMap((row, index) => {
+            if (registryEditIndex.value !== null && index === registryEditIndex.value) {
+                return []
+            }
+
+            const value = row?.[field.key]
+            if (Array.isArray(value)) {
+                return value.map((item) => String(item))
+            }
+            if (value === null || value === undefined || String(value).trim() === '') {
+                return []
+            }
+            return [String(value)]
+        })
+    )
+}
+
+const availableOptionsForField = (field) => {
+    const blocked = blockedRegistryValuesForField(field)
+    const selected = new Set(selectedValuesForField(field).map((value) => String(value)))
+    return dynamicOptionsForField(field).filter((option) => {
+        const key = String(option.value)
+        return !blocked.has(key) || selected.has(key)
+    })
+}
+
+const selectedValuesForField = (field) => {
+    const value = formData.value?.[field.key]
+    return Array.isArray(value) ? value : []
+}
+
+const filteredMultiSelectOptions = (field) => {
+    const query = String(multiSelectQueries.value?.[field.key] || '').trim().toLowerCase()
+    const selected = new Set(selectedValuesForField(field).map((value) => String(value)))
+    return availableOptionsForField(field).filter((option) => {
+        if (selected.has(String(option.value))) return false
+        if (!query) return true
+        return String(option.label).toLowerCase().includes(query)
+    })
+}
+
+const addMultiSelectValue = (field, value) => {
+    const current = selectedValuesForField(field)
+    if (current.some((item) => String(item) === String(value))) return
+    formData.value = {
+        ...formData.value,
+        [field.key]: [...current, value],
+    }
+    multiSelectQueries.value = {
+        ...multiSelectQueries.value,
+        [field.key]: '',
+    }
+}
+
+const removeMultiSelectValue = (field, value) => {
+    formData.value = {
+        ...formData.value,
+        [field.key]: selectedValuesForField(field).filter((item) => String(item) !== String(value)),
+    }
+}
+
+const formatFieldValue = (field, value) => {
+    if (field?.type === 'image') {
+        if (value && typeof value === 'object') {
+            return value.url || value.path || '—'
+        }
+        return value || '—'
+    }
+    if (field?.type === 'checkbox') {
+        return value ? tr('Sí', 'Yes') : tr('No', 'No')
+    }
+    if (Array.isArray(value)) {
+        const optionMap = new Map(dynamicOptionsForField(field).map((option) => [String(option.value), option.label]))
+        const labels = value.map((item) => optionMap.get(String(item)) || String(item)).filter(Boolean)
+        return labels.length ? labels.join(', ') : '—'
+    }
+    if (value === null || value === undefined || String(value).trim() === '') {
+        return '—'
+    }
+    if (field?.type === 'select') {
+        const optionMap = new Map(dynamicOptionsForField(field).map((option) => [String(option.value), option.label]))
+        return optionMap.get(String(value)) || String(value)
+    }
+    return String(value)
+}
+
 const openCustomFormBuilderModal = (task) => {
     customFormTask.value = task
     const existing = task?.checklist_json?.custom_form_schema
+    customFormMode.value = existing?.mode === 'registry' ? 'registry' : 'single'
     if (existing && Array.isArray(existing.fields) && existing.fields.length) {
         customFormFields.value = existing.fields.map((field) => ({
             key: field.key || '',
             label: field.label || '',
             type: field.type || 'text',
             required: !!field.required,
+            help: field.help || '',
+            optionsText: Array.isArray(field.options) ? field.options.join(', ') : '',
+            source: field.source || '',
+            multiple: !!field.multiple,
+            sourceTaskId: field?.source_config?.task_id || '',
+            sourceLabelField: field?.source_config?.label_field || '',
+            sourceParticipantRole: field?.source_config?.participant_role || '',
+            sourceParticipantStatus: field?.source_config?.participant_status || '',
         }))
     } else {
-        customFormFields.value = [{ key: '', label: '', type: 'text', required: false }]
+        customFormFields.value = [{ key: '', label: '', type: 'text', required: false, help: '', optionsText: '', source: '', multiple: false, sourceTaskId: '', sourceLabelField: '', sourceParticipantRole: '', sourceParticipantStatus: '' }]
     }
     customFormError.value = ''
     showCustomFormBuilder.value = true
@@ -470,8 +995,17 @@ const openCustomFormBuilderModal = (task) => {
 const addCustomFormField = () => {
     customFormFields.value = [
         ...customFormFields.value,
-        { key: '', label: '', type: 'text', required: false },
+        { key: '', label: '', type: 'text', required: false, help: '', optionsText: '', source: '', multiple: false, sourceTaskId: '', sourceLabelField: '', sourceParticipantRole: '', sourceParticipantStatus: '' },
     ]
+}
+
+const moveCustomFormField = (index, direction) => {
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= customFormFields.value.length) return
+    const next = [...customFormFields.value]
+    const [field] = next.splice(index, 1)
+    next.splice(targetIndex, 0, field)
+    customFormFields.value = next
 }
 
 const removeCustomFormField = (index) => {
@@ -486,17 +1020,50 @@ const saveCustomFormDefinition = async () => {
         .map((field) => {
             const label = String(field.label || '').trim()
             const key = toSnake(field.key || label)
+            const help = String(field.help || '').trim()
+            const options = field.type === 'select'
+                ? String(field.optionsText || '')
+                    .split(',')
+                    .map((option) => option.trim())
+                    .filter(Boolean)
+                : []
+            let sourceConfig = null
+            if (field.type === 'select' && field.source === 'task_data' && field.sourceTaskId && field.sourceLabelField) {
+                sourceConfig = {
+                    task_id: Number(field.sourceTaskId),
+                    label_field: field.sourceLabelField,
+                }
+            } else if (field.type === 'select' && field.source === 'participants') {
+                sourceConfig = {
+                    ...(field.sourceParticipantRole ? { participant_role: field.sourceParticipantRole } : {}),
+                    ...(field.sourceParticipantStatus ? { participant_status: field.sourceParticipantStatus } : {}),
+                }
+                if (!Object.keys(sourceConfig).length) {
+                    sourceConfig = null
+                }
+            }
             return {
                 key,
                 label,
                 type: field.type || 'text',
                 required: !!field.required,
+                ...(field.type === 'select' && field.source ? { source: field.source } : {}),
+                ...(field.type === 'select' && sourceConfig ? { source_config: sourceConfig } : {}),
+                ...(field.type === 'select' && field.multiple ? { multiple: true } : {}),
+                ...(help ? { help } : {}),
+                ...(field.type === 'select' && !field.source && options.length ? { options } : {}),
             }
         })
         .filter((field) => field.key && field.label)
 
     if (!normalizedFields.length) {
         customFormError.value = 'Add at least one valid field.'
+        return
+    }
+
+    const invalidTaskDataField = normalizedFields.find((field) => field.type === 'select' && field.source === 'task_data' && (!field.source_config?.task_id || !field.source_config?.label_field))
+    if (invalidTaskDataField) {
+        customFormError.value = tr('Selecciona la tarea origen y el campo visible para cada selector con datos de otra tarea.', 'Select a source task and display field for every cross-task data selector.')
         return
     }
 
@@ -512,7 +1079,10 @@ const saveCustomFormDefinition = async () => {
     const checklist = {
         ...(customFormTask.value.checklist_json || {}),
         source: (customFormTask.value.checklist_json || {}).source || 'event_checklist',
-        custom_form_schema: { fields: normalizedFields },
+        custom_form_schema: {
+            mode: customFormMode.value === 'registry' ? 'registry' : 'single',
+            fields: normalizedFields,
+        },
     }
     if (!checklist.task_key) {
         checklist.task_key = taskKeyFromTitle(customFormTask.value.title)
@@ -526,10 +1096,105 @@ const saveCustomFormDefinition = async () => {
         status: customFormTask.value.status,
         checklist_json: checklist,
     })
-    tasksState.value = tasksState.value.map((item) => item.id === data.task.id ? data.task : item)
+    mergeTaskIntoState(data.task)
     showCustomFormBuilder.value = false
     customFormTask.value = null
     customFormFields.value = []
+    customFormMode.value = 'single'
+}
+
+const suggestCustomFormDefinition = async () => {
+    if (!customFormTask.value) return
+    if (customFormFields.value.length) {
+        const shouldReplace = window.confirm(tr('Esto reemplazará temporalmente los campos actuales del constructor. Podrás editarlos antes de guardar. ¿Continuar?', 'This will temporarily replace the current builder fields. You can still edit them before saving. Continue?'))
+        if (!shouldReplace) return
+    }
+
+    customFormSuggesting.value = true
+    customFormError.value = ''
+    try {
+        const { data } = await axios.post(route('event-tasks.form.suggest', { eventTask: customFormTask.value.id }))
+        const schema = data?.schema || {}
+        customFormMode.value = schema.mode === 'registry' ? 'registry' : 'single'
+        customFormFields.value = Array.isArray(schema.fields)
+            ? schema.fields.map((field) => ({
+                key: field.key || '',
+                label: field.label || '',
+                type: field.type || 'text',
+                required: !!field.required,
+                help: field.help || '',
+                optionsText: Array.isArray(field.options) ? field.options.join(', ') : '',
+                source: field.source || '',
+                multiple: !!field.multiple,
+                sourceTaskId: field?.source_config?.task_id || '',
+                sourceLabelField: field?.source_config?.label_field || '',
+                sourceParticipantRole: field?.source_config?.participant_role || '',
+                sourceParticipantStatus: field?.source_config?.participant_status || '',
+            }))
+            : []
+        if (!customFormFields.value.length) {
+            customFormError.value = tr('La IA no devolvió un formulario utilizable.', 'AI did not return a usable form.')
+        }
+    } catch (error) {
+        customFormError.value = error?.response?.data?.message || tr('No se pudo generar una sugerencia de formulario.', 'Unable to generate a form suggestion.')
+    } finally {
+        customFormSuggesting.value = false
+    }
+}
+
+const uploadTaskFormImage = async (field, file) => {
+    if (!activeFormTask.value || !field?.key || !file) return
+
+    formImageUploadingField.value = field.key
+    formError.value = ''
+
+    try {
+        const payload = new FormData()
+        payload.append('file', file)
+
+        const { data } = await axios.post(
+            route('event-tasks.form.media', { eventTask: activeFormTask.value.id }),
+            payload,
+            {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            }
+        )
+
+        formData.value = {
+            ...formData.value,
+            [field.key]: data.url || '',
+        }
+    } catch (error) {
+        formError.value = error?.response?.data?.message || tr('No se pudo subir la imagen.', 'Unable to upload image.')
+    } finally {
+        formImageUploadingField.value = null
+    }
+}
+
+const copyImageFieldUrl = async (field) => {
+    const rawValue = formData.value?.[field.key]
+    const url = typeof rawValue === 'object' ? rawValue?.url : rawValue
+    if (!url) return
+
+    try {
+        if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(String(url))
+            showAttendeeToast(tr('URL copiada al portapapeles.', 'URL copied to clipboard.'))
+            return
+        }
+
+        const temp = document.createElement('textarea')
+        temp.value = String(url)
+        document.body.appendChild(temp)
+        temp.select()
+        document.execCommand('copy')
+        document.body.removeChild(temp)
+        showAttendeeToast(tr('URL copiada al portapapeles.', 'URL copied to clipboard.'))
+    } catch {
+        formError.value = tr('No se pudo copiar la URL pública.', 'Unable to copy the public URL.')
+    }
 }
 
 const addChecklistItem = async () => {
@@ -583,7 +1248,15 @@ const openTaskForm = async (task) => {
         const { data } = await axios.get(route('event-tasks.form.show', { eventTask: task.id }))
         formSchema.value = data.schema?.schema_json || null
         const existingData = data.response?.data_json || data.prefill || {}
-        formData.value = applyCampReservationDefaults(taskKey, existingData)
+        if (data.schema?.schema_json?.mode === 'registry') {
+            registryRows.value = Array.isArray(existingData?.rows) ? existingData.rows : []
+            formData.value = blankDataFromSchema(data.schema?.schema_json)
+            registryEditIndex.value = null
+        } else {
+            registryRows.value = []
+            registryEditIndex.value = null
+            formData.value = applyCampReservationDefaults(taskKey, existingData)
+        }
         activeFormTaskKey.value = data.schema?.key || taskKey || null
         activeFormTask.value = task
     } catch (error) {
@@ -592,9 +1265,106 @@ const openTaskForm = async (task) => {
         activeFormTaskKey.value = taskKey || null
         formSchema.value = null
         formData.value = {}
+        registryRows.value = []
+        registryEditIndex.value = null
     } finally {
         formLoading.value = false
     }
+}
+
+const validateFormFields = (schema, data) => {
+    const fields = Array.isArray(schema?.fields) ? schema.fields : []
+    for (const field of fields) {
+        if (!field.required) continue
+        const value = data?.[field.key]
+        if (field.type === 'select' && field.multiple) {
+            if (!Array.isArray(value) || !value.length) return field.label
+            continue
+        }
+        if (field.type === 'checkbox') {
+            if (!value) return field.label
+            continue
+        }
+        if (value === null || value === undefined || String(value).trim() === '') {
+            return field.label
+        }
+    }
+    return null
+}
+
+const persistRegistryRows = async (rows) => {
+    if (!activeFormTask.value) return
+    const { data } = await axios.put(route('event-tasks.form.update', { eventTask: activeFormTask.value.id }), {
+        data_json: { rows },
+    })
+    activeFormTask.value = {
+        ...activeFormTask.value,
+        form_response: data.response,
+    }
+    tasksState.value = tasksState.value.map((item) => item.id === activeFormTask.value.id
+        ? { ...item, form_response: data.response }
+        : item)
+}
+
+const saveRegistryRow = async () => {
+    if (!formSchema.value) return
+    const missingLabel = validateFormFields(formSchema.value, formData.value)
+    if (missingLabel) {
+        formError.value = `${missingLabel} is required.`
+        return
+    }
+
+    formLoading.value = true
+    formError.value = ''
+    try {
+        const row = { ...formData.value }
+        row._row_id = row._row_id || buildRegistryRowId()
+        const nextRows = [...registryRows.value]
+        if (registryEditIndex.value === null) {
+            nextRows.push(row)
+        } else {
+            nextRows.splice(registryEditIndex.value, 1, row)
+        }
+        await persistRegistryRows(nextRows)
+        registryRows.value = nextRows
+        formData.value = blankDataFromSchema(formSchema.value)
+        registryEditIndex.value = null
+    } catch (error) {
+        formError.value = error?.response?.data?.message || 'Unable to save registry row.'
+    } finally {
+        formLoading.value = false
+    }
+}
+
+const editRegistryRow = (index) => {
+    const row = registryRows.value[index]
+    if (!row) return
+    formData.value = { ...blankDataFromSchema(formSchema.value), ...row }
+    registryEditIndex.value = index
+}
+
+const removeRegistryRow = async (index) => {
+    const nextRows = registryRows.value.filter((_, rowIndex) => rowIndex !== index)
+    formLoading.value = true
+    formError.value = ''
+    try {
+        await persistRegistryRows(nextRows)
+        registryRows.value = nextRows
+        if (registryEditIndex.value === index) {
+            formData.value = blankDataFromSchema(formSchema.value)
+            registryEditIndex.value = null
+        }
+    } catch (error) {
+        formError.value = error?.response?.data?.message || 'Unable to remove registry row.'
+    } finally {
+        formLoading.value = false
+    }
+}
+
+const cancelRegistryEdit = () => {
+    formData.value = blankDataFromSchema(formSchema.value)
+    registryEditIndex.value = null
+    formError.value = ''
 }
 
 const applyCampReservationDefaults = (taskKey, currentData) => {
@@ -1003,7 +1773,7 @@ const refreshTransportationCompletion = async () => {
             checklist_json: transportTaskRef.checklist_json,
         })
         transportTask.value = data.task
-        tasksState.value = tasksState.value.map((item) => item.id === data.task.id ? data.task : item)
+        mergeTaskIntoState(data.task)
         await syncMissingItems()
     }
 
@@ -1057,7 +1827,7 @@ const finishAttendeeList = async () => {
                 status: 'done',
                 checklist_json: finalizeTask.checklist_json,
             })
-            tasksState.value = tasksState.value.map((item) => item.id === taskData.task.id ? taskData.task : item)
+            mergeTaskIntoState(taskData.task)
             await syncMissingItems()
         }
 
@@ -1129,6 +1899,8 @@ const closeTaskForm = () => {
     venueTotalEditedManually.value = false
     formSchema.value = null
     formData.value = {}
+    registryRows.value = []
+    registryEditIndex.value = null
     formError.value = ''
 }
 
@@ -1188,11 +1960,22 @@ const upsertVenueBudgetFromForm = async () => {
 
 const saveTaskForm = async () => {
     if (!activeFormTask.value) return
+    if (isRegistryForm.value) {
+        await saveRegistryRow()
+        return
+    }
     formLoading.value = true
     try {
-        await axios.put(route('event-tasks.form.update', { eventTask: activeFormTask.value.id }), {
+        const { data: responseData } = await axios.put(route('event-tasks.form.update', { eventTask: activeFormTask.value.id }), {
             data_json: formData.value || {},
         })
+        activeFormTask.value = {
+            ...activeFormTask.value,
+            form_response: responseData.response,
+        }
+        tasksState.value = tasksState.value.map((item) => item.id === activeFormTask.value.id
+            ? { ...item, form_response: responseData.response }
+            : item)
         const taskKey = activeFormTaskKey.value || activeFormTask.value?.checklist_json?.task_key
         if (taskKey === 'camp_reservation') {
             await confirmCampReservation()
@@ -1210,7 +1993,7 @@ const saveTaskForm = async () => {
                 status: 'done',
                 checklist_json: activeFormTask.value.checklist_json,
             })
-            tasksState.value = tasksState.value.map((item) => item.id === data.task.id ? data.task : item)
+            mergeTaskIntoState(data.task)
             await syncMissingItems()
         }
         closeTaskForm()
@@ -1242,7 +2025,32 @@ const expectedPaymentsTotal = computed(() => {
 
 const seededChecklist = ref(false)
 
+const cleanupLegacyChecklistDuplicates = async () => {
+    const tasks = tasksState.value || []
+    const seededTitles = new Set(
+        tasks
+            .filter((task) => (task?.checklist_json?.source || null) === 'event_type_template')
+            .map((task) => normalizedTaskTitle(task))
+            .filter(Boolean)
+    )
+
+    const duplicates = tasks.filter((task) => {
+        const source = task?.checklist_json?.source || null
+        return source === 'event_checklist' && seededTitles.has(normalizedTaskTitle(task))
+    })
+
+    if (!duplicates.length) return
+
+    for (const task of duplicates) {
+        await axios.delete(route('event-tasks.destroy', { eventTask: task.id }))
+    }
+
+    const duplicateIds = new Set(duplicates.map((task) => task.id))
+    tasksState.value = tasks.filter((task) => !duplicateIds.has(task.id))
+}
+
 onMounted(async () => {
+    await cleanupLegacyChecklistDuplicates()
     if (seededChecklist.value) return
     const missing = planState.value?.missing_items_json || []
     if (!missing.length || checklistTasks.value.length) return
@@ -1305,6 +2113,7 @@ const handlePlannerUpdate = (payload) => {
     paymentRecordsState.value = payload.paymentRecords || paymentRecordsState.value
     serpApiUsageState.value = payload.serpApiUsage || serpApiUsageState.value
     eventForm.value = {
+        description: payload.event?.description || '',
         start_at: toLocalInput(payload.event?.start_at),
         end_at: toLocalInput(payload.event?.end_at),
         timezone: payload.event?.timezone || 'America/New_York',
@@ -1325,8 +2134,16 @@ const updateParticipants = (participants) => {
     refreshTransportationCompletion()
 }
 
-const updateBudget = (items) => {
-    budgetState.value = items || []
+const updateBudget = (payload) => {
+    if (Array.isArray(payload)) {
+        budgetState.value = payload
+        return
+    }
+
+    budgetState.value = payload?.items || []
+    if (Array.isArray(payload?.accounts)) {
+        accountsState.value = payload.accounts
+    }
 }
 
 const handlePlaceOptionsUpdate = (updated) => {
@@ -1432,7 +2249,9 @@ const saveBudgetPreference = async (value) => {
                     </div>
                     <div>
                         <div class="text-xs text-gray-500">{{ tr('Estado', 'Status') }}</div>
-                        <div class="font-semibold text-gray-800 capitalize">{{ eventState.status }}</div>
+                        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold" :class="eventStatusClass(eventState.effective_status || eventState.status)">
+                            {{ eventStatusLabel(eventState.effective_status || eventState.status) }}
+                        </span>
                     </div>
                     <div>
                         <div class="text-xs text-gray-500">{{ tr('Pagos recibidos', 'Payments Received') }}</div>
@@ -1474,6 +2293,14 @@ const saveBudgetPreference = async (value) => {
                         <button type="button" class="text-gray-500 hover:text-gray-700" @click="showEventModal = false">×</button>
                     </div>
                     <div class="p-5 space-y-4">
+                        <div>
+                            <label class="text-xs text-gray-600">{{ tr('Descripción del evento', 'Event Description') }}</label>
+                            <textarea
+                                v-model="eventForm.description"
+                                rows="4"
+                                class="w-full border rounded px-3 py-2 text-sm"
+                            ></textarea>
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="text-xs text-gray-600">{{ tr('Inicio', 'Start') }}</label>
@@ -1486,6 +2313,16 @@ const saveBudgetPreference = async (value) => {
                             <div>
                                 <label class="text-xs text-gray-600">{{ tr('Zona horaria', 'Timezone') }}</label>
                                 <input v-model="eventForm.timezone" class="w-full border rounded px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-600">{{ tr('Estado del plan', 'Plan status') }}</label>
+                                <select v-model="eventForm.status" class="w-full border rounded px-3 py-2 text-sm">
+                                    <option value="draft">{{ tr('Borrador', 'Draft') }}</option>
+                                    <option value="plan_finalized">{{ tr('Plan finalizado', 'Plan finalized') }}</option>
+                                </select>
+                                <div class="mt-1 text-[11px] text-gray-500">
+                                    {{ tr('En curso y Pasado se calculan automáticamente por fecha.', 'Ongoing and Past are calculated automatically from the event dates.') }}
+                                </div>
                             </div>
                             <div class="flex items-center gap-4">
                                 <label class="text-xs text-gray-600 flex items-center gap-2">
@@ -1611,7 +2448,39 @@ const saveBudgetPreference = async (value) => {
                                     <label v-for="task in checklistTasks" :key="task.id" class="flex items-center justify-between gap-2 text-sm text-gray-700">
                                         <span class="flex items-center gap-2">
                                             <input type="checkbox" class="rounded border-gray-300 text-blue-600" :checked="task.status === 'done'" @change="toggleChecklistTask(task)" />
-                                            <span :class="task.status === 'done' ? 'line-through text-gray-400' : ''">{{ task.title }}</span>
+                                            <template v-if="editingTaskId === task.id">
+                                                <input
+                                                    v-model="editingTaskTitle"
+                                                    type="text"
+                                                    class="w-72 rounded border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                                                    @click.stop
+                                                    @keydown.enter.prevent="saveTaskTitleEdit(task)"
+                                                    @keydown.esc.prevent="cancelTaskTitleEdit"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    class="text-xs text-blue-600 hover:text-blue-700"
+                                                    @click.prevent.stop="saveTaskTitleEdit(task)"
+                                                >
+                                                    {{ tr('Guardar', 'Save') }}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="text-xs text-gray-500 hover:text-gray-700"
+                                                    @click.prevent.stop="cancelTaskTitleEdit"
+                                                >
+                                                    {{ tr('Cancelar', 'Cancel') }}
+                                                </button>
+                                            </template>
+                                            <span v-else :class="task.status === 'done' ? 'line-through text-gray-400' : ''">{{ task.title }}</span>
+                                            <span
+                                                v-if="editingTaskId !== task.id && task.description"
+                                                class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 cursor-pointer"
+                                                :title="task.description"
+                                                @click.prevent.stop="openTaskInfoModal(task)"
+                                            >
+                                                Info
+                                            </span>
                                             <span
                                                 v-if="isPermissionSlipTask(task)"
                                                 class="text-[11px] px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700"
@@ -1636,6 +2505,14 @@ const saveBudgetPreference = async (value) => {
                                         </span>
                                         <span class="flex items-center gap-2">
                                             <button
+                                                v-if="editingTaskId !== task.id"
+                                                type="button"
+                                                class="text-xs text-gray-500 hover:text-gray-700"
+                                                @click.prevent.stop="startTaskTitleEdit(task)"
+                                            >
+                                                {{ tr('Renombrar', 'Rename') }}
+                                            </button>
+                                            <button
                                                 v-if="isFinalizeAttendeeTask(task)"
                                                 type="button"
                                                 class="text-xs text-blue-600 hover:text-blue-700"
@@ -1650,6 +2527,14 @@ const saveBudgetPreference = async (value) => {
                                                 @click="openTaskForm(task)"
                                             >
                                                 Open Form
+                                            </button>
+                                            <button
+                                                v-if="hasAiSuggestedForm(task)"
+                                                type="button"
+                                                class="text-xs text-amber-600 hover:text-amber-700"
+                                                @click="openCustomFormBuilderModal(task)"
+                                            >
+                                                Edit Form
                                             </button>
                                             <button
                                                 v-else
@@ -1690,6 +2575,8 @@ const saveBudgetPreference = async (value) => {
                             <BudgetTable
                                 :items="budgetState"
                                 :event-id="eventState.id"
+                                :club-id="eventState.club_id"
+                                :accounts="accountsState"
                                 :payment-summary="paymentSummaryState"
                                 :payment-records="paymentRecordsState"
                                 :concept-label="paymentConfigState?.concept_label || eventState?.title || ''"
@@ -1967,6 +2854,27 @@ const saveBudgetPreference = async (value) => {
             </div>
         </div>
 
+        <div
+            v-if="taskInfoModal.open"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            @click.self="closeTaskInfoModal"
+        >
+            <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <h3 class="text-base font-semibold text-gray-800">{{ taskInfoModal.title }}</h3>
+                    <button type="button" class="text-gray-400 hover:text-gray-600" @click="closeTaskInfoModal">✕</button>
+                </div>
+                <div class="text-sm text-gray-700 whitespace-pre-line">
+                    {{ taskInfoModal.description }}
+                </div>
+                <div class="mt-4 flex justify-end">
+                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="closeTaskInfoModal">
+                        {{ tr('Cerrar', 'Close') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div v-if="vehicleModalOpen && isPrivateTransport" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
                 <div class="flex items-center justify-between mb-4">
@@ -2009,7 +2917,28 @@ const saveBudgetPreference = async (value) => {
                 <div class="text-sm text-gray-600 mb-3">
                     {{ tr('Tarea', 'Task') }}: <span class="font-semibold text-gray-800">{{ customFormTask?.title }}</span>
                 </div>
+                <div class="mb-3">
+                    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                            type="checkbox"
+                            class="rounded border-gray-300 text-blue-600"
+                            :checked="customFormMode === 'registry'"
+                            @change="customFormMode = $event.target.checked ? 'registry' : 'single'"
+                        />
+                        {{ tr('Modo registro en tabla', 'Registry table mode') }}
+                    </label>
+                </div>
+                <div class="mb-3 text-xs text-gray-500">
+                    {{ tr('Marca la casilla en la columna "Obligatorio" para requerir un campo en el formulario.', 'Check the "Required" column to make a field mandatory in the form.') }}
+                </div>
                 <div class="space-y-2 max-h-[55vh] overflow-auto pr-1">
+                    <div class="grid grid-cols-12 gap-2 items-center text-[11px] font-medium uppercase tracking-wide text-gray-500 px-1">
+                        <div class="col-span-4">{{ tr('Etiqueta', 'Label') }}</div>
+                        <div class="col-span-3">Key</div>
+                        <div class="col-span-3">{{ tr('Tipo', 'Type') }}</div>
+                        <div class="col-span-1 text-center">{{ tr('Obligatorio', 'Required') }}</div>
+                        <div class="col-span-1"></div>
+                    </div>
                     <div v-for="(field, idx) in customFormFields" :key="idx" class="grid grid-cols-12 gap-2 items-center">
                         <input
                             v-model="field.label"
@@ -2026,19 +2955,122 @@ const saveBudgetPreference = async (value) => {
                             <option value="textarea">textarea</option>
                             <option value="number">number</option>
                             <option value="date">date</option>
+                            <option value="time">time</option>
                             <option value="select">select</option>
                             <option value="checkbox">checkbox</option>
+                            <option value="image">image/banner</option>
                         </select>
                         <label class="col-span-1 flex items-center justify-center">
                             <input type="checkbox" v-model="field.required" class="rounded border-gray-300 text-blue-600" />
                         </label>
-                        <button type="button" class="col-span-1 text-xs text-red-600" @click="removeCustomFormField(idx)">{{ tr('Eliminar', 'Remove') }}</button>
+                        <div class="col-span-1 flex flex-col items-end gap-1">
+                            <button type="button" class="text-[11px] text-gray-500 hover:text-gray-700" @click="moveCustomFormField(idx, -1)">↑</button>
+                            <button type="button" class="text-[11px] text-gray-500 hover:text-gray-700" @click="moveCustomFormField(idx, 1)">↓</button>
+                            <button type="button" class="text-[11px] text-red-600" @click="removeCustomFormField(idx)">{{ tr('Eliminar', 'Remove') }}</button>
+                        </div>
+                        <input
+                            v-model="field.help"
+                            class="col-span-6 rounded border border-gray-300 px-2 py-1 text-sm"
+                            :placeholder="tr('Ayuda o instrucción corta', 'Short help text')"
+                        />
+                        <div
+                            v-if="field.type === 'image'"
+                            class="col-span-6 rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500"
+                        >
+                            {{ tr('Este campo mostrará un botón para subir imagen cuando se abra el formulario de la tarea.', 'This field will show an image upload button when the task form is opened.') }}
+                        </div>
+                        <select
+                            v-if="field.type === 'select'"
+                            v-model="field.source"
+                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                        >
+                            <option value="">{{ tr('Opciones manuales', 'Manual options') }}</option>
+                            <option value="members">{{ tr('Miembros', 'Members') }}</option>
+                            <option value="staff">{{ tr('Staff', 'Staff') }}</option>
+                            <option value="classes">{{ tr('Clases', 'Classes') }}</option>
+                            <option value="participants">{{ tr('Participantes', 'Participants') }}</option>
+                            <option value="task_data">{{ tr('Datos de otra tarea', 'Data from another task') }}</option>
+                        </select>
+                        <select
+                            v-if="field.type === 'select' && field.source === 'task_data'"
+                            v-model="field.sourceTaskId"
+                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                        >
+                            <option value="">{{ tr('Selecciona la tarea origen', 'Select source task') }}</option>
+                            <option
+                                v-for="taskOption in taskDataSourceTasks.filter((taskOption) => taskOption.id !== customFormTask?.id)"
+                                :key="taskOption.id"
+                                :value="taskOption.id"
+                            >
+                                {{ taskOption.title }}
+                            </option>
+                        </select>
+                        <select
+                            v-if="field.type === 'select' && field.source === 'task_data' && field.sourceTaskId"
+                            v-model="field.sourceLabelField"
+                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                        >
+                            <option value="">{{ tr('Campo visible', 'Display field') }}</option>
+                            <option
+                                v-for="sourceField in taskSourceFieldChoices(field.sourceTaskId)"
+                                :key="sourceField.value"
+                                :value="sourceField.value"
+                            >
+                                {{ sourceField.label }}
+                            </option>
+                        </select>
+                        <select
+                            v-if="field.type === 'select' && field.source === 'participants'"
+                            v-model="field.sourceParticipantRole"
+                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                        >
+                            <option value="">{{ tr('Todos los roles', 'All roles') }}</option>
+                            <option value="kid">{{ tr('Menores', 'Kids') }}</option>
+                            <option value="staff">{{ tr('Staff', 'Staff') }}</option>
+                            <option value="parent">{{ tr('Padres', 'Parents') }}</option>
+                            <option value="invitee">{{ tr('Invitados', 'Invitees') }}</option>
+                            <option value="driver">{{ tr('Conductores', 'Drivers') }}</option>
+                        </select>
+                        <select
+                            v-if="field.type === 'select' && field.source === 'participants'"
+                            v-model="field.sourceParticipantStatus"
+                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                        >
+                            <option value="">{{ tr('Todos los estados', 'All statuses') }}</option>
+                            <option value="invited">{{ tr('Invitado', 'Invited') }}</option>
+                            <option value="confirmed">{{ tr('Confirmado', 'Confirmed') }}</option>
+                            <option value="declined">{{ tr('Declinado', 'Declined') }}</option>
+                            <option value="waitlisted">{{ tr('En espera', 'Waitlisted') }}</option>
+                        </select>
+                        <input
+                            v-if="field.type === 'select' && !field.source"
+                            v-model="field.optionsText"
+                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            :placeholder="tr('Opciones separadas por coma', 'Comma-separated options')"
+                        />
+                        <label
+                            v-if="field.type === 'select'"
+                            class="col-span-3 inline-flex items-center gap-2 text-xs text-gray-600"
+                        >
+                            <input type="checkbox" v-model="field.multiple" class="rounded border-gray-300 text-blue-600" />
+                            {{ tr('Selección múltiple', 'Multiple selection') }}
+                        </label>
                     </div>
                 </div>
                 <div class="mt-3">
-                    <button type="button" class="px-3 py-1 rounded text-xs bg-gray-200 text-gray-700" @click="addCustomFormField">
-                        Add field
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" class="px-3 py-1 rounded text-xs bg-gray-200 text-gray-700" @click="addCustomFormField">
+                            Add field
+                        </button>
+                        <button
+                            type="button"
+                            class="px-3 py-1 rounded text-xs bg-blue-100 text-blue-700"
+                            :disabled="customFormSuggesting"
+                            @click="suggestCustomFormDefinition"
+                        >
+                            {{ customFormSuggesting ? tr('Sugiriendo...', 'Suggesting...') : tr('Sugerir con IA', 'Suggest with AI') }}
+                        </button>
+                    </div>
                 </div>
                 <div v-if="customFormError" class="mt-2 text-xs text-red-600">{{ customFormError }}</div>
                 <div class="mt-5 flex justify-end gap-2">
@@ -2059,13 +3091,107 @@ const saveBudgetPreference = async (value) => {
                 <div v-if="formLoading" class="text-sm text-gray-500">{{ tr('Cargando...', 'Loading...') }}</div>
                 <div v-else-if="formError" class="text-sm text-red-500">{{ formError }}</div>
                 <div v-else-if="formSchema?.fields?.length" class="space-y-4">
+                    <div
+                        v-if="isRegistryForm"
+                        class="rounded-lg border bg-gray-50 p-3 space-y-3"
+                    >
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="text-sm font-semibold text-gray-800">{{ tr('Registros guardados', 'Saved rows') }}</div>
+                            <div class="text-xs text-gray-500">{{ registryRows.length }} {{ tr('filas', 'rows') }}</div>
+                        </div>
+                        <div v-if="registryRows.length" class="overflow-x-auto">
+                            <table class="min-w-full text-xs">
+                                <thead class="bg-gray-100 text-gray-600">
+                                    <tr>
+                                        <th v-for="field in formSchema.fields" :key="field.key" class="px-2 py-1 text-left">
+                                            {{ field.label }}
+                                        </th>
+                                        <th class="px-2 py-1 text-right">{{ tr('Acciones', 'Actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(row, index) in registryRows" :key="index" class="border-t">
+                                        <td v-for="field in formSchema.fields" :key="field.key" class="px-2 py-1 align-top">
+                                            {{ formatFieldValue(field, row[field.key]) }}
+                                        </td>
+                                        <td class="px-2 py-1 text-right whitespace-nowrap">
+                                            <button type="button" class="text-blue-600 hover:text-blue-700 mr-2" @click="editRegistryRow(index)">
+                                                {{ tr('Editar', 'Edit') }}
+                                            </button>
+                                            <button type="button" class="text-red-600 hover:text-red-700" @click="removeRegistryRow(index)">
+                                                {{ tr('Eliminar', 'Delete') }}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-else class="text-xs text-gray-500">
+                            {{ tr('Aún no hay filas registradas.', 'No rows saved yet.') }}
+                        </div>
+                        <div class="text-sm font-semibold text-gray-800">
+                            {{ registryEditIndex === null ? tr('Agregar registro', 'Add row') : tr('Editar registro', 'Edit row') }}
+                        </div>
+                    </div>
                     <div v-for="field in formSchema.fields" :key="field.key" class="space-y-1">
                         <label class="text-sm font-medium text-gray-700">
                             {{ field.label }}
                             <span v-if="field.required" class="text-red-500">*</span>
                         </label>
+                        <div
+                            v-if="field.type === 'image'"
+                            class="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3"
+                        >
+                            <div v-if="formData[field.key]" class="overflow-hidden rounded border border-gray-200 bg-white">
+                                <img
+                                    :src="typeof formData[field.key] === 'object' ? formData[field.key]?.url : formData[field.key]"
+                                    :alt="field.label || 'Task image'"
+                                    class="h-auto max-h-64 w-full object-cover"
+                                />
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <label class="inline-flex cursor-pointer items-center justify-center rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        class="hidden"
+                                        @change="uploadTaskFormImage(field, $event.target.files?.[0])"
+                                    />
+                                    {{ formImageUploadingField === field.key ? tr('Subiendo...', 'Uploading...') : tr('Subir imagen', 'Upload image') }}
+                                </label>
+                                <button
+                                    v-if="formData[field.key]"
+                                    type="button"
+                                    class="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                                    @click="copyImageFieldUrl(field)"
+                                >
+                                    {{ tr('Copiar URL', 'Copy URL') }}
+                                </button>
+                                <button
+                                    v-if="formData[field.key]"
+                                    type="button"
+                                    class="text-sm text-red-600 hover:text-red-700"
+                                    @click="formData = { ...formData, [field.key]: '' }"
+                                >
+                                    {{ tr('Quitar imagen', 'Remove image') }}
+                                </button>
+                            </div>
+                            <div v-if="field.help" class="text-xs text-gray-600">
+                                {{ field.help }}
+                            </div>
+                            <div v-if="formData[field.key]" class="space-y-1">
+                                <div class="text-xs font-medium text-gray-600">
+                                    {{ tr('URL pública compartible', 'Public shareable URL') }}
+                                </div>
+                                <input
+                                    :value="typeof formData[field.key] === 'object' ? formData[field.key]?.url : formData[field.key]"
+                                    readonly
+                                    class="w-full rounded border border-gray-300 bg-white px-3 py-2 text-xs text-gray-700"
+                                />
+                            </div>
+                        </div>
                         <input
-                            v-if="field.type === 'text' || field.type === 'date' || field.type === 'number'"
+                            v-else-if="field.type === 'text' || field.type === 'date' || field.type === 'time' || field.type === 'number'"
                             :type="field.type"
                             v-model="formData[field.key]"
                             class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
@@ -2077,13 +3203,52 @@ const saveBudgetPreference = async (value) => {
                             class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                         ></textarea>
                         <select
-                            v-else-if="field.type === 'select'"
+                            v-else-if="field.type === 'select' && !field.multiple"
                             v-model="formData[field.key]"
                             class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                         >
                             <option value="" disabled>{{ tr('Selecciona...', 'Select...') }}</option>
-                            <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                            <option v-for="option in availableOptionsForField(field)" :key="option.value" :value="option.value">{{ option.label }}</option>
                         </select>
+                        <div v-else-if="field.type === 'select' && field.multiple" class="space-y-2">
+                            <div class="flex flex-wrap items-center gap-2 rounded border border-gray-300 px-3 py-2 min-h-[44px]">
+                                <span
+                                    v-for="selectedValue in selectedValuesForField(field)"
+                                    :key="`${field.key}-${selectedValue}`"
+                                    class="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-800"
+                                >
+                                    {{ formatFieldValue(field, [selectedValue]).replace(/^|$/g, '').replace(/^, |, $/g, '') }}
+                                    <button
+                                        type="button"
+                                        class="text-blue-700 hover:text-blue-900"
+                                        @click="removeMultiSelectValue(field, selectedValue)"
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                                <input
+                                    v-model="multiSelectQueries[field.key]"
+                                    type="text"
+                                    class="flex-1 min-w-[180px] border-0 p-0 text-sm focus:ring-0"
+                                    :placeholder="tr('Escribe para buscar...', 'Type to search...')"
+                                    @keydown.enter.prevent="filteredMultiSelectOptions(field).length ? addMultiSelectValue(field, filteredMultiSelectOptions(field)[0].value) : null"
+                                />
+                            </div>
+                            <div
+                                v-if="filteredMultiSelectOptions(field).length"
+                                class="max-h-40 overflow-auto rounded border border-gray-200 bg-white"
+                            >
+                                <button
+                                    v-for="option in filteredMultiSelectOptions(field)"
+                                    :key="`${field.key}-${option.value}`"
+                                    type="button"
+                                    class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                                    @click="addMultiSelectValue(field, option.value)"
+                                >
+                                    {{ option.label }}
+                                </button>
+                            </div>
+                        </div>
                         <label v-else-if="field.type === 'checkbox'" class="flex items-center gap-2 text-sm text-gray-700">
                             <input type="checkbox" v-model="formData[field.key]" class="rounded border-gray-300 text-blue-600" />
                             {{ field.help || tr('Sí', 'Yes') }}
@@ -2146,9 +3311,21 @@ const saveBudgetPreference = async (value) => {
                 </div>
                 <div v-else class="text-sm text-gray-500">{{ tr('No hay campos de formulario para esta tarea.', 'No form fields available for this task.') }}</div>
                 <div class="mt-6 flex justify-end gap-2">
+                    <button
+                        v-if="isRegistryForm && registryEditIndex !== null"
+                        type="button"
+                        class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600"
+                        @click="cancelRegistryEdit"
+                    >
+                        {{ tr('Cancelar edición', 'Cancel edit') }}
+                    </button>
                     <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="closeTaskForm">{{ tr('Cerrar', 'Close') }}</button>
                     <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" :disabled="formLoading" @click="saveTaskForm">
-                        Save
+                        {{
+                            isRegistryForm
+                                ? (registryEditIndex === null ? tr('Agregar fila', 'Add row') : tr('Actualizar fila', 'Update row'))
+                                : 'Save'
+                        }}
                     </button>
                 </div>
             </div>

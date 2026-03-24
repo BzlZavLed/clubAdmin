@@ -29,4 +29,19 @@ class AiRequestLog extends Model
         'request_json' => 'array',
         'response_json' => 'array',
     ];
+
+    public function event()
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    public function club()
+    {
+        return $this->belongsTo(Club::class);
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 }

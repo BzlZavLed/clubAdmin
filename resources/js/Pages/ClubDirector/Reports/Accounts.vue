@@ -345,6 +345,7 @@ watch(selectedClubId, async (id, old) => {
                             </div>
                             <div class="mt-2 text-xs text-gray-600">
                                 <div><span class="font-medium text-gray-700">Cuenta:</span> {{ e.pay_to_label || payToLabel(e.pay_to) }}</div>
+                                <div v-if="e.is_event_related"><span class="font-medium text-gray-700">Origen:</span> Evento{{ e.event_title ? ` · ${e.event_title}` : '' }}</div>
                                 <div><span class="font-medium text-gray-700">Reembolsado a:</span> {{ e.reimbursed_to || '—' }}</div>
                                 <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
                             </div>
@@ -441,7 +442,12 @@ watch(selectedClubId, async (id, old) => {
                                     </div>
                                 </td>
                                 <td class="px-4 py-2">{{ e.reimbursed_to || '—' }}</td>
-                                <td class="px-4 py-2">{{ e.description || '—' }}</td>
+                                <td class="px-4 py-2">
+                                    <div>{{ e.description || '—' }}</div>
+                                    <div v-if="e.is_event_related" class="mt-1 text-xs text-blue-600">
+                                        Evento{{ e.event_title ? ` · ${e.event_title}` : '' }}
+                                    </div>
+                                </td>
                             </tr>
                         </tbody>
                     </table>

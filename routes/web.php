@@ -8,6 +8,7 @@ use App\Http\Controllers\ClubController;
 use App\Http\Controllers\MemberAdventurerController;
 use App\Http\Controllers\ParentAuthController;
 use App\Models\Club;
+use App\Models\AiRequestLog;
 use App\Models\Church;
 use App\Models\User;
 use App\Http\Controllers\ChurchController;
@@ -153,6 +154,8 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     })->name('superadmin.dashboard');
     Route::post('/super-admin/context', [SuperAdminContextController::class, 'set'])
         ->name('superadmin.context.set');
+    Route::get('/super-admin/ai-logs', [\App\Http\Controllers\SuperAdminAiLogController::class, 'index'])
+        ->name('superadmin.ai-logs.index');
     Route::get('/super-admin/churches/manage', fn() => Inertia::render('Church/ChurchForm'))->name('superadmin.churches.manage');
     Route::get('/super-admin/clubs', fn() => Inertia::render('SuperAdmin/Clubs', [
         'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
@@ -450,6 +453,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/events/{event}/budget-items', [EventBudgetItemController::class, 'index'])->name('event-budget-items.index');
     Route::post('/events/{event}/budget-items', [EventBudgetItemController::class, 'store'])->name('event-budget-items.store');
     Route::put('/event-budget-items/{eventBudgetItem}', [EventBudgetItemController::class, 'update'])->name('event-budget-items.update');
+    Route::post('/event-budget-items/{eventBudgetItem}/receipt', [EventBudgetItemController::class, 'uploadReceipt'])->name('event-budget-items.receipt');
     Route::delete('/event-budget-items/{eventBudgetItem}', [EventBudgetItemController::class, 'destroy'])->name('event-budget-items.destroy');
 
     Route::get('/events/{event}/participants', [EventParticipantController::class, 'index'])->name('event-participants.index');
@@ -474,6 +478,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/events/{event}/place-options', [EventPlaceOptionController::class, 'store'])->name('event-place-options.store');
     Route::put('/event-place-options/{eventPlaceOption}', [EventPlaceOptionController::class, 'update'])->name('event-place-options.update');
     Route::get('/event-tasks/{eventTask}/form', [TaskFormController::class, 'show'])->name('event-tasks.form.show');
+    Route::post('/event-tasks/{eventTask}/form/suggest', [TaskFormController::class, 'suggest'])->name('event-tasks.form.suggest');
+    Route::post('/event-tasks/{eventTask}/form/media', [TaskFormController::class, 'uploadMedia'])->name('event-tasks.form.media');
     Route::put('/event-tasks/{eventTask}/form', [TaskFormController::class, 'update'])->name('event-tasks.form.update');
 });
 

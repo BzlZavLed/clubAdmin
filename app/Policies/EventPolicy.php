@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Event;
 use App\Models\User;
+use App\Support\ClubHelper;
 
 class EventPolicy
 {
@@ -34,11 +35,17 @@ class EventPolicy
 
     protected function isClubStaff(User $user): bool
     {
-        return in_array($user->profile_type, ['club_director', 'club_personal'], true);
+        return in_array($user->profile_type, ['club_director', 'club_personal', 'superadmin'], true);
     }
 
     protected function belongsToClub(User $user, int $clubId): bool
     {
+        if (($user->profile_type ?? null) === 'superadmin') {
+            return ClubHelper::clubIdsForUser($user)
+                ->map(fn ($id) => (int) $id)
+                ->contains((int) $clubId);
+        }
+
         if ($user->club_id && (int) $user->club_id === (int) $clubId) {
             return true;
         }

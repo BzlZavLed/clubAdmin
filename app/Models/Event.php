@@ -5,15 +5,22 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 class Event extends Model
 {
     use HasFactory, SoftDeletes;
 
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_PLAN_FINALIZED = 'plan_finalized';
+    public const STATUS_ONGOING = 'ongoing';
+    public const STATUS_PAST = 'past';
+
     protected $fillable = [
         'club_id',
         'created_by_user_id',
         'title',
+        'description',
         'event_type',
         'start_at',
         'end_at',
@@ -38,6 +45,10 @@ class Event extends Model
         'budget_estimated_total' => 'decimal:2',
         'budget_actual_total' => 'decimal:2',
         'payment_amount' => 'decimal:2',
+    ];
+
+    protected $appends = [
+        'effective_status',
     ];
 
     public function club()
@@ -93,5 +104,34 @@ class Event extends Model
     public function paymentConcept()
     {
         return $this->belongsTo(PaymentConcept::class);
+    }
+
+    public static function editableStatuses(): array
+    {
+        return [
+            self::STATUS_DRAFT,
+            self::STATUS_PLAN_FINALIZED,
+        ];
+    }
+
+    public function getEffectiveStatusAttribute(): string
+    {
+        $now = Carbon::now($this->timezone ?: config('app.timezone'));
+        $startAt = $this->start_at ? Carbon::parse($this->start_at)->setTimezone($this->timezone ?: config('app.timezone')) : null;
+        $endAt = $this->end_at ? Carbon::parse($this->end_at)->setTimezone($this->timezone ?: config('app.timezone')) : null;
+
+        if ($endAt && $now->greaterThanOrEqualTo($endAt)) {
+            return self::STATUS_PAST;
+        }
+
+        if ($startAt && $now->greaterThanOrEqualTo($startAt)) {
+            return self::STATUS_ONGOING;
+        }
+
+        $status = strtolower((string) $this->status);
+
+        return in_array($status, self::editableStatuses(), true)
+            ? $status
+            : self::STATUS_DRAFT;
     }
 }

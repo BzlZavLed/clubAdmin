@@ -11,6 +11,7 @@ class Expense extends Model
 {
     protected $fillable = [
         'club_id',
+        'event_id',
         'pay_to',
         'payment_concept_id',
         'payee_id',
@@ -39,6 +40,11 @@ class Expense extends Model
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function event()
+    {
+        return $this->belongsTo(Event::class);
     }
 
     public function getReceiptUrlAttribute(): ?string

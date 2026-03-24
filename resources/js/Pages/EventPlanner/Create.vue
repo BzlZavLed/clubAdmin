@@ -2,14 +2,33 @@
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useForm } from '@inertiajs/vue3'
 import { useLocale } from '@/Composables/useLocale'
+import { computed } from 'vue'
+import { useAuth } from '@/Composables/useAuth'
 
 const props = defineProps({
     clubs: Array,
+    selectedClubId: {
+        type: [Number, String, null],
+        default: null,
+    },
+    lockClubSelection: {
+        type: Boolean,
+        default: false,
+    },
 })
 
+const { activeClub } = useAuth()
+
+const selectedClub = computed(() =>
+    (props.clubs || []).find((club) => String(club.id) === String(props.selectedClubId ?? ''))
+    || activeClub.value
+    || null
+)
+
 const form = useForm({
-    club_id: props.clubs?.[0]?.id || '',
+    club_id: props.selectedClubId || props.clubs?.[0]?.id || '',
     title: '',
+    description: '',
     event_type: '',
     start_at: '',
     end_at: '',
@@ -39,9 +58,19 @@ const submit = () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="text-sm text-gray-600">{{ tr('Club', 'Club') }}</label>
-                    <select v-model="form.club_id" class="w-full border rounded px-3 py-2 text-sm">
-                        <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
-                    </select>
+                    <template v-if="lockClubSelection">
+                        <input
+                            :value="selectedClub ? `${selectedClub.club_name}${selectedClub.club_type ? ` (${selectedClub.club_type})` : ''}` : tr('Selecciona un club desde el selector global', 'Select a club from the global selector')"
+                            class="w-full border rounded px-3 py-2 text-sm bg-gray-100 text-gray-700"
+                            readonly
+                        />
+                    </template>
+                    <template v-else>
+                        <select v-model="form.club_id" class="w-full border rounded px-3 py-2 text-sm">
+                            <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
+                            <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
+                        </select>
+                    </template>
                 </div>
                 <div>
                     <label class="text-sm text-gray-600">{{ tr('Título', 'Title') }}</label>
@@ -50,6 +79,15 @@ const submit = () => {
                 <div>
                     <label class="text-sm text-gray-600">{{ tr('Tipo de evento', 'Event Type') }}</label>
                     <input v-model="form.event_type" class="w-full border rounded px-3 py-2 text-sm" :placeholder="tr('campamento, recaudación...', 'camp, fundraiser...')" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm text-gray-600">{{ tr('Descripción del evento', 'Event Description') }}</label>
+                    <textarea
+                        v-model="form.description"
+                        rows="4"
+                        class="w-full border rounded px-3 py-2 text-sm"
+                        :placeholder="tr('Describe el propósito, formato y contexto del evento para mejorar las tareas sugeridas por IA.', 'Describe the purpose, format, and context of the event to improve AI task suggestions.')"
+                    ></textarea>
                 </div>
                 <div>
                     <label class="text-sm text-gray-600">{{ tr('Inicio', 'Start') }}</label>
@@ -72,9 +110,11 @@ const submit = () => {
                     <input v-model="form.location_address" class="w-full border rounded px-3 py-2 text-sm" :placeholder="tr('Opcional', 'Optional')" />
                 </div>
             </div>
-            <div class="flex items-center gap-3">
-                <label class="text-sm text-gray-600">{{ tr('Requiere aprobación', 'Requires approval') }}</label>
-                <input type="checkbox" v-model="form.requires_approval" />
+            <div class="flex items-center gap-6">
+                <label class="text-sm text-gray-600 flex items-center gap-2">
+                    <input type="checkbox" v-model="form.requires_approval" />
+                    {{ tr('Requiere aprobación', 'Requires approval') }}
+                </label>
             </div>
             <div class="flex items-center gap-6">
                 <label class="text-sm text-gray-600 flex items-center gap-2">

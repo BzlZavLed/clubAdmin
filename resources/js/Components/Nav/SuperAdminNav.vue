@@ -41,6 +41,12 @@ const menuItems = [
                 href: '/super-admin/users',
                 route: 'superadmin.users.manage',
                 icon: UsersIcon
+            },
+            {
+                name: 'AI logs',
+                href: '/super-admin/ai-logs',
+                route: 'superadmin.ai-logs.index',
+                icon: DocumentTextIcon
             }
         ]
     },

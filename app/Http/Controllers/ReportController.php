@@ -1072,9 +1072,10 @@ class ReportController extends Controller
 
         $expenses = Expense::query()
             ->where('club_id', $club->id)
+            ->with('event:id,title')
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
-            ->get(['id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path', 'reimbursement_receipt_path'])
+            ->get(['id', 'event_id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path', 'reimbursement_receipt_path'])
             ->values();
 
         // Assign receipt references and map to DTOs
@@ -1096,6 +1097,9 @@ class ReportController extends Controller
                 'amount' => (float) $e->amount,
                 'expense_date' => $e->expense_date,
                 'description' => $e->description,
+                'event_id' => $e->event_id,
+                'event_title' => $e->event?->title,
+                'is_event_related' => !empty($e->event_id),
                 'reimbursed_to' => $e->reimbursed_to,
                 'status' => $e->status,
                 'receipt_path' => $e->receipt_path,

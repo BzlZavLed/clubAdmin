@@ -791,6 +791,7 @@ class AiPlannerService
 
     protected function defaultMissingItems(string $eventType): array
     {
+        $text = strtolower($eventType);
         $base = [
             'Confirm date/time with venue',
             'Finalize attendee list',
@@ -799,6 +800,34 @@ class AiPlannerService
             'Arrange transportation',
             'Emergency contact list ready',
         ];
+
+        $sportsTournament = [
+            'Confirm tournament format and rules',
+            'Open team registration',
+            'Finalize team roster list',
+            'Publish match schedule',
+            'Confirm field or court availability',
+            'Assign referees and scorekeepers',
+            'Prepare equipment and uniforms',
+            'Set up hydration and first aid station',
+            'Confirm check-in table and signage',
+            'Prepare awards or recognition',
+        ];
+
+        if (
+            str_contains($text, 'soccer')
+            || str_contains($text, 'football')
+            || str_contains($text, 'basketball')
+            || str_contains($text, 'baseball')
+            || str_contains($text, 'volleyball')
+            || str_contains($text, 'tournament')
+            || str_contains($text, 'torneo')
+            || str_contains($text, 'league')
+            || str_contains($text, 'match')
+            || str_contains($text, 'game day')
+        ) {
+            return $sportsTournament;
+        }
 
         return match ($eventType) {
             'camp' => array_merge($base, [
@@ -1224,6 +1253,7 @@ class AiPlannerService
             'provider' => config('ai.provider'),
             'model' => $payload['model'] ?? config('ai.model'),
             'request_json' => [
+                'source' => 'planner_message',
                 'endpoint' => rtrim(config('ai.base_url'), '/') . '/responses',
                 'payload' => $payload,
             ],

@@ -10,6 +10,7 @@ return [
     'timeout_seconds' => (int) env('AI_TIMEOUT_SECONDS', 30),
     'provider' => env('AI_PROVIDER', 'openai-compatible'),
     'debug_return' => (bool) env('AI_DEBUG_RETURN', false),
+    'event_task_template_db_threshold' => (int) env('AI_EVENT_TASK_TEMPLATE_DB_THRESHOLD', 8),
     'intent_min_score' => (float) env('AI_INTENT_MIN_SCORE', 0.35),
     'intent_multi_delta' => (float) env('AI_INTENT_MULTI_DELTA', 0.12),
     'live_quotes_enabled' => (bool) env('AI_LIVE_QUOTES_ENABLED', true),

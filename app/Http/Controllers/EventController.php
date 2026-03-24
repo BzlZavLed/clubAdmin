@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\Club;
+use App\Models\Account;
 use App\Models\Event;
 use App\Models\EventPlan;
 use App\Models\Member;
@@ -16,7 +17,9 @@ use App\Services\EventTaskTemplateService;
 use App\Services\SerpApiUsageService;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class EventController extends Controller
@@ -32,7 +35,22 @@ class EventController extends Controller
             ->whereIn('club_id', $clubIds);
 
         if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
+            $status = (string) $request->string('status');
+            $now = now();
+
+            if ($status === Event::STATUS_ONGOING) {
+                $query->where('start_at', '<=', $now)
+                    ->where(function ($q) use ($now) {
+                        $q->whereNull('end_at')
+                            ->orWhere('end_at', '>', $now);
+                    });
+            } elseif ($status === Event::STATUS_PAST) {
+                $query->whereNotNull('end_at')
+                    ->where('end_at', '<=', $now);
+            } elseif (in_array($status, Event::editableStatuses(), true)) {
+                $query->where('status', $status)
+                    ->where('start_at', '>', $now);
+            }
         }
         if ($request->filled('event_type')) {
             $query->where('event_type', $request->string('event_type'));
@@ -59,10 +77,22 @@ class EventController extends Controller
 
         $user = $request->user();
         $clubs = Club::whereIn('id', $this->userClubIds($user))
-            ->get(['id', 'club_name']);
+            ->orderBy('club_name')
+            ->get(['id', 'club_name', 'club_type']);
+        $activeClub = ClubHelper::activeClubForUser($user);
+        $selectedClubId = $activeClub?->id;
+
+        if (!$selectedClubId && $clubs->count() === 1) {
+            $selectedClubId = (int) $clubs->first()->id;
+        }
+
+        $lockClubSelection = ($user->profile_type ?? null) === 'superadmin'
+            || $clubs->count() <= 1;
 
         return Inertia::render('EventPlanner/Create', [
             'clubs' => $clubs,
+            'selectedClubId' => $selectedClubId,
+            'lockClubSelection' => $lockClubSelection,
         ]);
     }
 
@@ -73,13 +103,14 @@ class EventController extends Controller
         $validated = $request->validate([
             'club_id' => ['required', 'integer', 'exists:clubs,id'],
             'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
             'event_type' => ['required', 'string', 'max:255'],
             'start_at' => ['required', 'date'],
             'end_at' => ['nullable', 'date'],
             'timezone' => ['nullable', 'string', 'max:255'],
             'location_name' => ['nullable', 'string', 'max:255'],
             'location_address' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', Rule::in(Event::editableStatuses())],
             'budget_estimated_total' => ['nullable', 'numeric'],
             'budget_actual_total' => ['nullable', 'numeric'],
             'requires_approval' => ['nullable', 'boolean'],
@@ -96,13 +127,14 @@ class EventController extends Controller
             'club_id' => $validated['club_id'],
             'created_by_user_id' => $request->user()->id,
             'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
             'event_type' => $validated['event_type'],
             'start_at' => $validated['start_at'],
             'end_at' => $validated['end_at'] ?? null,
             'timezone' => $validated['timezone'] ?? 'America/New_York',
             'location_name' => $validated['location_name'] ?? null,
             'location_address' => $validated['location_address'] ?? null,
-            'status' => $validated['status'] ?? 'draft',
+            'status' => $validated['status'] ?? Event::STATUS_DRAFT,
             'budget_estimated_total' => $validated['budget_estimated_total'] ?? null,
             'budget_actual_total' => $validated['budget_actual_total'] ?? null,
             'requires_approval' => $validated['requires_approval'] ?? false,
@@ -119,7 +151,19 @@ class EventController extends Controller
             'conversation_json' => [],
         ]);
 
-        $seededTasks = app(EventTaskTemplateService::class)->seedEventTasks($event);
+        try {
+            $seededTasks = app(EventTaskTemplateService::class)->seedEventTasks($event);
+        } catch (\Throwable $e) {
+            Log::warning('Event task seeding failed; continuing without seeded tasks.', [
+                'event_id' => $event->id,
+                'club_id' => $event->club_id,
+                'event_type' => $event->event_type,
+                'error' => $e->getMessage(),
+            ]);
+            report($e);
+            $seededTasks = [];
+        }
+
         if (!empty($seededTasks)) {
             $event->plan()->update([
                 'missing_items_json' => collect($seededTasks)->map(fn ($task) => $task->title)->values()->all(),
@@ -135,7 +179,9 @@ class EventController extends Controller
     {
         $this->authorize('view', $event);
 
-        $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents', 'placeOptions']);
+        app(EventTaskTemplateService::class)->reseedEventTasksIfSafe($event);
+        $event->refresh();
+        $event->load(['plan', 'tasks.formResponse', 'budgetItems.expense', 'budgetItems.reimbursementExpense', 'participants', 'documents', 'placeOptions']);
         $clubId = $event->club_id;
 
         $members = ClubHelper::membersOfClub($clubId);
@@ -150,6 +196,34 @@ class EventController extends Controller
                     'type' => $row->type,
                     'status' => $row->status,
                     'classes' => $row->classes?->map(fn ($c) => ['id' => $c->id, 'class_name' => $c->class_name])->values(),
+                ];
+            })
+            ->values();
+
+        $accounts = Account::query()
+            ->where('club_id', $clubId)
+            ->orderBy('label')
+            ->get(['id', 'club_id', 'pay_to', 'label', 'balance']);
+
+        if ($accounts->isEmpty()) {
+            $accounts = collect([
+                Account::create([
+                    'club_id' => $clubId,
+                    'pay_to' => 'club_budget',
+                    'label' => 'Club budget',
+                    'balance' => 0,
+                ]),
+            ]);
+        }
+
+        $accounts = $accounts
+            ->map(function (Account $account) {
+                return [
+                    'id' => $account->id,
+                    'pay_to' => $account->pay_to,
+                    'value' => $account->pay_to,
+                    'label' => $account->label,
+                    'balance' => (float) $account->balance,
                 ];
             })
             ->values();
@@ -261,6 +335,7 @@ class EventController extends Controller
             'members' => $members,
             'classes' => $classes,
             'staff' => $staff,
+            'accounts' => $accounts,
             'parents' => $parents,
             'paymentSummary' => $paymentSummary,
             'paymentConfig' => [
@@ -358,13 +433,14 @@ class EventController extends Controller
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
             'event_type' => ['required', 'string', 'max:255'],
             'start_at' => ['required', 'date'],
             'end_at' => ['nullable', 'date'],
             'timezone' => ['nullable', 'string', 'max:255'],
             'location_name' => ['nullable', 'string', 'max:255'],
             'location_address' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', Rule::in(Event::editableStatuses())],
             'budget_estimated_total' => ['nullable', 'numeric'],
             'budget_actual_total' => ['nullable', 'numeric'],
             'requires_approval' => ['nullable', 'boolean'],
@@ -377,6 +453,7 @@ class EventController extends Controller
 
         $event->update([
             'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
             'event_type' => $validated['event_type'],
             'start_at' => $validated['start_at'],
             'end_at' => $validated['end_at'] ?? null,
@@ -408,12 +485,11 @@ class EventController extends Controller
 
     protected function userClubIds($user): array
     {
-        $clubIds = $user->clubs()->pluck('clubs.id')->all();
-        if ($user->club_id) {
-            $clubIds[] = $user->club_id;
-        }
-
-        return array_values(array_unique(array_filter($clubIds)));
+        return ClubHelper::clubIdsForUser($user)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values()
+            ->all();
     }
 
     protected function syncPaymentConcept(Event $event, bool $isPayable, ?float $amount, int $userId): void
