@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB as FacadesDB;
 use Auth;
 use App\Models\ClubClass;
 use App\Models\SubRole; // Import the SubRole model
+use App\Support\ClubHelper;
 
 class StaffAdventurerController extends Controller
 {
@@ -335,16 +336,8 @@ class StaffAdventurerController extends Controller
     public function byClub($clubId, $churchId = null)
     {
         $user = Auth::user();
-        $authorizedClubIds = $user->clubs()->pluck('clubs.id')->toArray();
-
-        if (!in_array($clubId, $authorizedClubIds)) {
-            abort(403, 'Unauthorized access to this club.');
-        }
-
-        $club = $user->clubs()->where('clubs.id', $clubId)->first();
-        if (!$club) {
-            abort(404, 'Club not found.');
-        }
+        $club = ClubHelper::clubForUser($user, $clubId);
+        $clubId = (int) $club->id;
 
         $staffActive = Staff::query()
             ->where('club_id', $clubId)

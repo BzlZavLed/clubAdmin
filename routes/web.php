@@ -263,7 +263,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     Route::get('/club-director/staff', function () {
         $authUser = auth()->user();
-        $clubId = $authUser?->club_id;
+        $activeClub = \App\Support\ClubHelper::activeClubForUser($authUser);
+        $clubId = $activeClub?->id;
 
         // Parents who have children in this club (even if parent.club_id differs)
         $parentIdsWithKids = \App\Models\Member::when($clubId, fn ($q) => $q->where('club_id', $clubId))

@@ -37,6 +37,7 @@ const subRoles = page.props.sub_roles;
 
 // ✅ Auth & general utilities
 const { user, activeClub, availableClubs } = useAuth()
+const directorCanSelectClub = computed(() => !isSuperadmin.value && clubs.value.length > 1)
 const churchId = computed(() => user.value?.church_id || null)
 const userId = computed(() => user.value?.id || null)
 const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
@@ -184,10 +185,27 @@ watch(staff, (newVal) => {
 const fetchClubs = async () => {
     try {
         clubs.value = Array.isArray(availableClubs.value) ? availableClubs.value : []
-        const preferredClubId = activeClub.value?.id || user.value?.club_id || null
-        selectedClub.value = clubs.value.find(club => String(club.id) === String(preferredClubId)) || clubs.value[0] || null
+
+        if (isSuperadmin.value) {
+            const contextClubId = activeClub.value?.id || null
+            selectedClub.value = contextClubId
+                ? clubs.value.find(club => String(club.id) === String(contextClubId)) || null
+                : null
+        } else {
+            const preferredClubId = activeClub.value?.id || user.value?.club_id || null
+            selectedClub.value = clubs.value.find(club => String(club.id) === String(preferredClubId)) || clubs.value[0] || null
+        }
+
         if (selectedClub.value?.id) {
             await fetchStaff(selectedClub.value.id, churchId.value)
+        } else {
+            staff.value = []
+            pendingStaff.value = []
+            tempStaff.value = []
+            sub_roles.value = []
+            pendingUsers.value = []
+            clubUserIds.value = new Set()
+            clubClasses.value = []
         }
         showToast('Clubes cargados')
     } catch (error) {
@@ -485,6 +503,13 @@ watch(() => tempStaffForm.value.staff_dob, (dob) => {
 })
 
 onMounted(fetchClubs)
+
+watch(
+    () => [activeClub.value?.id, availableClubs.value?.length, isSuperadmin.value],
+    () => {
+        fetchClubs()
+    }
+)
 </script>
 
 
@@ -492,7 +517,7 @@ onMounted(fetchClubs)
     <PathfinderLayout>
         <div class="p-8">
             <h1 class="text-xl font-bold mb-4">Personal</h1>
-            <div v-if="isSuperadmin" class="max-w-xl mb-6">
+            <div v-if="directorCanSelectClub" class="max-w-xl mb-6">
                 <label class="block mb-1 font-medium text-gray-700">Selecciona un club</label>
                 <select v-model="selectedClub"
                     @change="() => { if (selectedClub) { fetchStaff(selectedClub.id, churchId) } }"
@@ -513,8 +538,11 @@ onMounted(fetchClubs)
             <div v-else-if="selectedClub" class="mb-6 rounded border bg-white px-4 py-3 text-sm text-gray-700">
                 Club activo: <strong>{{ selectedClub.club_name }}</strong>
             </div>
+            <div v-else-if="isSuperadmin" class="mb-6 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Selecciona un club desde el selector global del superadmin para administrar el personal.
+            </div>
 
-                <div v-if="selectedClub" class="max-w-5xl mx-auto">
+            <div v-if="selectedClub" class="max-w-5xl mx-auto">
                 <div v-if="filteredPendingStaff.length" class="mb-6 border rounded p-4 bg-amber-50">
                     <h2 class="font-semibold text-amber-800 mb-2">Aprobaciones de personal pendientes</h2>
                     <div class="space-y-2">
