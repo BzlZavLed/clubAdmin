@@ -1,6 +1,6 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import MemberRegistrationModal from '@/Components/MemberRegistrationModal.vue'
 import PathfinderMemberRegistrationModal from '@/Components/PathfinderMemberRegistrationModal.vue'
@@ -40,6 +40,9 @@ const clubs = ref([])
 const selectedClub = ref(null)
 const members = ref([])
 const clubClasses = ref([])
+const memberSearch = ref('')
+const memberPage = ref(1)
+const memberPageSize = ref(10)
 const expandedRows = ref(new Set())
 const showAdventurerRegistrationModal = ref(false)
 const showPathfinderRegistrationModal = ref(false)
@@ -118,6 +121,7 @@ const fetchClasses = async (clubId) => {
 // On club selection
 const onClubChange = async () => {
     if (selectedClub.value) {
+        memberPage.value = 1
         await fetchMembers(selectedClub.value.id)
         await fetchClasses(selectedClub.value.id)
     }
@@ -250,7 +254,7 @@ const toggleExpanded = (id) => {
 
 const toggleSelectAll = () => {
     selectAll.value
-        ? (selectedMemberIds.value = new Set(members.value.map(m => m.id)))
+        ? (selectedMemberIds.value = new Set(paginatedMembers.value.map(m => m.id)))
         : selectedMemberIds.value.clear()
 }
 
@@ -316,6 +320,25 @@ const progressColumnLabel = computed(() =>
     selectedClub.value?.club_type === 'pathfinders' ? 'Clase actual' : 'Ultima completada'
 )
 
+const normalizedMemberSearch = computed(() => memberSearch.value.trim().toLowerCase())
+
+const filteredMembers = computed(() => {
+    if (!normalizedMemberSearch.value) return members.value
+
+    return members.value.filter((member) => {
+        const memberName = String(member.applicant_name || '').toLowerCase()
+        const className = String(lastCompletedDisplay(member) || '').toLowerCase()
+        return memberName.includes(normalizedMemberSearch.value) || className.includes(normalizedMemberSearch.value)
+    })
+})
+
+const totalMemberPages = computed(() => Math.max(1, Math.ceil(filteredMembers.value.length / memberPageSize.value)))
+
+const paginatedMembers = computed(() => {
+    const start = (memberPage.value - 1) * memberPageSize.value
+    return filteredMembers.value.slice(start, start + memberPageSize.value)
+})
+
 const unassignedMembers = computed(() =>
     members.value.filter(member =>
         !member.class_assignments ||
@@ -358,6 +381,26 @@ const exportClassSummaryPdf = () => {
 }
 
 onMounted(fetchClubs)
+
+const goToPreviousMemberPage = () => {
+    memberPage.value = Math.max(1, memberPage.value - 1)
+}
+
+const goToNextMemberPage = () => {
+    memberPage.value = Math.min(totalMemberPages.value, memberPage.value + 1)
+}
+
+watch([memberSearch, memberPageSize], () => {
+    memberPage.value = 1
+})
+
+watch(filteredMembers, () => {
+    if (memberPage.value > totalMemberPages.value) {
+        memberPage.value = totalMemberPages.value
+    }
+    selectAll.value = paginatedMembers.value.length > 0
+        && paginatedMembers.value.every(member => selectedMemberIds.value.has(member.id))
+})
 </script>
 
 
@@ -408,6 +451,30 @@ onMounted(fetchClubs)
 
             <!-- Tab 1: Members Table -->
             <div v-if="selectedTab === 'members' && selectedClub">
+                <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-700">Buscar por nombre o clase</label>
+                            <input
+                                v-model="memberSearch"
+                                type="text"
+                                class="w-full rounded border p-2 text-sm"
+                                placeholder="Ej. Juan o Friend"
+                            />
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-700">Filas por página</label>
+                            <select v-model="memberPageSize" class="w-full rounded border p-2 text-sm">
+                                <option :value="10">10</option>
+                                <option :value="25">25</option>
+                                <option :value="50">50</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        {{ filteredMembers.length }} miembros encontrados
+                    </div>
+                </div>
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-4">
                         <label class="inline-flex items-center">
@@ -436,7 +503,7 @@ onMounted(fetchClubs)
                         </tr>
                     </thead>
                     <tbody>
-                        <template v-for="member in members" :key="member.id">
+                        <template v-for="member in paginatedMembers" :key="member.id">
                             <!-- Main Row -->
                             <tr class="border-t">
                                 <td class="p-2">
@@ -542,8 +609,36 @@ onMounted(fetchClubs)
                                 </td>
                             </tr>
                         </template>
+                        <tr v-if="paginatedMembers.length === 0">
+                            <td colspan="6" class="p-4 text-center text-gray-500">
+                                No se encontraron miembros con ese criterio.
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
+                <div class="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div class="text-sm text-gray-600">
+                        Página {{ memberPage }} de {{ totalMemberPages }}
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            @click="goToPreviousMemberPage"
+                            :disabled="memberPage <= 1"
+                            class="rounded border px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Anterior
+                        </button>
+                        <button
+                            type="button"
+                            @click="goToNextMemberPage"
+                            :disabled="memberPage >= totalMemberPages"
+                            class="rounded border px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Siguiente
+                        </button>
+                    </div>
+                </div>
                 <div class="mt-6 text-center">
                     <button @click="toggleRegistrationForm"
                         class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
