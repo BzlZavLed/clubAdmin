@@ -16,7 +16,7 @@ class SubRoleSeeder extends Seeder
         $roles = [
             ['key' => 'treasurer', 'label' => 'Treasurer'],
             ['key' => 'secretary', 'label' => 'Secretary'],
-            ['key' => 'adviser', 'label' => 'Staff'],
+            ['key' => 'staff', 'label' => 'Staff'],
         ];
 
         foreach ($roles as $role) {

@@ -80,6 +80,8 @@ class RegisteredUserController extends Controller
             abort(403);
         }
 
+        $subRolesExist = SubRole::query()->exists();
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
@@ -100,7 +102,11 @@ class RegisteredUserController extends Controller
             $church = Church::find($validated['church_id']);
         }
 
-        if (($validated['profile_type'] ?? null) === 'club_personal' && empty($validated['sub_role'])) {
+        if (
+            ($validated['profile_type'] ?? null) === 'club_personal'
+            && $subRolesExist
+            && empty($validated['sub_role'])
+        ) {
             return back()->withErrors(['sub_role' => 'Sub role is required for club personal.'])->withInput();
         }
 
@@ -151,6 +157,8 @@ class RegisteredUserController extends Controller
             abort(403);
         }
 
+        $subRolesExist = SubRole::query()->exists();
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
@@ -171,7 +179,11 @@ class RegisteredUserController extends Controller
             $church = Church::find($validated['church_id']);
         }
 
-        if (($validated['profile_type'] ?? null) === 'club_personal' && empty($validated['sub_role'])) {
+        if (
+            ($validated['profile_type'] ?? null) === 'club_personal'
+            && $subRolesExist
+            && empty($validated['sub_role'])
+        ) {
             return back()->withErrors(['sub_role' => 'Sub role is required for club personal.'])->withInput();
         }
 

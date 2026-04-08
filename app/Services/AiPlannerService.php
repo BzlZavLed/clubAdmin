@@ -11,6 +11,7 @@ use App\Models\EventPlan;
 use App\Models\EventTask;
 use App\Models\User;
 use App\Services\EventTaskTemplateService;
+use App\Support\ClubHelper;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -36,7 +37,7 @@ class AiPlannerService
 
     public function handleMessage(Event $event, User $user, string $message, array $options = []): array
     {
-        $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents', 'club.church']);
+        $event->load(['plan', 'tasks.formResponse', 'budgetItems', 'participants', 'documents', 'club.church']);
         $plan = $event->plan ?? $this->initializePlan($event);
 
         $this->applyPlannerPreferences($plan, $options);
@@ -59,6 +60,8 @@ class AiPlannerService
             'content' => $message,
             'at' => now()->toIso8601String(),
         ];
+
+        $agentRun = $this->beginAgentRun($plan, $message, $options);
 
         $systemPrompt = $this->buildSystemPrompt($event);
         $tools = $this->toolDefinitions();
@@ -179,33 +182,35 @@ class AiPlannerService
             $conversation[] = [
                 'role' => 'assistant',
                 'content' => $assistantMessage,
+                'agent' => $this->buildAgentMessageMeta($agentRun, [
+                    'status' => isset($toolOutput['error']) ? 'waiting_for_input' : 'completed',
+                    'completed' => !isset($toolOutput['error']),
+                    'steps_taken' => 1,
+                    'tool_calls_executed' => 1,
+                    'last_tool' => 'find_recommended_places',
+                ]),
                 'at' => now()->toIso8601String(),
             ];
 
             $plan->conversation_json = $conversation;
             $plan->last_generated_at = now();
             $plan->ai_summary = $assistantMessage;
+            $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+                'status' => isset($toolOutput['error']) ? 'waiting_for_input' : 'completed',
+                'completed' => !isset($toolOutput['error']),
+                'steps_taken' => 1,
+                'tool_calls_executed' => 1,
+                'last_tool' => 'find_recommended_places',
+                'waiting_for' => isset($toolOutput['error']) ? 'location_confirmation' : null,
+            ]);
             $plan->save();
-
-            $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents']);
-
-            $response = [
-                'assistant_message' => $assistantMessage,
-                'event' => $event,
-                'eventPlan' => $event->plan,
-                'tasks' => $event->tasks,
-                'budget_items' => $event->budgetItems,
-                'participants' => $event->participants,
-                'documents' => $event->documents,
-                'missing_items' => $event->plan?->missing_items_json ?? [],
-            ];
-            return $this->withDebug($response);
+            return $this->withDebug($this->baseResponse($event));
         }
 
         if ($pendingAction && !$inferredTool) {
             $tool = $pendingAction['tool'] ?? null;
             if ($tool) {
-                $handled = $this->handlePendingAction($event, $plan, $conversation, $tool, $message);
+                $handled = $this->handlePendingAction($event, $plan, $conversation, $tool, $message, $agentRun);
                 if ($handled) {
                     return $this->withDebug($handled);
                 }
@@ -228,27 +233,174 @@ class AiPlannerService
                 $conversation[] = [
                     'role' => 'assistant',
                     'content' => $assistantMessage,
+                    'agent' => $this->buildAgentMessageMeta($agentRun, [
+                        'status' => isset($toolOutput['error']) ? 'waiting_for_input' : 'completed',
+                        'completed' => !isset($toolOutput['error']),
+                        'steps_taken' => 1,
+                        'tool_calls_executed' => 1,
+                        'last_tool' => 'estimate_rental_costs',
+                    ]),
                     'at' => now()->toIso8601String(),
                 ];
                 $plan->conversation_json = $conversation;
                 $plan->last_generated_at = now();
                 $plan->ai_summary = $assistantMessage;
+                $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+                    'status' => isset($toolOutput['error']) ? 'waiting_for_input' : 'completed',
+                    'completed' => !isset($toolOutput['error']),
+                    'steps_taken' => 1,
+                    'tool_calls_executed' => 1,
+                    'last_tool' => 'estimate_rental_costs',
+                    'waiting_for' => isset($toolOutput['error']) ? 'rental_details' : null,
+                ]);
                 $plan->save();
-
-                $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents']);
-
-                $response = [
-                    'assistant_message' => $assistantMessage,
-                    'event' => $event,
-                    'eventPlan' => $event->plan,
-                    'tasks' => $event->tasks,
-                    'budget_items' => $event->budgetItems,
-                    'participants' => $event->participants,
-                    'documents' => $event->documents,
-                    'missing_items' => $event->plan?->missing_items_json ?? [],
-                ];
-                return $this->withDebug($response);
+                return $this->withDebug($this->baseResponse($event));
             }
+        }
+
+        if ($this->isTaskReevaluationRequest($message)) {
+            $toolOutput = $this->handleGenerateEventTypeTasks($event, [
+                'event_id' => $event->id,
+                'refresh_if_safe' => true,
+            ]);
+            $taskCount = (int) ($toolOutput['open_task_count'] ?? $toolOutput['task_count'] ?? 0);
+            $assistantMessage = $taskCount > 0
+                ? "I reevaluated the event tasks and refreshed the checklist. There are {$taskCount} open planning tasks right now."
+                : 'I reevaluated the event tasks, but I could not produce a refreshed checklist.';
+
+            $conversation[] = [
+                'role' => 'assistant',
+                'content' => $assistantMessage,
+                'agent' => $this->buildAgentMessageMeta($agentRun, [
+                    'status' => 'completed',
+                    'completed' => true,
+                    'steps_taken' => 1,
+                    'tool_calls_executed' => 1,
+                    'last_tool' => 'generate_event_type_tasks',
+                ]),
+                'at' => now()->toIso8601String(),
+            ];
+            $plan->conversation_json = $conversation;
+            $plan->last_generated_at = now();
+            $plan->ai_summary = $assistantMessage;
+            $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+                'status' => 'completed',
+                'completed' => true,
+                'steps_taken' => 1,
+                'tool_calls_executed' => 1,
+                'executed_tools' => ['generate_event_type_tasks'],
+                'last_tool' => 'generate_event_type_tasks',
+            ]);
+            $plan->save();
+
+            return $this->withDebug($this->baseResponse($event));
+        }
+
+        $explicitTaskTitle = $this->extractExplicitTaskTitle($message);
+        if ($explicitTaskTitle) {
+            $toolOutput = $this->handleCreateTasks($event, [
+                'event_id' => $event->id,
+                'tasks' => [[
+                    'title' => $explicitTaskTitle,
+                ]],
+            ]);
+            $assistantMessage = isset($toolOutput['error'])
+                ? 'I could not create that task.'
+                : "I created the task \"{$explicitTaskTitle}\".";
+
+            $conversation[] = [
+                'role' => 'assistant',
+                'content' => $assistantMessage,
+                'agent' => $this->buildAgentMessageMeta($agentRun, [
+                    'status' => isset($toolOutput['error']) ? 'waiting_for_input' : 'completed',
+                    'completed' => !isset($toolOutput['error']),
+                    'steps_taken' => 1,
+                    'tool_calls_executed' => 1,
+                    'last_tool' => 'create_tasks',
+                ]),
+                'at' => now()->toIso8601String(),
+            ];
+            $plan->conversation_json = $conversation;
+            $plan->last_generated_at = now();
+            $plan->ai_summary = $assistantMessage;
+            $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+                'status' => isset($toolOutput['error']) ? 'waiting_for_input' : 'completed',
+                'completed' => !isset($toolOutput['error']),
+                'steps_taken' => 1,
+                'tool_calls_executed' => 1,
+                'executed_tools' => ['create_tasks'],
+                'last_tool' => 'create_tasks',
+            ]);
+            $plan->save();
+
+            return $this->withDebug($this->baseResponse($event));
+        }
+
+        if ($this->isTeamRosterQuery($message)) {
+            $workspace = $this->handleGetEventWorkspace($event, [
+                'event_id' => $event->id,
+            ]);
+            $assistantMessage = $this->buildTeamVerificationMessage($workspace);
+
+            $conversation[] = [
+                'role' => 'assistant',
+                'content' => $assistantMessage,
+                'agent' => $this->buildAgentMessageMeta($agentRun, [
+                    'status' => 'completed',
+                    'completed' => true,
+                    'steps_taken' => 1,
+                    'tool_calls_executed' => 1,
+                    'last_tool' => 'get_event_workspace',
+                ]),
+                'at' => now()->toIso8601String(),
+            ];
+            $plan->conversation_json = $conversation;
+            $plan->last_generated_at = now();
+            $plan->ai_summary = $assistantMessage;
+            $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+                'status' => 'completed',
+                'completed' => true,
+                'steps_taken' => 1,
+                'tool_calls_executed' => 1,
+                'executed_tools' => ['get_event_workspace'],
+                'last_tool' => 'get_event_workspace',
+            ]);
+            $plan->save();
+
+            return $this->withDebug($this->baseResponse($event));
+        }
+
+        $referencedTask = $this->findReferencedTaskFromMessage($event, $message);
+        if ($referencedTask && $this->messageImpliesTaskHasStoredData($message)) {
+            $sync = $this->syncTournamentTeamsFromTask($event, $referencedTask);
+            $assistantMessage = $this->buildReferencedTaskDataMessage($referencedTask, $sync);
+
+            $conversation[] = [
+                'role' => 'assistant',
+                'content' => $assistantMessage,
+                'agent' => $this->buildAgentMessageMeta($agentRun, [
+                    'status' => 'completed',
+                    'completed' => true,
+                    'steps_taken' => 1,
+                    'tool_calls_executed' => 1,
+                    'last_tool' => 'sync_tournament_teams',
+                ]),
+                'at' => now()->toIso8601String(),
+            ];
+            $plan->conversation_json = $conversation;
+            $plan->last_generated_at = now();
+            $plan->ai_summary = $assistantMessage;
+            $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+                'status' => 'completed',
+                'completed' => true,
+                'steps_taken' => 1,
+                'tool_calls_executed' => 1,
+                'executed_tools' => ['sync_tournament_teams'],
+                'last_tool' => 'sync_tournament_teams',
+            ]);
+            $plan->save();
+
+            return $this->withDebug($this->baseResponse($event));
         }
 
 
@@ -257,7 +409,15 @@ class AiPlannerService
         ], $conversation), $tools, $forcedTool, $forceNoTools ? 'none' : null);
 
         $latestPlaces = null;
-        for ($attempt = 0; $attempt < 3; $attempt++) {
+        $stepsTaken = 0;
+        $toolCallsExecuted = 0;
+        $executedTools = [];
+        $agentStatus = 'completed';
+        $maxIterations = max(1, (int) config('ai.agent_max_iterations', 5));
+        $maxToolCalls = max(1, (int) config('ai.agent_max_tool_calls', 8));
+
+        for ($attempt = 0; $attempt < $maxIterations; $attempt++) {
+            $stepsTaken++;
             $response = $this->callAndLog($event, $user, $payload);
             $assistantMessage = $this->extractAssistantMessage($response);
             $toolCalls = $this->extractToolCalls($response);
@@ -284,12 +444,21 @@ class AiPlannerService
                         'last_prompt' => $message,
                     ];
                     $plan->plan_json = $planJson;
+                    $agentStatus = 'waiting_for_input';
                 }
                 $plan->conversation_json = $conversation;
                 $plan->last_generated_at = now();
                 if ($assistantMessage) {
                     $plan->ai_summary = $assistantMessage;
                 }
+                $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+                    'status' => $agentStatus,
+                    'completed' => $agentStatus === 'completed',
+                    'steps_taken' => $stepsTaken,
+                    'tool_calls_executed' => $toolCallsExecuted,
+                    'executed_tools' => array_values(array_unique($executedTools)),
+                    'waiting_for' => $agentStatus === 'waiting_for_input' ? ($inferredTool ?? 'details') : null,
+                ]);
                 $plan->save();
                 break;
             }
@@ -304,8 +473,16 @@ class AiPlannerService
             $toolOutputs = [];
 
             foreach ($toolCalls as $call) {
+                if ($toolCallsExecuted >= $maxToolCalls) {
+                    $assistantMessage = 'I reached the planner tool budget for this turn. Review the latest updates and send a follow-up to continue.';
+                    $agentStatus = 'paused';
+                    break 2;
+                }
+
                 $toolOutput = $this->executeToolCall($event, $call);
                 $toolOutputs[] = $toolOutput;
+                $toolCallsExecuted++;
+                $executedTools[] = $toolOutput['name'] ?? 'unknown';
 
                 if (($toolOutput['name'] ?? null) === 'find_recommended_places') {
                     $count = $toolOutput['result']['count'] ?? null;
@@ -339,7 +516,7 @@ class AiPlannerService
             ], $conversation), $tools, null, $forceNoTools ? 'none' : null);
         }
 
-        $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents']);
+        $event->load(['plan', 'tasks.formResponse', 'budgetItems', 'participants', 'documents']);
 
         if (!$assistantMessage && $lastToolSummary) {
             $assistantMessage = $lastToolSummary;
@@ -347,6 +524,14 @@ class AiPlannerService
         if (!$assistantMessage) {
             $assistantMessage = 'I’m here and ready. Tell me what you want to accomplish next (tasks, budget, participants, plan outline, or place recommendations).';
         }
+
+        $agentMeta = $this->buildAgentMessageMeta($agentRun, [
+            'status' => $agentStatus,
+            'completed' => $agentStatus === 'completed',
+            'steps_taken' => $stepsTaken,
+            'tool_calls_executed' => $toolCallsExecuted,
+            'executed_tools' => array_values(array_unique($executedTools)),
+        ]);
 
         if ($latestPlaces) {
             $lastIndex = count($conversation) - 1;
@@ -359,29 +544,48 @@ class AiPlannerService
                     'role' => 'assistant',
                     'content' => $assistantMessage,
                     'places' => $latestPlaces,
+                    'agent' => $agentMeta,
                     'at' => now()->toIso8601String(),
                 ];
             } else {
                 $conversation[$lastIndex]['places'] = $latestPlaces;
                 $conversation[$lastIndex]['content'] = $assistantMessage;
+                $conversation[$lastIndex]['agent'] = $agentMeta;
             }
             $plan->conversation_json = $conversation;
             $plan->last_generated_at = now();
             $plan->ai_summary = $assistantMessage;
-            $plan->save();
+        } else {
+            $lastIndex = count($conversation) - 1;
+            $lastMessage = $lastIndex >= 0 ? $conversation[$lastIndex] : null;
+            $shouldAppend = !($lastMessage && ($lastMessage['role'] ?? null) === 'assistant')
+                || !empty($lastMessage['tool_calls'])
+                || empty($lastMessage['content'] ?? null);
+            if ($shouldAppend) {
+                $conversation[] = [
+                    'role' => 'assistant',
+                    'content' => $assistantMessage,
+                    'agent' => $agentMeta,
+                    'at' => now()->toIso8601String(),
+                ];
+            } else {
+                $conversation[$lastIndex]['agent'] = $agentMeta;
+            }
+            $plan->conversation_json = $conversation;
+            $plan->last_generated_at = now();
+            $plan->ai_summary = $assistantMessage;
         }
 
-        $response = [
-            'assistant_message' => $assistantMessage,
-            'event' => $event,
-            'eventPlan' => $event->plan,
-            'tasks' => $event->tasks,
-            'budget_items' => $event->budgetItems,
-            'participants' => $event->participants,
-            'documents' => $event->documents,
-            'missing_items' => $event->plan?->missing_items_json ?? [],
-        ];
-        return $this->withDebug($response);
+        $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+            'status' => $agentStatus,
+            'completed' => $agentStatus === 'completed',
+            'steps_taken' => $stepsTaken,
+            'tool_calls_executed' => $toolCallsExecuted,
+            'executed_tools' => array_values(array_unique($executedTools)),
+        ]);
+        $plan->save();
+
+        return $this->withDebug($this->baseResponse($event));
     }
 
     protected function initializePlan(Event $event): EventPlan
@@ -393,6 +597,68 @@ class AiPlannerService
             'missing_items_json' => [],
             'conversation_json' => [],
         ]);
+    }
+
+    protected function beginAgentRun(EventPlan $plan, string $message, array $options = []): array
+    {
+        $run = [
+            'run_id' => (string) str()->uuid(),
+            'mode' => config('ai.agent_execution_mode', 'autonomous'),
+            'enabled' => (bool) config('ai.agent_enabled', true),
+            'started_at' => now()->toIso8601String(),
+            'status' => 'running',
+            'completed' => false,
+            'goal' => $message,
+            'steps_taken' => 0,
+            'tool_calls_executed' => 0,
+            'executed_tools' => [],
+            'last_summary' => null,
+            'preferences' => [
+                'auto_create_budget_item' => (bool) ($options['create_budget_item'] ?? false),
+            ],
+        ];
+
+        $planJson = $plan->plan_json ?? ['sections' => []];
+        $planJson['agent'] = $run;
+        $plan->plan_json = $planJson;
+
+        return $run;
+    }
+
+    protected function finalizeAgentRun(EventPlan $plan, array $run, ?string $summary, array $patch = []): void
+    {
+        $agent = array_merge($run, $patch, [
+            'last_summary' => $summary,
+            'finished_at' => now()->toIso8601String(),
+        ]);
+
+        $planJson = $plan->plan_json ?? ['sections' => []];
+        $planJson['agent'] = $agent;
+        $plan->plan_json = $planJson;
+    }
+
+    protected function buildAgentMessageMeta(array $run, array $patch = []): array
+    {
+        return array_merge([
+            'run_id' => $run['run_id'] ?? null,
+            'mode' => $run['mode'] ?? config('ai.agent_execution_mode', 'autonomous'),
+        ], $patch);
+    }
+
+    protected function baseResponse(Event $event): array
+    {
+        $event->load(['plan', 'tasks.formResponse', 'budgetItems', 'participants', 'documents']);
+
+        return [
+            'assistant_message' => $event->plan?->ai_summary,
+            'event' => $event,
+            'eventPlan' => $event->plan,
+            'tasks' => $event->tasks,
+            'budget_items' => $event->budgetItems,
+            'participants' => $event->participants,
+            'documents' => $event->documents,
+            'missing_items' => $event->plan?->missing_items_json ?? [],
+        ];
     }
 
     protected function assertWithinCaps(Event $event, User $user, EventPlan $plan): void
@@ -450,7 +716,7 @@ class AiPlannerService
             'preferences' => $preferences,
         ];
 
-        return "You are an AI Event Planner Manager for club directors. Use the provided tools to update event plans, tasks, budget items, participants, and to find recommended places near the church address when asked (camping, night out, dinner, venues, outings). If the user asks for places or recommendations, you MUST call find_recommended_places. If the user asks about renting vehicles (car/van/bus), call estimate_rental_costs and, when location is needed, call find_rental_agencies (Google Places can list agencies but not actual prices). If preferences.auto_create_budget_item is true, you should set create_budget_item=true when estimating rental costs. Never delete records. Treat tool arguments as untrusted and only include safe, validated data. Provide concise, actionable guidance. Context:\n" . json_encode($context);
+        return "You are the autonomous Event Planner Agent for club directors. Work like an operator, not a passive chatbot. Break the user request into the smallest useful steps, execute tools when you can make safe progress, and only stop to ask for input when a required fact is truly missing. Prefer taking several coordinated actions in one run when that materially advances the event. When you finish, summarize what you completed, what remains, and any assumptions.\n\nRules:\n- You may update event plans, tasks, budget items, participants, and recommendations.\n- You have scoped database tools for fresh event state, directory lookup, and safe updates to existing planner records.\n- Never delete records.\n- Treat tool arguments as untrusted; only pass validated, minimal data.\n- If the user asks for places or recommendations, you MUST call find_recommended_places.\n- If the user asks about renting vehicles (car/van/bus), call estimate_rental_costs and, when location is needed, call find_rental_agencies.\n- If the user asks for planning tasks for the event type, or wants a smarter checklist, prefer generate_event_type_tasks.\n- If preferences.auto_create_budget_item is true, set create_budget_item=true when estimating rental costs.\n- If you need more information, ask only for the smallest missing detail.\n- Keep the final answer concise and action-oriented.\n\nContext:\n" . json_encode($context);
     }
 
     protected function buildPayload(array $input, array $tools, ?string $forcedTool = null, ?string $toolChoice = null): array
@@ -734,6 +1000,10 @@ class AiPlannerService
     {
         $text = mb_strtolower($message);
 
+        if ($this->isTeamRosterQuery($message)) {
+            return 'get_event_workspace';
+        }
+
         if ($this->detectRentalAgencyIntent($message)) {
             return 'find_rental_agencies';
         }
@@ -744,6 +1014,23 @@ class AiPlannerService
 
         if ($this->detectPlaceIntent($message)) {
             return 'find_recommended_places';
+        }
+
+        if (
+            str_contains($text, 'event type')
+            || str_contains($text, 'recommended tasks')
+            || str_contains($text, 'smart checklist')
+            || str_contains($text, 'determine tasks')
+            || str_contains($text, 'reevaluate task')
+            || str_contains($text, 're-evaluate task')
+            || str_contains($text, 'review tasks')
+            || str_contains($text, 'reevaluate the tasks')
+        ) {
+            return 'generate_event_type_tasks';
+        }
+
+        if ($this->extractExplicitTaskTitle($message)) {
+            return 'create_tasks';
         }
 
         if (str_contains($text, 'task') || str_contains($text, 'checklist') || str_contains($text, 'to do')) {
@@ -776,12 +1063,18 @@ class AiPlannerService
     protected function toolGuidanceMessage(string $tool): string
     {
         return match ($tool) {
+            'get_event_workspace' => 'No tools were executed. I can refresh the current event workspace from the database whenever needed.',
+            'find_club_directory' => 'No tools were executed. Please provide a member or staff name if you want me to look someone up in the club directory.',
             'find_recommended_places' => 'No tools were executed. Please provide a city, state, or ZIP code (or confirm the church address) so I can find nearby recommendations.',
             'find_rental_agencies' => 'No tools were executed. Please provide a pickup city/ZIP (or confirm the church address) so I can list nearby rental agencies.',
             'estimate_rental_costs' => 'No tools were executed. Please provide vehicle type (car/van/bus), passenger count, and dates so I can estimate costs.',
+            'generate_event_type_tasks' => 'No tools were executed. Please confirm the event type or share a short description so I can generate a better task plan.',
             'create_tasks' => 'No tools were executed. Please list the tasks you want created (e.g., title and due date if known).',
+            'update_tasks' => 'No tools were executed. Please tell me which task should change and what fields to update.',
             'create_budget_items' => 'No tools were executed. Please share budget items with category, description, and estimated cost.',
+            'update_budget_items' => 'No tools were executed. Please tell me which budget line should change and the new values.',
             'add_participants' => 'No tools were executed. Please provide participant names, roles, and statuses.',
+            'update_participants' => 'No tools were executed. Please tell me which participant should change and what to update.',
             'set_missing_items' => 'No tools were executed. Please list the missing items you want tracked.',
             'update_event_spine' => 'No tools were executed. Please specify which event fields to update (title, dates, location, status, etc.).',
             'update_plan_section' => 'No tools were executed. Please name the plan section and the details you want added.',
@@ -938,7 +1231,7 @@ class AiPlannerService
         return null;
     }
 
-    protected function handlePendingAction(Event $event, EventPlan $plan, array $conversation, string $tool, string $message): ?array
+    protected function handlePendingAction(Event $event, EventPlan $plan, array $conversation, string $tool, string $message, array $agentRun): ?array
     {
         $toolOutput = null;
         $assistantMessage = null;
@@ -1031,6 +1324,13 @@ class AiPlannerService
         $conversation[] = [
             'role' => 'assistant',
             'content' => $assistantMessage,
+            'agent' => $this->buildAgentMessageMeta($agentRun, [
+                'status' => 'completed',
+                'completed' => true,
+                'steps_taken' => 1,
+                'tool_calls_executed' => $toolOutput ? 1 : 0,
+                'last_tool' => $tool,
+            ]),
             'at' => now()->toIso8601String(),
         ];
 
@@ -1040,20 +1340,17 @@ class AiPlannerService
         $plan->conversation_json = $conversation;
         $plan->last_generated_at = now();
         $plan->ai_summary = $assistantMessage;
+        $this->finalizeAgentRun($plan, $agentRun, $assistantMessage, [
+            'status' => 'completed',
+            'completed' => true,
+            'steps_taken' => 1,
+            'tool_calls_executed' => $toolOutput ? 1 : 0,
+            'executed_tools' => $toolOutput ? [$tool] : [],
+            'last_tool' => $tool,
+        ]);
         $plan->save();
 
-        $event->load(['plan', 'tasks', 'budgetItems', 'participants', 'documents']);
-
-        return [
-            'assistant_message' => $assistantMessage,
-            'event' => $event,
-            'eventPlan' => $event->plan,
-            'tasks' => $event->tasks,
-            'budget_items' => $event->budgetItems,
-            'participants' => $event->participants,
-            'documents' => $event->documents,
-            'missing_items' => $event->plan?->missing_items_json ?? [],
-        ];
+        return $this->baseResponse($event);
     }
 
     protected function parseListItems(string $message): array
@@ -1067,6 +1364,329 @@ class AiPlannerService
             }
         }
         return array_values(array_unique($items));
+    }
+
+    protected function isTaskReevaluationRequest(string $message): bool
+    {
+        $text = mb_strtolower($message);
+
+        return (str_contains($text, 'reevaluate') || str_contains($text, 're-evaluate') || str_contains($text, 'review') || str_contains($text, 'regenerate') || str_contains($text, 'refresh'))
+            && (str_contains($text, 'task') || str_contains($text, 'checklist'));
+    }
+
+    protected function isTeamRosterQuery(string $message): bool
+    {
+        $text = mb_strtolower($message);
+
+        $teamSignals = str_contains($text, 'team')
+            || str_contains($text, 'teams')
+            || str_contains($text, 'roster')
+            || str_contains($text, 'team members');
+
+        $actionSignals = str_contains($text, 'verify')
+            || str_contains($text, 'query')
+            || str_contains($text, 'check')
+            || str_contains($text, 'show')
+            || str_contains($text, 'list');
+
+        return $teamSignals && $actionSignals;
+    }
+
+    protected function extractExplicitTaskTitle(string $message): ?string
+    {
+        $value = trim($message);
+
+        if (preg_match('/^(?:(?:can|could|would|will)\s+you\s+|please\s+)?(?:create|add)\s+(?:a\s+)?task\s+(?:to\s+)?(.+)$/i', $value, $matches)) {
+            $title = trim($matches[1], " \t\n\r\0\x0B?.!");
+            return $title !== '' ? ucfirst($title) : null;
+        }
+
+        return null;
+    }
+
+    protected function buildTeamVerificationMessage(array $workspace): string
+    {
+        $normalizedTeams = collect(data_get($workspace, 'tournament.teams', []));
+        $participants = collect($workspace['participants'] ?? []);
+        $tasks = collect($workspace['tasks'] ?? []);
+        $teamTaskWithData = $tasks->first(function ($task) {
+            $title = mb_strtolower((string) ($task['title'] ?? ''));
+            $responseData = $task['form_response_data'] ?? null;
+            $hasRows = is_array($responseData['rows'] ?? null) && !empty($responseData['rows']);
+            $hasObject = is_array($responseData) && !empty($responseData);
+
+            return (str_contains($title, 'team') || str_contains($title, 'roster')) && ($hasRows || $hasObject);
+        });
+
+        $teamTasks = $tasks->filter(function ($task) {
+            $title = mb_strtolower((string) ($task['title'] ?? ''));
+            return str_contains($title, 'team') || str_contains($title, 'roster');
+        })->values();
+
+        $participantCount = $participants->count();
+        if ($participantCount > 0) {
+            $roles = $participants->pluck('role')->filter()->unique()->values()->all();
+            $rolesText = !empty($roles) ? ' Roles on file: ' . implode(', ', $roles) . '.' : '';
+
+            return "I checked the event data in the database. This event currently has {$participantCount} participant record(s)." . $rolesText;
+        }
+
+        if ($normalizedTeams->isNotEmpty()) {
+            $teamNames = $normalizedTeams->pluck('name')->filter()->take(4)->implode('; ');
+            return "I checked the normalized tournament data in the database. I found {$normalizedTeams->count()} team(s): {$teamNames}.";
+        }
+
+        if ($teamTaskWithData) {
+            $referencedTask = (object) $teamTaskWithData;
+            return $this->buildReferencedTaskDataMessage($referencedTask);
+        }
+
+        if ($teamTasks->isNotEmpty()) {
+            $titles = $teamTasks->pluck('title')->take(3)->implode('; ');
+            return "I checked the event data in the database. I do not see participant roster records yet, but I found team-related planning tasks: {$titles}.";
+        }
+
+        return 'I checked the event data in the database. I do not see participant roster records or team-specific task entries yet for this tournament.';
+    }
+
+    protected function messageImpliesTaskHasStoredData(string $message): bool
+    {
+        $text = mb_strtolower($message);
+
+        return str_contains($text, 'already defined')
+            || str_contains($text, 'already has')
+            || str_contains($text, 'has the teams')
+            || str_contains($text, 'teams already')
+            || str_contains($text, 'defined there')
+            || str_contains($text, 'stored there');
+    }
+
+    protected function findReferencedTaskFromMessage(Event $event, string $message): ?object
+    {
+        $messageText = mb_strtolower($message);
+        $tasks = $event->tasks;
+
+        foreach ($tasks as $task) {
+            $title = trim((string) $task->title);
+            if ($title === '') {
+                continue;
+            }
+
+            if (str_contains($messageText, mb_strtolower($title))) {
+                return $task;
+            }
+        }
+
+        return $tasks->first(function ($task) use ($messageText) {
+            $title = mb_strtolower((string) $task->title);
+            $words = preg_split('/\s+/', preg_replace('/[^a-z0-9\s]+/i', ' ', $title) ?? '') ?: [];
+            $words = array_values(array_filter($words, fn ($word) => strlen($word) >= 4));
+
+            if (count($words) < 2) {
+                return false;
+            }
+
+            $matches = 0;
+            foreach ($words as $word) {
+                if (str_contains($messageText, $word)) {
+                    $matches++;
+                }
+            }
+
+            return $matches >= min(3, count($words));
+        });
+    }
+
+    protected function buildReferencedTaskDataMessage(object $task, ?array $sync = null): string
+    {
+        $title = (string) ($task->title ?? 'Selected task');
+        $responseData = data_get($task, 'formResponse.data_json')
+            ?? data_get($task, 'form_response.data_json')
+            ?? data_get($task, 'form_response_data')
+            ?? [];
+
+        if (is_array($responseData['rows'] ?? null) && !empty($responseData['rows'])) {
+            $rows = collect($responseData['rows']);
+            $first = (array) ($rows->first() ?? []);
+            $keys = array_values(array_filter(array_keys($first), fn ($key) => $key !== '_row_id'));
+            $keysText = !empty($keys) ? ' Fields captured: ' . implode(', ', array_slice($keys, 0, 5)) . '.' : '';
+            $syncText = $sync && !empty($sync['teams_count'])
+                ? " I normalized {$sync['teams_count']} team(s) into the tournament workspace. " . $this->describeNormalizedTeams($sync['teams'] ?? [])
+                : '';
+
+            return "I checked the task \"{$title}\" and it does contain stored form records. I found {$rows->count()} row(s) in that task." . $keysText . $syncText;
+        }
+
+        if (is_array($responseData) && !empty($responseData)) {
+            $keys = array_values(array_keys($responseData));
+            $syncText = $sync && !empty($sync['teams_count'])
+                ? " I normalized {$sync['teams_count']} team(s) into the tournament workspace. " . $this->describeNormalizedTeams($sync['teams'] ?? [])
+                : '';
+            return "I checked the task \"{$title}\" and it contains stored form data. Captured fields: " . implode(', ', array_slice($keys, 0, 6)) . '.' . $syncText;
+        }
+
+        return "I checked the task \"{$title}\", but I do not see stored form data on it yet.";
+    }
+
+    protected function syncTournamentTeamsFromTask(Event $event, object $task): array
+    {
+        $responseData = data_get($task, 'formResponse.data_json')
+            ?? data_get($task, 'form_response.data_json')
+            ?? data_get($task, 'form_response_data')
+            ?? [];
+
+        $teams = $this->extractTournamentTeamsFromTaskData($responseData);
+        if (empty($teams)) {
+            return [
+                'teams_count' => 0,
+                'teams' => [],
+            ];
+        }
+
+        $plan = $event->plan ?? $this->initializePlan($event);
+        $planJson = $plan->plan_json ?? ['sections' => []];
+        $tournament = $planJson['tournament'] ?? [];
+        $existingTeams = collect($tournament['teams'] ?? [])
+            ->keyBy(fn ($team) => mb_strtolower(trim((string) ($team['name'] ?? ''))));
+
+        foreach ($teams as $team) {
+            $key = mb_strtolower(trim((string) ($team['name'] ?? '')));
+            if ($key === '') {
+                continue;
+            }
+
+            $previous = $existingTeams->get($key, []);
+            $existingTeams->put($key, array_merge($previous, $team, [
+                'source_task_id' => $task->id ?? data_get($task, 'id'),
+                'source_task_title' => $task->title ?? data_get($task, 'title'),
+                'synced_at' => now()->toIso8601String(),
+            ]));
+        }
+
+        $tournament['teams'] = $existingTeams->values()->all();
+        $tournament['last_team_sync_at'] = now()->toIso8601String();
+        $planJson['tournament'] = $tournament;
+        $plan->plan_json = $planJson;
+        $plan->save();
+
+        return [
+            'teams_count' => count($teams),
+            'teams' => $teams,
+        ];
+    }
+
+    protected function extractTournamentTeamsFromTaskData(array $responseData): array
+    {
+        $rows = [];
+        if (is_array($responseData['rows'] ?? null) && !empty($responseData['rows'])) {
+            $rows = $responseData['rows'];
+        } elseif (!empty($responseData)) {
+            $rows = [$responseData];
+        }
+
+        $teams = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $teamName = $this->firstNonEmptyValue($row, [
+                'team_name', 'team', 'name', 'club_name', 'group_name',
+            ]);
+            if (!$teamName) {
+                continue;
+            }
+
+            $membersRaw = $this->firstNonEmptyValue($row, [
+                'members', 'team_members', 'players', 'participant_names', 'player_names',
+            ]);
+            $members = $this->normalizeTeamMembers($membersRaw);
+
+            $teams[] = array_filter([
+                'name' => $teamName,
+                'fee_status' => $this->firstNonEmptyValue($row, ['fee_status', 'fees_status', 'payment_status', 'status']),
+                'fee_amount' => $this->firstNonEmptyValue($row, ['fee_amount', 'fees', 'registration_fee', 'amount_paid', 'entry_fee_paid']),
+                'coach' => $this->firstNonEmptyValue($row, ['coach', 'manager', 'leader', 'captain_name']),
+                'captain' => $this->firstNonEmptyValue($row, ['captain_name', 'captain', 'team_captain']),
+                'members' => $members,
+                'members_count' => count($members),
+            ], function ($value) {
+                if (is_array($value)) {
+                    return !empty($value);
+                }
+
+                return $value !== null && $value !== '';
+            });
+        }
+
+        return array_values($teams);
+    }
+
+    protected function firstNonEmptyValue(array $row, array $keys): mixed
+    {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $row)) {
+                continue;
+            }
+
+            $value = $row[$key];
+            if (is_string($value) && trim($value) === '') {
+                continue;
+            }
+            if ($value === null) {
+                continue;
+            }
+
+            return $value;
+        }
+
+        return null;
+    }
+
+    protected function normalizeTeamMembers(mixed $value): array
+    {
+        if (is_array($value)) {
+            return array_values(array_filter(array_map(function ($item) {
+                return is_scalar($item) ? trim((string) $item) : null;
+            }, $value)));
+        }
+
+        if (is_string($value)) {
+            $parts = preg_split('/\r?\n|,|;|\|/', $value) ?: [];
+            return array_values(array_filter(array_map(fn ($part) => trim($part), $parts)));
+        }
+
+        return [];
+    }
+
+    protected function describeNormalizedTeams(array $teams): string
+    {
+        if (empty($teams)) {
+            return '';
+        }
+
+        $labels = [];
+        foreach (array_slice($teams, 0, 4) as $team) {
+            $name = trim((string) ($team['name'] ?? 'Unnamed team'));
+            $captain = trim((string) ($team['captain'] ?? $team['coach'] ?? ''));
+            $membersCount = (int) ($team['members_count'] ?? 0);
+            $fee = $team['fee_amount'] ?? null;
+
+            $parts = [$name];
+            if ($captain !== '') {
+                $parts[] = "captain {$captain}";
+            }
+            if ($membersCount > 0) {
+                $parts[] = "{$membersCount} player(s)";
+            }
+            if ($fee !== null && $fee !== '') {
+                $parts[] = "fee {$fee}";
+            }
+
+            $labels[] = implode(', ', $parts);
+        }
+
+        return 'Teams: ' . implode('; ', $labels) . '.';
     }
 
     protected function buildRentalEstimateMessage(array $toolOutput, ?array $details = null): string
@@ -1369,12 +1989,18 @@ class AiPlannerService
         $args = is_string($rawArgs) ? json_decode($rawArgs, true) : (array) $rawArgs;
 
         $result = match ($name) {
+            'get_event_workspace' => $this->handleGetEventWorkspace($event, $args),
+            'find_club_directory' => $this->handleFindClubDirectory($event, $args),
             'update_event_spine' => $this->handleUpdateEventSpine($event, $args),
             'update_plan_section' => $this->handleUpdatePlanSection($event, $args),
             'create_tasks' => $this->handleCreateTasks($event, $args),
+            'generate_event_type_tasks' => $this->handleGenerateEventTypeTasks($event, $args),
+            'update_tasks' => $this->handleUpdateTasks($event, $args),
             'create_budget_items' => $this->handleCreateBudgetItems($event, $args),
+            'update_budget_items' => $this->handleUpdateBudgetItems($event, $args),
             'set_missing_items' => $this->handleSetMissingItems($event, $args),
             'add_participants' => $this->handleAddParticipants($event, $args),
+            'update_participants' => $this->handleUpdateParticipants($event, $args),
             'find_recommended_places' => $this->handleFindRecommendedPlaces($event, $args),
             'find_rental_agencies' => $this->handleFindRentalAgencies($event, $args),
             'estimate_rental_costs' => $this->handleEstimateRentalCosts($event, $args),
@@ -1385,6 +2011,132 @@ class AiPlannerService
             'name' => $name,
             'result' => $result,
             'id' => $call['id'] ?? null,
+        ];
+    }
+
+    protected function handleGetEventWorkspace(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        $event->load(['plan', 'tasks.formResponse', 'budgetItems', 'participants', 'documents', 'club.church']);
+
+        return [
+            'event' => [
+                'id' => $event->id,
+                'title' => $event->title,
+                'event_type' => $event->event_type,
+                'status' => $event->status,
+                'start_at' => optional($event->start_at)->toIso8601String(),
+                'end_at' => optional($event->end_at)->toIso8601String(),
+                'location_name' => $event->location_name,
+                'location_address' => $event->location_address,
+            ],
+            'plan_sections' => $event->plan?->plan_json['sections'] ?? [],
+            'tournament' => $event->plan?->plan_json['tournament'] ?? null,
+            'missing_items' => $event->plan?->missing_items_json ?? [],
+            'tasks' => $event->tasks->map(fn ($task) => [
+                'id' => $task->id,
+                'title' => $task->title,
+                'description' => $task->description,
+                'status' => $task->status,
+                'due_at' => optional($task->due_at)->toIso8601String(),
+                'assigned_to_user_id' => $task->assigned_to_user_id,
+                'form_response_data' => $task->formResponse?->data_json,
+            ])->values()->all(),
+            'budget_items' => $event->budgetItems->map(fn ($item) => [
+                'id' => $item->id,
+                'category' => $item->category,
+                'description' => $item->description,
+                'qty' => $item->qty,
+                'unit_cost' => $item->unit_cost,
+                'total' => $item->total,
+                'funding_source' => $item->funding_source,
+            ])->values()->all(),
+            'participants' => $event->participants->map(fn ($participant) => [
+                'id' => $participant->id,
+                'member_id' => $participant->member_id,
+                'participant_name' => $participant->participant_name,
+                'role' => $participant->role,
+                'status' => $participant->status,
+                'permission_received' => $participant->permission_received,
+                'medical_form_received' => $participant->medical_form_received,
+            ])->values()->all(),
+        ];
+    }
+
+    protected function handleFindClubDirectory(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+            'query' => ['nullable', 'string', 'max:120'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        $query = mb_strtolower(trim((string) ($args['query'] ?? '')));
+        $limit = (int) ($args['limit'] ?? 12);
+
+        $members = ClubHelper::membersOfClub($event->club_id)
+            ->filter(function ($member) use ($query) {
+                if ($query === '') {
+                    return true;
+                }
+
+                return str_contains(mb_strtolower((string) ($member['applicant_name'] ?? '')), $query);
+            })
+            ->take($limit)
+            ->map(fn ($member) => [
+                'member_id' => $member['member_id'] ?? null,
+                'name' => $member['applicant_name'] ?? null,
+                'class_id' => $member['class_id'] ?? null,
+                'member_type' => $member['member_type'] ?? null,
+            ])
+            ->values()
+            ->all();
+
+        $staff = ClubHelper::staffOfClub($event->club_id)
+            ->filter(function ($staffRow) use ($query) {
+                $name = $staffRow->user?->name ?? '';
+                if ($query === '') {
+                    return true;
+                }
+
+                return str_contains(mb_strtolower($name), $query);
+            })
+            ->take($limit)
+            ->map(fn ($staffRow) => [
+                'staff_id' => $staffRow->id,
+                'user_id' => $staffRow->user_id,
+                'name' => $staffRow->user?->name,
+                'email' => $staffRow->user?->email,
+                'assigned_class' => $staffRow->assigned_class,
+                'status' => $staffRow->status,
+                'type' => $staffRow->type,
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'query' => $args['query'] ?? null,
+            'members' => $members,
+            'staff' => $staff,
         ];
     }
 
@@ -1468,6 +2220,49 @@ class AiPlannerService
         return ['section' => $sectionName, 'updated' => true];
     }
 
+    protected function handleGenerateEventTypeTasks(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+            'refresh_if_safe' => ['nullable', 'boolean'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        if (!empty($args['refresh_if_safe'])) {
+            $this->taskTemplates->reseedEventTasksIfSafe($event);
+            $event->refresh();
+        }
+
+        $tasks = $this->taskTemplates->seedEventTasks($event);
+        $event->load('tasks');
+
+        $openTitles = $event->tasks()
+            ->where('status', '!=', 'done')
+            ->orderBy('id')
+            ->pluck('title')
+            ->values()
+            ->all();
+
+        $plan = $event->plan ?? $this->initializePlan($event);
+        $plan->missing_items_json = $openTitles;
+        $plan->save();
+
+        return [
+            'event_type' => $event->event_type,
+            'task_count' => count($tasks),
+            'task_titles' => collect($tasks)->map(fn ($task) => $task->title)->values()->all(),
+            'open_task_count' => count($openTitles),
+            'open_task_titles' => $openTitles,
+        ];
+    }
+
     protected function handleCreateTasks(Event $event, array $args): array
     {
         $validator = Validator::make($args, [
@@ -1504,7 +2299,61 @@ class AiPlannerService
             }
         });
 
-        return ['created_task_ids' => $created];
+        return [
+            'created_task_ids' => $created,
+            'created_count' => count($created),
+        ];
+    }
+
+    protected function handleUpdateTasks(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+            'updates' => ['required', 'array'],
+            'updates.*.task_id' => ['required', 'integer', 'exists:event_tasks,id'],
+            'updates.*.patch' => ['required', 'array'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        $updated = [];
+        $allowed = ['title', 'description', 'assigned_to_user_id', 'due_at', 'status', 'checklist_json'];
+
+        DB::transaction(function () use (&$updated, $event, $args, $allowed) {
+            foreach ($args['updates'] as $update) {
+                $task = $event->tasks()->whereKey($update['task_id'])->first();
+                if (!$task) {
+                    continue;
+                }
+
+                $patch = Arr::only((array) $update['patch'], $allowed);
+                if (array_key_exists('assigned_to_user_id', $patch) && $patch['assigned_to_user_id']) {
+                    $userExists = User::query()->whereKey($patch['assigned_to_user_id'])->exists();
+                    if (!$userExists) {
+                        unset($patch['assigned_to_user_id']);
+                    }
+                }
+
+                $task->fill($patch);
+                $task->save();
+
+                $updated[] = [
+                    'task_id' => $task->id,
+                    'updated_fields' => array_keys($patch),
+                ];
+            }
+        });
+
+        return [
+            'updated_count' => count($updated),
+            'updated_tasks' => $updated,
+        ];
     }
 
     protected function handleCreateBudgetItems(Event $event, array $args): array
@@ -1543,7 +2392,54 @@ class AiPlannerService
             }
         });
 
-        return ['created_budget_item_ids' => $created];
+        return [
+            'created_budget_item_ids' => $created,
+            'created_count' => count($created),
+        ];
+    }
+
+    protected function handleUpdateBudgetItems(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+            'updates' => ['required', 'array'],
+            'updates.*.budget_item_id' => ['required', 'integer', 'exists:event_budget_items,id'],
+            'updates.*.patch' => ['required', 'array'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        $allowed = ['category', 'description', 'qty', 'unit_cost', 'funding_source', 'expense_date', 'notes'];
+        $updated = [];
+
+        DB::transaction(function () use (&$updated, $event, $args, $allowed) {
+            foreach ($args['updates'] as $update) {
+                $item = $event->budgetItems()->whereKey($update['budget_item_id'])->first();
+                if (!$item) {
+                    continue;
+                }
+
+                $patch = Arr::only((array) $update['patch'], $allowed);
+                $item->fill($patch);
+                $item->save();
+
+                $updated[] = [
+                    'budget_item_id' => $item->id,
+                    'updated_fields' => array_keys($patch),
+                ];
+            }
+        });
+
+        return [
+            'updated_count' => count($updated),
+            'updated_budget_items' => $updated,
+        ];
     }
 
     protected function handleSetMissingItems(Event $event, array $args): array
@@ -1607,7 +2503,62 @@ class AiPlannerService
             }
         });
 
-        return ['created_participant_ids' => $created];
+        return [
+            'created_participant_ids' => $created,
+            'created_count' => count($created),
+        ];
+    }
+
+    protected function handleUpdateParticipants(Event $event, array $args): array
+    {
+        $validator = Validator::make($args, [
+            'event_id' => ['required', 'integer'],
+            'updates' => ['required', 'array'],
+            'updates.*.participant_id' => ['required', 'integer', 'exists:event_participants,id'],
+            'updates.*.patch' => ['required', 'array'],
+        ]);
+
+        if ($validator->fails()) {
+            return ['error' => $validator->errors()->toArray()];
+        }
+
+        if ((int) $args['event_id'] !== (int) $event->id) {
+            return ['error' => 'Event mismatch'];
+        }
+
+        $allowed = [
+            'member_id',
+            'participant_name',
+            'role',
+            'status',
+            'permission_received',
+            'medical_form_received',
+            'emergency_contact_json',
+        ];
+        $updated = [];
+
+        DB::transaction(function () use (&$updated, $event, $args, $allowed) {
+            foreach ($args['updates'] as $update) {
+                $participant = $event->participants()->whereKey($update['participant_id'])->first();
+                if (!$participant) {
+                    continue;
+                }
+
+                $patch = Arr::only((array) $update['patch'], $allowed);
+                $participant->fill($patch);
+                $participant->save();
+
+                $updated[] = [
+                    'participant_id' => $participant->id,
+                    'updated_fields' => array_keys($patch),
+                ];
+            }
+        });
+
+        return [
+            'updated_count' => count($updated),
+            'updated_participants' => $updated,
+        ];
     }
 
     protected function handleFindRecommendedPlaces(Event $event, array $args): array
@@ -2320,6 +3271,36 @@ class AiPlannerService
         return [
             [
                 'type' => 'function',
+                'name' => 'get_event_workspace',
+                'description' => 'Fetch the latest event planner workspace state directly from the database.',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                    ],
+                    'required' => ['event_id'],
+                ],
+                'strict' => true,
+            ],
+            [
+                'type' => 'function',
+                'name' => 'find_club_directory',
+                'description' => 'Search club members and staff from the database for assignment or roster work.',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                        'query' => ['type' => ['string', 'null']],
+                        'limit' => ['type' => ['integer', 'null']],
+                    ],
+                    'required' => ['event_id'],
+                ],
+                'strict' => false,
+            ],
+            [
+                'type' => 'function',
                 'name' => 'update_event_spine',
                 'description' => 'Update top-level event details like title, dates, location, status, or risk level.',
                 'parameters' => [
@@ -2409,6 +3390,47 @@ class AiPlannerService
             ],
             [
                 'type' => 'function',
+                'name' => 'update_tasks',
+                'description' => 'Update existing tasks in the event planner database.',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                        'updates' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'additionalProperties' => false,
+                                'properties' => [
+                                    'task_id' => ['type' => 'integer'],
+                                    'patch' => ['type' => 'object'],
+                                ],
+                                'required' => ['task_id', 'patch'],
+                            ],
+                        ],
+                    ],
+                    'required' => ['event_id', 'updates'],
+                ],
+                'strict' => false,
+            ],
+            [
+                'type' => 'function',
+                'name' => 'generate_event_type_tasks',
+                'description' => 'Generate or refresh a planning checklist tailored to the event type and event context.',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                        'refresh_if_safe' => ['type' => ['boolean', 'null']],
+                    ],
+                    'required' => ['event_id'],
+                ],
+                'strict' => false,
+            ],
+            [
+                'type' => 'function',
                 'name' => 'create_budget_items',
                 'description' => 'Create budget line items for the event.',
                 'parameters' => [
@@ -2434,6 +3456,32 @@ class AiPlannerService
                         ],
                     ],
                     'required' => ['event_id', 'items'],
+                ],
+                'strict' => false,
+            ],
+            [
+                'type' => 'function',
+                'name' => 'update_budget_items',
+                'description' => 'Update existing budget items in the event planner database.',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                        'updates' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'additionalProperties' => false,
+                                'properties' => [
+                                    'budget_item_id' => ['type' => 'integer'],
+                                    'patch' => ['type' => 'object'],
+                                ],
+                                'required' => ['budget_item_id', 'patch'],
+                            ],
+                        ],
+                    ],
+                    'required' => ['event_id', 'updates'],
                 ],
                 'strict' => false,
             ],
@@ -2495,6 +3543,32 @@ class AiPlannerService
                         ],
                     ],
                     'required' => ['event_id', 'participants'],
+                ],
+                'strict' => false,
+            ],
+            [
+                'type' => 'function',
+                'name' => 'update_participants',
+                'description' => 'Update existing participants in the event planner database.',
+                'parameters' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'event_id' => ['type' => 'integer'],
+                        'updates' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'additionalProperties' => false,
+                                'properties' => [
+                                    'participant_id' => ['type' => 'integer'],
+                                    'patch' => ['type' => 'object'],
+                                ],
+                                'required' => ['participant_id', 'patch'],
+                            ],
+                        ],
+                    ],
+                    'required' => ['event_id', 'updates'],
                 ],
                 'strict' => false,
             ],

@@ -27,6 +27,7 @@ const form = useForm({
 })
 
 const isEditing = computed(() => editingUserId.value !== null)
+const hasSubRoles = computed(() => props.subRoles.length > 0)
 
 const filteredClubs = computed(() => {
     if (!form.church_id) return []
@@ -143,12 +144,23 @@ const deleteUser = (user) => {
                         </div>
                         <div v-if="form.profile_type === 'club_personal'">
                             <InputLabel for="sub_role" value="Subrol" />
-                            <select id="sub_role" v-model="form.sub_role" class="mt-1 block w-full rounded-md border-gray-300" required>
-                                <option disabled value="">Selecciona un subrol</option>
+                            <select
+                                id="sub_role"
+                                v-model="form.sub_role"
+                                class="mt-1 block w-full rounded-md border-gray-300"
+                                :required="hasSubRoles"
+                                :disabled="!hasSubRoles"
+                            >
+                                <option disabled value="">
+                                    {{ hasSubRoles ? 'Selecciona un subrol' : 'No hay subroles disponibles' }}
+                                </option>
                                 <option v-for="role in props.subRoles" :key="role.id" :value="role.key">
                                     {{ role.label }}
                                 </option>
                             </select>
+                            <p v-if="!hasSubRoles" class="mt-2 text-sm text-amber-700">
+                                Puedes crear personal de club sin subrol hasta que se configuren subroles.
+                            </p>
                             <InputError class="mt-2" :message="form.errors.sub_role" />
                         </div>
                     </div>

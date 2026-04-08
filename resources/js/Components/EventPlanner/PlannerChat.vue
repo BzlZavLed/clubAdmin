@@ -20,6 +20,13 @@ const error = ref(null)
 const messagesRef = ref(null)
 const inputRef = ref(null)
 
+const agentBadge = (msg) => {
+    if (!msg?.agent?.mode) return null
+    return msg.agent.mode === 'autonomous'
+        ? tr('Agente autónomo', 'Autonomous agent')
+        : tr('Planificador IA', 'AI planner')
+}
+
 const placeMapLink = (place) => {
     if (place?.place_id) {
         return `https://www.google.com/maps/place/?q=place_id:${place.place_id}`
@@ -193,12 +200,18 @@ const send = async () => {
         <details class="bg-gray-50 border rounded-md p-3 text-xs text-gray-700">
             <summary class="font-semibold text-gray-800 cursor-pointer">{{ tr('Herramientas disponibles', 'Available tools') }}</summary>
             <ul class="list-disc pl-4 space-y-1 mt-2">
+                <li><span class="font-medium">get_event_workspace</span> — {{ tr('Lee el estado más reciente del evento desde la base de datos.', 'Read the latest event state from the database.') }}</li>
+                <li><span class="font-medium">find_club_directory</span> — {{ tr('Busca miembros y staff del club para asignaciones.', 'Search club members and staff for assignments.') }}</li>
                 <li><span class="font-medium">update_event_spine</span> — {{ tr('Actualiza título, fechas, ubicación y estado.', 'Update title, dates, location, status.') }}</li>
                 <li><span class="font-medium">update_plan_section</span> — {{ tr('Agrega o ajusta una sección del plan.', 'Add or revise a section of the plan outline.') }}</li>
                 <li><span class="font-medium">create_tasks</span> — {{ tr('Crea tareas con fechas límite y responsables.', 'Create tasks with due dates and assignees.') }}</li>
+                <li><span class="font-medium">update_tasks</span> — {{ tr('Actualiza tareas existentes del evento.', 'Update existing event tasks.') }}</li>
+                <li><span class="font-medium">generate_event_type_tasks</span> — {{ tr('Genera una lista de tareas adaptada al tipo de evento.', 'Generate a task plan tailored to the event type.') }}</li>
                 <li><span class="font-medium">create_budget_items</span> — {{ tr('Agrega partidas de presupuesto y costos.', 'Add budget line items and costs.') }}</li>
+                <li><span class="font-medium">update_budget_items</span> — {{ tr('Actualiza partidas de presupuesto existentes.', 'Update existing budget line items.') }}</li>
                 <li><span class="font-medium">set_missing_items</span> — {{ tr('Lleva control de requisitos faltantes.', 'Track missing plan requirements.') }}</li>
                 <li><span class="font-medium">add_participants</span> — {{ tr('Agrega participantes y roles.', 'Add participants and roles.') }}</li>
+                <li><span class="font-medium">update_participants</span> — {{ tr('Actualiza participantes existentes.', 'Update existing participants.') }}</li>
                 <li><span class="font-medium">find_recommended_places</span> — {{ tr('Busca lugares recomendados cerca de la iglesia.', 'Find recommended places near the church address.') }}</li>
                 <li><span class="font-medium">find_rental_agencies</span> — {{ tr('Busca agencias cercanas de renta de autos/vans/bus.', 'Find nearby car/van/bus rental agencies.') }}</li>
                 <li><span class="font-medium">estimate_rental_costs</span> — {{ tr('Estima costos de renta por día y total.', 'Estimate rental costs per day and total.') }}</li>
@@ -208,7 +221,10 @@ const send = async () => {
             <div v-for="(msg, idx) in localMessages" :key="idx" class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
                 <div :class="msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'"
                     class="px-3 py-2 rounded-lg max-w-[80%] text-sm whitespace-pre-wrap">
-                    <div class="text-xs opacity-70 mb-1">{{ msg.role }}</div>
+                    <div class="mb-1 flex items-center gap-2 text-xs opacity-70">
+                        <span>{{ msg.role }}</span>
+                        <span v-if="agentBadge(msg)" class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-gray-700">{{ agentBadge(msg) }}</span>
+                    </div>
                     <template v-if="msg.role === 'assistant' && parseRentalEstimateMessage(msg.content)">
                         <div class="space-y-2 break-words">
                             <div class="font-medium text-sm">{{ parseRentalEstimateMessage(msg.content).intro }}</div>
@@ -278,6 +294,13 @@ const send = async () => {
                             </div>
                             <a v-if="placeMapLink(place)" :href="placeMapLink(place)" target="_blank" rel="noopener noreferrer" class="inline-block mt-1 text-xs text-blue-600 underline">{{ tr('Abrir en Maps', 'Open in Maps') }}</a>
                         </div>
+                    </div>
+                    <div v-if="msg.agent && msg.role === 'assistant'" class="mt-2 text-[11px] text-gray-500">
+                        <span>{{ tr('Pasos', 'Steps') }}: {{ Number(msg.agent.steps_taken || 0) }}</span>
+                        <span class="mx-1">•</span>
+                        <span>{{ tr('Herramientas', 'Tools') }}: {{ Number(msg.agent.tool_calls_executed || 0) }}</span>
+                        <span v-if="msg.agent.status" class="mx-1">•</span>
+                        <span v-if="msg.agent.status">{{ tr('Estado', 'Status') }}: {{ msg.agent.status }}</span>
                     </div>
                 </div>
             </div>
