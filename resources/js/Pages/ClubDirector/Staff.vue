@@ -25,7 +25,6 @@ import {
     fetchClubClasses,
     updateStaffAssignedClass,
     linkStaffToClubUser,
-    fetchTempStaffPathfinder,
     createTempStaffPathfinder
 } from '@/Services/api'
 import axios from 'axios'
@@ -74,6 +73,7 @@ const selectedStaffIds = ref(new Set())
 const activeTab = ref('active')
 const activeStaffTab = ref('active')
 const clubUserIds = ref(new Set())
+const tempStaffModalVisible = ref(false)
 
 // ✅ Create staff eligibility map
 const createStaffMap = computed(() => {
@@ -84,58 +84,24 @@ const createStaffMap = computed(() => {
     return map
 })
 
-// ✅ Filtered lists
-const userClubId = computed(() => user.value?.club_id || null)
-
 const filteredUsers = computed(() =>
     sub_roles.value.filter(user => {
         if (activeTab.value === 'pending') return false
         if (activeTab.value === 'parents') return false
         const targetStatus = activeTab.value === 'active' ? 'active' : 'deleted'
         if (user.profile_type === 'parent') return false
-        return user.status === targetStatus && (!userClubId.value || String(user.club_id) === String(userClubId.value))
+        return user.status === targetStatus
     })
 )
 
 const filteredPendingUsers = computed(() =>
-    pendingUsers.value.filter(u => !userClubId.value || String(u.club_id) === String(userClubId.value))
+    pendingUsers.value
 )
 const filteredPendingStaff = computed(() =>
-    pendingStaff.value.filter(u => !userClubId.value || String(u.club_id) === String(userClubId.value))
+    pendingStaff.value
 )
 
-const displayedStaff = computed(() => {
-    if (selectedClub.value?.club_type === 'pathfinders') {
-        const baseStaff = staff.value.filter(p => p.type !== 'temp_pathfinder')
-        const tempMapped = tempStaff.value.map(ts => {
-            const staffRecord = staff.value.find(s =>
-                s.type === 'temp_pathfinder' &&
-                (String(s.id_data) === String(ts.id) || (s.user_id && s.user_id === ts.user_id))
-            )
-            const staffId = staffRecord?.id ?? null
-            return {
-                id: staffId ?? `temp-${ts.id}`,
-                staff_id: staffId ?? null,
-                name: ts.staff_name,
-                dob: ts.staff_dob,
-                staff_dob: ts.staff_dob,
-                type: 'temp_pathfinder',
-                address: ts.address || '—',
-                cell_phone: ts.staff_phone,
-                email: ts.staff_email,
-                status: staffRecord?.status ?? 'active',
-                assigned_classes: staffRecord?.assigned_classes ?? [],
-                class_names: staffRecord?.class_names ?? [],
-                assigned_class: staffRecord?.assigned_class ?? null,
-                club_id: ts.club_id,
-                user_id: staffRecord?.user_id ?? ts.user_id ?? null,
-                id_data: ts.id,
-            }
-        })
-        return [...baseStaff, ...tempMapped]
-    }
-    return staff.value
-})
+const displayedStaff = computed(() => staff.value)
 
 const filteredStaff = computed(() =>
     displayedStaff.value.filter(person => person.status === activeStaffTab.value)
@@ -156,7 +122,6 @@ const classDisplay = (person) => {
 }
 
 const dobDisplay = (person) => {
-    console.log(person);
     if (person.dob) return String(person.dob).slice(0, 10)
     if (person.staff_dob) return String(person.staff_dob).slice(0, 10)
     return '—'
@@ -241,11 +206,7 @@ const fetchStaff = async (clubId, churchId = null) => {
                 if (match) assignedClassChanges.value[person.id] = match.id
             }
         })
-        if (selectedClub.value?.club_type === 'pathfinders') {
-            await loadTempStaff(clubId)
-        } else {
-            tempStaff.value = []
-        }
+        tempStaff.value = []
         showToast('Personal cargado')
     } catch (error) {
         console.error('Failed to fetch staff:', error)
@@ -280,8 +241,22 @@ const saveAssignedClass = async (person) => {
 
 // ✅ Modals
 const openStaffForm = (user) => {
+    if (!selectedClub.value) {
+        showToast('Selecciona un club primero', 'error')
+        return
+    }
     selectedUserForStaff.value = user
     selectedUserForStaff.value.club_name = club_name.value
+    if (['pathfinders', 'temp_pathfinder'].includes(selectedClub.value?.club_type)) {
+        tempStaffForm.value.club_id = selectedClub.value.id
+        tempStaffForm.value.staff_email = user?.email || ''
+        tempStaffForm.value.staff_name = user?.name || ''
+        tempStaffForm.value.staff_dob = ''
+        tempStaffForm.value.staff_age = ''
+        tempStaffForm.value.staff_phone = ''
+        tempStaffModalVisible.value = true
+        return
+    }
     createStaffModalVisible.value = true
 }
 
@@ -431,6 +406,9 @@ const closeModal = () => {
     createStaffModalVisible.value = false
     staffToEdit.value = null
 }
+const closeTempStaffModal = () => {
+    tempStaffModalVisible.value = false
+}
 const approvePendingStaff = async (staffRow) => {
     try {
         await approveStaff(staffRow.id)
@@ -453,15 +431,6 @@ const rejectPendingStaff = async (staffRow) => {
     }
 }
 
-const loadTempStaff = async (clubId) => {
-    try {
-        tempStaff.value = await fetchTempStaffPathfinder(clubId)
-    } catch (err) {
-        console.error('Failed to load temp staff', err)
-        tempStaff.value = []
-    }
-}
-
 const saveTempStaff = async () => {
     try {
         tempStaffForm.value.club_id = selectedClub.value?.id || ''
@@ -470,8 +439,7 @@ const saveTempStaff = async () => {
             return
         }
         await createTempStaffPathfinder(tempStaffForm.value)
-        showToast('Personal temporal guardado', 'success')
-        await loadTempStaff(tempStaffForm.value.club_id)
+        showToast('Perfil de staff creado', 'success')
         tempStaffForm.value = {
             club_id: selectedClub.value?.id || '',
             staff_name: '',
@@ -480,11 +448,10 @@ const saveTempStaff = async () => {
             staff_email: '',
             staff_phone: '',
         }
-        // Refresh entire staff view to reflect new temp staff everywhere
         await fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
         console.error('Failed to save temp staff', err)
-        showToast('No se pudo guardar el personal temporal', 'error')
+        showToast('No se pudo crear el perfil de staff', 'error')
     }
 }
 
@@ -527,19 +494,20 @@ watch(
                         {{ club.club_name }} ({{ club.club_type }})
                     </option>
                 </select><br><br>
-                <button v-if="selectedClub && selectedClub.club_type === 'adventurers'"
-                    class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700" @click="openStaffForm(user)">
-                    Crear personal</button>
-                <p v-else-if="selectedClub" class="text-sm text-gray-600">
-                    El modulo de personal solo esta disponible para clubes de Aventureros.
-                </p>
-
             </div>
             <div v-else-if="selectedClub" class="mb-6 rounded border bg-white px-4 py-3 text-sm text-gray-700">
                 Club activo: <strong>{{ selectedClub.club_name }}</strong>
             </div>
             <div v-else-if="isSuperadmin" class="mb-6 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 Selecciona un club desde el selector global del superadmin para administrar el personal.
+            </div>
+            <div v-if="selectedClub" class="mb-6 flex items-center gap-3">
+                <button
+                    class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                    @click="openStaffForm(user)"
+                >
+                    Crear personal
+                </button>
             </div>
 
             <div v-if="selectedClub" class="max-w-5xl mx-auto">
@@ -650,7 +618,7 @@ watch(
 
                                 <!-- Download Word Form -->
                                 <button
-                                    v-if="person.type !== 'temp_pathfinder'"
+                                    v-if="person.type !== 'pathfinders'"
                                     @click="downloadWord(person.id)"
                                     class="text-blue-600"
                                     title="Descargar formulario Word">
@@ -667,7 +635,7 @@ watch(
                                         <ArrowPathIcon class="w-4 h-4 inline" />
                                     </button>
                                     <button
-                                        v-if="person.type !== 'temp_pathfinder'"
+                                        v-if="person.type !== 'pathfinders'"
                                         class="text-indigo-600 hover:underline"
                                         @click="openEditStaffModal(person)">
                                         <PencilIcon class="w-4 h-4 inline" />
@@ -849,6 +817,7 @@ watch(
                                 <tr>
                                     <th class="p-2 text-left">Nombre</th>
                                     <th class="p-2 text-left">Email</th>
+                                    <th class="p-2 text-left">Club</th>
                                     <th class="p-2 text-left">Rol</th>
                                     <th class="p-2 text-left">Subrol</th>
                                     <th class="p-2 text-left">Iglesia</th>
@@ -860,6 +829,7 @@ watch(
                                 <tr v-for="user in filteredUsers" :key="user.id" class="border-t">
                                     <td class="p-2 text-xs">{{ user.name }}</td>
                                     <td class="p-2 text-xs">{{ user.email }}</td>
+                                    <td class="p-2 text-xs">{{ user.club_name || user.club_id || '—' }}</td>
                                     <td class="p-2 text-xs">{{ user.profile_type }}</td>
 
 
@@ -888,7 +858,7 @@ watch(
                                                     <TrashIcon class="w-4 h-4 inline" />
                                                 </button>
 
-                                            <button v-if="createStaffMap[user.id] && selectedClub?.club_type === 'adventurers'"
+                                            <button v-if="createStaffMap[user.id]"
                                                 class="text-green-600 hover:underline" @click="openStaffForm(user)"
                                                 title="Agregar usuario como personal">
                                                 <UserPlusIcon class="w-5 h-5 text-green-600" />
@@ -950,6 +920,49 @@ watch(
         <CreateStaffModal :show="createStaffModalVisible" :user="selectedUserForStaff" :club="selectedClub"
             :club-classes="clubClasses" :editing-staff="staffToEdit" @close="closeModal"
             @submitted="fetchStaff(selectedClub.id)" />
+
+        <div v-if="tempStaffModalVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div class="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+                <div class="mb-4 flex items-center justify-between">
+                    <h2 class="text-lg font-bold">Crear perfil de staff</h2>
+                    <button @click="closeTempStaffModal" class="text-xl font-bold text-red-500 hover:text-red-700">
+                        &times;
+                    </button>
+                </div>
+                <form @submit.prevent="saveTempStaff" class="space-y-4">
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-gray-700">Nombre</label>
+                        <input v-model="tempStaffForm.staff_name" type="text" class="w-full rounded border p-2" required />
+                    </div>
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-700">Fecha de nacimiento</label>
+                            <input v-model="tempStaffForm.staff_dob" type="date" class="w-full rounded border p-2" />
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-700">Edad</label>
+                            <input v-model="tempStaffForm.staff_age" type="number" min="0" class="w-full rounded border p-2" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-gray-700">Email</label>
+                        <input v-model="tempStaffForm.staff_email" type="email" class="w-full rounded border p-2" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-gray-700">Teléfono</label>
+                        <input v-model="tempStaffForm.staff_phone" type="text" class="w-full rounded border p-2" />
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="closeTempStaffModal" class="rounded border px-4 py-2 text-gray-700">
+                            Cancelar
+                        </button>
+                        <button type="submit" class="rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700">
+                            Guardar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
     </PathfinderLayout>
 </template>

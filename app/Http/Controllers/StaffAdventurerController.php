@@ -15,7 +15,7 @@ use App\Models\ClassMemberAdventurer; // Import the ClassMemberAdventurer model
 use App\Models\MemberAdventurer; // Import the MemberAdventurer model
 use App\Models\Staff;
 use App\Models\Club;
-use App\Models\TempStaffPathfinder;
+use App\Models\StaffPathfinder;
 use Illuminate\Support\Facades\DB as FacadesDB;
 
 use Auth;
@@ -338,6 +338,7 @@ class StaffAdventurerController extends Controller
         $user = Auth::user();
         $club = ClubHelper::clubForUser($user, $clubId);
         $clubId = (int) $club->id;
+        $churchId = (int) ($club->church_id ?? $churchId ?? 0);
 
         $staffActive = Staff::query()
             ->where('club_id', $clubId)
@@ -346,23 +347,33 @@ class StaffAdventurerController extends Controller
             ->get()
             ->map(function ($s) {
                 $displayName = $s->user?->name;
-                if ($s->type === 'temp_pathfinder') {
-                    $tmp = \App\Models\TempStaffPathfinder::where('staff_id', $s->id)
-                        ->orWhere('user_id', $s->user_id)
+                $pathfinderStaff = null;
+                if (in_array($s->type, ['temp_pathfinder', 'pathfinders'], true)) {
+                    $pathfinderStaff = StaffPathfinder::query()
+                        ->where(function ($query) use ($s) {
+                            $query->where('staff_id', $s->id);
+                            if ($s->user_id) {
+                                $query->orWhere('user_id', $s->user_id);
+                            }
+                        })
                         ->first();
-                    $displayName = $tmp?->staff_name ?? $displayName;
+                    $displayName = $pathfinderStaff?->staff_name ?? $displayName;
                 }
                 return [
                     'id' => $s->id,
-                    'type' => $s->type,
+                    'type' => in_array($s->type, ['temp_pathfinder', 'pathfinders'], true) ? 'pathfinders' : $s->type,
                     'name' => $displayName,
-                    'email' => $s->user?->email,
+                    'email' => $pathfinderStaff?->staff_email ?? $s->user?->email,
                     'club_id' => $s->club_id,
                     'status' => $s->status,
                     'class_names' => $s->classes->pluck('class_name')->values(),
                     'user_id' => $s->user_id,
+                    'create_user' => empty($s->user_id),
                     'id_data' => $s->id_data,
                     'assigned_class' => $s->assigned_class,
+                    'staff_dob' => $pathfinderStaff?->staff_dob,
+                    'staff_age' => $pathfinderStaff?->staff_age,
+                    'cell_phone' => $pathfinderStaff?->staff_phone,
                 ];
             });
 
@@ -384,31 +395,52 @@ class StaffAdventurerController extends Controller
 
         $clubUserIds = FacadesDB::table('club_user')->where('club_id', $clubId)->pluck('user_id')->toArray();
 
-        $subRoleUsers = User::when($churchId, function ($query) use ($churchId) {
-            return $query->where('church_id', $churchId);
-        }, function ($query) use ($clubId) {
-            return $query->where('club_id', $clubId);
-        })
+        $subRoleUsers = User::query()
+            ->with([
+                'club:id,club_name',
+                'clubs:id,club_name',
+            ])
+            ->where('church_id', $churchId)
+            ->where(function ($query) use ($clubId, $clubUserIds, $club) {
+                $query->where('club_id', $clubId)
+                    ->orWhereIn('id', $clubUserIds);
+
+                if (!empty($club->user_id)) {
+                    $query->orWhere('id', (int) $club->user_id);
+                }
+            })
             ->get()
-            ->map(function ($u) use ($clubId) {
-                $existsByName = StaffAdventurer::whereRaw('LOWER(name) = ?', [strtolower($u->name)])
+            ->map(function ($u) use ($clubId, $churchId) {
+                $staffExists = Staff::query()
                     ->where('club_id', $clubId)
+                    ->whereHas('club', fn ($query) => $query->where('church_id', $churchId))
+                    ->where(function ($query) use ($u) {
+                        $query->where('user_id', $u->id);
+
+                        if (!empty($u->email)) {
+                            $query->orWhereHas('user', fn ($userQuery) => $userQuery->where('email', $u->email));
+                        }
+                    })
                     ->exists();
 
-                $existsByEmail = StaffAdventurer::where('email', $u->email)
-                    ->where('club_id', $clubId)
-                    ->exists();
-
-                $u->create_staff = !($existsByName || $existsByEmail);
+                $u->create_staff = !$staffExists;
+                $u->club_names = $u->clubs
+                    ->pluck('club_name')
+                    ->when($u->club?->club_name, fn ($names) => $names->prepend($u->club->club_name))
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $u->club_name = $u->club_names->join(', ');
 
                 return $u;
             });
 
-        $pendingUsers = User::where('club_id', $clubId)
+        $pendingUsers = User::where('church_id', $churchId)
+            ->where('club_id', $clubId)
             ->where('status', 'pending')
             ->get(['id', 'name', 'email', 'profile_type', 'church_id', 'club_id', 'status']);
 
-        $tempStaff = TempStaffPathfinder::where('club_id', $clubId)
+        $tempStaff = StaffPathfinder::where('club_id', $clubId)
             ->get(['id', 'club_id', 'user_id', 'staff_name', 'staff_dob', 'staff_age', 'staff_email', 'staff_phone']);
 
         return response()->json([
@@ -617,8 +649,8 @@ class StaffAdventurerController extends Controller
             $staffModel->save();
             $user = $staffModel->user_id ? User::find($staffModel->user_id) : null;
             // If this is a temp pathfinder staff, try to fetch its temp row
-            if ($staffModel->type === 'temp_pathfinder') {
-                $tempRow = \App\Models\TempStaffPathfinder::where('staff_id', $staffModel->id)
+            if (in_array($staffModel->type, ['temp_pathfinder', 'pathfinders'], true)) {
+                $tempRow = StaffPathfinder::where('staff_id', $staffModel->id)
                     ->orWhere('user_id', $staffModel->user_id)
                     ->first();
             }
@@ -633,9 +665,8 @@ class StaffAdventurerController extends Controller
                 ->update(['status' => $newStatus]);
         }
 
-        // For temp pathfinder staff, remove the temp entry when deactivated
-        if ($newStatus === 'deleted' && $tempRow) {
-            $tempRow->delete();
+        if ($tempRow) {
+            $tempRow->touch();
         }
 
         return response()->json([

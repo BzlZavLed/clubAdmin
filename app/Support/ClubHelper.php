@@ -8,7 +8,7 @@ use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
 use App\Models\StaffAdventurer;
-use App\Models\TempStaffPathfinder;
+use App\Models\StaffPathfinder;
 use Illuminate\Support\Collection;
 
 class ClubHelper
@@ -355,11 +355,11 @@ class ClubHelper
             ];
         }
 
-        if ($type === 'temp_pathfinder' && $idData) {
-            $row = TempStaffPathfinder::query()->find($idData);
+        if (in_array($type, ['temp_pathfinder', 'pathfinders'], true) && $idData) {
+            $row = StaffPathfinder::query()->find($idData);
             return [
                 'staff_id' => $staff->id,
-                'type' => $type,
+                'type' => 'pathfinders',
                 'id_data' => $idData,
                 'name' => $row?->staff_name ?? $fallbackName,
             ];
