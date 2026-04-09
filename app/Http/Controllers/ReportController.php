@@ -776,7 +776,27 @@ class ReportController extends Controller
         }
     }
 
-    public function financialReportPrint(Request $request)
+    public function financialReportPdf(Request $request)
+    {
+        $payload = $this->buildFinancialLedgerPdfPayload($request);
+
+        $pdf = Pdf::loadView('reports.financial_ledger_print', [
+            'club' => $payload['club'],
+            'accounts' => $payload['accounts'],
+            'receipts' => $payload['receipts'],
+            'filters' => $payload['filters'],
+            'generatedAt' => $payload['generatedAt'],
+        ])->setPaper('a4', 'landscape');
+
+        $filename = 'financial-ledger-club-' . $payload['club']->id . '-' . now()->format('Ymd-His') . '.pdf';
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
+    }
+
+    protected function buildFinancialLedgerPdfPayload(Request $request): array
     {
         $user = $request->user();
         $club = $this->resolveClubForUser($user, $request->input('club_id'));
@@ -803,7 +823,6 @@ class ReportController extends Controller
         }
 
         $report = $this->buildFinancialAccountLedgerData($club, $validated, true);
-        $accounts = $report['accounts'];
         $concept = null;
         if (!empty($validated['concept_id'])) {
             $concept = PaymentConcept::query()
@@ -812,9 +831,9 @@ class ReportController extends Controller
                 ->first(['id', 'concept']);
         }
 
-        return view('reports.financial_ledger_print', [
+        return [
             'club' => $club,
-            'accounts' => $accounts,
+            'accounts' => $report['accounts'],
             'receipts' => $report['receipts'],
             'filters' => [
                 'pay_to' => $payTo,
@@ -824,16 +843,13 @@ class ReportController extends Controller
                 'date' => $validated['date'] ?? null,
             ],
             'generatedAt' => now(),
-        ]);
+        ];
     }
 
     protected function buildFinancialAccountLedgerData(Club $club, array $filters = [], bool $includeReceipts = false): array
     {
         $payTo = $filters['pay_to'] ?? null;
         $conceptId = $filters['concept_id'] ?? null;
-        $paymentReceiptCounter = 1;
-        $expenseReceiptCounter = 1;
-        $reimbursementReceiptCounter = 1;
         $receiptAnnexes = collect();
 
         $paymentsQ = Payment::query()
@@ -902,7 +918,7 @@ class ReportController extends Controller
             $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
             $receiptRef = null;
             if ($includeReceipts && !empty($p->check_image_path)) {
-                $receiptRef = 'P' . $paymentReceiptCounter++;
+                $receiptRef = $this->receiptReference('payment', $p->id);
                 $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $p->check_image_path, $p->id, 'Payment'));
             }
             $entriesByAccount[$key][] = [
@@ -923,12 +939,12 @@ class ReportController extends Controller
             $key = $e->pay_to ?? 'unassigned';
             $receiptRefs = [];
             if ($includeReceipts && !empty($e->receipt_path)) {
-                $receiptRef = 'R' . $expenseReceiptCounter++;
+                $receiptRef = $this->receiptReference('expense', $e->id);
                 $receiptRefs[] = $receiptRef;
                 $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $e->receipt_path, $e->id, 'Expense'));
             }
             if ($includeReceipts && !empty($e->reimbursement_receipt_path)) {
-                $reimbursementRef = 'RR' . $reimbursementReceiptCounter++;
+                $reimbursementRef = $this->receiptReference('reimbursement', $e->id);
                 $receiptRefs[] = $reimbursementRef;
                 $receiptAnnexes->push($this->buildReceiptAnnex($reimbursementRef, $e->reimbursement_receipt_path, $e->id, 'Reimbursement'));
             }
@@ -992,6 +1008,16 @@ class ReportController extends Controller
             'data_uri' => $dataUri,
             'filename' => basename($path),
         ];
+    }
+
+    protected function receiptReference(string $kind, int|string $id): string
+    {
+        return match ($kind) {
+            'payment' => 'PAY-' . $id,
+            'expense' => 'EXP-' . $id,
+            'reimbursement' => 'REIMB-' . $id,
+            default => strtoupper($kind) . '-' . $id,
+        };
     }
 
     protected function attachPaymentPayerNames(Collection $rows): Collection
@@ -1134,7 +1160,6 @@ class ReportController extends Controller
         });
 
         // Detailed payment rows for income table
-        $paymentReceiptCounter = 1;
         $payments = Payment::query()
             ->where('payments.club_id', $club->id)
             ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
@@ -1160,11 +1185,11 @@ class ReportController extends Controller
                 'acc.label as account_label',
                 'payment_concepts.concept as concept_name',
             ])
-            ->map(function ($p) use ($payToLabelMap, &$paymentReceiptCounter) {
+            ->map(function ($p) use ($payToLabelMap) {
                 $ref = null;
                 $url = null;
                 if ($p->check_image_path) {
-                    $ref = 'P' . $paymentReceiptCounter++;
+                    $ref = $this->receiptReference('payment', $p->id);
                     $url = $this->toPublicUrl($p->check_image_path);
                 }
                 return [
@@ -1193,16 +1218,14 @@ class ReportController extends Controller
             ->values();
 
         // Assign receipt references and map to DTOs
-        $expenseReceiptCounter = 1;
-        $reimburseReceiptCounter = 1;
-        $expenseRows = $expenses->map(function ($e) use ($payToLabelMap, &$expenseReceiptCounter, &$reimburseReceiptCounter) {
+        $expenseRows = $expenses->map(function ($e) use ($payToLabelMap) {
             $ref = null;
             if ($e->receipt_path) {
-                $ref = 'R' . $expenseReceiptCounter++;
+                $ref = $this->receiptReference('expense', $e->id);
             }
             $reimburseRef = null;
             if ($e->reimbursement_receipt_path) {
-                $reimburseRef = 'RR' . $reimburseReceiptCounter++;
+                $reimburseRef = $this->receiptReference('reimbursement', $e->id);
             }
             return [
                 'id' => $e->id,

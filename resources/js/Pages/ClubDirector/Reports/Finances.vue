@@ -79,14 +79,14 @@ const setDefaultPayTo = () => {
     selectedPayTo.value = 'all'
 }
 
-const printUrl = computed(() => {
+const pdfUrl = computed(() => {
     const params = {}
     if (selectedClubId.value) params.club_id = selectedClubId.value
     if (selectedConceptId.value) params.concept_id = selectedConceptId.value
     if (dateFrom.value) params.date_from = dateFrom.value
     if (dateTo.value) params.date_to = dateTo.value
     if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
-    return route('financial.report.print', params)
+    return route('financial.report.pdf', params)
 })
 
 // For scope filters: only show class list when scope_type === 'class'
@@ -379,9 +379,9 @@ watch(selectedClubId, async (id, old) => {
                 </div>
 
                 <div class="mt-5 flex justify-end gap-3">
-                    <a :href="printUrl" target="_blank" rel="noopener noreferrer"
+                    <a :href="pdfUrl" target="_blank" rel="noopener noreferrer"
                         class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        Imprimir reporte
+                        Abrir PDF
                     </a>
                     <button @click="fetchReport" :disabled="loading"
                         class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
