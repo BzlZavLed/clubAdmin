@@ -562,111 +562,7 @@ class ReportController extends Controller
             }
 
             case 'account': {
-                $conceptId = $validated['concept_id'] ?? null;
-
-                $paymentsQ = Payment::query()
-                    ->where('club_id', $club->id)
-                    ->with([
-                        'member:id,type,id_data',
-                        'staff:id,type,id_data,user_id',
-                        'staff.user:id,name',
-                        'concept:id,concept,amount',
-                        'account:id,club_id,pay_to,label',
-                        'receivedBy:id,name',
-                    ]);
-
-                if ($payTo) {
-                    $paymentsQ->where('pay_to', $payTo);
-                }
-                if ($conceptId) {
-                    $paymentsQ->where('payment_concept_id', $conceptId);
-                }
-
-                if (!empty($validated['date_from']) || !empty($validated['date_to'])) {
-                    $from = $validated['date_from'] ?? '1900-01-01';
-                    $to = $validated['date_to'] ?? '2999-12-31';
-                    $paymentsQ->whereBetween('payment_date', [$from, $to]);
-                } elseif (!empty($validated['date'])) {
-                    $paymentsQ->whereDate('payment_date', $validated['date']);
-                }
-
-                $payments = $this->attachPaymentPayerNames($paymentsQ->get());
-
-                $expensesQ = Expense::query()
-                    ->where('club_id', $club->id);
-
-                if ($payTo) {
-                    $expensesQ->where('pay_to', $payTo);
-                }
-                if (!empty($validated['date_from']) || !empty($validated['date_to'])) {
-                    $from = $validated['date_from'] ?? '1900-01-01';
-                    $to = $validated['date_to'] ?? '2999-12-31';
-                    $expensesQ->whereBetween('expense_date', [$from, $to]);
-                } elseif (!empty($validated['date'])) {
-                    $expensesQ->whereDate('expense_date', $validated['date']);
-                }
-
-                $expenses = $expensesQ->get([
-                    'id',
-                    'pay_to',
-                    'amount',
-                    'expense_date',
-                    'description',
-                    'status',
-                    'reimbursed_to',
-                ]);
-
-                $accountLabels = Account::query()
-                    ->where('club_id', $club->id)
-                    ->get(['pay_to', 'label'])
-                    ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
-                    ->all();
-
-                $entriesByAccount = [];
-
-                foreach ($payments as $p) {
-                    $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
-                    $entriesByAccount[$key][] = [
-                        'entry_type' => 'payment',
-                        'id' => $p->id,
-                        'date' => $p->payment_date,
-                        'amount' => (float) $p->amount_paid,
-                        'payment_type' => $p->payment_type,
-                        'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
-                        'member' => $p->member?->applicant_name ?? null,
-                        'staff' => $p->staff?->name ?? null,
-                    ];
-                }
-
-                foreach ($expenses as $e) {
-                    $key = $e->pay_to ?? 'unassigned';
-                    $entriesByAccount[$key][] = [
-                        'entry_type' => 'expense',
-                        'id' => $e->id,
-                        'date' => $e->expense_date,
-                        'amount' => (float) $e->amount,
-                        'payment_type' => null,
-                        'concept' => $e->description ?? '—',
-                        'member' => null,
-                        'staff' => $e->reimbursed_to,
-                    ];
-                }
-
-                $accountsReport = collect($entriesByAccount)->map(function ($entries, $payToKey) use ($accountLabels) {
-                    usort($entries, fn($a, $b) => strcmp($a['date'], $b['date']));
-                    $paid = array_sum(array_map(fn($e) => $e['entry_type'] === 'payment' ? $e['amount'] : 0, $entries));
-                    $spent = array_sum(array_map(fn($e) => $e['entry_type'] === 'expense' ? $e['amount'] : 0, $entries));
-                    return [
-                        'pay_to' => $payToKey,
-                        'label' => $accountLabels[$payToKey] ?? ($payToKey === 'unassigned' ? 'Cuenta sin asignar' : $payToKey),
-                        'totals' => [
-                            'paid' => $paid,
-                            'spent' => $spent,
-                            'net' => $paid - $spent,
-                        ],
-                        'entries' => $entries,
-                    ];
-                })->values();
+                $accountsReport = $this->buildFinancialAccountLedger($club, $validated);
 
                 return response()->json([
                     'data' => [
@@ -878,6 +774,172 @@ class ReportController extends Controller
             default:
                 return response()->json(['message' => 'Mode not implemented yet'], 400);
         }
+    }
+
+    public function financialReportPrint(Request $request)
+    {
+        $user = $request->user();
+        $club = $this->resolveClubForUser($user, $request->input('club_id'));
+        $clubId = $club->id;
+
+        $validated = $request->validate([
+            'concept_id' => ['nullable', 'integer', Rule::exists('payment_concepts', 'id')->where(fn($q) => $q->where('club_id', $clubId))],
+            'date' => ['nullable', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'pay_to' => ['nullable', 'string', 'max:255'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+        ]);
+
+        $payTo = $validated['pay_to'] ?? null;
+        if ($payTo) {
+            $exists = Account::query()
+                ->where('club_id', $club->id)
+                ->where('pay_to', $payTo)
+                ->exists();
+            if (!$exists) {
+                abort(422, 'Cuenta invalida.');
+            }
+        }
+
+        $accounts = $this->buildFinancialAccountLedger($club, $validated);
+        $concept = null;
+        if (!empty($validated['concept_id'])) {
+            $concept = PaymentConcept::query()
+                ->where('club_id', $club->id)
+                ->where('id', $validated['concept_id'])
+                ->first(['id', 'concept']);
+        }
+
+        return view('reports.financial_ledger_print', [
+            'club' => $club,
+            'accounts' => $accounts,
+            'filters' => [
+                'pay_to' => $payTo,
+                'concept' => $concept,
+                'date_from' => $validated['date_from'] ?? null,
+                'date_to' => $validated['date_to'] ?? null,
+                'date' => $validated['date'] ?? null,
+            ],
+            'generatedAt' => now(),
+        ]);
+    }
+
+    protected function buildFinancialAccountLedger(Club $club, array $filters = []): Collection
+    {
+        $payTo = $filters['pay_to'] ?? null;
+        $conceptId = $filters['concept_id'] ?? null;
+
+        $paymentsQ = Payment::query()
+            ->where('club_id', $club->id)
+            ->with([
+                'member:id,type,id_data',
+                'staff:id,type,id_data,user_id',
+                'staff.user:id,name',
+                'concept:id,concept,amount',
+                'account:id,club_id,pay_to,label',
+                'receivedBy:id,name',
+            ]);
+
+        if ($payTo) {
+            $paymentsQ->where('pay_to', $payTo);
+        }
+        if ($conceptId) {
+            $paymentsQ->where('payment_concept_id', $conceptId);
+        }
+
+        if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
+            $from = $filters['date_from'] ?? '1900-01-01';
+            $to = $filters['date_to'] ?? '2999-12-31';
+            $paymentsQ->whereBetween('payment_date', [$from, $to]);
+        } elseif (!empty($filters['date'])) {
+            $paymentsQ->whereDate('payment_date', $filters['date']);
+        }
+
+        $payments = $this->attachPaymentPayerNames($paymentsQ->get());
+
+        $expensesQ = Expense::query()
+            ->where('club_id', $club->id);
+
+        if ($payTo) {
+            $expensesQ->where('pay_to', $payTo);
+        }
+        if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
+            $from = $filters['date_from'] ?? '1900-01-01';
+            $to = $filters['date_to'] ?? '2999-12-31';
+            $expensesQ->whereBetween('expense_date', [$from, $to]);
+        } elseif (!empty($filters['date'])) {
+            $expensesQ->whereDate('expense_date', $filters['date']);
+        }
+
+        $expenses = $expensesQ->get([
+            'id',
+            'pay_to',
+            'amount',
+            'expense_date',
+            'description',
+            'status',
+            'reimbursed_to',
+        ]);
+
+        $accountLabels = Account::query()
+            ->where('club_id', $club->id)
+            ->get(['pay_to', 'label'])
+            ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
+            ->all();
+
+        $entriesByAccount = [];
+
+        foreach ($payments as $p) {
+            $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
+            $entriesByAccount[$key][] = [
+                'entry_type' => 'payment',
+                'id' => $p->id,
+                'date' => $p->payment_date,
+                'amount' => (float) $p->amount_paid,
+                'payment_type' => $p->payment_type,
+                'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
+                'member' => $p->member?->applicant_name ?? null,
+                'staff' => $p->staff?->name ?? null,
+            ];
+        }
+
+        foreach ($expenses as $e) {
+            $key = $e->pay_to ?? 'unassigned';
+            $entriesByAccount[$key][] = [
+                'entry_type' => 'expense',
+                'id' => $e->id,
+                'date' => $e->expense_date,
+                'amount' => (float) $e->amount,
+                'payment_type' => null,
+                'concept' => $e->description ?? '—',
+                'member' => null,
+                'staff' => $e->reimbursed_to,
+            ];
+        }
+
+        return collect($entriesByAccount)
+            ->map(function ($entries, $payToKey) use ($accountLabels) {
+                usort($entries, function ($a, $b) {
+                    return [$a['date'], $a['id'], $a['entry_type']] <=> [$b['date'], $b['id'], $b['entry_type']];
+                });
+
+                $paid = array_sum(array_map(fn($e) => $e['entry_type'] === 'payment' ? $e['amount'] : 0, $entries));
+                $spent = array_sum(array_map(fn($e) => $e['entry_type'] === 'expense' ? $e['amount'] : 0, $entries));
+
+                return [
+                    'pay_to' => $payToKey,
+                    'label' => $accountLabels[$payToKey] ?? ($payToKey === 'unassigned' ? 'Cuenta sin asignar' : $payToKey),
+                    'totals' => [
+                        'paid' => $paid,
+                        'spent' => $spent,
+                        'net' => $paid - $spent,
+                    ],
+                    'entries' => array_values($entries),
+                ];
+            })
+            ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
     }
 
     protected function attachPaymentPayerNames(Collection $rows): Collection

@@ -9,7 +9,7 @@ import { useAuth } from '@/Composables/useAuth'
 // ─────────────────────────────────────
 // UI / Filter state
 // ─────────────────────────────────────
-const mode = ref('account') // 'concept' | 'account'
+const mode = ref('account')
 
 const selectedConceptId = ref(null)
 const selectedScopeType = ref(null)  // 'club_wide' | 'class' | 'member' | 'staff' | 'staff_wide'
@@ -78,6 +78,16 @@ const conceptScopeLabel = computed(() => {
 const setDefaultPayTo = () => {
     selectedPayTo.value = 'all'
 }
+
+const printUrl = computed(() => {
+    const params = {}
+    if (selectedClubId.value) params.club_id = selectedClubId.value
+    if (selectedConceptId.value) params.concept_id = selectedConceptId.value
+    if (dateFrom.value) params.date_from = dateFrom.value
+    if (dateTo.value) params.date_to = dateTo.value
+    if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
+    return route('financial.report.print', params)
+})
 
 // For scope filters: only show class list when scope_type === 'class'
 const activeScopeOptions = computed(() => {
@@ -206,23 +216,13 @@ const fetchReport = async () => {
     }
 
     try {
-        let params = {}
-
-        if (selectedConceptId.value) {
-            mode.value = 'concept'
-            params = { mode: 'concept', concept_id: selectedConceptId.value }
-            if (dateFrom.value) params.date_from = dateFrom.value
-            if (dateTo.value) params.date_to = dateTo.value
-            if (selectedClubId.value) params.club_id = selectedClubId.value
-            if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
-        } else {
-            mode.value = 'account'
-            params = { mode: 'account' }
-            if (dateFrom.value) params.date_from = dateFrom.value
-            if (dateTo.value) params.date_to = dateTo.value
-            if (selectedClubId.value) params.club_id = selectedClubId.value
-            if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
-        }
+        mode.value = 'account'
+        const params = { mode: 'account' }
+        if (selectedConceptId.value) params.concept_id = selectedConceptId.value
+        if (dateFrom.value) params.date_from = dateFrom.value
+        if (dateTo.value) params.date_to = dateTo.value
+        if (selectedClubId.value) params.club_id = selectedClubId.value
+        if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
 
         const { data } = await axios.get(route('financial.report'), { params })
 
@@ -340,7 +340,7 @@ watch(selectedClubId, async (id, old) => {
             <section class="rounded-2xl border border-gray-200 p-4 shadow-sm">
                 <h2 class="text-base font-semibold text-gray-900">Opciones de filtro</h2>
                 <p class="mt-0.5 text-sm text-gray-600">
-                    Puedes generar el reporte solo por cuenta, solo por concepto, o combinando ambos.
+                    El reporte muestra movimientos por cuenta. Puedes filtrar por cuenta, concepto y rango de fechas, y luego imprimir exactamente esa seleccion.
                 </p>
 
                 <div v-if="loadError" class="mt-2 text-sm text-red-600">{{ loadError }}</div>
@@ -378,7 +378,11 @@ watch(selectedClubId, async (id, old) => {
                     </div>
                 </div>
 
-                <div class="mt-5 flex justify-end">
+                <div class="mt-5 flex justify-end gap-3">
+                    <a :href="printUrl" target="_blank" rel="noopener noreferrer"
+                        class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Imprimir reporte
+                    </a>
                     <button @click="fetchReport" :disabled="loading"
                         class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
                         <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />

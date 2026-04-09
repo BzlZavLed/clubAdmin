@@ -433,6 +433,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/assistance-reports/filter', [ReportController::class, 'assistanceReportsDirector'])->name('assistance-reports.director');
     Route::get('/financial-report/bootstrap', [ReportController::class, 'financialReportPreload'])->name('financial.preload');
     Route::get('/financial-report/report', [ReportController::class, 'financialReport'])->name('financial.report');
+    Route::get('/financial-report/print', [ReportController::class, 'financialReportPrint'])->name('financial.report.print');
     Route::get('/financial-report/accounts', [ReportController::class, 'financialAccountBalances'])->name('financial.accounts');
     Route::get('/financial-report/accounts/pdf', [ReportController::class, 'financialAccountBalancesPdf'])->name('financial.accounts.pdf');
 
