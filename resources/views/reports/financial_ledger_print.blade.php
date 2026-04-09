@@ -38,7 +38,7 @@
         }
 
         .account-block + .account-block {
-            page-break-before: auto;
+            page-break-before: always;
         }
 
         .account-head {
@@ -178,6 +178,11 @@
             .account-block {
                 break-inside: auto;
                 page-break-inside: auto;
+            }
+
+            .account-block + .account-block {
+                break-before: page;
+                page-break-before: always;
             }
 
             table {

@@ -440,6 +440,9 @@ watch(selectedClubId, async (id, old) => {
                             <div v-if="acc.pay_to === 'reimbursement_to'" class="mt-1 text-xs text-gray-600">
                                 <span class="font-medium text-gray-700">Miembro/Personal:</span> {{ e.member ?? e.staff ?? '—' }}
                             </div>
+                            <div v-if="e.receipt_ref" class="mt-1 text-xs text-gray-600">
+                                <span class="font-medium text-gray-700">Ref:</span> {{ e.receipt_ref }}
+                            </div>
                             <div class="mt-2 text-sm">
                                 <span v-if="e.entry_type === 'expense'" class="font-semibold text-amber-700">-{{ fmtMoney(e.amount) }}</span>
                                 <span v-else class="font-semibold text-emerald-700">{{ fmtMoney(e.amount) }}</span>
@@ -479,6 +482,7 @@ watch(selectedClubId, async (id, old) => {
                                     <th class="px-4 py-2 text-left font-semibold">Tipo</th>
                                     <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
                                     <th class="px-4 py-2 text-left font-semibold">Concepto</th>
+                                    <th class="px-4 py-2 text-left font-semibold">Ref.</th>
                                     <th class="px-4 py-2 text-right font-semibold">Cargos</th>
                                     <th class="px-4 py-2 text-right font-semibold">Abonos</th>
                                 </tr>
@@ -496,6 +500,7 @@ watch(selectedClubId, async (id, old) => {
                                     </td>
                                     <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ e.member ?? e.staff ?? '—' }}</td>
                                     <td class="px-4 py-2">{{ e.concept }}</td>
+                                    <td class="px-4 py-2">{{ e.receipt_ref ?? '—' }}</td>
                                     <td class="px-4 py-2 text-right">
                                         <span v-if="e.entry_type === 'expense'" class="text-amber-700">-{{ fmtMoney(e.amount) }}</span>
                                         <span v-else class="text-gray-400">—</span>
@@ -508,12 +513,12 @@ watch(selectedClubId, async (id, old) => {
                             </tbody>
                             <tfoot>
                                 <tr class="border-t bg-gray-50 font-semibold">
-                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 4 : 3">Totales</td>
+                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 5 : 4">Totales</td>
                                     <td class="px-4 py-2 text-right text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</td>
                                     <td class="px-4 py-2 text-right text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</td>
                                 </tr>
                                 <tr class="border-t bg-white font-semibold">
-                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 4 : 3">Saldo de la cuenta</td>
+                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 5 : 4">Saldo de la cuenta</td>
                                     <td class="px-4 py-2 text-right" :colspan="2">{{ fmtMoney(acc.totals.net) }}</td>
                                 </tr>
                             </tfoot>

@@ -916,9 +916,10 @@ class ReportController extends Controller
 
         foreach ($payments as $p) {
             $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
-            $receiptRef = null;
-            if ($includeReceipts && !empty($p->check_image_path)) {
-                $receiptRef = $this->receiptReference('payment', $p->id);
+            $receiptRef = !empty($p->check_image_path)
+                ? $this->receiptReference('payment', $p->id)
+                : null;
+            if ($includeReceipts && $receiptRef) {
                 $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $p->check_image_path, $p->id, 'Payment'));
             }
             $entriesByAccount[$key][] = [
@@ -938,15 +939,19 @@ class ReportController extends Controller
         foreach ($expenses as $e) {
             $key = $e->pay_to ?? 'unassigned';
             $receiptRefs = [];
-            if ($includeReceipts && !empty($e->receipt_path)) {
+            if (!empty($e->receipt_path)) {
                 $receiptRef = $this->receiptReference('expense', $e->id);
                 $receiptRefs[] = $receiptRef;
-                $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $e->receipt_path, $e->id, 'Expense'));
+                if ($includeReceipts) {
+                    $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $e->receipt_path, $e->id, 'Expense'));
+                }
             }
-            if ($includeReceipts && !empty($e->reimbursement_receipt_path)) {
+            if (!empty($e->reimbursement_receipt_path)) {
                 $reimbursementRef = $this->receiptReference('reimbursement', $e->id);
                 $receiptRefs[] = $reimbursementRef;
-                $receiptAnnexes->push($this->buildReceiptAnnex($reimbursementRef, $e->reimbursement_receipt_path, $e->id, 'Reimbursement'));
+                if ($includeReceipts) {
+                    $receiptAnnexes->push($this->buildReceiptAnnex($reimbursementRef, $e->reimbursement_receipt_path, $e->id, 'Reimbursement'));
+                }
             }
             $entriesByAccount[$key][] = [
                 'entry_type' => 'expense',
