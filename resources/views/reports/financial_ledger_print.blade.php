@@ -124,19 +124,41 @@
 
         .appendix-page {
             page-break-before: always;
+            min-height: 100vh;
+        }
+
+        .appendix-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: calc(100vh - 40px);
+        }
+
+        .appendix-item {
+            border: 1px solid #d1d5db;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            min-height: 0;
+            flex: 1 1 0;
+            overflow: hidden;
         }
 
         .appendix-image-wrap {
-            margin-top: 12px;
+            margin-top: 8px;
             text-align: center;
+            flex: 1 1 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 0;
         }
 
         .appendix-image {
             max-width: 100%;
-            max-height: 720px;
+            max-height: 100%;
             object-fit: contain;
-            border: 1px solid #d1d5db;
-            padding: 6px;
         }
 
         @media screen {
@@ -169,6 +191,23 @@
 
             tfoot {
                 display: table-row-group;
+            }
+
+            .appendix-page {
+                min-height: auto;
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            .appendix-grid {
+                min-height: 250mm;
+                gap: 8mm;
+            }
+
+            .appendix-item {
+                height: 121mm;
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
         }
     </style>
@@ -264,23 +303,29 @@
         @endforelse
 
         @if(!empty($receipts) && count($receipts))
-            @foreach($receipts as $receipt)
+            @foreach(collect($receipts)->chunk(2) as $receiptPage)
                 <section class="appendix-page">
-                    <p class="title" style="font-size: 18px;">Apéndice {{ $receipt['ref'] ?? '' }}</p>
-                    <p class="subtitle">
-                        {{ $receipt['source'] ?? 'Movimiento' }} ID: {{ $receipt['record_id'] ?? '' }}
-                        @if(!empty($receipt['filename']))
-                            | Archivo: {{ $receipt['filename'] }}
-                        @endif
-                    </p>
+                    <div class="appendix-grid">
+                        @foreach($receiptPage as $receipt)
+                            <article class="appendix-item">
+                                <p class="title" style="font-size: 18px; margin-bottom: 4px;">Apéndice {{ $receipt['ref'] ?? '' }}</p>
+                                <p class="subtitle">
+                                    {{ $receipt['source'] ?? 'Movimiento' }} ID: {{ $receipt['record_id'] ?? '' }}
+                                    @if(!empty($receipt['filename']))
+                                        | Archivo: {{ $receipt['filename'] }}
+                                    @endif
+                                </p>
 
-                    @if(!empty($receipt['data_uri']))
-                        <div class="appendix-image-wrap">
-                            <img src="{{ $receipt['data_uri'] }}" alt="Receipt {{ $receipt['ref'] ?? '' }}" class="appendix-image" />
-                        </div>
-                    @else
-                        <div class="empty-state">La imagen del recibo no esta disponible.</div>
-                    @endif
+                                @if(!empty($receipt['data_uri']))
+                                    <div class="appendix-image-wrap">
+                                        <img src="{{ $receipt['data_uri'] }}" alt="Receipt {{ $receipt['ref'] ?? '' }}" class="appendix-image" />
+                                    </div>
+                                @else
+                                    <div class="empty-state">La imagen del recibo no esta disponible.</div>
+                                @endif
+                            </article>
+                        @endforeach
+                    </div>
                 </section>
             @endforeach
         @endif
