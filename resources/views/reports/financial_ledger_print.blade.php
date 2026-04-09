@@ -85,6 +85,22 @@
             text-align: left;
         }
 
+        .entry-row-income td {
+            background: #f0fdf4;
+        }
+
+        .entry-row-expense td {
+            background: #fffbeb;
+        }
+
+        .entry-row-income td:first-child {
+            border-left: 4px solid #10b981;
+        }
+
+        .entry-row-expense td:first-child {
+            border-left: 4px solid #f59e0b;
+        }
+
         .text-right {
             text-align: right;
         }
@@ -265,7 +281,7 @@
                     </thead>
                     <tbody>
                         @foreach(($acc['entries'] ?? []) as $entry)
-                            <tr>
+                            <tr class="{{ $entry['entry_type'] === 'payment' ? 'entry-row-income' : 'entry-row-expense' }}">
                                 <td>{{ \Illuminate\Support\Carbon::parse($entry['date'])->format('m-d-Y') }}</td>
                                 <td>{{ $entry['entry_type'] === 'payment' ? 'Ingreso' : 'Gasto' }}</td>
                                 <td>{{ $entry['member'] ?? $entry['staff'] ?? '—' }}</td>
