@@ -35,7 +35,10 @@
 
         .account-block {
             margin-top: 18px;
-            page-break-inside: avoid;
+        }
+
+        .account-block + .account-block {
+            page-break-before: auto;
         }
 
         .account-head {
@@ -129,6 +132,26 @@
                 background: #fff;
                 padding: 24px;
                 box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+            }
+        }
+
+        @media print {
+            .account-block {
+                break-inside: auto;
+                page-break-inside: auto;
+            }
+
+            table {
+                break-inside: auto;
+                page-break-inside: auto;
+            }
+
+            thead {
+                display: table-header-group;
+            }
+
+            tfoot {
+                display: table-row-group;
             }
         }
     </style>
