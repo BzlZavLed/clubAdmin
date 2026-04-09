@@ -562,7 +562,7 @@ class ReportController extends Controller
             }
 
             case 'account': {
-                $accountsReport = $this->buildFinancialAccountLedger($club, $validated);
+                $accountsReport = $this->buildFinancialAccountLedgerData($club, $validated)['accounts'];
 
                 return response()->json([
                     'data' => [
@@ -802,7 +802,8 @@ class ReportController extends Controller
             }
         }
 
-        $accounts = $this->buildFinancialAccountLedger($club, $validated);
+        $report = $this->buildFinancialAccountLedgerData($club, $validated, true);
+        $accounts = $report['accounts'];
         $concept = null;
         if (!empty($validated['concept_id'])) {
             $concept = PaymentConcept::query()
@@ -814,6 +815,7 @@ class ReportController extends Controller
         return view('reports.financial_ledger_print', [
             'club' => $club,
             'accounts' => $accounts,
+            'receipts' => $report['receipts'],
             'filters' => [
                 'pay_to' => $payTo,
                 'concept' => $concept,
@@ -825,10 +827,14 @@ class ReportController extends Controller
         ]);
     }
 
-    protected function buildFinancialAccountLedger(Club $club, array $filters = []): Collection
+    protected function buildFinancialAccountLedgerData(Club $club, array $filters = [], bool $includeReceipts = false): array
     {
         $payTo = $filters['pay_to'] ?? null;
         $conceptId = $filters['concept_id'] ?? null;
+        $paymentReceiptCounter = 1;
+        $expenseReceiptCounter = 1;
+        $reimbursementReceiptCounter = 1;
+        $receiptAnnexes = collect();
 
         $paymentsQ = Payment::query()
             ->where('club_id', $club->id)
@@ -880,6 +886,8 @@ class ReportController extends Controller
             'description',
             'status',
             'reimbursed_to',
+            'receipt_path',
+            'reimbursement_receipt_path',
         ]);
 
         $accountLabels = Account::query()
@@ -892,6 +900,11 @@ class ReportController extends Controller
 
         foreach ($payments as $p) {
             $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
+            $receiptRef = null;
+            if ($includeReceipts && !empty($p->check_image_path)) {
+                $receiptRef = 'P' . $paymentReceiptCounter++;
+                $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $p->check_image_path, $p->id, 'Payment'));
+            }
             $entriesByAccount[$key][] = [
                 'entry_type' => 'payment',
                 'id' => $p->id,
@@ -901,11 +914,24 @@ class ReportController extends Controller
                 'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
                 'member' => $p->member?->applicant_name ?? null,
                 'staff' => $p->staff?->name ?? null,
+                'receipt_ref' => $receiptRef,
+                'receipt_refs' => $receiptRef ? [$receiptRef] : [],
             ];
         }
 
         foreach ($expenses as $e) {
             $key = $e->pay_to ?? 'unassigned';
+            $receiptRefs = [];
+            if ($includeReceipts && !empty($e->receipt_path)) {
+                $receiptRef = 'R' . $expenseReceiptCounter++;
+                $receiptRefs[] = $receiptRef;
+                $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $e->receipt_path, $e->id, 'Expense'));
+            }
+            if ($includeReceipts && !empty($e->reimbursement_receipt_path)) {
+                $reimbursementRef = 'RR' . $reimbursementReceiptCounter++;
+                $receiptRefs[] = $reimbursementRef;
+                $receiptAnnexes->push($this->buildReceiptAnnex($reimbursementRef, $e->reimbursement_receipt_path, $e->id, 'Reimbursement'));
+            }
             $entriesByAccount[$key][] = [
                 'entry_type' => 'expense',
                 'id' => $e->id,
@@ -915,10 +941,12 @@ class ReportController extends Controller
                 'concept' => $e->description ?? '—',
                 'member' => null,
                 'staff' => $e->reimbursed_to,
+                'receipt_ref' => count($receiptRefs) ? implode(', ', $receiptRefs) : null,
+                'receipt_refs' => $receiptRefs,
             ];
         }
 
-        return collect($entriesByAccount)
+        $accounts = collect($entriesByAccount)
             ->map(function ($entries, $payToKey) use ($accountLabels) {
                 usort($entries, function ($a, $b) {
                     return [$a['date'], $a['id'], $a['entry_type']] <=> [$b['date'], $b['id'], $b['entry_type']];
@@ -940,6 +968,30 @@ class ReportController extends Controller
             })
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
+
+        return [
+            'accounts' => $accounts,
+            'receipts' => $receiptAnnexes->values(),
+        ];
+    }
+
+    protected function buildReceiptAnnex(string $ref, string $path, int $id, string $labelPrefix): array
+    {
+        $fullPath = storage_path('app/public/' . ltrim($path, '/'));
+        $dataUri = null;
+        if (file_exists($fullPath)) {
+            $mime = mime_content_type($fullPath) ?: 'image/jpeg';
+            $data = base64_encode(file_get_contents($fullPath));
+            $dataUri = "data:$mime;base64,$data";
+        }
+
+        return [
+            'ref' => $ref,
+            'source' => $labelPrefix,
+            'record_id' => $id,
+            'data_uri' => $dataUri,
+            'filename' => basename($path),
+        ];
     }
 
     protected function attachPaymentPayerNames(Collection $rows): Collection

@@ -122,6 +122,23 @@
             background: #f9fafb;
         }
 
+        .appendix-page {
+            page-break-before: always;
+        }
+
+        .appendix-image-wrap {
+            margin-top: 12px;
+            text-align: center;
+        }
+
+        .appendix-image {
+            max-width: 100%;
+            max-height: 720px;
+            object-fit: contain;
+            border: 1px solid #d1d5db;
+            padding: 6px;
+        }
+
         @media screen {
             body {
                 padding: 24px;
@@ -197,6 +214,7 @@
                             <th style="width: 10%">Tipo</th>
                             <th style="width: 16%">Miembro / Personal</th>
                             <th>Concepto</th>
+                            <th style="width: 10%" class="text-center">Ref.</th>
                             <th style="width: 12%" class="text-right">Gastos</th>
                             <th style="width: 12%" class="text-right">Ingresos</th>
                         </tr>
@@ -208,6 +226,7 @@
                                 <td>{{ $entry['entry_type'] === 'payment' ? 'Ingreso' : 'Gasto' }}</td>
                                 <td>{{ $entry['member'] ?? $entry['staff'] ?? '—' }}</td>
                                 <td>{{ $entry['concept'] ?? '—' }}</td>
+                                <td class="text-center">{{ $entry['receipt_ref'] ?? '—' }}</td>
                                 <td class="text-right">
                                     @if($entry['entry_type'] === 'expense')
                                         <span class="expense">-${{ number_format($entry['amount'] ?? 0, 2) }}</span>
@@ -227,12 +246,12 @@
                     </tbody>
                     <tfoot>
                         <tr class="totals-row">
-                            <td colspan="4">Totales</td>
+                            <td colspan="5">Totales</td>
                             <td class="text-right expense">-${{ number_format($acc['totals']['spent'] ?? 0, 2) }}</td>
                             <td class="text-right income">${{ number_format($acc['totals']['paid'] ?? 0, 2) }}</td>
                         </tr>
                         <tr class="balance-row">
-                            <td colspan="4">Saldo final</td>
+                            <td colspan="5">Saldo final</td>
                             <td colspan="2" class="text-right">${{ number_format($acc['totals']['net'] ?? 0, 2) }}</td>
                         </tr>
                     </tfoot>
@@ -243,6 +262,28 @@
                 No se encontraron movimientos para los filtros seleccionados.
             </div>
         @endforelse
+
+        @if(!empty($receipts) && count($receipts))
+            @foreach($receipts as $receipt)
+                <section class="appendix-page">
+                    <p class="title" style="font-size: 18px;">Apéndice {{ $receipt['ref'] ?? '' }}</p>
+                    <p class="subtitle">
+                        {{ $receipt['source'] ?? 'Movimiento' }} ID: {{ $receipt['record_id'] ?? '' }}
+                        @if(!empty($receipt['filename']))
+                            | Archivo: {{ $receipt['filename'] }}
+                        @endif
+                    </p>
+
+                    @if(!empty($receipt['data_uri']))
+                        <div class="appendix-image-wrap">
+                            <img src="{{ $receipt['data_uri'] }}" alt="Receipt {{ $receipt['ref'] ?? '' }}" class="appendix-image" />
+                        </div>
+                    @else
+                        <div class="empty-state">La imagen del recibo no esta disponible.</div>
+                    @endif
+                </section>
+            @endforeach
+        @endif
     </div>
 
     <script>
