@@ -5,17 +5,32 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Church;
 use App\Models\ChurchInviteCode;
+use App\Models\District;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
+
 class ChurchController extends Controller
 {
+    public function manage()
+    {
+        return Inertia::render('Church/ChurchForm', [
+            'districts' => District::query()
+                ->with('association.union:id,name')
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(['id', 'association_id', 'name', 'status']),
+        ]);
+    }
+
     private function listWithInviteCodes()
     {
-        return Church::with('inviteCode')
+        return Church::with(['inviteCode', 'district.association.union'])
             ->orderBy('church_name')
             ->get()
             ->map(function ($church) {
                 return [
                     'id' => $church->id,
+                    'district_id' => $church->district_id,
                     'church_name' => $church->church_name,
                     'email' => $church->email,
                     'phone_number' => $church->phone_number,
@@ -24,6 +39,9 @@ class ChurchController extends Controller
                     'ethnicity' => $church->ethnicity,
                     'pastor_name' => $church->pastor_name,
                     'pastor_email' => $church->pastor_email,
+                    'district_name' => $church->district?->name,
+                    'association_name' => $church->district?->association?->name,
+                    'union_name' => $church->district?->association?->union?->name,
                     'invite_code' => $church->inviteCode?->code,
                     'invite_status' => $church->inviteCode?->status,
                     'invite_uses_left' => $church->inviteCode?->uses_left,
@@ -51,6 +69,7 @@ class ChurchController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'district_id' => 'nullable|exists:districts,id',
             'church_name' => 'required|string|max:255',
             'address' => 'nullable|string',
             'ethnicity' => 'nullable|string',
@@ -100,6 +119,7 @@ class ChurchController extends Controller
         $church = Church::findOrFail($id);
 
         $validated = $request->validate([
+            'district_id' => 'nullable|exists:districts,id',
             'church_name' => 'required|string|max:255',
             'address' => 'nullable|string',
             'ethnicity' => 'nullable|string',

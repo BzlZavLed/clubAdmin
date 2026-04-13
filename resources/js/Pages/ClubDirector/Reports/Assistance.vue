@@ -45,7 +45,7 @@ const { toast, showToast } = useGeneral();
 const reports = ref([]);
 const page = usePage();
 const superadminContext = computed(() => page.props.auth?.superadmin_context ?? null);
-const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin');
+const canSelectClub = computed(() => (clubs.value?.length ?? 0) > 1);
 
 const onClubChange = async () => {
     if (selectedClub.value) {
@@ -315,7 +315,7 @@ onMounted(() => {
             <!-- Form Container -->
             <div class="grid gap-6 sm:grid-cols-2 md:grid-cols-3">
                 <!-- Select Club -->
-                <div v-if="isSuperadmin" class="col-span-full sm:col-span-1">
+                <div v-if="canSelectClub" class="col-span-full sm:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-1"
                         >Selecciona un club</label
                     >

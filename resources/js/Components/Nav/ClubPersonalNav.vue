@@ -18,7 +18,7 @@ import {
 } from '@heroicons/vue/24/outline'
 
 const { showToast } = useGeneral()
-const { locale, setLocale, tr } = useLocale()
+const { tr } = useLocale()
 const page = usePage()
 const showDropdown = ref(false)
 
@@ -51,18 +51,6 @@ watch(
 
 <template>
     <nav class="flex-1 px-2 py-4 space-y-1">
-        <div v-if="!isCollapsed" class="mb-2 px-3">
-            <label class="block text-[11px] font-semibold text-gray-500 mb-1">{{ tr('Idioma', 'Language') }}</label>
-            <select
-                :value="locale"
-                @change="setLocale($event.target.value)"
-                class="w-full rounded border border-gray-300 px-2 py-1 text-xs text-gray-700"
-            >
-                <option value="es">Español</option>
-                <option value="en">English</option>
-            </select>
-        </div>
-
         <!-- Main menu items -->
         <Link v-for="item in menuItems" :key="item.name" :href="item.href"
             class="flex items-center space-x-2 px-3 py-2 rounded hover:bg-gray-100"

@@ -37,7 +37,7 @@ const scopeTypes = ref([])   // catalog: [{ value, label }]
 const payTo = ref([])        // catalog: [{ value, label }]
 const loadError = ref(null)
 const { user } = useAuth()
-const canSelectClub = computed(() => user.value?.profile_type === 'superadmin')
+const canSelectClub = computed(() => (clubs.value?.length ?? 0) > 1)
 
 // ─────────────────────────────────────
 /** Helpers */

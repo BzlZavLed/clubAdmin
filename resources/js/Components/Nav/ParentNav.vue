@@ -1,5 +1,6 @@
 <script setup>
 import { Link, usePage } from '@inertiajs/vue3'
+import { useLocale } from '@/Composables/useLocale'
 import {
     HomeIcon,
     UserGroupIcon,
@@ -10,10 +11,12 @@ defineProps({
     isCollapsed: Boolean,
 })
 
+const { tr } = useLocale()
+
 const menuItems = [
-    { name: 'Panel', href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
-    { name: 'Solicitud', href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
-    { name: 'Hijos', href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
+    { name: tr('Panel', 'Dashboard'), href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
+    { name: tr('Solicitud', 'Application'), href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
+    { name: tr('Hijos', 'Children'), href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
 ]
 </script>
 

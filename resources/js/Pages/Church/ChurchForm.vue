@@ -5,6 +5,15 @@
         <div class="p-4 max-w-lg mx-auto">
             <form @submit.prevent="submitChurch">
                 <div class="mb-4">
+                    <label class="block mb-1">Distrito</label>
+                    <select v-model="form.district_id" class="border p-2 w-full">
+                        <option value="">Sin distrito</option>
+                        <option v-for="district in districts" :key="district.id" :value="district.id">
+                            {{ districtLabel(district) }}
+                        </option>
+                    </select>
+                </div>
+                <div class="mb-4">
                     <label class="block mb-1">Nombre de la iglesia *</label>
                     <input v-model="form.church_name" type="text" class="border p-2 w-full" required />
                 </div>
@@ -52,19 +61,21 @@
                     <thead class="bg-gray-50 text-gray-700">
                         <tr>
                             <th class="text-left px-4 py-2">Nombre</th>
+                            <th class="text-left px-4 py-2">Distrito</th>
+                            <th class="text-left px-4 py-2">Asociación</th>
+                            <th class="text-left px-4 py-2">Unión</th>
                             <th class="text-left px-4 py-2">Correo</th>
                             <th class="text-left px-4 py-2">Teléfono</th>
-                            <th class="text-left px-4 py-2">Conferencia</th>
                             <th class="text-left px-4 py-2">Código de invitación</th>
                             <th class="text-right px-4 py-2">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="loadingChurches">
-                            <td colspan="6" class="px-4 py-3 text-gray-500">Cargando iglesias...</td>
+                            <td colspan="9" class="px-4 py-3 text-gray-500">Cargando iglesias...</td>
                         </tr>
                         <tr v-else-if="churches.length === 0">
-                            <td colspan="6" class="px-4 py-3 text-gray-500">No se encontraron iglesias.</td>
+                            <td colspan="9" class="px-4 py-3 text-gray-500">No se encontraron iglesias.</td>
                         </tr>
                         <tr v-for="church in churches" :key="church.id" class="border-t">
                             <td class="px-4 py-2">
@@ -72,6 +83,17 @@
                                     class="border p-1 w-full" />
                                 <span v-else>{{ church.church_name }}</span>
                             </td>
+                            <td class="px-4 py-2">
+                                <select v-if="editingId === church.id" v-model="editForm.district_id" class="border p-1 w-full">
+                                    <option value="">Sin distrito</option>
+                                    <option v-for="district in districts" :key="district.id" :value="district.id">
+                                        {{ districtLabel(district) }}
+                                    </option>
+                                </select>
+                                <span v-else>{{ church.district_name || '-' }}</span>
+                            </td>
+                            <td class="px-4 py-2">{{ church.association_name || '-' }}</td>
+                            <td class="px-4 py-2">{{ church.union_name || '-' }}</td>
                             <td class="px-4 py-2">
                                 <input v-if="editingId === church.id" v-model="editForm.email" type="email"
                                     class="border p-1 w-full" />
@@ -81,11 +103,6 @@
                                 <input v-if="editingId === church.id" v-model="editForm.phone_number" type="text"
                                     class="border p-1 w-full" />
                                 <span v-else>{{ church.phone_number || '-' }}</span>
-                            </td>
-                            <td class="px-4 py-2">
-                                <input v-if="editingId === church.id" v-model="editForm.conference" type="text"
-                                    class="border p-1 w-full" />
-                                <span v-else>{{ church.conference || '-' }}</span>
                             </td>
                             <td class="px-4 py-2">
                                 <span v-if="church.invite_code" class="font-mono text-xs">
@@ -131,8 +148,10 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user ?? null)
 const isSuperAdmin = computed(() => currentUser.value?.profile_type === 'superadmin')
+const districts = computed(() => page.props.districts ?? [])
 
 const form = reactive({
+    district_id: '',
     church_name: '',
     address: '',
     ethnicity: '',
@@ -147,6 +166,7 @@ const churches = ref([])
 const loadingChurches = ref(false)
 const editingId = ref(null)
 const editForm = reactive({
+    district_id: '',
     church_name: '',
     email: '',
     phone_number: '',
@@ -156,6 +176,16 @@ const editForm = reactive({
     pastor_name: '',
     pastor_email: ''
 })
+
+const districtLabel = (district) => {
+    const parts = [
+        district.name,
+        district.association?.name,
+        district.association?.union?.name,
+    ].filter(Boolean)
+
+    return parts.join(' - ')
+}
 
 const fetchChurches = async () => {
     loadingChurches.value = true
@@ -172,10 +202,14 @@ const fetchChurches = async () => {
 
 const submitChurch = async () => {
     try {
-        await axios.post('/churches', form)
+        await axios.post('/churches', {
+            ...form,
+            district_id: form.district_id || null,
+        })
         alert('Iglesia creada correctamente.')
 
         // Reset form fields
+        form.district_id = ''
         form.church_name = ''
         form.address = ''
         form.ethnicity = ''
@@ -193,6 +227,7 @@ const submitChurch = async () => {
 
 const startEdit = (church) => {
     editingId.value = church.id
+    editForm.district_id = church.district_id || ''
     editForm.church_name = church.church_name || ''
     editForm.email = church.email || ''
     editForm.phone_number = church.phone_number || ''
@@ -210,6 +245,7 @@ const cancelEdit = () => {
 const saveEdit = async (churchId) => {
     try {
         await axios.put(`/churches/${churchId}`, {
+            district_id: editForm.district_id || null,
             church_name: editForm.church_name,
             email: editForm.email,
             phone_number: editForm.phone_number,

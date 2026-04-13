@@ -9,11 +9,19 @@ use App\Http\Middleware\RedirectIfAuthenticated;
 
 class EnsureProfileIs
 {
-    public function handle(Request $request, Closure $next, string $role): Response
+    public function handle(Request $request, Closure $next, string ...$roles): Response
     {
-        $profileType = $request->user()?->profile_type;
-        $isSuperadmin = $profileType === 'superadmin';
-        $hasRole = $profileType === $role;
+        $user = $request->user();
+        $profileType = $user?->profile_type;
+        $roleKey = $user?->role_key;
+        $allowedRoles = collect($roles)
+            ->flatMap(fn($value) => explode(',', $value))
+            ->map(fn($value) => trim($value))
+            ->filter()
+            ->values();
+
+        $isSuperadmin = $profileType === 'superadmin' || $roleKey === 'superadmin';
+        $hasRole = $allowedRoles->contains($profileType) || $allowedRoles->contains($roleKey);
 
         if (!$isSuperadmin && !$hasRole) {
             if ($request->expectsJson()) {

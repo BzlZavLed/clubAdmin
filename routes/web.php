@@ -41,6 +41,9 @@ use App\Http\Controllers\ClassInvestitureRequirementController;
 use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 use App\Http\Controllers\SuperAdminContextController;
 use App\Http\Controllers\PaymentReceiptController;
+use App\Http\Controllers\UnionController;
+use App\Http\Controllers\AssociationController;
+use App\Http\Controllers\DistrictController;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -73,6 +76,75 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('dashboard');
+});
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::post('/assistance-reports/filter', [ReportController::class, 'assistanceReportsDirector'])->name('assistance-reports.director');
+    Route::get('/financial-report/bootstrap', [ReportController::class, 'financialReportPreload'])->name('financial.preload');
+    Route::get('/financial-report/report', [ReportController::class, 'financialReport'])->name('financial.report');
+    Route::get('/financial-report/pdf', [ReportController::class, 'financialReportPdf'])->name('financial.report.pdf');
+    Route::get('/financial-report/accounts', [ReportController::class, 'financialAccountBalances'])->name('financial.accounts');
+    Route::get('/financial-report/accounts/pdf', [ReportController::class, 'financialAccountBalancesPdf'])->name('financial.accounts.pdf');
+});
+
+Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secretary'])->group(function () {
+    Route::get('/district/dashboard', fn() => Inertia::render('District/Dashboard', [
+        'auth_user' => auth()->user(),
+    ]))->name('district.dashboard');
+
+    Route::get('/district/reports/assistance', function () {
+        return Inertia::render('ClubDirector/Reports/Assistance', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('district.reports.assistance');
+
+    Route::get('/district/reports/finances', function () {
+        return Inertia::render('ClubDirector/Reports/Finances', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('district.reports.finances');
+});
+
+Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->group(function () {
+    Route::get('/association/dashboard', fn() => Inertia::render('Association/Dashboard', [
+        'auth_user' => auth()->user(),
+    ]))->name('association.dashboard');
+
+    Route::get('/association/reports/assistance', function () {
+        return Inertia::render('ClubDirector/Reports/Assistance', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('association.reports.assistance');
+
+    Route::get('/association/reports/finances', function () {
+        return Inertia::render('ClubDirector/Reports/Finances', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('association.reports.finances');
+});
+
+Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(function () {
+    Route::get('/union/dashboard', fn() => Inertia::render('Union/Dashboard', [
+        'auth_user' => auth()->user(),
+    ]))->name('union.dashboard');
+
+    Route::get('/union/reports/assistance', function () {
+        return Inertia::render('ClubDirector/Reports/Assistance', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('union.reports.assistance');
+
+    Route::get('/union/reports/finances', function () {
+        return Inertia::render('ClubDirector/Reports/Finances', [
+            'auth_user' => auth()->user(),
+            'sub_roles' => SubRole::all(),
+        ]);
+    })->name('union.reports.finances');
 });
 
 // ---------------------------------
@@ -156,7 +228,22 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
         ->name('superadmin.context.set');
     Route::get('/super-admin/ai-logs', [\App\Http\Controllers\SuperAdminAiLogController::class, 'index'])
         ->name('superadmin.ai-logs.index');
-    Route::get('/super-admin/churches/manage', fn() => Inertia::render('Church/ChurchForm'))->name('superadmin.churches.manage');
+    Route::get('/super-admin/churches/manage', [ChurchController::class, 'manage'])->name('superadmin.churches.manage');
+    Route::get('/super-admin/unions', [UnionController::class, 'index'])->name('superadmin.unions.manage');
+    Route::post('/super-admin/unions', [UnionController::class, 'store'])->name('superadmin.unions.store');
+    Route::put('/super-admin/unions/{union}', [UnionController::class, 'update'])->name('superadmin.unions.update');
+    Route::put('/super-admin/unions/{union}/deactivate', [UnionController::class, 'deactivate'])->name('superadmin.unions.deactivate');
+    Route::delete('/super-admin/unions/{union}', [UnionController::class, 'destroy'])->name('superadmin.unions.delete');
+    Route::get('/super-admin/associations', [AssociationController::class, 'index'])->name('superadmin.associations.manage');
+    Route::post('/super-admin/associations', [AssociationController::class, 'store'])->name('superadmin.associations.store');
+    Route::put('/super-admin/associations/{association}', [AssociationController::class, 'update'])->name('superadmin.associations.update');
+    Route::put('/super-admin/associations/{association}/deactivate', [AssociationController::class, 'deactivate'])->name('superadmin.associations.deactivate');
+    Route::delete('/super-admin/associations/{association}', [AssociationController::class, 'destroy'])->name('superadmin.associations.delete');
+    Route::get('/super-admin/districts', [DistrictController::class, 'index'])->name('superadmin.districts.manage');
+    Route::post('/super-admin/districts', [DistrictController::class, 'store'])->name('superadmin.districts.store');
+    Route::put('/super-admin/districts/{district}', [DistrictController::class, 'update'])->name('superadmin.districts.update');
+    Route::put('/super-admin/districts/{district}/deactivate', [DistrictController::class, 'deactivate'])->name('superadmin.districts.deactivate');
+    Route::delete('/super-admin/districts/{district}', [DistrictController::class, 'destroy'])->name('superadmin.districts.delete');
     Route::get('/super-admin/clubs', fn() => Inertia::render('SuperAdmin/Clubs', [
         'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
         'directors' => User::select('id', 'name', 'email', 'church_id', 'club_id')
@@ -176,9 +263,23 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::get('/super-admin/users', fn() => Inertia::render('SuperAdmin/Users', [
         'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
         'clubs' => Club::select('id', 'club_name', 'church_id')->orderBy('club_name')->get(),
+        'districts' => \App\Models\District::query()
+            ->with('association.union:id,name')
+            ->where('status', '!=', 'deleted')
+            ->orderBy('name')
+            ->get(['id', 'association_id', 'name', 'status']),
+        'associations' => \App\Models\Association::query()
+            ->with('union:id,name')
+            ->where('status', '!=', 'deleted')
+            ->orderBy('name')
+            ->get(['id', 'union_id', 'name', 'status']),
+        'unions' => \App\Models\Union::query()
+            ->where('status', '!=', 'deleted')
+            ->orderBy('name')
+            ->get(['id', 'name', 'status']),
         'subRoles' => SubRole::all(),
         'users' => User::query()
-            ->select('id', 'name', 'email', 'profile_type', 'sub_role', 'church_id', 'church_name', 'club_id', 'status')
+            ->select('id', 'name', 'email', 'profile_type', 'role_key', 'scope_type', 'scope_id', 'sub_role', 'church_id', 'church_name', 'club_id', 'status')
             ->where('status', '!=', 'deleted')
             ->orderBy('name')
             ->get(),
@@ -189,8 +290,8 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::delete('/super-admin/users/{user}', [RegisteredUserController::class, 'deleteBySuperadmin'])->name('superadmin.users.delete');
 
     Route::get('/churches', [ChurchController::class, 'index']);
-    Route::get('/churches/create', fn() => Inertia::render('Church/ChurchForm'))->name('churches.create');
-    Route::get('/church-form', fn() => Inertia::render('Church/ChurchForm'))->name('church.form');
+    Route::get('/churches/create', [ChurchController::class, 'manage'])->name('churches.create');
+    Route::get('/church-form', [ChurchController::class, 'manage'])->name('church.form');
     Route::post('/churches', [ChurchController::class, 'store']);
     Route::post('/churches/{church}/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'upsertForChurch'])->name('churches.invite-code');
     Route::put('/churches/{church}', [ChurchController::class, 'update']);
@@ -428,14 +529,6 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         $path = storage_path('app/templates/template_adventurer_new.docx');
         return file_exists($path) ? response()->download($path) : 'Template not found.';
     });
-
-    //Reports
-    Route::post('/assistance-reports/filter', [ReportController::class, 'assistanceReportsDirector'])->name('assistance-reports.director');
-    Route::get('/financial-report/bootstrap', [ReportController::class, 'financialReportPreload'])->name('financial.preload');
-    Route::get('/financial-report/report', [ReportController::class, 'financialReport'])->name('financial.report');
-    Route::get('/financial-report/pdf', [ReportController::class, 'financialReportPdf'])->name('financial.report.pdf');
-    Route::get('/financial-report/accounts', [ReportController::class, 'financialAccountBalances'])->name('financial.accounts');
-    Route::get('/financial-report/accounts/pdf', [ReportController::class, 'financialAccountBalancesPdf'])->name('financial.accounts.pdf');
 
 });
 

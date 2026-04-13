@@ -25,6 +25,24 @@ const menuItems = [
         icon: UsersIcon,
         children: [
             {
+                name: 'Uniones',
+                href: '/super-admin/unions',
+                route: 'superadmin.unions.manage',
+                icon: BuildingOffice2Icon
+            },
+            {
+                name: 'Conferencias / Asociaciones',
+                href: '/super-admin/associations',
+                route: 'superadmin.associations.manage',
+                icon: BuildingOffice2Icon
+            },
+            {
+                name: 'Distritos',
+                href: '/super-admin/districts',
+                route: 'superadmin.districts.manage',
+                icon: BuildingOffice2Icon
+            },
+            {
                 name: 'Iglesias',
                 href: '/super-admin/churches/manage',
                 route: 'superadmin.churches.manage',

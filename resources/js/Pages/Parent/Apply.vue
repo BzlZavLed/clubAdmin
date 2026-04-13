@@ -4,12 +4,13 @@ import { useForm, usePage, router } from '@inertiajs/vue3'
 import { formatPhoneNumber, forceLogout } from '@/Helpers/general'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 
 const page = usePage()
 const auth_user = ref(page.props.auth_user || {})
 const clubs = ref(page.props.clubs || [])
 const sameAsHomeAddress = ref(false)
-const lang = ref('en')
+const { locale } = useLocale()
 
 const showSuccess = ref(false)
 const selectedClubId = ref(null)
@@ -178,7 +179,7 @@ const labels = {
         pathfinderName: 'Nombre',
     }
 }
-const t = (key) => labels[lang.value]?.[key] || key
+const t = (key) => labels[locale.value]?.[key] || key
 </script>
 <template>
     <PathfinderLayout>
@@ -193,13 +194,6 @@ const t = (key) => labels[lang.value]?.[key] || key
             </div>
 
             <form @submit.prevent="submit" class="space-y-4 bg-white border rounded shadow-sm p-4 sm:p-6">
-                <div class="flex justify-end">
-                    <label class="text-sm text-gray-700 mr-2">Language / Idioma:</label>
-                    <select v-model="lang" class="border rounded p-1 text-sm">
-                        <option value="en">English</option>
-                        <option value="es">Español</option>
-                    </select>
-                </div>
                 <!-- Club Selection -->
                 <div>
                     <label>{{ t('clubName') }}</label>

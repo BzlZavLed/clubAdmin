@@ -5,6 +5,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useForm } from '@inertiajs/vue3'
 import { useGeneral } from '@/Composables/useGeneral'
 import { PencilIcon, EyeIcon } from '@heroicons/vue/24/outline'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     children: {
@@ -23,7 +24,7 @@ const linkable = ref([])
 const linking = ref(false)
 const linkSearchName = ref('')
 const manualSearchVisible = ref(false)
-const lang = ref('en')
+const { locale } = useLocale()
 
 const labels = {
     en: {
@@ -69,7 +70,7 @@ const labels = {
         signature: 'Firma',
     },
 }
-const t = (key) => labels[lang.value]?.[key] || key
+const t = (key) => labels[locale.value]?.[key] || key
 
 const form = useForm({
     member_type: 'adventurers',
@@ -201,13 +202,6 @@ const linkMember = async (candidate) => {
                     <div>
                         <h2 class="text-xl font-semibold text-gray-800">{{ t('title') }}</h2>
                         <p class="text-sm text-gray-600">View and update your children’s application data.</p>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <label class="text-sm text-gray-700">Language / Idioma:</label>
-                        <select v-model="lang" class="border rounded p-1 text-sm">
-                            <option value="en">English</option>
-                            <option value="es">Español</option>
-                        </select>
                     </div>
                 </div>
                 <div class="mt-3">

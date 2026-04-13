@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use App\Models\ChurchInviteCode;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Church extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
+        'district_id',
         'church_name',
         'address',
         'ethnicity',
@@ -21,6 +25,12 @@ class Church extends Model
     {
         return $this->hasMany(Club::class);
     }
+
+    public function district()
+    {
+        return $this->belongsTo(District::class);
+    }
+
     public function users()
     {
         return $this->hasMany(User::class);

@@ -26,10 +26,14 @@ class RedirectIfAuthenticated
     public static function redirectPath(): string
     {
         $user = Auth::user();
+        $role = $user?->role_key ?: $user?->profile_type;
 
-        return match ($user?->profile_type) {
+        return match ($role) {
             'club_director' => '/club-director/dashboard',
             'club_personal' => '/club-personal/dashboard',
+            'district_pastor', 'district_secretary' => '/district/dashboard',
+            'association_youth_director' => '/association/dashboard',
+            'union_youth_director' => '/union/dashboard',
             'conference_manager' => '/conference/dashboard',
             'regional_manager' => '/regional/dashboard',
             'union_manager' => '/union/dashboard',

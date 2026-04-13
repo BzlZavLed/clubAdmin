@@ -64,6 +64,9 @@ class HandleInertiaRequests extends Middleware
 
         $isSuperadmin = $user?->profile_type === 'superadmin';
         $availableClubs = $user ? ClubHelper::clubsForUser($user) : collect();
+        $availableChurches = $user ? ClubHelper::churchesForUser($user) : collect();
+        $scopeSummary = $user ? ClubHelper::scopeSummaryForUser($user) : null;
+        $hierarchyWidget = $user ? ClubHelper::hierarchyWidgetDataForUser($user) : null;
         $activeClub = $user ? ClubHelper::activeClubForUser($user) : null;
         $effectiveClubId = $activeClub?->id ?: ($isSuperadmin ? $request->session()->get('superadmin_context.club_id') : ($request->session()->get('club_context.club_id') ?: $user?->club_id));
         $effectiveChurchId = $activeClub?->church_id ?: ($isSuperadmin
@@ -90,6 +93,9 @@ class HandleInertiaRequests extends Middleware
                         'id' => $user->id,
                         'name' => $user->name,
                         'profile_type' => $user->profile_type,
+                        'role_key' => $user->role_key,
+                        'scope_type' => $user->scope_type,
+                        'scope_id' => $user->scope_id,
                         'sub_role' => $user->sub_role,
                         'church_id' => $effectiveChurchId ?: $user->church_id,
                         'church_name' => $effectiveChurch?->church_name ?: $user->church_name,
@@ -108,6 +114,16 @@ class HandleInertiaRequests extends Middleware
                             'church_id' => $club->church_id,
                             'church_name' => $club->church_name,
                         ]),
+                        'churches' => $availableChurches->map(fn($church) => [
+                            'id' => $church->id,
+                            'district_id' => $church->district_id,
+                            'church_name' => $church->church_name,
+                            'email' => $church->email,
+                        ]),
+                        'accessible_club_count' => $availableClubs->count(),
+                        'accessible_church_count' => $availableChurches->count(),
+                        'scope_summary' => $scopeSummary,
+                        'hierarchy_widget' => $hierarchyWidget,
                         'staff' => $staffRecord ? [
                             'id' => $staffRecord->id,
                             'club_id' => $staffRecord->club_id,

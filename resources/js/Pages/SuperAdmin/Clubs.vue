@@ -5,6 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue'
 import PrimaryButton from '@/Components/PrimaryButton.vue'
 import { router, useForm } from '@inertiajs/vue3'
 import { computed, ref } from 'vue'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     churches: { type: Array, default: () => [] },
@@ -13,6 +14,7 @@ const props = defineProps({
 })
 
 const editingClubId = ref(null)
+const { tr } = useLocale()
 
 const form = useForm({
     club_name: '',
@@ -73,7 +75,7 @@ const directorLabelById = (directorId) => {
 }
 
 const deactivateClub = (club) => {
-    if (!confirm(`Deactivate club "${club.club_name}"?`)) return
+    if (!confirm(tr(`Desactivar club "${club.club_name}"?`, `Deactivate club "${club.club_name}"?`))) return
     router.put(
         route('superadmin.clubs.deactivate', club.id),
         {},
@@ -85,7 +87,7 @@ const deactivateClub = (club) => {
 }
 
 const deleteClub = (club) => {
-    if (!confirm(`Delete club "${club.club_name}"? This will hide it from active lists.`)) return
+    if (!confirm(tr(`Eliminar club "${club.club_name}"? Esto lo ocultará de las listas activas.`, `Delete club "${club.club_name}"? This will hide it from active lists.`))) return
     router.delete(route('superadmin.clubs.delete', club.id), {
         preserveScroll: true,
         onSuccess: () => router.reload({ only: ['clubs'] }),
@@ -95,17 +97,17 @@ const deleteClub = (club) => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Superadmin: Clubs</template>
+        <template #title>{{ tr('Superadmin: Clubes', 'Superadmin: Clubs') }}</template>
 
         <div class="max-w-5xl mx-auto space-y-6">
             <div class="bg-white border rounded-lg p-6 space-y-4">
-                <h2 class="text-lg font-semibold">{{ isEditing ? 'Editar club' : 'Crear club' }}</h2>
+                <h2 class="text-lg font-semibold">{{ isEditing ? tr('Editar club', 'Edit club') : tr('Crear club', 'Create club') }}</h2>
 
                 <form @submit.prevent="submit" class="space-y-4">
                     <div>
-                        <InputLabel for="church_id" value="Iglesia" />
+                        <InputLabel for="church_id" :value="tr('Iglesia', 'Church')" />
                         <select id="church_id" v-model="form.church_id" class="mt-1 block w-full rounded-md border-gray-300" required>
-                            <option disabled value="">Selecciona una iglesia</option>
+                            <option disabled value="">{{ tr('Selecciona una iglesia', 'Select a church') }}</option>
                             <option v-for="church in props.churches" :key="church.id" :value="church.id">
                                 {{ church.church_name }}
                             </option>
@@ -114,9 +116,9 @@ const deleteClub = (club) => {
                     </div>
 
                     <div>
-                        <InputLabel for="director_user_id" value="Director (usuario)" />
+                        <InputLabel for="director_user_id" :value="tr('Director (usuario)', 'Director (user)')" />
                         <select id="director_user_id" v-model="form.director_user_id" class="mt-1 block w-full rounded-md border-gray-300" required>
-                            <option disabled value="">Selecciona un director</option>
+                            <option disabled value="">{{ tr('Selecciona un director', 'Select a director') }}</option>
                             <option v-for="director in props.directors" :key="director.id" :value="director.id">
                                 {{ director.name }} ({{ director.email }})
                             </option>
@@ -125,14 +127,14 @@ const deleteClub = (club) => {
                     </div>
 
                     <div>
-                        <InputLabel for="club_name" value="Nombre del club" />
+                        <InputLabel for="club_name" :value="tr('Nombre del club', 'Club name')" />
                         <input id="club_name" v-model="form.club_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" required />
                         <InputError class="mt-2" :message="form.errors.club_name" />
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <InputLabel for="club_type" value="Tipo" />
+                            <InputLabel for="club_type" :value="tr('Tipo', 'Type')" />
                             <select id="club_type" v-model="form.club_type" class="mt-1 block w-full rounded-md border-gray-300" required>
                                 <option value="adventurers">Adventurers</option>
                                 <option value="pathfinders">Pathfinders</option>
@@ -141,7 +143,7 @@ const deleteClub = (club) => {
                             <InputError class="mt-2" :message="form.errors.club_type" />
                         </div>
                         <div>
-                            <InputLabel for="creation_date" value="Fecha de creacion" />
+                            <InputLabel for="creation_date" :value="tr('Fecha de creacion', 'Creation date')" />
                             <input id="creation_date" v-model="form.creation_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
                             <InputError class="mt-2" :message="form.errors.creation_date" />
                         </div>
@@ -149,17 +151,17 @@ const deleteClub = (club) => {
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <InputLabel for="pastor_name" value="Pastor" />
+                            <InputLabel for="pastor_name" :value="tr('Pastor', 'Pastor')" />
                             <input id="pastor_name" v-model="form.pastor_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
                             <InputError class="mt-2" :message="form.errors.pastor_name" />
                         </div>
                         <div>
-                            <InputLabel for="conference_name" value="Conferencia" />
+                            <InputLabel for="conference_name" :value="tr('Conferencia', 'Conference')" />
                             <input id="conference_name" v-model="form.conference_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
                             <InputError class="mt-2" :message="form.errors.conference_name" />
                         </div>
                         <div>
-                            <InputLabel for="conference_region" value="Region" />
+                            <InputLabel for="conference_region" :value="tr('Region', 'Region')" />
                             <input id="conference_region" v-model="form.conference_region" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
                             <InputError class="mt-2" :message="form.errors.conference_region" />
                         </div>
@@ -167,43 +169,43 @@ const deleteClub = (club) => {
 
                     <div class="flex gap-2">
                         <PrimaryButton :disabled="form.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
-                            {{ isEditing ? 'Guardar cambios' : 'Crear club' }}
+                            {{ isEditing ? tr('Guardar cambios', 'Save changes') : tr('Crear club', 'Create club') }}
                         </PrimaryButton>
                         <button v-if="isEditing" type="button" @click="resetForm" class="px-4 py-2 rounded border border-gray-300 text-gray-700">
-                            Cancelar
+                            {{ tr('Cancelar', 'Cancel') }}
                         </button>
                     </div>
                 </form>
             </div>
 
             <div class="bg-white border rounded-lg p-6">
-                <h2 class="text-lg font-semibold mb-3">Clubes existentes</h2>
+                <h2 class="text-lg font-semibold mb-3">{{ tr('Clubes existentes', 'Existing clubs') }}</h2>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-700">
                             <tr>
-                                <th class="text-left px-3 py-2">Club</th>
-                                <th class="text-left px-3 py-2">Iglesia</th>
-                                <th class="text-left px-3 py-2">Director</th>
-                                <th class="text-left px-3 py-2">Tipo</th>
-                                <th class="text-left px-3 py-2">Estado</th>
-                                <th class="text-right px-3 py-2">Acciones</th>
+                                <th class="text-left px-3 py-2">{{ tr('Club', 'Club') }}</th>
+                                <th class="text-left px-3 py-2">{{ tr('Iglesia', 'Church') }}</th>
+                                <th class="text-left px-3 py-2">{{ tr('Director', 'Director') }}</th>
+                                <th class="text-left px-3 py-2">{{ tr('Tipo', 'Type') }}</th>
+                                <th class="text-left px-3 py-2">{{ tr('Estado', 'Status') }}</th>
+                                <th class="text-right px-3 py-2">{{ tr('Acciones', 'Actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-if="props.clubs.length === 0">
-                                <td colspan="6" class="px-3 py-3 text-gray-500">No hay clubes.</td>
+                                <td colspan="6" class="px-3 py-3 text-gray-500">{{ tr('No hay clubes.', 'There are no clubs.') }}</td>
                             </tr>
                             <tr v-for="club in props.clubs" :key="club.id" class="border-t">
                                 <td class="px-3 py-2">{{ club.club_name }}</td>
                                 <td class="px-3 py-2">{{ churchNameById(club.church_id) }}</td>
                                 <td class="px-3 py-2">{{ directorLabelById(club.user_id) }}</td>
                                 <td class="px-3 py-2">{{ club.club_type }}</td>
-                                <td class="px-3 py-2">{{ club.status || 'active' }}</td>
+                                <td class="px-3 py-2">{{ club.status || tr('activo', 'active') }}</td>
                                 <td class="px-3 py-2 text-right space-x-2">
-                                    <button type="button" class="text-blue-600 hover:underline" @click="editClub(club)">Editar</button>
-                                    <button type="button" class="text-amber-600 hover:underline" @click="deactivateClub(club)">Desactivar</button>
-                                    <button type="button" class="text-red-600 hover:underline" @click="deleteClub(club)">Eliminar</button>
+                                    <button type="button" class="text-blue-600 hover:underline" @click="editClub(club)">{{ tr('Editar', 'Edit') }}</button>
+                                    <button type="button" class="text-amber-600 hover:underline" @click="deactivateClub(club)">{{ tr('Desactivar', 'Deactivate') }}</button>
+                                    <button type="button" class="text-red-600 hover:underline" @click="deleteClub(club)">{{ tr('Eliminar', 'Delete') }}</button>
                                 </td>
                             </tr>
                         </tbody>

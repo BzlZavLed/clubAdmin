@@ -100,11 +100,13 @@ class ClubClassController extends Controller
         return response()->json(['message' => 'Class deleted']);
     }
 
-    public function getByClubId($clubId)
+    public function getByClubId(Request $request, $clubId)
     {
+        $club = ClubHelper::clubForUser($request->user(), $clubId);
+
         $classes = ClubClass::with('staff.user')
             ->with('investitureRequirements')
-            ->where('club_id', $clubId)
+            ->where('club_id', $club->id)
             ->orderBy('class_order')
             ->get();
         $this->attachAssignedStaffNames($classes);

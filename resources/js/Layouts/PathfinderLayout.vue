@@ -6,6 +6,7 @@ import SuperAdminNav from '@/Components/Nav/SuperAdminNav.vue'
 import ClubPersonalNav from '@/Components/Nav/ClubPersonalNav.vue'
 import ParentNav from '@/Components/Nav/ParentNav.vue'
 import SuperadminClubContextBar from '@/Components/SuperadminClubContextBar.vue'
+import LocaleSwitcher from '@/Components/LocaleSwitcher.vue'
 
 const isCollapsed = ref(false)
 const isMobileOpen = ref(false)
@@ -106,6 +107,10 @@ const mainOffsetClass = computed(() => {
             <p v-if="sidebarClubLabel" class="text-sm text-gray-800 truncate">{{ sidebarClubLabel }}</p>
         </div>
 
+        <div v-if="user && !navCollapsed" class="mx-3 mb-3">
+            <LocaleSwitcher />
+        </div>
+
         <SuperadminClubContextBar :compact="true" :collapsed="navCollapsed" />
 
         <!-- Logout -->
@@ -128,6 +133,9 @@ const mainOffsetClass = computed(() => {
                     ☰
                 </button>
                 <div class="text-sm font-semibold text-gray-800">Menu</div>
+            </div>
+            <div v-if="user" class="mb-4 md:hidden">
+                <LocaleSwitcher :compact="true" />
             </div>
             <h1 class="text-2xl font-bold text-gray-800 mb-6">
                 <slot name="title">Pathfinder Portal</slot>

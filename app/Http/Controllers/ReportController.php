@@ -94,13 +94,15 @@ class ReportController extends Controller
 
     public function assistanceReportsDirector(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'report_type' => 'required|string',
             'club_id' => 'required|integer|exists:clubs,id',
         ]);
 
+        $club = $this->resolveClubForUser($request->user(), $validated['club_id']);
+
         $query = RepAssistanceAdv::query()
-            ->where('club_id', $request->club_id);
+            ->where('club_id', $club->id);
 
         $with = ['staff', 'club'];
 

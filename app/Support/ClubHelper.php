@@ -2,17 +2,26 @@
 
 namespace App\Support;
 
+use App\Models\Association;
 use App\Models\Club;
+use App\Models\Church;
+use App\Models\District;
 use App\Models\Staff;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
 use App\Models\StaffAdventurer;
 use App\Models\StaffPathfinder;
+use App\Models\Union;
 use Illuminate\Support\Collection;
 
 class ClubHelper
 {
+    public static function roleKey($user): ?string
+    {
+        return $user?->role_key ?: $user?->profile_type;
+    }
+
     /**
      * Clubs the user can operate on as full models.
      */
@@ -40,11 +49,33 @@ class ClubHelper
     }
 
     /**
+     * Churches the user can operate on as full models.
+     */
+    public static function churchesForUser($user): Collection
+    {
+        if (!$user) {
+            return collect();
+        }
+
+        $churchIds = self::churchIdsForUser($user);
+        if ($churchIds->isEmpty()) {
+            return collect();
+        }
+
+        return Church::query()
+            ->whereIn('id', $churchIds)
+            ->orderBy('church_name')
+            ->get(['id', 'district_id', 'church_name', 'email']);
+    }
+
+    /**
      * Collect club ids the user can operate on: owned, pivot, explicit club_id.
      */
     public static function clubIdsForUser($user): Collection
     {
-        if (($user?->profile_type ?? null) === 'superadmin') {
+        $role = self::roleKey($user);
+
+        if ($role === 'superadmin') {
             $contextClubId = session('superadmin_context.club_id');
             $contextChurchId = session('superadmin_context.church_id');
 
@@ -66,6 +97,19 @@ class ClubHelper
                 ->values();
         }
 
+        if (in_array($role, ['district_pastor', 'district_secretary', 'association_youth_director', 'union_youth_director'], true)) {
+            $churchIds = self::churchIdsForUser($user);
+            if ($churchIds->isEmpty()) {
+                return collect();
+            }
+
+            return Club::query()
+                ->whereIn('church_id', $churchIds)
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
         $pivotIds = $user?->clubs?->pluck('id') ?? collect();
         $explicit = $user?->club_id ? collect([$user->club_id]) : collect();
 
@@ -76,6 +120,271 @@ class ClubHelper
             ->pluck('id')
             ->unique()
             ->values();
+    }
+
+    /**
+     * Collect church ids the user can operate on.
+     */
+    public static function churchIdsForUser($user): Collection
+    {
+        if (!$user) {
+            return collect();
+        }
+
+        $role = self::roleKey($user);
+
+        if ($role === 'superadmin') {
+            $contextClubId = session('superadmin_context.club_id');
+            $contextChurchId = session('superadmin_context.church_id');
+
+            if ($contextClubId) {
+                $churchId = Club::query()->where('id', (int) $contextClubId)->value('church_id');
+                return $churchId ? collect([(int) $churchId]) : collect();
+            }
+
+            if ($contextChurchId) {
+                return collect([(int) $contextChurchId]);
+            }
+
+            return Church::query()
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
+        if (in_array($role, ['district_pastor', 'district_secretary'], true)) {
+            return Church::query()
+                ->where('district_id', (int) $user->scope_id)
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
+        if ($role === 'association_youth_director') {
+            return Church::query()
+                ->whereHas('district', fn($q) => $q->where('association_id', (int) $user->scope_id))
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
+        if ($role === 'union_youth_director') {
+            return Church::query()
+                ->whereHas('district.association', fn($q) => $q->where('union_id', (int) $user->scope_id))
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
+        $explicit = $user?->church_id ? collect([(int) $user->church_id]) : collect();
+        $clubChurchIds = Club::query()
+            ->whereIn('id', self::clubIdsForUser($user))
+            ->pluck('church_id');
+
+        return $explicit
+            ->merge($clubChurchIds)
+            ->filter()
+            ->map(fn($id) => (int) $id)
+            ->unique()
+            ->values();
+    }
+
+    public static function scopeSummaryForUser($user): ?array
+    {
+        if (!$user) {
+            return null;
+        }
+
+        $role = self::roleKey($user);
+        $scopeType = $user->scope_type;
+        $scopeId = $user->scope_id;
+
+        if ($role === 'superadmin' || $scopeType === 'global') {
+            return [
+                'type' => 'global',
+                'id' => null,
+                'name' => 'Global',
+            ];
+        }
+
+        if ($scopeType === 'district' && $scopeId) {
+            $district = District::query()->with('association.union')->find($scopeId);
+            return $district ? [
+                'type' => 'district',
+                'id' => $district->id,
+                'name' => $district->name,
+                'association_name' => $district->association?->name,
+                'union_name' => $district->association?->union?->name,
+            ] : null;
+        }
+
+        if ($scopeType === 'association' && $scopeId) {
+            $association = Association::query()->with('union')->find($scopeId);
+            return $association ? [
+                'type' => 'association',
+                'id' => $association->id,
+                'name' => $association->name,
+                'union_name' => $association->union?->name,
+            ] : null;
+        }
+
+        if ($scopeType === 'union' && $scopeId) {
+            $union = Union::query()->find($scopeId);
+            return $union ? [
+                'type' => 'union',
+                'id' => $union->id,
+                'name' => $union->name,
+            ] : null;
+        }
+
+        if ($scopeType === 'church' && $scopeId) {
+            $church = Church::query()->find($scopeId);
+            return $church ? [
+                'type' => 'church',
+                'id' => $church->id,
+                'name' => $church->church_name,
+            ] : null;
+        }
+
+        if ($scopeType === 'club' && $scopeId) {
+            $club = Club::query()->find($scopeId);
+            return $club ? [
+                'type' => 'club',
+                'id' => $club->id,
+                'name' => $club->club_name,
+                'church_name' => $club->church_name,
+            ] : null;
+        }
+
+        return null;
+    }
+
+    public static function hierarchyWidgetDataForUser($user): ?array
+    {
+        if (!$user) {
+            return null;
+        }
+
+        $role = self::roleKey($user);
+
+        if (in_array($role, ['district_pastor', 'district_secretary'], true)) {
+            $district = District::query()
+                ->with([
+                    'association.union:id,name',
+                    'churches' => fn ($query) => $query->orderBy('church_name'),
+                    'churches.clubs' => fn ($query) => $query->orderBy('club_name'),
+                ])
+                ->find($user->scope_id, ['id', 'association_id', 'name']);
+
+            if (!$district) {
+                return null;
+            }
+
+            return [
+                'level' => 'district',
+                'title' => $district->name,
+                'association_name' => $district->association?->name,
+                'union_name' => $district->association?->union?->name,
+                'districts' => collect([$district])->map(fn ($item) => self::mapDistrictForWidget($item))->values()->all(),
+                'summary' => [
+                    'districts' => 1,
+                    'churches' => $district->churches->count(),
+                    'clubs' => $district->churches->flatMap->clubs->count(),
+                ],
+            ];
+        }
+
+        if ($role === 'association_youth_director') {
+            $association = Association::query()
+                ->with([
+                    'union:id,name',
+                    'districts' => fn ($query) => $query->orderBy('name'),
+                    'districts.churches' => fn ($query) => $query->orderBy('church_name'),
+                    'districts.churches.clubs' => fn ($query) => $query->orderBy('club_name'),
+                ])
+                ->find($user->scope_id, ['id', 'union_id', 'name']);
+
+            if (!$association) {
+                return null;
+            }
+
+            return [
+                'level' => 'association',
+                'title' => $association->name,
+                'association_name' => $association->name,
+                'union_name' => $association->union?->name,
+                'districts' => $association->districts->map(fn ($item) => self::mapDistrictForWidget($item))->values()->all(),
+                'summary' => [
+                    'districts' => $association->districts->count(),
+                    'churches' => $association->districts->flatMap->churches->count(),
+                    'clubs' => $association->districts->flatMap->churches->flatMap->clubs->count(),
+                ],
+            ];
+        }
+
+        if ($role === 'union_youth_director') {
+            $union = Union::query()
+                ->with([
+                    'associations' => fn ($query) => $query->orderBy('name'),
+                    'associations.districts' => fn ($query) => $query->orderBy('name'),
+                    'associations.districts.churches' => fn ($query) => $query->orderBy('church_name'),
+                    'associations.districts.churches.clubs' => fn ($query) => $query->orderBy('club_name'),
+                ])
+                ->find($user->scope_id, ['id', 'name']);
+
+            if (!$union) {
+                return null;
+            }
+
+            return [
+                'level' => 'union',
+                'title' => $union->name,
+                'association_name' => null,
+                'union_name' => $union->name,
+                'associations' => $union->associations->map(function ($association) {
+                    return [
+                        'id' => $association->id,
+                        'name' => $association->name,
+                        'districts_count' => $association->districts->count(),
+                        'churches_count' => $association->districts->flatMap->churches->count(),
+                        'clubs_count' => $association->districts->flatMap->churches->flatMap->clubs->count(),
+                        'districts' => $association->districts->map(fn ($district) => self::mapDistrictForWidget($district))->values()->all(),
+                    ];
+                })->values()->all(),
+                'summary' => [
+                    'associations' => $union->associations->count(),
+                    'districts' => $union->associations->flatMap->districts->count(),
+                    'churches' => $union->associations->flatMap->districts->flatMap->churches->count(),
+                    'clubs' => $union->associations->flatMap->districts->flatMap->churches->flatMap->clubs->count(),
+                ],
+            ];
+        }
+
+        return null;
+    }
+
+    private static function mapDistrictForWidget(District $district): array
+    {
+        return [
+            'id' => $district->id,
+            'name' => $district->name,
+            'association_name' => $district->association?->name,
+            'union_name' => $district->association?->union?->name,
+            'churches_count' => $district->churches->count(),
+            'clubs_count' => $district->churches->flatMap->clubs->count(),
+            'churches' => $district->churches->map(function ($church) {
+                return [
+                    'id' => $church->id,
+                    'name' => $church->church_name,
+                    'clubs_count' => $church->clubs->count(),
+                    'clubs' => $church->clubs->map(fn ($club) => [
+                        'id' => $club->id,
+                        'name' => $club->club_name,
+                        'type' => $club->club_type,
+                    ])->values()->all(),
+                ];
+            })->values()->all(),
+        ];
     }
 
     /**
@@ -127,18 +436,14 @@ class ClubHelper
     {
         $ids = self::clubIdsForUser($user);
 
-        $query = Club::query()->whereIn('id', $ids);
         if ($clubId) {
-            $query->where('id', $clubId);
+            return Club::query()
+                ->whereIn('id', $ids)
+                ->where('id', $clubId)
+                ->firstOrFail();
         }
 
-        $club = $query->first();
-
-        if (!$club) {
-            $club = Club::query()->whereIn('id', $ids)->firstOrFail();
-        }
-
-        return $club;
+        return Club::query()->whereIn('id', $ids)->firstOrFail();
     }
 
     /**

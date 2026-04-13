@@ -5,12 +5,14 @@ import WorkplanCalendar from '@/Components/WorkplanCalendar.vue'
 import { fetchParentWorkplan, fetchParentReceipts } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     auth_user: Object
 })
 
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 
 const clubs = ref([])
 const selectedClubId = ref(null)
@@ -50,7 +52,7 @@ const load = async (clubId = null) => {
         memberships.value = m || []
     } catch (e) {
         console.error(e)
-        showToast('No se pudo cargar el plan de trabajo', 'error')
+        showToast(tr('No se pudo cargar el plan de trabajo', 'Could not load the workplan'), 'error')
     }
 }
 
@@ -60,7 +62,7 @@ const loadReceipts = async () => {
         receipts.value = payload.data || []
     } catch (e) {
         console.error(e)
-        showToast('No se pudieron cargar los recibos', 'error')
+        showToast(tr('No se pudieron cargar los recibos', 'Could not load receipts'), 'error')
     }
 }
 
@@ -93,20 +95,20 @@ onMounted(() => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Panel de padres</template>
+        <template #title>{{ tr('Panel de padres', 'Parent Dashboard') }}</template>
 
         <div class="space-y-4">
             <div class="bg-white border rounded shadow-sm p-4">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                        <h2 class="text-xl font-semibold text-gray-800">Bienvenido, {{ props.auth_user?.name }}</h2>
-                        <p class="text-gray-600 text-sm mt-1">Consulta los planes de trabajo de los clubes de tus hijos.</p>
+                        <h2 class="text-xl font-semibold text-gray-800">{{ tr('Bienvenido,', 'Welcome,') }} {{ props.auth_user?.name }}</h2>
+                        <p class="text-gray-600 text-sm mt-1">{{ tr('Consulta los planes de trabajo de los clubes de tus hijos.', 'Review the workplans for your children’s clubs.') }}</p>
                     </div>
                     <button
                         class="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
                         @click="openPasswordModal"
                     >
-                        Actualizar contrasena
+                        {{ tr('Actualizar contrasena', 'Update password') }}
                     </button>
                 </div>
             </div>
@@ -114,13 +116,13 @@ onMounted(() => {
             <div class="bg-white border rounded shadow-sm p-4 space-y-3">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div class="space-y-1">
-                        <h3 class="text-lg font-semibold text-gray-800">Plan de trabajo del club</h3>
-                        <p class="text-sm text-gray-600">Selecciona un club para ver su calendario.</p>
+                        <h3 class="text-lg font-semibold text-gray-800">{{ tr('Plan de trabajo del club', 'Club workplan') }}</h3>
+                        <p class="text-sm text-gray-600">{{ tr('Selecciona un club para ver su calendario.', 'Select a club to view its calendar.') }}</p>
                     </div>
                     <div class="flex items-center gap-2">
-                        <label class="text-sm text-gray-700">Club</label>
+                        <label class="text-sm text-gray-700">{{ tr('Club', 'Club') }}</label>
                         <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm" @change="changeClub">
-                            <option value="">Selecciona un club</option>
+                            <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
                     </div>
@@ -137,15 +139,15 @@ onMounted(() => {
                         @edit="openEvent"
                     />
                 </div>
-                <div v-else class="text-sm text-gray-600">No se encontró plan de trabajo para tus clubes.</div>
+                <div v-else class="text-sm text-gray-600">{{ tr('No se encontró plan de trabajo para tus clubes.', 'No workplan was found for your clubs.') }}</div>
             </div>
 
             <div class="bg-white border rounded shadow-sm p-4 space-y-3">
                 <div class="space-y-1">
-                    <h3 class="text-lg font-semibold text-gray-800">Mis recibos</h3>
-                    <p class="text-sm text-gray-600">Recibos emitidos por pagos de tus hijos.</p>
+                    <h3 class="text-lg font-semibold text-gray-800">{{ tr('Mis recibos', 'My receipts') }}</h3>
+                    <p class="text-sm text-gray-600">{{ tr('Recibos emitidos por pagos de tus hijos.', 'Receipts issued for your children’s payments.') }}</p>
                 </div>
-                <div v-if="!receipts.length" class="text-sm text-gray-600">Aun no hay recibos disponibles.</div>
+                <div v-if="!receipts.length" class="text-sm text-gray-600">{{ tr('Aun no hay recibos disponibles.', 'There are no receipts available yet.') }}</div>
                 <div v-else class="space-y-2">
                     <div v-for="receipt in receipts" :key="receipt.id" class="flex flex-col gap-2 rounded border border-gray-200 p-3 md:flex-row md:items-center md:justify-between">
                         <div class="text-sm">
@@ -158,7 +160,7 @@ onMounted(() => {
                             </div>
                         </div>
                         <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
-                            Descargar recibo
+                            {{ tr('Descargar recibo', 'Download receipt') }}
                         </a>
                     </div>
                 </div>
@@ -181,20 +183,20 @@ onMounted(() => {
                     <button class="text-gray-500" @click="closeEvent">✕</button>
                 </div>
                 <div class="space-y-2 text-sm text-gray-700">
-                    <div><span class="font-semibold">Descripción:</span> {{ selectedEvent.description || '—' }}</div>
-                    <div><span class="font-semibold">Ubicación:</span> {{ selectedEvent.location || '—' }}</div>
+                    <div><span class="font-semibold">{{ tr('Descripción:', 'Description:') }}</span> {{ selectedEvent.description || '—' }}</div>
+                    <div><span class="font-semibold">{{ tr('Ubicación:', 'Location:') }}</span> {{ selectedEvent.location || '—' }}</div>
                 </div>
                 <div v-if="selectedEvent.classPlans?.length" class="border-t pt-3">
-                    <h5 class="font-semibold text-gray-800 text-sm mb-2">Planes de clase para tus hijos</h5>
+                    <h5 class="font-semibold text-gray-800 text-sm mb-2">{{ tr('Planes de clase para tus hijos', 'Class plans for your children') }}</h5>
                     <div class="space-y-2">
                         <div v-for="plan in selectedEvent.classPlans" :key="plan.id" class="border rounded p-3 bg-gray-50">
                             <div class="flex items-center justify-between text-sm">
-                                <div class="font-semibold">{{ plan.title || 'Plan de clase' }}</div>
-                                <span class="text-xs capitalize text-gray-600">{{ plan.type || 'plan' }}</span>
+                                <div class="font-semibold">{{ plan.title || tr('Plan de clase', 'Class plan') }}</div>
+                                <span class="text-xs capitalize text-gray-600">{{ plan.type || tr('plan', 'plan') }}</span>
                             </div>
                             <div class="text-xs text-gray-700 mt-1">{{ plan.description || '—' }}</div>
                             <div class="text-[11px] text-gray-600 mt-2">
-                                Clase: {{ plan.class?.class_name || '—' }} • Personal: {{ plan.staff?.user?.name || plan.staff?.name || '—' }}
+                                {{ tr('Clase:', 'Class:') }} {{ plan.class?.class_name || '—' }} • {{ tr('Personal:', 'Staff:') }} {{ plan.staff?.user?.name || plan.staff?.name || '—' }}
                             </div>
                         </div>
                     </div>
@@ -207,7 +209,7 @@ onMounted(() => {
             :show="showPasswordModal"
             :user-id="changePasswordUserId"
             @close="showPasswordModal = false"
-            @updated="showToast('Contrasena actualizada correctamente')"
+            @updated="showToast(tr('Contrasena actualizada correctamente', 'Password updated successfully'))"
         />
     </PathfinderLayout>
 </template>
