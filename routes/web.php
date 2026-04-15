@@ -131,6 +131,17 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
     Route::get('/union/dashboard', fn() => Inertia::render('Union/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('union.dashboard');
+    Route::get('/union/carpeta-builder', [UnionController::class, 'builder'])->name('union.carpeta-builder');
+    Route::put('/union/carpeta-builder/evaluation-system', [UnionController::class, 'updateScopedEvaluationSystem'])
+        ->name('union.carpeta-builder.evaluation-system.update');
+    Route::post('/union/carpeta-builder/years', [UnionController::class, 'storeCarpetaYear'])
+        ->name('union.carpeta-builder.years.store');
+    Route::post('/union/carpeta-builder/years/{carpetaYear}/requirements', [UnionController::class, 'storeCarpetaRequirement'])
+        ->name('union.carpeta-builder.requirements.store');
+    Route::put('/union/carpeta-builder/years/{carpetaYear}/publish', [UnionController::class, 'publishCarpetaYear'])
+        ->name('union.carpeta-builder.years.publish');
+    Route::put('/union/carpeta-builder/years/{carpetaYear}/archive', [UnionController::class, 'archiveCarpetaYear'])
+        ->name('union.carpeta-builder.years.archive');
 
     Route::get('/union/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [
@@ -245,14 +256,24 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::put('/super-admin/districts/{district}/deactivate', [DistrictController::class, 'deactivate'])->name('superadmin.districts.deactivate');
     Route::delete('/super-admin/districts/{district}', [DistrictController::class, 'destroy'])->name('superadmin.districts.delete');
     Route::get('/super-admin/clubs', fn() => Inertia::render('SuperAdmin/Clubs', [
-        'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
+        'churches' => Church::query()
+            ->with('district.association.union:id,name,evaluation_system')
+            ->orderBy('church_name')
+            ->get(['id', 'district_id', 'church_name'])
+            ->map(fn ($church) => [
+                'id' => $church->id,
+                'church_name' => $church->church_name,
+                'union_name' => $church->district?->association?->union?->name,
+                'evaluation_system' => $church->district?->association?->union?->evaluation_system ?: 'honors',
+            ])
+            ->values(),
         'directors' => User::select('id', 'name', 'email', 'church_id', 'club_id')
             ->where('profile_type', 'club_director')
             ->where('status', '!=', 'deleted')
             ->orderBy('name')
             ->get(),
         'clubs' => Club::query()
-            ->select('id', 'club_name', 'church_name', 'director_name', 'creation_date', 'pastor_name', 'conference_name', 'conference_region', 'club_type', 'church_id', 'user_id', 'status')
+            ->select('id', 'club_name', 'church_name', 'director_name', 'creation_date', 'pastor_name', 'conference_name', 'conference_region', 'club_type', 'evaluation_system', 'church_id', 'user_id', 'status')
             ->orderBy('club_name')
             ->get(),
     ]))->name('superadmin.clubs.manage');

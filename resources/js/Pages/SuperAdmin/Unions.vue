@@ -17,6 +17,7 @@ const { tr } = useLocale()
 
 const form = useForm({
     name: '',
+    evaluation_system: 'honors',
 })
 
 const isEditing = computed(() => editingUnionId.value !== null)
@@ -29,6 +30,7 @@ const resetForm = () => {
 const editUnion = (union) => {
     editingUnionId.value = union.id
     form.name = union.name || ''
+    form.evaluation_system = union.evaluation_system || 'honors'
 }
 
 const submit = () => {
@@ -80,6 +82,15 @@ const deleteUnion = (union) => {
                         <InputError class="mt-2" :message="form.errors.name" />
                     </div>
 
+                    <div>
+                        <InputLabel for="evaluation_system" :value="tr('Sistema de evaluación', 'Evaluation system')" />
+                        <select id="evaluation_system" v-model="form.evaluation_system" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <option value="honors">{{ tr('Honores / requisitos', 'Honors / requirements') }}</option>
+                            <option value="carpetas">{{ tr('Carpetas', 'Carpetas') }}</option>
+                        </select>
+                        <InputError class="mt-2" :message="form.errors.evaluation_system" />
+                    </div>
+
                     <div class="flex gap-2">
                         <PrimaryButton :disabled="form.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
                             {{ isEditing ? tr('Guardar cambios', 'Save changes') : tr('Crear union', 'Create union') }}
@@ -98,6 +109,7 @@ const deleteUnion = (union) => {
                         <thead class="bg-gray-50 text-gray-700">
                             <tr>
                                 <th class="text-left px-3 py-2">{{ tr('Nombre', 'Name') }}</th>
+                                <th class="text-left px-3 py-2">{{ tr('Sistema', 'System') }}</th>
                                 <th class="text-left px-3 py-2">{{ tr('Asociaciones', 'Associations') }}</th>
                                 <th class="text-left px-3 py-2">{{ tr('Estado', 'Status') }}</th>
                                 <th class="text-right px-3 py-2">{{ tr('Acciones', 'Actions') }}</th>
@@ -105,10 +117,11 @@ const deleteUnion = (union) => {
                         </thead>
                         <tbody>
                             <tr v-if="props.unions.length === 0">
-                                <td colspan="4" class="px-3 py-3 text-gray-500">{{ tr('No hay uniones.', 'There are no unions.') }}</td>
+                                <td colspan="5" class="px-3 py-3 text-gray-500">{{ tr('No hay uniones.', 'There are no unions.') }}</td>
                             </tr>
                             <tr v-for="union in props.unions" :key="union.id" class="border-t">
                                 <td class="px-3 py-2">{{ union.name }}</td>
+                                <td class="px-3 py-2">{{ union.evaluation_system || 'honors' }}</td>
                                 <td class="px-3 py-2">{{ union.associations_count ?? 0 }}</td>
                                 <td class="px-3 py-2">{{ union.status || tr('activo', 'active') }}</td>
                                 <td class="px-3 py-2 text-right space-x-2">

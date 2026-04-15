@@ -18,6 +18,7 @@ class Club extends Model
         'conference_name',
         'conference_region',
         'club_type',
+        'evaluation_system',
         'status',
         'church_id'
     ];

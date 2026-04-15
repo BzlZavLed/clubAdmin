@@ -18,6 +18,13 @@ class ClubController extends Controller
 {
     use AuthorizesRequests;
 
+    protected function resolveEvaluationSystemForChurch(Church $church): string
+    {
+        $church->loadMissing('district.association.union:id,evaluation_system');
+
+        return $church->district?->association?->union?->evaluation_system ?: 'honors';
+    }
+
     protected function enforceChurchClubTypeRule(int $churchId, string $clubType, ?int $ignoreClubId = null): void
     {
         if (!in_array($clubType, ['adventurers', 'pathfinders'], true)) {
@@ -79,6 +86,7 @@ class ClubController extends Controller
             'conference_name' => $validated['conference_name'] ?? null,
             'conference_region' => $validated['conference_region'] ?? null,
             'club_type' => $validated['club_type'],
+            'evaluation_system' => $this->resolveEvaluationSystemForChurch($church),
             'church_id' => $church->id,
             'status' => 'active',
         ]);
@@ -137,6 +145,7 @@ class ClubController extends Controller
             'conference_name' => $validated['conference_name'] ?? null,
             'conference_region' => $validated['conference_region'] ?? null,
             'club_type' => $validated['club_type'],
+            'evaluation_system' => $this->resolveEvaluationSystemForChurch($church),
             'church_id' => $church->id,
         ]);
 
@@ -231,6 +240,7 @@ class ClubController extends Controller
 
         $club = Club::create(array_merge($validated, [
             'user_id' => auth()->id(),
+            'evaluation_system' => $this->resolveEvaluationSystemForChurch(Church::findOrFail($validated['church_id'])),
         ]));
         // Link user to this club in pivot table with status
         $club->users()->attach(auth()->id(), ['status' => 'active']);

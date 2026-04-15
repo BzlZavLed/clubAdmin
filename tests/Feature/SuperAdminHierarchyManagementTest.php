@@ -50,12 +50,14 @@ class SuperAdminHierarchyManagementTest extends TestCase
         $this->actingAs($user)
             ->post('/super-admin/unions', [
                 'name' => 'Union Test',
+                'evaluation_system' => 'carpetas',
             ])
             ->assertRedirect();
 
         $union = Union::query()->where('name', 'Union Test')->first();
 
         $this->assertNotNull($union);
+        $this->assertSame('carpetas', $union->evaluation_system);
 
         $this->actingAs($user)
             ->post('/super-admin/associations', [
@@ -88,6 +90,7 @@ class SuperAdminHierarchyManagementTest extends TestCase
 
         $union = Union::query()->create([
             'name' => 'Union Alpha',
+            'evaluation_system' => 'honors',
             'status' => 'active',
         ]);
 
@@ -106,6 +109,7 @@ class SuperAdminHierarchyManagementTest extends TestCase
         $this->actingAs($user)
             ->put("/super-admin/unions/{$union->id}", [
                 'name' => 'Union Beta',
+                'evaluation_system' => 'carpetas',
             ])
             ->assertRedirect();
 
@@ -138,6 +142,7 @@ class SuperAdminHierarchyManagementTest extends TestCase
         $this->assertDatabaseHas('unions', [
             'id' => $union->id,
             'name' => 'Union Beta',
+            'evaluation_system' => 'carpetas',
             'status' => 'deleted',
         ]);
 

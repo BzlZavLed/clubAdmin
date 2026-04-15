@@ -29,6 +29,9 @@ const { tr } = useLocale()
                 </div>
 
                 <div class="mt-6 flex flex-wrap gap-3">
+                    <a :href="route('union.carpeta-builder')" class="inline-flex items-center rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+                        {{ tr('Builder de carpetas', 'Carpeta builder') }}
+                    </a>
                     <a :href="route('union.reports.assistance')" class="inline-flex items-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900">
                         {{ tr('Reporte de asistencia', 'Attendance report') }}
                     </a>

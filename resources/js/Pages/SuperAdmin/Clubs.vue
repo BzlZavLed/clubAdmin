@@ -25,6 +25,7 @@ const form = useForm({
     conference_name: '',
     conference_region: '',
     club_type: 'pathfinders',
+    evaluation_system: 'honors',
 })
 
 const isEditing = computed(() => editingClubId.value !== null)
@@ -33,6 +34,7 @@ const resetForm = () => {
     editingClubId.value = null
     form.reset()
     form.club_type = 'pathfinders'
+    form.evaluation_system = 'honors'
 }
 
 const editClub = (club) => {
@@ -45,7 +47,19 @@ const editClub = (club) => {
     form.conference_name = club.conference_name || ''
     form.conference_region = club.conference_region || ''
     form.club_type = club.club_type || 'pathfinders'
+    form.evaluation_system = club.evaluation_system || 'honors'
 }
+
+const selectedChurch = computed(() =>
+    props.churches.find((item) => Number(item.id) === Number(form.church_id)) || null
+)
+
+const inheritedEvaluationSystemLabel = computed(() => {
+    const system = selectedChurch.value?.evaluation_system || form.evaluation_system || 'honors'
+    return system === 'carpetas'
+        ? tr('Carpetas', 'Carpetas')
+        : tr('Honores / requisitos', 'Honors / requirements')
+})
 
 const submit = () => {
     const options = {
@@ -109,7 +123,7 @@ const deleteClub = (club) => {
                         <select id="church_id" v-model="form.church_id" class="mt-1 block w-full rounded-md border-gray-300" required>
                             <option disabled value="">{{ tr('Selecciona una iglesia', 'Select a church') }}</option>
                             <option v-for="church in props.churches" :key="church.id" :value="church.id">
-                                {{ church.church_name }}
+                                {{ church.church_name }}{{ church.union_name ? ` - ${church.union_name}` : '' }}
                             </option>
                         </select>
                         <InputError class="mt-2" :message="form.errors.church_id" />
@@ -146,6 +160,14 @@ const deleteClub = (club) => {
                             <InputLabel for="creation_date" :value="tr('Fecha de creacion', 'Creation date')" />
                             <input id="creation_date" v-model="form.creation_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
                             <InputError class="mt-2" :message="form.errors.creation_date" />
+                        </div>
+                    </div>
+
+                    <div class="rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                        <div class="font-medium">{{ tr('Sistema de evaluación heredado', 'Inherited evaluation system') }}</div>
+                        <div class="mt-1">{{ inheritedEvaluationSystemLabel }}</div>
+                        <div v-if="selectedChurch?.union_name" class="mt-1 text-xs text-blue-700">
+                            {{ tr('Definido por la unión asociada a la iglesia seleccionada.', 'Defined by the union linked to the selected church.') }}
                         </div>
                     </div>
 
@@ -188,19 +210,21 @@ const deleteClub = (club) => {
                                 <th class="text-left px-3 py-2">{{ tr('Iglesia', 'Church') }}</th>
                                 <th class="text-left px-3 py-2">{{ tr('Director', 'Director') }}</th>
                                 <th class="text-left px-3 py-2">{{ tr('Tipo', 'Type') }}</th>
+                                <th class="text-left px-3 py-2">{{ tr('Sistema', 'System') }}</th>
                                 <th class="text-left px-3 py-2">{{ tr('Estado', 'Status') }}</th>
                                 <th class="text-right px-3 py-2">{{ tr('Acciones', 'Actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-if="props.clubs.length === 0">
-                                <td colspan="6" class="px-3 py-3 text-gray-500">{{ tr('No hay clubes.', 'There are no clubs.') }}</td>
+                                <td colspan="7" class="px-3 py-3 text-gray-500">{{ tr('No hay clubes.', 'There are no clubs.') }}</td>
                             </tr>
                             <tr v-for="club in props.clubs" :key="club.id" class="border-t">
                                 <td class="px-3 py-2">{{ club.club_name }}</td>
                                 <td class="px-3 py-2">{{ churchNameById(club.church_id) }}</td>
                                 <td class="px-3 py-2">{{ directorLabelById(club.user_id) }}</td>
                                 <td class="px-3 py-2">{{ club.club_type }}</td>
+                                <td class="px-3 py-2">{{ club.evaluation_system || 'honors' }}</td>
                                 <td class="px-3 py-2">{{ club.status || tr('activo', 'active') }}</td>
                                 <td class="px-3 py-2 text-right space-x-2">
                                     <button type="button" class="text-blue-600 hover:underline" @click="editClub(club)">{{ tr('Editar', 'Edit') }}</button>

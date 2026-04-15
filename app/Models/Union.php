@@ -11,11 +11,17 @@ class Union extends Model
 
     protected $fillable = [
         'name',
+        'evaluation_system',
         'status',
     ];
 
     public function associations()
     {
         return $this->hasMany(Association::class);
+    }
+
+    public function carpetaYears()
+    {
+        return $this->hasMany(UnionCarpetaYear::class)->orderByDesc('year')->orderByDesc('id');
     }
 }
