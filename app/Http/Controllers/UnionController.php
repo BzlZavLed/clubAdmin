@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\UnionCarpetaYear;
 use App\Models\UnionCarpetaRequirement;
+use App\Models\UnionClubCatalog;
+use App\Models\UnionClassCatalog;
 use App\Models\Union;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -81,6 +83,8 @@ class UnionController extends Controller
                     'union_carpeta_year_id',
                     'title',
                     'description',
+                    'club_type',
+                    'class_name',
                     'requirement_type',
                     'validation_mode',
                     'allowed_evidence_types',
@@ -89,7 +93,70 @@ class UnionController extends Controller
                     'status'
                 )])
                 ->get(['id', 'union_id', 'year', 'status', 'published_at', 'created_at', 'updated_at']),
+            'clubCatalogs' => $this->catalogPayload($union),
         ]);
+    }
+
+    public function catalog(Request $request)
+    {
+        $union = $this->resolveScopedUnion($request);
+
+        return Inertia::render('Union/ClubCatalog', [
+            'union' => [
+                'id' => $union->id,
+                'name' => $union->name,
+                'evaluation_system' => $union->evaluation_system,
+                'status' => $union->status,
+            ],
+            'clubCatalogs' => $this->catalogPayload($union),
+        ]);
+    }
+
+    public function storeClubCatalog(Request $request)
+    {
+        $union = $this->resolveScopedUnion($request);
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('union_club_catalogs', 'name')->where(fn ($query) => $query->where('union_id', $union->id)),
+            ],
+            'sort_order' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $union->clubCatalogs()->create([
+            'name' => $validated['name'],
+            'sort_order' => $validated['sort_order'] ?? ((int) $union->clubCatalogs()->max('sort_order') + 1),
+            'status' => 'active',
+        ]);
+
+        return back()->with('success', 'Tipo de club agregado al catálogo.');
+    }
+
+    public function storeClassCatalog(Request $request, UnionClubCatalog $clubCatalog)
+    {
+        $union = $this->resolveScopedUnion($request);
+        $this->assertOwnsClubCatalog($union, $clubCatalog);
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('union_class_catalogs', 'name')->where(fn ($query) => $query->where('union_club_catalog_id', $clubCatalog->id)),
+            ],
+            'sort_order' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $clubCatalog->classCatalogs()->create([
+            'name' => $validated['name'],
+            'sort_order' => $validated['sort_order'] ?? ((int) $clubCatalog->classCatalogs()->max('sort_order') + 1),
+            'status' => 'active',
+        ]);
+
+        return back()->with('success', 'Clase agregada al catálogo.');
     }
 
     public function updateScopedEvaluationSystem(Request $request)
@@ -146,6 +213,8 @@ class UnionController extends Controller
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            'club_catalog_id' => ['required', 'integer'],
+            'class_catalog_id' => ['required', 'integer'],
             'requirement_type' => ['required', Rule::in(['speciality', 'event', 'class', 'presentation', 'other'])],
             'validation_mode' => ['required', Rule::in(['electronic', 'physical', 'hybrid'])],
             'allowed_evidence_types' => ['nullable', 'array'],
@@ -154,9 +223,25 @@ class UnionController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:1'],
         ]);
 
+        $clubCatalog = $union->clubCatalogs()
+            ->where('id', (int) $validated['club_catalog_id'])
+            ->first();
+        if (!$clubCatalog) {
+            abort(422, 'Selected club catalog does not belong to this union.');
+        }
+
+        $classCatalog = $clubCatalog->classCatalogs()
+            ->where('id', (int) $validated['class_catalog_id'])
+            ->first();
+        if (!$classCatalog) {
+            abort(422, 'Selected class catalog does not belong to the selected club catalog.');
+        }
+
         $requirement = $carpetaYear->requirements()->create([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
+            'club_type' => $clubCatalog->name,
+            'class_name' => $classCatalog->name,
             'requirement_type' => $validated['requirement_type'],
             'validation_mode' => $validated['validation_mode'],
             'allowed_evidence_types' => array_values($validated['allowed_evidence_types'] ?? []),
@@ -233,5 +318,25 @@ class UnionController extends Controller
         if ((int) $carpetaYear->union_id !== (int) $union->id) {
             abort(403);
         }
+    }
+
+    protected function assertOwnsClubCatalog(Union $union, UnionClubCatalog $clubCatalog): void
+    {
+        if ((int) $clubCatalog->union_id !== (int) $union->id) {
+            abort(403);
+        }
+    }
+
+    protected function catalogPayload(Union $union)
+    {
+        return $union->clubCatalogs()
+            ->with(['classCatalogs' => fn ($query) => $query->select(
+                'id',
+                'union_club_catalog_id',
+                'name',
+                'sort_order',
+                'status'
+            )])
+            ->get(['id', 'union_id', 'name', 'sort_order', 'status']);
     }
 }

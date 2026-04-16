@@ -13,6 +13,7 @@ import { useGeneral } from '@/Composables/useGeneral'
 const props = defineProps({
     union: { type: Object, required: true },
     years: { type: Array, default: () => [] },
+    clubCatalogs: { type: Array, default: () => [] },
 })
 
 const { tr } = useLocale()
@@ -28,6 +29,8 @@ const yearForm = useForm({
 
 const requirementModalOpen = ref(false)
 const activeYear = ref(null)
+const activeClubCatalog = ref(null)
+const activeClassCatalog = ref(null)
 const savingRequirement = ref(false)
 const evidenceTypeOptions = [
     { value: 'photo', label: 'Photo' },
@@ -64,8 +67,27 @@ const resetRequirementForm = () => {
     requirementForm.sort_order = ''
 }
 
-const openRequirementModal = (yearRow) => {
+const firstCatalogContext = computed(() => {
+    const firstClub = props.clubCatalogs?.[0] || null
+    const firstClass = firstClub?.class_catalogs?.[0] || null
+    if (!firstClub || !firstClass) return null
+    return {
+        clubCatalog: firstClub,
+        classCatalog: firstClass,
+    }
+})
+
+const getRequirementsForClass = (yearRow, clubCatalog, classCatalog) => {
+    return (yearRow?.requirements || []).filter((requirement) =>
+        String(requirement.club_type || '') === String(clubCatalog?.name || '') &&
+        String(requirement.class_name || '') === String(classCatalog?.name || '')
+    )
+}
+
+const openRequirementModal = (yearRow, clubCatalog, classCatalog) => {
     activeYear.value = yearRow
+    activeClubCatalog.value = clubCatalog
+    activeClassCatalog.value = classCatalog
     resetRequirementForm()
     requirementModalOpen.value = true
 }
@@ -73,6 +95,8 @@ const openRequirementModal = (yearRow) => {
 const closeRequirementModal = () => {
     requirementModalOpen.value = false
     activeYear.value = null
+    activeClubCatalog.value = null
+    activeClassCatalog.value = null
     resetRequirementForm()
 }
 
@@ -103,8 +127,8 @@ const submitYear = async () => {
         showToast(data?.message || tr('Ciclo anual creado.', 'Yearly cycle created.'), 'success')
         yearForm.reset()
         yearForm.year = new Date().getFullYear()
-        if (data?.year) {
-            openRequirementModal(data.year)
+        if (data?.year && firstCatalogContext.value) {
+            openRequirementModal(data.year, firstCatalogContext.value.clubCatalog, firstCatalogContext.value.classCatalog)
         }
         refreshBuilder()
     } catch (error) {
@@ -116,13 +140,15 @@ const submitYear = async () => {
 }
 
 const submitRequirement = async () => {
-    if (!activeYear.value?.id) return
+    if (!activeYear.value?.id || !activeClubCatalog.value?.id || !activeClassCatalog.value?.id) return
 
     savingRequirement.value = true
     requirementForm.clearErrors()
     try {
         const payload = {
             ...requirementForm.data(),
+            club_catalog_id: Number(activeClubCatalog.value.id),
+            class_catalog_id: Number(activeClassCatalog.value.id),
             sort_order: requirementForm.sort_order ? Number(requirementForm.sort_order) : null,
             allowed_evidence_types: Array.isArray(requirementForm.allowed_evidence_types)
                 ? requirementForm.allowed_evidence_types
@@ -242,7 +268,7 @@ const formatDateTime = (value) => {
                             <InputError class="mt-2" :message="yearForm.errors.year" />
                         </div>
 
-                        <PrimaryButton :disabled="yearForm.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                        <PrimaryButton :disabled="yearForm.processing" class="justify-self-start whitespace-normal text-center leading-tight bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
                             {{ tr('Crear borrador anual', 'Create yearly draft') }}
                         </PrimaryButton>
                     </form>
@@ -272,9 +298,6 @@ const formatDateTime = (value) => {
                                 </div>
 
                                 <div class="flex flex-wrap justify-end gap-3 text-sm">
-                                    <button type="button" class="text-blue-600 hover:underline" @click="openRequirementModal(yearRow)">
-                                        {{ tr('Agregar requisito', 'Add requirement') }}
-                                    </button>
                                     <button v-if="yearRow.status === 'draft'" type="button" class="text-blue-600 hover:underline" @click="publishYear(yearRow)">
                                         {{ tr('Publicar', 'Publish') }}
                                     </button>
@@ -285,40 +308,87 @@ const formatDateTime = (value) => {
                             </div>
 
                             <div class="mt-4">
-                                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                    {{ tr('Requisitos', 'Requirements') }} ({{ (yearRow.requirements || []).length }})
+                                <div v-if="!props.clubCatalogs.length" class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                    {{ tr('Primero define el catálogo de clubes y clases de la unión para poder segmentar correctamente los requisitos.', 'Define the union club and class catalog first so requirements can be segmented correctly.') }}
                                 </div>
 
-                                <div v-if="!(yearRow.requirements || []).length" class="mt-2 text-sm text-gray-500">
-                                    {{ tr('Aún no se han agregado requisitos a este ciclo.', 'No requirements have been added to this cycle yet.') }}
-                                </div>
+                                <div v-else class="mt-3 space-y-5">
+                                    <section v-for="clubCatalog in props.clubCatalogs" :key="`${yearRow.id}-club-${clubCatalog.id}`" class="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <div>
+                                                <h4 class="text-sm font-semibold uppercase tracking-wide text-gray-700">{{ clubCatalog.name }}</h4>
+                                                <p class="mt-1 text-xs text-gray-500">
+                                                    {{ tr('Clases de referencia', 'Reference classes') }}: {{ (clubCatalog.class_catalogs || []).length }}
+                                                </p>
+                                            </div>
+                                        </div>
 
-                                <div v-else class="mt-3 overflow-x-auto">
-                                    <table class="min-w-full text-sm">
-                                        <thead>
-                                            <tr class="border-b text-left text-gray-500">
-                                                <th class="pb-2 pr-4 font-medium">#</th>
-                                                <th class="pb-2 pr-4 font-medium">{{ tr('Título', 'Title') }}</th>
-                                                <th class="pb-2 pr-4 font-medium">{{ tr('Tipo', 'Type') }}</th>
-                                                <th class="pb-2 pr-4 font-medium">{{ tr('Validación', 'Validation') }}</th>
-                                                <th class="pb-2 font-medium">{{ tr('Evidencias', 'Evidence') }}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="requirement in (yearRow.requirements || [])" :key="requirement.id" class="border-b last:border-b-0">
-                                                <td class="py-2 pr-4 text-gray-700">{{ requirement.sort_order }}</td>
-                                                <td class="py-2 pr-4">
-                                                    <div class="font-medium text-gray-900">{{ requirement.title }}</div>
-                                                    <div v-if="requirement.description" class="text-xs text-gray-500">{{ requirement.description }}</div>
-                                                </td>
-                                                <td class="py-2 pr-4 text-gray-700">{{ requirement.requirement_type }}</td>
-                                                <td class="py-2 pr-4 text-gray-700">{{ requirement.validation_mode }}</td>
-                                                <td class="py-2 text-gray-700">
-                                                    {{ Array.isArray(requirement.allowed_evidence_types) && requirement.allowed_evidence_types.length ? requirement.allowed_evidence_types.join(', ') : '—' }}
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                        <div v-if="!(clubCatalog.class_catalogs || []).length" class="mt-3 text-sm text-gray-500">
+                                            {{ tr('Este tipo de club todavía no tiene clases en el catálogo.', 'This club type does not have classes in the catalog yet.') }}
+                                        </div>
+
+                                        <div v-else class="mt-4 grid gap-4 lg:grid-cols-2">
+                                            <article
+                                                v-for="classCatalog in (clubCatalog.class_catalogs || [])"
+                                                :key="`${yearRow.id}-class-${classCatalog.id}`"
+                                                class="rounded-lg border border-gray-200 bg-white p-4"
+                                            >
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <h5 class="text-sm font-semibold text-gray-900">{{ classCatalog.name }}</h5>
+                                                        <p class="mt-1 text-xs text-gray-500">
+                                                            {{ tr('Requisitos', 'Requirements') }}:
+                                                            {{ getRequirementsForClass(yearRow, clubCatalog, classCatalog).length }}
+                                                        </p>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        class="text-sm text-blue-600 hover:underline"
+                                                        @click="openRequirementModal(yearRow, clubCatalog, classCatalog)"
+                                                    >
+                                                        {{ tr('Agregar requisito', 'Add requirement') }}
+                                                    </button>
+                                                </div>
+
+                                                <div v-if="!getRequirementsForClass(yearRow, clubCatalog, classCatalog).length" class="mt-3 text-sm text-gray-500">
+                                                    {{ tr('Todavía no hay requisitos para esta clase.', 'There are no requirements for this class yet.') }}
+                                                </div>
+
+                                                <div v-else class="mt-3 overflow-x-auto">
+                                                    <table class="min-w-full text-sm">
+                                                        <thead>
+                                                            <tr class="border-b text-left text-gray-500">
+                                                                <th class="pb-2 pr-4 font-medium">#</th>
+                                                                <th class="pb-2 pr-4 font-medium">{{ tr('Título', 'Title') }}</th>
+                                                                <th class="pb-2 pr-4 font-medium">{{ tr('Tipo', 'Type') }}</th>
+                                                                <th class="pb-2 pr-4 font-medium">{{ tr('Validación', 'Validation') }}</th>
+                                                                <th class="pb-2 font-medium">{{ tr('Evidencias', 'Evidence') }}</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr
+                                                                v-for="requirement in getRequirementsForClass(yearRow, clubCatalog, classCatalog)"
+                                                                :key="requirement.id"
+                                                                class="border-b last:border-b-0"
+                                                            >
+                                                                <td class="py-2 pr-4 text-gray-700">{{ requirement.sort_order }}</td>
+                                                                <td class="py-2 pr-4">
+                                                                    <div class="font-medium text-gray-900">{{ requirement.title }}</div>
+                                                                    <div v-if="requirement.description" class="text-xs text-gray-500">{{ requirement.description }}</div>
+                                                                </td>
+                                                                <td class="py-2 pr-4 text-gray-700">{{ requirement.requirement_type }}</td>
+                                                                <td class="py-2 pr-4 text-gray-700">{{ requirement.validation_mode }}</td>
+                                                                <td class="py-2 text-gray-700">
+                                                                    {{ Array.isArray(requirement.allowed_evidence_types) && requirement.allowed_evidence_types.length ? requirement.allowed_evidence_types.join(', ') : '—' }}
+                                                                </td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </article>
+                                        </div>
+                                    </section>
                                 </div>
                             </div>
                         </article>
@@ -336,6 +406,12 @@ const formatDateTime = (value) => {
                         </h3>
                         <p class="mt-1 text-sm text-gray-600">
                             {{ tr('Ciclo activo', 'Active cycle') }}: {{ activeYear?.year || '—' }}
+                        </p>
+                        <p v-if="activeClubCatalog?.name && activeClassCatalog?.name" class="mt-2 text-sm text-gray-700">
+                            {{ tr('Contexto', 'Context') }}: {{ activeClubCatalog.name }} / {{ activeClassCatalog.name }}
+                        </p>
+                        <p v-if="!props.clubCatalogs.length" class="mt-2 text-sm text-amber-700">
+                            {{ tr('No hay catálogo de clubes y clases todavía. Crea ese catálogo primero desde el menú lateral.', 'There is no club/class catalog yet. Create it first from the sidebar menu.') }}
                         </p>
                     </div>
                     <button type="button" class="text-sm text-gray-500 hover:text-gray-700" @click="closeRequirementModal">
@@ -356,7 +432,18 @@ const formatDateTime = (value) => {
                         <InputError class="mt-2" :message="requirementForm.errors.description" />
                     </div>
 
-                    <div class="grid gap-4 md:grid-cols-3">
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <InputLabel for="sort_order" :value="tr('Orden', 'Order')" />
+                            <input id="sort_order" v-model="requirementForm.sort_order" type="number" min="1" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <InputError class="mt-2" :message="requirementForm.errors.sort_order" />
+                        </div>
+                        <div class="rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-600">
+                            {{ tr('Este requisito se guardará dentro de la clase seleccionada en el esquema del ciclo.', 'This requirement will be saved inside the class selected in the cycle schema.') }}
+                        </div>
+                    </div>
+
+                    <div class="grid gap-4 md:grid-cols-2">
                         <div>
                             <InputLabel for="requirement_type" :value="tr('Tipo', 'Type')" />
                             <select id="requirement_type" v-model="requirementForm.requirement_type" class="mt-1 block w-full rounded-md border-gray-300" required>
@@ -377,12 +464,6 @@ const formatDateTime = (value) => {
                                 <option value="hybrid">Hybrid</option>
                             </select>
                             <InputError class="mt-2" :message="requirementForm.errors.validation_mode" />
-                        </div>
-
-                        <div>
-                            <InputLabel for="sort_order" :value="tr('Orden', 'Order')" />
-                            <input id="sort_order" v-model="requirementForm.sort_order" type="number" min="1" class="mt-1 block w-full rounded-md border-gray-300" />
-                            <InputError class="mt-2" :message="requirementForm.errors.sort_order" />
                         </div>
                     </div>
 
@@ -407,7 +488,7 @@ const formatDateTime = (value) => {
                         <button type="button" class="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="closeRequirementModal">
                             {{ tr('Cerrar', 'Close') }}
                         </button>
-                        <PrimaryButton :disabled="savingRequirement" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                        <PrimaryButton :disabled="savingRequirement || !activeClubCatalog || !activeClassCatalog" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
                             {{ savingRequirement ? tr('Guardando...', 'Saving...') : tr('Guardar requisito', 'Save requirement') }}
                         </PrimaryButton>
                     </div>

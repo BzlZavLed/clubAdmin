@@ -72,7 +72,7 @@ watch(() => props.editingStaff, (staff) => {
             club_name: staff.club_name || page.props.user?.club_name || "",
             church_id: auth_user.church_id,
             club_id: page.props.user?.club_id || "",
-            assigned_class: staff.assigned_classes?.[0]?.id || "",
+            assigned_class: staff.assigned_carpeta_class_activation_id || staff.assigned_classes?.[0]?.id || "",
             reference_pastor: staff.reference_pastor,
             reference_elder: staff.reference_elder,
             reference_other: staff.reference_other,

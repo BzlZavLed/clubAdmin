@@ -20,7 +20,8 @@ class Club extends Model
         'club_type',
         'evaluation_system',
         'status',
-        'church_id'
+        'church_id',
+        'district_id',
     ];
     protected static function booted(): void
     {
@@ -47,9 +48,19 @@ class Club extends Model
         return $this->belongsTo(Church::class);
     }
 
+    public function district()
+    {
+        return $this->belongsTo(District::class);
+    }
+
     public function clubClasses()
     {
         return $this->hasMany(ClubClass::class);
+    }
+
+    public function carpetaClassActivations()
+    {
+        return $this->hasMany(ClubCarpetaClassActivation::class);
     }
 
     public function staff()

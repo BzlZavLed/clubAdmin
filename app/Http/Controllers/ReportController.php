@@ -1132,39 +1132,43 @@ class ReportController extends Controller
             ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
             ->all();
 
-        // Sum payments by pay_to from payments
-        $entries = Payment::query()
+        // Sum income by pay_to
+        $incomeByAccount = Payment::query()
             ->where('payments.club_id', $club->id)
-            ->selectRaw('payments.pay_to as account, COALESCE(SUM(payments.amount_paid), 0) as entries')
-            ->groupBy('payments.pay_to')
-            ->get()
-            ->map(function ($row) use ($payToLabelMap) {
-                $account = $row->account ?? 'unassigned';
-                $entries = (float) $row->entries;
-                return [
-                    'account' => $account,
-                    'label' => $payToLabelMap[$account] ?? ($account === 'unassigned' ? 'Cuenta sin asignar' : $account),
-                    'entries' => $entries,
-                    'expenses' => 0.0,
-                    'balance' => $entries,
-                ];
-            })
-            ->values();
+            ->selectRaw('COALESCE(payments.pay_to, \'unassigned\') as account, COALESCE(SUM(payments.amount_paid), 0) as total')
+            ->groupBy('account')
+            ->pluck('total', 'account')
+            ->map(fn ($v) => (float) $v);
 
-        // Sum expenses by pay_to
+        // Sum expenses by pay_to.
+        // For reimbursement_to: only count pending entries — completed ones are already
+        // reflected as outflow expenses on the funding account created by markReimbursed.
         $expensesByAccount = Expense::query()
             ->where('club_id', $club->id)
-            ->selectRaw('pay_to as account, COALESCE(SUM(amount),0) as expenses')
+            ->where(fn ($q) => $q
+                ->where('pay_to', '!=', 'reimbursement_to')
+                ->orWhere('status', 'pending_reimbursement')
+            )
+            ->selectRaw('pay_to as account, COALESCE(SUM(amount), 0) as total')
             ->groupBy('pay_to')
-            ->pluck('expenses', 'account');
+            ->pluck('total', 'account')
+            ->map(fn ($v) => (float) $v);
 
-        // Merge expenses into entries collection
-        $entries = $entries->map(function ($acc) use ($expensesByAccount) {
-            $exp = (float) ($expensesByAccount[$acc['account']] ?? 0);
-            $acc['expenses'] = $exp;
-            $acc['balance'] = ($acc['entries'] ?? 0) - $exp;
-            return $acc;
-        });
+        // Build summary from union of all account keys so expense-only accounts
+        // (like reimbursement_to which never receives payments) are always shown.
+        $allAccountKeys = $incomeByAccount->keys()->merge($expensesByAccount->keys())->unique();
+
+        $entries = $allAccountKeys->map(function ($account) use ($incomeByAccount, $expensesByAccount, $payToLabelMap) {
+            $income   = (float) ($incomeByAccount[$account] ?? 0.0);
+            $expenses = (float) ($expensesByAccount[$account] ?? 0.0);
+            return [
+                'account'  => $account,
+                'label'    => $payToLabelMap[$account] ?? ($account === 'unassigned' ? 'Cuenta sin asignar' : $account),
+                'entries'  => $income,
+                'expenses' => $expenses,
+                'balance'  => $income - $expenses,
+            ];
+        })->values();
 
         // Detailed payment rows for income table
         $payments = Payment::query()

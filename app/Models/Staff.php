@@ -11,6 +11,7 @@ class Staff extends Model
         'id_data',
         'club_id',
         'assigned_class',
+        'assigned_carpeta_class_activation_id',
         'user_id',
         'status',
     ];
@@ -37,5 +38,10 @@ class Staff extends Model
     public function assignedClasses()
     {
         return $this->classes();
+    }
+
+    public function assignedCarpetaClassActivation()
+    {
+        return $this->belongsTo(ClubCarpetaClassActivation::class, 'assigned_carpeta_class_activation_id');
     }
 }

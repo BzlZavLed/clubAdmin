@@ -13,6 +13,8 @@ class UnionCarpetaRequirement extends Model
         'union_carpeta_year_id',
         'title',
         'description',
+        'club_type',
+        'class_name',
         'requirement_type',
         'validation_mode',
         'allowed_evidence_types',

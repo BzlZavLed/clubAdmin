@@ -34,7 +34,7 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request)
     {
-        $user = $request->user()?->load(['church', 'clubs', 'staff.classes', 'staff.club']);
+        $user = $request->user()?->load(['church', 'clubs', 'staff.classes', 'staff.club', 'staff.assignedCarpetaClassActivation.unionClassCatalog']);
         $staffRecord = $user?->staff;
         $assignedClassId = null;
         $assignedClassName = null;
@@ -47,6 +47,8 @@ class HandleInertiaRequests extends Middleware
                     ->where('id', $assignedClassId)
                     ->first(['id', 'class_name']);
                 $assignedClassName = $assignedClass?->class_name ?: $staffRecord->classes?->first()?->class_name;
+            } elseif ($staffRecord->assignedCarpetaClassActivation) {
+                $assignedClassName = $staffRecord->assignedCarpetaClassActivation->unionClassCatalog?->name;
             } else {
                 $assignedClassName = $staffRecord->classes?->first()?->class_name;
             }
@@ -77,13 +79,13 @@ class HandleInertiaRequests extends Middleware
             ? Church::query()->where('id', $effectiveChurchId)->first(['id', 'church_name'])
             : null;
         $effectiveClub = $activeClub ?: ($effectiveClubId
-            ? Club::query()->where('id', $effectiveClubId)->first(['id', 'club_name', 'club_type', 'church_id', 'church_name'])
+            ? Club::query()->where('id', $effectiveClubId)->first(['id', 'club_name', 'club_type', 'evaluation_system', 'church_id', 'church_name'])
             : null);
         $primaryDirectorClub = $user && in_array($user->profile_type, ['club_director', 'superadmin'], true)
             ? Club::query()
                 ->where('user_id', $user->id)
                 ->orderBy('club_name')
-                ->first(['id', 'club_name', 'club_type', 'church_id', 'church_name'])
+                ->first(['id', 'club_name', 'club_type', 'evaluation_system', 'church_id', 'church_name'])
             : null;
 
         return array_merge(parent::share($request), [
@@ -138,6 +140,7 @@ class HandleInertiaRequests extends Middleware
                     'id' => $effectiveClub->id,
                     'club_name' => $effectiveClub->club_name,
                     'club_type' => $effectiveClub->club_type,
+                    'evaluation_system' => $effectiveClub->evaluation_system,
                     'church_id' => $effectiveClub->church_id,
                     'church_name' => $effectiveClub->church_name,
                 ] : null,
@@ -156,6 +159,7 @@ class HandleInertiaRequests extends Middleware
                     'id' => $club->id,
                     'club_name' => $club->club_name,
                     'club_type' => $club->club_type,
+                    'evaluation_system' => $club->evaluation_system,
                     'church_id' => $club->church_id,
                     'church_name' => $club->church_name,
                 ])->values(),
@@ -176,6 +180,7 @@ class HandleInertiaRequests extends Middleware
                         'id' => $club->id,
                         'club_name' => $club->club_name,
                         'club_type' => $club->club_type,
+                        'evaluation_system' => $club->evaluation_system,
                         'church_id' => $club->church_id,
                         'church_name' => $club->church_name,
                     ])->values(),

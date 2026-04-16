@@ -27,18 +27,6 @@ const { tr } = useLocale()
                     <div><span class="font-medium">{{ tr('Iglesias accesibles:', 'Accessible churches:') }}</span> {{ user?.accessible_church_count ?? 0 }}</div>
                     <div><span class="font-medium">{{ tr('Clubes accesibles:', 'Accessible clubs:') }}</span> {{ user?.accessible_club_count ?? 0 }}</div>
                 </div>
-
-                <div class="mt-6 flex flex-wrap gap-3">
-                    <a :href="route('union.carpeta-builder')" class="inline-flex items-center rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-                        {{ tr('Builder de carpetas', 'Carpeta builder') }}
-                    </a>
-                    <a :href="route('union.reports.assistance')" class="inline-flex items-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900">
-                        {{ tr('Reporte de asistencia', 'Attendance report') }}
-                    </a>
-                    <a :href="route('union.reports.finances')" class="inline-flex items-center rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        {{ tr('Reporte financiero', 'Financial report') }}
-                    </a>
-                </div>
             </div>
             <HierarchyScopeWidget />
         </div>

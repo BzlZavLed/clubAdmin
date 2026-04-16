@@ -315,11 +315,26 @@ class ExpenseController extends Controller
             Storage::disk('public')->delete($expense->reimbursement_receipt_path);
         }
 
-        \DB::transaction(function () use ($expense, $account, $receiptPath) {
+        \DB::transaction(function () use ($expense, $account, $receiptPath, $request) {
+            // Outflow expense against the funding account — makes the deduction visible in reports
+            Expense::create([
+                'club_id'             => $expense->club_id,
+                'pay_to'              => $account->pay_to,
+                'amount'              => (float) $expense->amount,
+                'expense_date'        => now()->toDateString(),
+                'description'         => 'Reembolso a ' . ($expense->reimbursed_to ?? 'persona'),
+                'reimbursed_to'       => $expense->reimbursed_to,
+                'created_by_user_id'  => $request->user()->id,
+                'status'              => 'completed',
+                'receipt_path'        => $receiptPath,
+            ]);
+
             $account->decrement('balance', (float) $expense->amount);
+
+            // Mark original pending_reimbursement as settled, attach proof
             $expense->update([
-                'status' => 'completed',
-                'reimbursement_receipt_path' => $receiptPath,
+                'status'                      => 'completed',
+                'reimbursement_receipt_path'  => $receiptPath,
             ]);
         });
 

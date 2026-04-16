@@ -20,6 +20,9 @@ import {
     updateClubObjective,
     deleteClubObjective,
     deleteClassById,
+    activateCarpetaClassForClub,
+    createOrUpdateClass,
+    deactivateCarpetaClassForClub,
     fetchMembersByClub,
     createInvestitureRequirement,
     updateInvestitureRequirement,
@@ -28,6 +31,10 @@ import {
 
 const props = defineProps({
     churches: {
+        type: Array,
+        default: () => []
+    },
+    districts: {
         type: Array,
         default: () => []
     },
@@ -81,6 +88,36 @@ if (!isSuperadmin.value && !user.value.pastor_name) {
 const initialChurch = isSuperadmin.value
     ? (props.churches.find(ch => Number(ch.id) === Number(user.value.church_id)) || props.churches[0] || null)
     : null
+const initialDistrict = computed(() => {
+    const sourceChurch = isSuperadmin.value
+        ? props.churches.find(ch => Number(ch.id) === Number(initialChurch?.id))
+        : props.churches.find(ch => Number(ch.id) === Number(user.value.church_id))
+
+    return props.districts.find(d => Number(d.id) === Number(sourceChurch?.district_id)) || null
+})
+
+const getChurchById = (churchId) => (
+    props.churches.find(ch => Number(ch.id) === Number(churchId)) || null
+)
+
+const getDistrictById = (districtId) => (
+    props.districts.find(d => Number(d.id) === Number(districtId)) || null
+)
+
+const syncChurchFields = (church) => {
+    clubForm.church_id = church?.id || ''
+    clubForm.church_name = church?.church_name || ''
+    clubForm.pastor_name = church?.pastor_name || ''
+    churchSearch.value = church?.church_name || ''
+}
+
+const syncDistrictFields = (district) => {
+    clubForm.district_id = district?.id || ''
+    clubForm.district_name = district?.name || ''
+    clubForm.conference_name = district?.association_name || ''
+    clubForm.union_name = district?.union_name || ''
+    clubForm.evaluation_system = district?.evaluation_system || 'honors'
+}
 
 // 🧠 Club form
 const clubForm = useForm({
@@ -92,11 +129,38 @@ const clubForm = useForm({
     pastor_name: isSuperadmin.value
         ? (initialChurch?.pastor_name || '')
         : (user.value.pastor_name || 'Iglesia no creada'),
-    conference_name: isSuperadmin.value
+    conference_name: initialDistrict.value?.association_name || (isSuperadmin.value
         ? (initialChurch?.conference || '')
-        : (user.value.conference_name || 'Iglesia no creada'),
+        : (user.value.conference_name || 'Iglesia no creada')),
     conference_region: '',
-    club_type: ''
+    club_type: '',
+    evaluation_system: 'honors',
+    district_id: initialDistrict.value?.id || '',
+    district_name: initialDistrict.value?.name || '',
+    union_name: initialDistrict.value?.union_name || '',
+})
+const churchSearch = ref(initialChurch?.church_name || user.value.church_name || '')
+const showChurchSuggestions = ref(false)
+const filteredChurches = computed(() => {
+    const query = String(churchSearch.value || '').trim().toLowerCase()
+    if (!query) return props.churches.slice(0, 8)
+    return props.churches.filter((church) => {
+        const haystack = [
+            church.church_name,
+            church.pastor_name,
+        ].filter(Boolean).join(' ').toLowerCase()
+        return haystack.includes(query)
+    }).slice(0, 8)
+})
+const availableEvaluationSystems = computed(() => {
+    const value = clubForm.evaluation_system || 'honors'
+
+    return [
+        {
+            value,
+            label: value === 'carpetas' ? 'Carpetas' : 'Honores',
+        },
+    ]
 })
 
 const activeClubId = computed(() => {
@@ -136,12 +200,14 @@ const mustAttachInsteadOfCreate = computed(() =>
     eligibleAttachClubs.value.length > 0
 )
 
+watch(() => clubForm.district_id, (districtId) => {
+    syncDistrictFields(getDistrictById(districtId))
+})
+
 watch(() => clubForm.church_id, (churchId) => {
-    if (!isSuperadmin.value) return
-    const selected = props.churches.find(ch => Number(ch.id) === Number(churchId))
-    clubForm.church_name = selected?.church_name || ''
-    clubForm.pastor_name = selected?.pastor_name || ''
-    clubForm.conference_name = selected?.conference || ''
+    const selectedChurch = getChurchById(churchId)
+    syncChurchFields(selectedChurch)
+    syncDistrictFields(getDistrictById(selectedChurch?.district_id))
 })
 
 // 🧠 Load clubs on mount
@@ -202,6 +268,17 @@ const editClub = (club) => {
     editingClubId.value = club.id
     clubForm.reset()
     Object.assign(clubForm, { ...club })
+    syncChurchFields(getChurchById(club.church_id) || {
+        id: club.church_id,
+        church_name: club.church_name || '',
+        pastor_name: club.pastor_name || '',
+    })
+    syncDistrictFields(getDistrictById(club.district_id) || {
+        id: club.district_id,
+        name: club.district_name || '',
+        association_name: club.conference_name || '',
+        union_name: club.union_name || '',
+    })
 }
 
 // 🧠 Delete club or class
@@ -239,6 +316,68 @@ const getClassRequirements = (cls) => {
             if (oa !== ob) return oa - ob
             return Number(a.id || 0) - Number(b.id || 0)
         })
+}
+
+const getCarpetaRequirements = (cls) => {
+    if (!Array.isArray(cls?.carpeta_requirements)) return []
+    return cls.carpeta_requirements
+        .slice()
+        .sort((a, b) => {
+            const oa = Number(a.sort_order || 0)
+            const ob = Number(b.sort_order || 0)
+            if (oa !== ob) return oa - ob
+            return Number(a.id || 0) - Number(b.id || 0)
+        })
+}
+
+const isCarpetaClub = (club) => (club?.evaluation_system || 'honors') === 'carpetas'
+
+const getClubClasses = (club) => (
+    (club?.club_classes ?? []).slice().sort((a, b) => a.class_order - b.class_order)
+)
+
+const getCarpetaClassRows = (club) => {
+    return (club?.union_class_catalogs ?? []).slice().sort((a, b) => {
+        const oa = Number(a.sort_order || 0)
+        const ob = Number(b.sort_order || 0)
+        if (oa !== ob) return oa - ob
+        return String(a.name || '').localeCompare(String(b.name || ''))
+    })
+}
+
+const requirementTypeLabel = (value) => {
+    const labels = {
+        speciality: 'Especialidad',
+        event: 'Evento',
+        class: 'Clase',
+        presentation: 'Presentacion',
+        other: 'Otro',
+    }
+
+    return labels[value] || value || 'Otro'
+}
+
+const validationModeLabel = (value) => {
+    const labels = {
+        electronic: 'Validacion electronica',
+        physical: 'Evidencia fisica',
+        hybrid: 'Mixto',
+    }
+
+    return labels[value] || value || 'Sin definir'
+}
+
+const evidenceTypeLabel = (value) => {
+    const labels = {
+        photo: 'Foto',
+        file: 'Archivo',
+        text: 'Texto',
+        video_link: 'Video',
+        external_link: 'Enlace',
+        physical_only: 'Fisico',
+    }
+
+    return labels[value] || value
 }
 
 const getRequirementDraft = (classId) => {
@@ -326,6 +465,29 @@ const removeRequirement = async (requirementId) => {
     }
 }
 
+const activateCarpetaClass = async (club, catalogClass) => {
+    try {
+        await activateCarpetaClassForClub(club.id, catalogClass.id)
+        showToast('Clase activada correctamente')
+        await fetchClubs()
+    } catch (error) {
+        console.error('Failed to activate carpeta class:', error)
+        showToast(error?.response?.data?.message || 'No se pudo activar la clase', 'error')
+    }
+}
+
+const deactivateCarpetaClass = async (activationId) => {
+    if (!confirm('¿Seguro que deseas desactivar esta clase del club?')) return
+    try {
+        await deactivateCarpetaClassForClub(activationId)
+        showToast('Clase desactivada correctamente')
+        await fetchClubs()
+    } catch (error) {
+        console.error('Failed to deactivate carpeta class:', error)
+        showToast(error?.response?.data?.message || 'No se pudo desactivar la clase', 'error')
+    }
+}
+
 // 🧠 Select club (director choosing one)
 const selectClub = async (nextClubId) => {
     try {
@@ -344,12 +506,12 @@ const selectClub = async (nextClubId) => {
     }
 }
 
-// 🧠 Get assigned staff name by class (prefers staff.assigned_class mapping)
-const getStaffName = (cls) => {
+const getStaffName = (cls, isCarpeta = false) => {
     if (!cls) return '—'
+    if (isCarpeta) {
+        return cls.activation?.assigned_staff_name || '—'
+    }
     if (cls.assigned_staff_name) return cls.assigned_staff_name
-    const byClass = clubStaff.value.find(s => String(s.assigned_class) === String(cls.id))
-    if (byClass) return byClass.name
     if (cls.assigned_staff_id) {
         const legacy = clubStaff.value.find(s => s.id === cls.assigned_staff_id)
         if (legacy) return legacy.name
@@ -494,6 +656,7 @@ const startCreatingClub = () => {
     addClub.value = true
     clubForm.reset()
     const selected = props.churches.find(ch => Number(ch.id) === Number(clubForm.church_id))
+    const selectedDistrict = getDistrictById(selected?.district_id || initialDistrict.value?.id)
     Object.assign(clubForm, {
         church_id: isSuperadmin.value ? (selected?.id || props.churches?.[0]?.id || '') : user.value.church_id,
         club_name: '',
@@ -505,15 +668,45 @@ const startCreatingClub = () => {
         pastor_name: isSuperadmin.value
             ? (selected?.pastor_name || props.churches?.[0]?.pastor_name || '')
             : user.value.pastor_name,
-        conference_name: isSuperadmin.value
-            ? (selected?.conference || props.churches?.[0]?.conference || '')
-            : (user.value.conference_name || ''),
+        conference_name: selectedDistrict?.association_name || '',
         conference_region: '',
-        club_type: ''
+        club_type: '',
+    evaluation_system: initialDistrict.value?.evaluation_system || 'honors',
+        district_id: selectedDistrict?.id || '',
+        district_name: selectedDistrict?.name || '',
+        union_name: selectedDistrict?.union_name || '',
     })
+    syncChurchFields(selected)
+    syncDistrictFields(selectedDistrict)
     if (!isSuperadmin.value && missingChurchClubTypes.value.length === 1) {
         clubForm.club_type = missingChurchClubTypes.value[0]
     }
+}
+
+const handleChurchInput = () => {
+    showChurchSuggestions.value = true
+    const selected = getChurchById(clubForm.church_id)
+    if (!selected) {
+        clubForm.church_id = ''
+        clubForm.church_name = ''
+        clubForm.pastor_name = ''
+        syncDistrictFields(null)
+        return
+    }
+
+    if (selected.church_name !== churchSearch.value) {
+        clubForm.church_id = ''
+        clubForm.church_name = ''
+        clubForm.pastor_name = ''
+        syncDistrictFields(null)
+        return
+    }
+}
+
+const selectChurch = (church) => {
+    syncChurchFields(church)
+    syncDistrictFields(getDistrictById(church?.district_id))
+    showChurchSuggestions.value = false
 }
 
 const attachToExistingClub = async (club) => {
@@ -819,26 +1012,61 @@ onMounted(fetchClubs);
             <form class="space-y-4" @submit.prevent="isEditing ? updateClub() : submitClub()">
                 <div v-for="field in [
                     { key: 'club_name', label: 'Nombre del club' },
-                    { key: 'church_name', label: 'Nombre de la iglesia' , readonly: true },
-                    { key: 'director_name', label: 'Nombre del director', readonly: true },
-                    { key: 'creation_date', label: 'Fecha de creacion', type: 'date' },
-                    { key: 'pastor_name', label: 'Nombre del pastor', readonly: true },
-                    { key: 'conference_name', label: 'Nombre de la conferencia', readonly: true },
-                    { key: 'conference_region', label: 'Region de la conferencia' }
+                    { key: 'creation_date', label: 'Fecha de creacion', type: 'date' }
                 ]" :key="field.key">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
-                    <template v-if="field.key === 'church_name' && isSuperadmin">
-                        <select v-model="clubForm.church_id" class="w-full mt-1 p-2 border rounded">
-                            <option value="">Selecciona una iglesia</option>
-                            <option v-for="church in props.churches" :key="church.id" :value="church.id">
-                                {{ church.church_name }}
-                            </option>
-                        </select>
-                    </template>
-                    <template v-else>
-                        <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
-                            class="w-full mt-1 p-2 border rounded" />
-                    </template>
+                    <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
+                        class="w-full mt-1 p-2 border rounded" />
+                </div>
+
+                <div class="relative">
+                    <label class="block text-sm font-medium text-gray-700">Iglesia</label>
+                    <input
+                        v-model="churchSearch"
+                        type="text"
+                        class="w-full mt-1 p-2 border rounded"
+                        placeholder="Busca una iglesia"
+                        @focus="showChurchSuggestions = true"
+                        @input="handleChurchInput"
+                        @blur="() => setTimeout(() => { showChurchSuggestions = false }, 150)"
+                    />
+                    <div
+                        v-if="showChurchSuggestions && filteredChurches.length"
+                        class="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg"
+                    >
+                        <button
+                            v-for="church in filteredChurches"
+                            :key="church.id"
+                            type="button"
+                            class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                            @click="selectChurch(church)"
+                        >
+                            <div class="font-medium text-gray-900">{{ church.church_name }}</div>
+                            <div class="text-xs text-gray-500">Pastor: {{ church.pastor_name || '—' }}</div>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">
+                        Selecciona la iglesia para completar automaticamente el nombre del pastor.
+                    </p>
+                </div>
+
+                <div v-for="field in [
+                    { key: 'pastor_name', label: 'Nombre del pastor', readonly: true }
+                ]" :key="field.key">
+                    <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
+                    <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
+                        class="w-full mt-1 p-2 border rounded" />
+                </div>
+
+                <div v-for="field in [
+                    { key: 'district_name', label: 'Distrito', readonly: true },
+                    { key: 'conference_name', label: 'Asociacion / Conferencia', readonly: true },
+                    { key: 'union_name', label: 'Union', readonly: true },
+                    { key: 'director_name', label: 'Nombre del director', readonly: true }
+                ]" :key="field.key">
+                    <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
+                    <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
+                        class="w-full mt-1 p-2 border rounded" />
                 </div>
 
                 <div>
@@ -849,6 +1077,22 @@ onMounted(fetchClubs);
                         <option value="pathfinders">Conquistadores</option>
                         <option value="master_guide">Guia Mayor</option>
                     </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Sistema de evaluacion</label>
+                    <select v-model="clubForm.evaluation_system" class="w-full mt-1 p-2 border rounded bg-gray-50" disabled>
+                        <option
+                            v-for="option in availableEvaluationSystems"
+                            :key="option.value"
+                            :value="option.value"
+                        >
+                            {{ option.label }}
+                        </option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">
+                        Este valor se toma de la configuracion de la union asociada a la iglesia seleccionada.
+                    </p>
                 </div>
 
                 <div class="flex items-center space-x-4">
@@ -894,8 +1138,9 @@ onMounted(fetchClubs);
                         <thead class="bg-gray-100">
                             <tr>
                                 <th class="p-2 text-left">Nombre</th>
-                                <th class="p-2 text-left">Iglesia</th>
+                                <th class="p-2 text-left">Distrito</th>
                                 <th class="p-2 text-left">Tipo</th>
+                                <th class="p-2 text-left">Sistema</th>
                                 <th class="p-2 text-left">Creado</th>
                                 <th class="p-2 text-left">Acciones</th>
                             </tr>
@@ -903,8 +1148,9 @@ onMounted(fetchClubs);
                         <tbody>
                             <tr v-for="club in clubs" :key="club.id" class="border-t">
                                 <td class="p-2">{{ club.club_name }}</td>
-                                <td class="p-2">{{ club.church_name }}</td>
+                                <td class="p-2">{{ club.district_name || '—' }}</td>
                                 <td class="p-2 capitalize">{{ club.club_type }}</td>
+                                <td class="p-2 capitalize">{{ club.evaluation_system || 'honors' }}</td>
                                 <td class="p-2">{{ club.creation_date }}</td>
                                 <td class="p-2 space-x-2">
                                     <button @click="editClub(club)" class="text-blue-600 hover:underline">Editar</button>
@@ -958,10 +1204,30 @@ onMounted(fetchClubs);
                             >
                                 PDF clases + requisitos
                             </button>
-                            <button @click="openNewClassModal"
+                            <button
+                                v-if="!filteredClubs.some(isCarpetaClub)"
+                                @click="openNewClassModal"
                                 class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                                 + Agregar clase
                             </button>
+                        </div>
+                    </div>
+                    <div
+                        v-for="club in filteredClubs.filter(isCarpetaClub)"
+                        :key="`carpeta-banner-${club.id}`"
+                        class="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4"
+                    >
+                        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-amber-900">Carpeta de investidura definida por la union</p>
+                                <p class="text-xs text-amber-800 mt-1">
+                                    Esta clase debe cumplir exactamente la lista publicada por la union. Aqui no se editan requisitos locales.
+                                </p>
+                            </div>
+                            <div class="text-xs text-amber-900">
+                                Ciclo:
+                                <span class="font-semibold">{{ club.published_carpeta_year?.year || 'Sin publicar' }}</span>
+                            </div>
                         </div>
                     </div>
                     <table class="min-w-full border rounded text-left border-collapse">
@@ -970,113 +1236,197 @@ onMounted(fetchClubs);
                                 <th class="border-b px-4 py-2">Club</th>
                                 <th class="border-b px-4 py-2">Orden</th>
                                 <th class="border-b px-4 py-2">Nombre</th>
+                                <th class="border-b px-4 py-2">Instructor</th>
                                 <th class="border-b px-4 py-2">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
                             <template v-for="club in filteredClubs" :key="club.id">
+                                <tr v-if="isCarpetaClub(club) && !getCarpetaClassRows(club).length">
+                                    <td colspan="5" class="px-4 py-6 text-sm text-amber-800 bg-amber-50 border-b">
+                                        La union no tiene clases de carpeta configuradas para este tipo de club.
+                                    </td>
+                                </tr>
                                 <template
-                                    v-for="cls in club.club_classes.slice().sort((a, b) => a.class_order - b.class_order)"
-                                    :key="cls.id">
+                                    v-for="cls in isCarpetaClub(club) ? getCarpetaClassRows(club) : getClubClasses(club)"
+                                    :key="isCarpetaClub(club) ? `catalog-${club.id}-${cls.id}` : cls.id">
                                     <tr>
                                         <td class="px-4 py-2">{{ club.club_name }}</td>
-                                        <td class="px-4 py-2">{{ cls.class_order }}</td>
-                                        <td class="px-4 py-2">{{ cls.class_name }}</td>
+                                        <td class="px-4 py-2">{{ isCarpetaClub(club) ? cls.sort_order : cls.class_order }}</td>
+                                        <td class="px-4 py-2">
+                                            <div class="flex items-center gap-2">
+                                                <span>{{ isCarpetaClub(club) ? cls.name : cls.class_name }}</span>
+                                                <span
+                                                    v-if="isCarpetaClub(club)"
+                                                    class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                                                    :class="cls.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'"
+                                                >
+                                                    {{ cls.is_active ? 'Activa' : 'Inactiva' }}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-2 text-sm text-gray-700">
+                                            {{ getStaffName(cls, isCarpetaClub(club)) }}
+                                        </td>
                                         <td class="p-2 space-x-2">
-                                            <button @click="editCls(cls)"
-                                                class="text-blue-600 hover:underline">Editar</button>
-                                            <button @click="deleteCls(cls.id)"
-                                                class="text-red-600 hover:underline">Eliminar</button>
+                                            <template v-if="isCarpetaClub(club)">
+                                                <button
+                                                    v-if="!cls.is_active"
+                                                    @click="activateCarpetaClass(club, cls)"
+                                                    class="text-emerald-700 hover:underline"
+                                                >
+                                                    Activar
+                                                </button>
+                                                <button
+                                                    v-else
+                                                    @click="deactivateCarpetaClass(cls.activation.id)"
+                                                    class="text-red-600 hover:underline"
+                                                >
+                                                    Desactivar
+                                                </button>
+                                            </template>
+                                            <template v-else>
+                                                <button @click="editCls(cls)"
+                                                    class="text-blue-600 hover:underline">Editar</button>
+                                                <button @click="deleteCls(cls.id)"
+                                                    class="text-red-600 hover:underline">Eliminar</button>
+                                            </template>
                                         </td>
                                     </tr>
-                                    <tr>
-                                        <td colspan="4" class="px-4 py-3 bg-gray-50 border-b">
-                                            <div class="flex items-center justify-between mb-2">
-                                                <p class="text-sm font-semibold text-gray-800">
-                                                    Requisitos de investidura<span v-if="club.club_type === 'adventurers'"> (Honores/Honors)</span>
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    class="text-sm text-blue-700 hover:underline"
-                                                    @click="startCreateRequirement(cls.id)"
-                                                >
-                                                    + Agregar requisito
-                                                </button>
-                                            </div>
-
-                                            <ul v-if="getClassRequirements(cls).length" class="space-y-2 mb-3">
-                                                <li
-                                                    v-for="requirement in getClassRequirements(cls)"
-                                                    :key="requirement.id"
-                                                    class="border rounded p-2 bg-white"
-                                                >
-                                                    <div class="flex items-start justify-between gap-3">
-                                                        <div>
-                                                            <p class="text-sm font-medium text-gray-900">
-                                                                {{ requirement.sort_order }}. {{ requirement.title }}
-                                                            </p>
-                                                            <p v-if="requirement.description" class="text-xs text-gray-600 mt-1">
-                                                                {{ requirement.description }}
-                                                            </p>
+                                    <tr v-if="!isCarpetaClub(club) || cls.is_active">
+                                        <td colspan="5" class="px-4 py-3 bg-gray-50 border-b">
+                                            <template v-if="isCarpetaClub(club)">
+                                                <ul v-if="getCarpetaRequirements(cls).length" class="space-y-3">
+                                                    <li
+                                                        v-for="requirement in getCarpetaRequirements(cls)"
+                                                        :key="`carpeta-${requirement.id}`"
+                                                        class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
+                                                    >
+                                                        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                                            <div class="min-w-0">
+                                                                <div class="flex flex-wrap items-center gap-2">
+                                                                    <span class="inline-flex items-center rounded-full bg-gray-900 px-2 py-0.5 text-[11px] font-medium text-white">
+                                                                        {{ requirement.sort_order }}.
+                                                                    </span>
+                                                                    <p class="text-sm font-semibold text-gray-900">{{ requirement.title }}</p>
+                                                                </div>
+                                                                <p v-if="requirement.description" class="mt-2 text-xs text-gray-600">
+                                                                    {{ requirement.description }}
+                                                                </p>
+                                                                <p v-if="requirement.evidence_instructions" class="mt-2 text-xs text-gray-700">
+                                                                    <span class="font-medium">Instrucciones:</span> {{ requirement.evidence_instructions }}
+                                                                </p>
+                                                            </div>
+                                                            <div class="grid grid-cols-1 gap-2 text-xs text-gray-700 md:min-w-[220px]">
+                                                                <div class="rounded border bg-gray-50 px-2 py-1.5">
+                                                                    <span class="font-medium">Tipo:</span> {{ requirementTypeLabel(requirement.requirement_type) }}
+                                                                </div>
+                                                                <div class="rounded border bg-gray-50 px-2 py-1.5">
+                                                                    <span class="font-medium">Validacion:</span> {{ validationModeLabel(requirement.validation_mode) }}
+                                                                </div>
+                                                                <div class="rounded border bg-gray-50 px-2 py-1.5">
+                                                                    <span class="font-medium">Evidencias:</span>
+                                                                        {{ (requirement.allowed_evidence_types || []).length
+                                                                            ? requirement.allowed_evidence_types.map(evidenceTypeLabel).join(', ')
+                                                                            : 'Segun defina la union' }}
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div class="flex items-center gap-2">
-                                                            <button
-                                                                type="button"
-                                                                class="text-xs text-blue-700 hover:underline"
-                                                                @click="startEditRequirement(cls.id, requirement)"
-                                                            >
-                                                                Editar
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                class="text-xs text-red-700 hover:underline"
-                                                                @click="removeRequirement(requirement.id)"
-                                                            >
-                                                                Eliminar
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </li>
-                                            </ul>
-                                            <p v-else class="text-xs text-gray-500 mb-3">No hay requisitos registrados para esta clase.</p>
+                                                    </li>
+                                                </ul>
+                                                <div v-else class="rounded border border-dashed border-amber-300 bg-white px-3 py-4 text-sm text-amber-800">
+                                                    No hay requisitos publicados para esta clase en el ciclo de carpeta actual de la union.
+                                                </div>
+                                            </template>
 
-                                            <div v-if="showRequirementFormByClass[cls.id]" class="grid grid-cols-1 md:grid-cols-4 gap-2">
-                                                <input
-                                                    v-model="getRequirementDraft(cls.id).title"
-                                                    type="text"
-                                                    placeholder="Titulo del requisito"
-                                                    class="border rounded px-2 py-1 text-sm md:col-span-2"
-                                                />
-                                                <input
-                                                    v-model="getRequirementDraft(cls.id).description"
-                                                    type="text"
-                                                    placeholder="Descripcion (opcional)"
-                                                    class="border rounded px-2 py-1 text-sm"
-                                                />
-                                                <input
-                                                    v-model.number="getRequirementDraft(cls.id).sort_order"
-                                                    type="number"
-                                                    min="1"
-                                                    placeholder="Orden"
-                                                    class="border rounded px-2 py-1 text-sm"
-                                                />
-                                            </div>
-                                            <div v-if="showRequirementFormByClass[cls.id]" class="mt-2 flex items-center gap-3">
-                                                <button
-                                                    type="button"
-                                                    class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
-                                                    @click="saveRequirement(cls)"
-                                                >
-                                                    {{ editingRequirementByClass[cls.id] ? 'Actualizar' : 'Guardar' }}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    class="text-xs text-gray-600 hover:underline"
-                                                    @click="cancelRequirementEdit(cls.id)"
-                                                >
-                                                    Limpiar
-                                                </button>
-                                            </div>
+                                            <template v-else>
+                                                <div class="flex items-center justify-between mb-2">
+                                                    <p class="text-sm font-semibold text-gray-800">
+                                                        Requisitos de investidura<span v-if="club.club_type === 'adventurers'"> (Honores/Honors)</span>
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        class="text-sm text-blue-700 hover:underline"
+                                                        @click="startCreateRequirement(cls.id)"
+                                                    >
+                                                        + Agregar requisito
+                                                    </button>
+                                                </div>
+
+                                                <ul v-if="getClassRequirements(cls).length" class="space-y-2 mb-3">
+                                                    <li
+                                                        v-for="requirement in getClassRequirements(cls)"
+                                                        :key="requirement.id"
+                                                        class="border rounded p-2 bg-white"
+                                                    >
+                                                        <div class="flex items-start justify-between gap-3">
+                                                            <div>
+                                                                <p class="text-sm font-medium text-gray-900">
+                                                                    {{ requirement.sort_order }}. {{ requirement.title }}
+                                                                </p>
+                                                                <p v-if="requirement.description" class="text-xs text-gray-600 mt-1">
+                                                                    {{ requirement.description }}
+                                                                </p>
+                                                            </div>
+                                                            <div class="flex items-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    class="text-xs text-blue-700 hover:underline"
+                                                                    @click="startEditRequirement(cls.id, requirement)"
+                                                                >
+                                                                    Editar
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    class="text-xs text-red-700 hover:underline"
+                                                                    @click="removeRequirement(requirement.id)"
+                                                                >
+                                                                    Eliminar
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                </ul>
+                                                <p v-else class="text-xs text-gray-500 mb-3">No hay requisitos registrados para esta clase.</p>
+
+                                                <div v-if="showRequirementFormByClass[cls.id]" class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                                    <input
+                                                        v-model="getRequirementDraft(cls.id).title"
+                                                        type="text"
+                                                        placeholder="Titulo del requisito"
+                                                        class="border rounded px-2 py-1 text-sm md:col-span-2"
+                                                    />
+                                                    <input
+                                                        v-model="getRequirementDraft(cls.id).description"
+                                                        type="text"
+                                                        placeholder="Descripcion (opcional)"
+                                                        class="border rounded px-2 py-1 text-sm"
+                                                    />
+                                                    <input
+                                                        v-model.number="getRequirementDraft(cls.id).sort_order"
+                                                        type="number"
+                                                        min="1"
+                                                        placeholder="Orden"
+                                                        class="border rounded px-2 py-1 text-sm"
+                                                    />
+                                                </div>
+                                                <div v-if="showRequirementFormByClass[cls.id]" class="mt-2 flex items-center gap-3">
+                                                    <button
+                                                        type="button"
+                                                        class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
+                                                        @click="saveRequirement(cls)"
+                                                    >
+                                                        {{ editingRequirementByClass[cls.id] ? 'Actualizar' : 'Guardar' }}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="text-xs text-gray-600 hover:underline"
+                                                        @click="cancelRequirementEdit(cls.id)"
+                                                    >
+                                                        Limpiar
+                                                    </button>
+                                                </div>
+                                            </template>
                                         </td>
                                     </tr>
                                 </template>

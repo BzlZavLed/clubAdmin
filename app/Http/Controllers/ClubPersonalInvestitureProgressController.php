@@ -6,9 +6,11 @@ use App\Models\ClassInvestitureRequirement;
 use App\Models\ClassPlan;
 use App\Models\Club;
 use App\Models\ClubClass;
+use App\Models\ClubCarpetaClassActivation;
 use App\Models\RepAssistanceAdv;
 use App\Models\RepAssistanceAdvMerit;
 use App\Models\Staff;
+use App\Models\UnionCarpetaYear;
 use App\Support\ClubHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -18,6 +20,24 @@ use Inertia\Inertia;
 
 class ClubPersonalInvestitureProgressController extends Controller
 {
+    private function normalizeValue(?string $value): string
+    {
+        return mb_strtolower(trim((string) $value));
+    }
+
+    private function normalizeClubType(?string $value): string
+    {
+        $normalized = str_replace(['-', '_'], ' ', $this->normalizeValue($value));
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+
+        return match ($normalized) {
+            'adventurers', 'adventurer', 'aventureros', 'aventurero' => 'adventurers',
+            'pathfinders', 'pathfinder', 'conquistadores', 'conquistador' => 'pathfinders',
+            'master guide', 'master guides', 'guia mayor', 'guia mayores', 'guia mayor avanzado' => 'master_guide',
+            default => $normalized,
+        };
+    }
+
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -120,6 +140,33 @@ class ClubPersonalInvestitureProgressController extends Controller
         ]);
     }
 
+    private function resolveAssignedClassName($user, ?ClubClass $assignedClass = null): ?string
+    {
+        return $assignedClass?->class_name
+            ?: $user?->staff?->assigned_class_name
+            ?: $user?->assigned_class_name
+            ?: session('assigned_class_name');
+    }
+
+    private function findPublishedCarpetaYear(?Club $club): ?UnionCarpetaYear
+    {
+        $unionId = $club?->district?->association?->union?->id;
+        if (!$unionId) {
+            return null;
+        }
+
+        return UnionCarpetaYear::query()
+            ->with(['requirements' => fn ($query) => $query
+                ->where('status', 'active')
+                ->orderBy('sort_order')
+                ->orderBy('id')])
+            ->where('union_id', $unionId)
+            ->where('status', 'published')
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->first();
+    }
+
     public function pdf(Request $request)
     {
         $user = $request->user();
@@ -192,12 +239,85 @@ class ClubPersonalInvestitureProgressController extends Controller
     private function buildProgressData($user): ?array
     {
         [$staff, $assignedClass, $assignedClassId] = $this->resolveStaffAndClass($user);
-        if (!$staff || !$assignedClass || !$assignedClassId) {
+        if (!$staff) {
             return null;
         }
 
         $clubId = (int) ($staff->club_id ?? $user->club_id ?? $assignedClass->club_id ?? 0);
-        $club = $clubId ? Club::find($clubId) : null;
+        $club = $clubId
+            ? Club::query()
+                ->with([
+                    'district.association.union',
+                    'carpetaClassActivations.unionClassCatalog',
+                ])
+                ->find($clubId)
+            : null;
+
+        if (($club?->evaluation_system ?? 'honors') === 'carpetas') {
+            $assignedClassName = $this->resolveAssignedClassName($user, $assignedClass);
+            if (!$assignedClassName) {
+                return null;
+            }
+
+            $activation = $club?->carpetaClassActivations
+                ?->first(function (ClubCarpetaClassActivation $activation) use ($assignedClassName) {
+                    return $this->normalizeValue($activation->unionClassCatalog?->name) === $this->normalizeValue($assignedClassName);
+                });
+
+            if (!$activation) {
+                return null;
+            }
+
+            $publishedYear = $this->findPublishedCarpetaYear($club);
+            $requirements = collect($publishedYear?->requirements ?? [])
+                ->filter(function ($requirement) use ($club, $activation) {
+                    return $this->normalizeClubType($requirement->club_type) === $this->normalizeClubType($club?->club_type)
+                        && $this->normalizeValue($requirement->class_name) === $this->normalizeValue($activation->unionClassCatalog?->name);
+                })
+                ->map(fn ($requirement) => [
+                    'id' => (int) $requirement->id,
+                    'title' => $requirement->title,
+                    'description' => $requirement->description,
+                    'sort_order' => $requirement->sort_order,
+                    'requirement_type' => $requirement->requirement_type,
+                    'validation_mode' => $requirement->validation_mode,
+                    'allowed_evidence_types' => $requirement->allowed_evidence_types ?? [],
+                    'evidence_instructions' => $requirement->evidence_instructions,
+                    'completed_count' => null,
+                    'completions' => [],
+                    'activities' => [],
+                    'completion_placeholder' => true,
+                ])
+                ->values()
+                ->all();
+
+            return [
+                'club' => $club ? [
+                    'id' => $club->id,
+                    'club_name' => $club->club_name,
+                    'evaluation_system' => $club->evaluation_system,
+                    'published_carpeta_year' => $publishedYear ? [
+                        'id' => $publishedYear->id,
+                        'year' => $publishedYear->year,
+                    ] : null,
+                ] : null,
+                'staff' => [
+                    'id' => $staff->id,
+                    'name' => $staff->user?->name ?? $user?->name,
+                ],
+                'assigned_class' => [
+                    'id' => $activation->id,
+                    'name' => $activation->unionClassCatalog?->name ?: $assignedClassName,
+                    'order' => $activation->unionClassCatalog?->sort_order,
+                ],
+                'members' => [],
+                'requirements' => $requirements,
+            ];
+        }
+
+        if (!$assignedClass || !$assignedClassId) {
+            return null;
+        }
 
         $members = ClubHelper::getMembersByClassAndClub($clubId, (int) $assignedClassId)
             ->filter(fn ($m) => !empty($m['id_data']))
@@ -327,7 +447,11 @@ class ClubPersonalInvestitureProgressController extends Controller
         })->values()->all();
 
         return [
-            'club' => $club ? ['id' => $club->id, 'club_name' => $club->club_name] : null,
+            'club' => $club ? [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+                'evaluation_system' => $club->evaluation_system,
+            ] : null,
             'staff' => [
                 'id' => $staff->id,
                 'name' => $staff->user?->name ?? $user?->name,

@@ -108,12 +108,18 @@ const filteredStaff = computed(() =>
 )
 const availableClasses = computed(() => {
     if (!selectedClub.value) return []
-    const cls = clubClasses.value.filter(c => c.club_id === selectedClub.value.id || !c.club_id)
-    return cls
+    if ((selectedClub.value.evaluation_system || 'honors') === 'carpetas') {
+        return clubClasses.value
+    }
+    return clubClasses.value.filter(c => c.club_id === selectedClub.value.id || !c.club_id)
 })
 
 const classDisplay = (person) => {
     if (person.class_names?.length) return person.class_names.join(', ')
+    if ((selectedClub.value?.evaluation_system || 'honors') === 'carpetas' && person.assigned_carpeta_class_activation_id) {
+        const match = clubClasses.value.find(c => String(c.id) === String(person.assigned_carpeta_class_activation_id))
+        if (match) return match.class_name
+    }
     if (person.assigned_class) {
         const match = clubClasses.value.find(c => String(c.id) === String(person.assigned_class))
         if (match) return match.class_name
@@ -199,7 +205,10 @@ const fetchStaff = async (clubId, churchId = null) => {
         await fetchClasses(clubId)
         // hydrate current class selections
         staff.value.forEach(person => {
-            if (person.assigned_class) {
+            if ((selectedClub.value?.evaluation_system || 'honors') === 'carpetas' && person.assigned_carpeta_class_activation_id) {
+                const match = clubClasses.value.find(c => String(c.id) === String(person.assigned_carpeta_class_activation_id))
+                if (match) assignedClassChanges.value[person.id] = match.id
+            } else if (person.assigned_class) {
                 assignedClassChanges.value[person.id] = person.assigned_class
             } else if (person.class_names?.length === 1) {
                 const match = clubClasses.value.find(c => c.class_name === person.class_names[0])

@@ -13,6 +13,7 @@ const { tr } = useLocale()
 const assignedClass = computed(() => page.props.assigned_class || null)
 const staff = computed(() => page.props.staff || null)
 const club = computed(() => page.props.club || null)
+const isCarpetaClub = computed(() => (club.value?.evaluation_system || 'honors') === 'carpetas')
 const membersCount = computed(() => Number(page.props.members_count || 0))
 const members = computed(() => Array.isArray(page.props.members) ? page.props.members : [])
 const requirements = computed(() => Array.isArray(page.props.requirements) ? page.props.requirements : [])
@@ -61,6 +62,41 @@ const formatDate = (value) => {
     if (Number.isNaN(date.getTime())) return value
     return date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
+
+const requirementTypeLabel = (value) => {
+    const labels = {
+        speciality: tr('Especialidad', 'Specialty'),
+        event: tr('Evento', 'Event'),
+        class: tr('Clase', 'Class'),
+        presentation: tr('Presentacion', 'Presentation'),
+        other: tr('Otro', 'Other'),
+    }
+
+    return labels[value] || value || tr('Otro', 'Other')
+}
+
+const validationModeLabel = (value) => {
+    const labels = {
+        electronic: tr('Validacion electronica', 'Electronic validation'),
+        physical: tr('Evidencia fisica', 'Physical evidence'),
+        hybrid: tr('Mixto', 'Hybrid'),
+    }
+
+    return labels[value] || value || tr('Sin definir', 'Undefined')
+}
+
+const evidenceTypeLabel = (value) => {
+    const labels = {
+        photo: tr('Foto', 'Photo'),
+        file: tr('Archivo', 'File'),
+        text: tr('Texto', 'Text'),
+        video_link: tr('Video', 'Video'),
+        external_link: tr('Enlace', 'Link'),
+        physical_only: tr('Fisico', 'Physical'),
+    }
+
+    return labels[value] || value
+}
 </script>
 
 <template>
@@ -82,6 +118,7 @@ const formatDate = (value) => {
                     <div><span class="font-semibold">{{ tr('Orden', 'Order') }}:</span> {{ assignedClass?.order ?? '—' }}</div>
                     <div><span class="font-semibold">Staff:</span> {{ staff?.name || '—' }}</div>
                     <div><span class="font-semibold">Club:</span> {{ club?.club_name || '—' }}</div>
+                    <div><span class="font-semibold">{{ tr('Sistema', 'System') }}:</span> {{ isCarpetaClub ? tr('Carpetas', 'Carpetas') : tr('Honores', 'Honors') }}</div>
                     <div><span class="font-semibold">{{ tr('Miembros en clase', 'Class members') }}:</span> {{ membersCount }}</div>
                     <div><span class="font-semibold">{{ tr('Total requisitos', 'Total requirements') }}:</span> {{ requirements.length }}</div>
                 </div>
@@ -104,7 +141,7 @@ const formatDate = (value) => {
                             </h2>
                             <p v-if="requirement.description" class="text-sm text-gray-600 mt-1">{{ requirement.description }}</p>
                         </div>
-                        <div class="text-xs text-right">
+                        <div v-if="!isCarpetaClub" class="text-xs text-right">
                             <div class="font-semibold text-green-700">{{ requirement.completed_count || 0 }} {{ tr('completados', 'completed') }}</div>
                             <div class="text-gray-500">{{ tr('de', 'of') }} {{ membersCount }} {{ tr('miembros', 'members') }}</div>
                         </div>
@@ -112,62 +149,87 @@ const formatDate = (value) => {
                 </div>
 
                 <div class="p-4">
-                    <div class="mb-4 p-3 border rounded bg-blue-50">
-                        <p class="text-sm font-semibold text-gray-800 mb-2">{{ tr('Registrar cumplimiento manual', 'Register manual completion') }}</p>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <select
-                                v-model="getDraft(requirement.id).member_id"
-                                class="border rounded px-2 py-2 text-sm bg-white"
-                            >
-                                <option value="">{{ tr('Selecciona miembro', 'Select member') }}</option>
-                                <option v-for="member in members" :key="`member-opt-${member.id}`" :value="member.id">
-                                    {{ member.name }}
-                                </option>
-                            </select>
-
-                            <select
-                                v-model="getDraft(requirement.id).class_plan_id"
-                                class="border rounded px-2 py-2 text-sm bg-white"
-                            >
-                                <option value="">{{ tr('Selecciona actividad vinculada', 'Select linked activity') }}</option>
-                                <option
-                                    v-for="activity in (requirement.activities || [])"
-                                    :key="`activity-opt-${activity.id}`"
-                                    :value="activity.id"
-                                    :disabled="!activity.has_report"
-                                >
-                                    {{ activity.title }} - {{ formatDate(activity.meeting_date) }}{{ activity.has_report ? '' : ' (Sin reporte de asistencia)' }}
-                                </option>
-                            </select>
-
-                            <button
-                                type="button"
-                                class="px-3 py-2 rounded text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60"
-                                :disabled="getDraft(requirement.id).saving || !(requirement.activities || []).length"
-                                @click="saveCompletion(requirement)"
-                            >
-                                {{ getDraft(requirement.id).saving ? tr('Guardando...', 'Saving...') : tr('Agregar cumplimiento', 'Add completion') }}
-                            </button>
+                    <template v-if="isCarpetaClub">
+                        <div class="grid gap-2 md:grid-cols-3 text-xs mb-4">
+                            <div class="rounded border bg-gray-50 px-3 py-2">
+                                <span class="font-medium">{{ tr('Tipo', 'Type') }}:</span> {{ requirementTypeLabel(requirement.requirement_type) }}
+                            </div>
+                            <div class="rounded border bg-gray-50 px-3 py-2">
+                                <span class="font-medium">{{ tr('Validacion', 'Validation') }}:</span> {{ validationModeLabel(requirement.validation_mode) }}
+                            </div>
+                            <div class="rounded border bg-gray-50 px-3 py-2">
+                                <span class="font-medium">{{ tr('Evidencias', 'Evidence') }}:</span>
+                                {{ (requirement.allowed_evidence_types || []).length
+                                    ? requirement.allowed_evidence_types.map(evidenceTypeLabel).join(', ')
+                                    : tr('Segun defina la union', 'As defined by the union') }}
+                            </div>
                         </div>
-                        <p v-if="!(requirement.activities || []).length" class="text-xs text-gray-500 mt-2">
-                            {{ tr('No hay actividades con reporte de asistencia disponible para este requisito.', 'There are no activities with attendance report available for this requirement.') }}
+                        <p v-if="requirement.evidence_instructions" class="text-sm text-gray-700 mb-4">
+                            <span class="font-medium">{{ tr('Instrucciones', 'Instructions') }}:</span> {{ requirement.evidence_instructions }}
                         </p>
-                    </div>
+                        <div class="rounded border border-dashed border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                            {{ tr('Pronto mostraremos aqui la lista de miembros que han completado este requisito de carpeta.', 'We will show here the list of members who have completed this carpeta requirement soon.') }}
+                        </div>
+                    </template>
 
-                    <div v-if="!(requirement.completions || []).length" class="text-sm text-gray-500">
-                        {{ tr('Aún no hay miembros con este requisito cumplido.', 'There are no members with this requirement completed yet.') }}
-                    </div>
-                    <ul v-else class="space-y-2">
-                        <li
-                            v-for="entry in requirement.completions"
-                            :key="`${requirement.id}-${entry.member_id}`"
-                            class="text-sm border border-gray-100 rounded px-3 py-2 bg-white"
-                        >
-                            <span class="font-medium text-gray-900">{{ entry.member_name }}</span>
-                            <span class="text-gray-600"> - {{ tr('requisito cumplido el', 'requirement completed on') }} {{ formatDate(entry.date) }}</span>
-                            <span v-if="entry.activity_title" class="text-gray-500"> ({{ entry.activity_title }})</span>
-                        </li>
-                    </ul>
+                    <template v-else>
+                        <div class="mb-4 p-3 border rounded bg-blue-50">
+                            <p class="text-sm font-semibold text-gray-800 mb-2">{{ tr('Registrar cumplimiento manual', 'Register manual completion') }}</p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                <select
+                                    v-model="getDraft(requirement.id).member_id"
+                                    class="border rounded px-2 py-2 text-sm bg-white"
+                                >
+                                    <option value="">{{ tr('Selecciona miembro', 'Select member') }}</option>
+                                    <option v-for="member in members" :key="`member-opt-${member.id}`" :value="member.id">
+                                        {{ member.name }}
+                                    </option>
+                                </select>
+
+                                <select
+                                    v-model="getDraft(requirement.id).class_plan_id"
+                                    class="border rounded px-2 py-2 text-sm bg-white"
+                                >
+                                    <option value="">{{ tr('Selecciona actividad vinculada', 'Select linked activity') }}</option>
+                                    <option
+                                        v-for="activity in (requirement.activities || [])"
+                                        :key="`activity-opt-${activity.id}`"
+                                        :value="activity.id"
+                                        :disabled="!activity.has_report"
+                                    >
+                                        {{ activity.title }} - {{ formatDate(activity.meeting_date) }}{{ activity.has_report ? '' : ' (Sin reporte de asistencia)' }}
+                                    </option>
+                                </select>
+
+                                <button
+                                    type="button"
+                                    class="px-3 py-2 rounded text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60"
+                                    :disabled="getDraft(requirement.id).saving || !(requirement.activities || []).length"
+                                    @click="saveCompletion(requirement)"
+                                >
+                                    {{ getDraft(requirement.id).saving ? tr('Guardando...', 'Saving...') : tr('Agregar cumplimiento', 'Add completion') }}
+                                </button>
+                            </div>
+                            <p v-if="!(requirement.activities || []).length" class="text-xs text-gray-500 mt-2">
+                                {{ tr('No hay actividades con reporte de asistencia disponible para este requisito.', 'There are no activities with attendance report available for this requirement.') }}
+                            </p>
+                        </div>
+
+                        <div v-if="!(requirement.completions || []).length" class="text-sm text-gray-500">
+                            {{ tr('Aún no hay miembros con este requisito cumplido.', 'There are no members with this requirement completed yet.') }}
+                        </div>
+                        <ul v-else class="space-y-2">
+                            <li
+                                v-for="entry in requirement.completions"
+                                :key="`${requirement.id}-${entry.member_id}`"
+                                class="text-sm border border-gray-100 rounded px-3 py-2 bg-white"
+                            >
+                                <span class="font-medium text-gray-900">{{ entry.member_name }}</span>
+                                <span class="text-gray-600"> - {{ tr('requisito cumplido el', 'requirement completed on') }} {{ formatDate(entry.date) }}</span>
+                                <span v-if="entry.activity_title" class="text-gray-500"> ({{ entry.activity_title }})</span>
+                            </li>
+                        </ul>
+                    </template>
                 </div>
             </section>
         </div>

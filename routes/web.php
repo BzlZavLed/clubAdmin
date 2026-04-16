@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use App\Http\Controllers\ClubController;
+use App\Http\Controllers\ClubCarpetaClassActivationController;
 use App\Http\Controllers\MemberAdventurerController;
 use App\Http\Controllers\ParentAuthController;
 use App\Models\Club;
@@ -131,6 +132,9 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
     Route::get('/union/dashboard', fn() => Inertia::render('Union/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('union.dashboard');
+    Route::get('/union/catalog/clubs-classes', [UnionController::class, 'catalog'])->name('union.catalog');
+    Route::post('/union/catalog/clubs-classes/club-types', [UnionController::class, 'storeClubCatalog'])->name('union.catalog.club-types.store');
+    Route::post('/union/catalog/clubs-classes/club-types/{clubCatalog}/classes', [UnionController::class, 'storeClassCatalog'])->name('union.catalog.classes.store');
     Route::get('/union/carpeta-builder', [UnionController::class, 'builder'])->name('union.carpeta-builder');
     Route::put('/union/carpeta-builder/evaluation-system', [UnionController::class, 'updateScopedEvaluationSystem'])
         ->name('union.carpeta-builder.evaluation-system.update');
@@ -341,9 +345,22 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
             return Inertia::render('ClubDirector/MyClub', [
                 'auth_user' => $user,
-                'churches' => Church::select('id', 'church_name', 'pastor_name', 'conference')
+                'churches' => Church::select('id', 'district_id', 'church_name', 'pastor_name', 'conference')
                     ->orderBy('church_name')
                     ->get(),
+                'districts' => \App\Models\District::query()
+                    ->with('association.union:id,name,evaluation_system')
+                    ->where('status', '!=', 'deleted')
+                    ->orderBy('name')
+                    ->get(['id', 'association_id', 'name', 'status'])
+                    ->map(fn ($district) => [
+                        'id' => $district->id,
+                        'name' => $district->name,
+                        'association_name' => $district->association?->name,
+                        'union_name' => $district->association?->union?->name,
+                        'evaluation_system' => $district->association?->union?->evaluation_system ?: 'honors',
+                    ])
+                    ->values(),
                 'superadmin_context' => $isSuperadmin ? [
                     'church_id' => session('superadmin_context.church_id')
                         ? (int) session('superadmin_context.church_id')
@@ -508,6 +525,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/club-user', [ClubController::class, 'selectClub'])->name('club.select');
     Route::post('/clubs/{club}/attach-director', [ClubController::class, 'attachDirector'])->name('club.attach-director');
     Route::post('/clubs/{club}/detach-director', [ClubController::class, 'detachDirector'])->name('club.detach-director');
+    Route::post('/clubs/{club}/carpeta-class-activations', [ClubCarpetaClassActivationController::class, 'store'])->name('clubs.carpeta-class-activations.store');
+    Route::delete('/club-carpeta-class-activations/{activation}', [ClubCarpetaClassActivationController::class, 'destroy'])->name('clubs.carpeta-class-activations.destroy');
     Route::post('/clubs/{club}/objectives', [\App\Http\Controllers\ClubObjectiveController::class, 'store'])->name('clubs.objectives.store');
     Route::put('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'update'])->name('clubs.objectives.update');
     Route::delete('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'destroy'])->name('clubs.objectives.destroy');

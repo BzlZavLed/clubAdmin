@@ -5,6 +5,7 @@ import ClubDirectorNav from '@/Components/Nav/ClubDirectorNav.vue'
 import SuperAdminNav from '@/Components/Nav/SuperAdminNav.vue'
 import ClubPersonalNav from '@/Components/Nav/ClubPersonalNav.vue'
 import ParentNav from '@/Components/Nav/ParentNav.vue'
+import UnionNav from '@/Components/Nav/UnionNav.vue'
 import SuperadminClubContextBar from '@/Components/SuperadminClubContextBar.vue'
 import LocaleSwitcher from '@/Components/LocaleSwitcher.vue'
 
@@ -49,6 +50,8 @@ const getNavComponent = () => {
         return h(SuperAdminNav, { isCollapsed: navCollapsed.value })
     } else if (profileType === 'club_personal') {
         return h(ClubPersonalNav, { isCollapsed: navCollapsed.value })
+    } else if (profileType === 'union_youth_director' || profileType === 'union_manager') {
+        return h(UnionNav, { isCollapsed: navCollapsed.value })
     } else if (profileType === 'parent') {
         return h(ParentNav, { isCollapsed: navCollapsed.value })
     }

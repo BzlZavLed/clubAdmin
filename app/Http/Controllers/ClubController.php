@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 use Illuminate\Validation\Rule;
 use App\Models\Club;
+use App\Models\District;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use App\Models\PaymentConcept;
@@ -11,7 +12,10 @@ use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
+use App\Models\StaffPathfinder;
 use App\Models\Account;
+use App\Models\Union;
+use App\Models\UnionCarpetaYear;
 use App\Support\ClubHelper;
 use Illuminate\Http\Exceptions\HttpResponseException;
 class ClubController extends Controller
@@ -23,6 +27,31 @@ class ClubController extends Controller
         $church->loadMissing('district.association.union:id,evaluation_system');
 
         return $church->district?->association?->union?->evaluation_system ?: 'honors';
+    }
+
+    protected function resolveDistrictHierarchy(District $district): array
+    {
+        $district->loadMissing('association.union');
+
+        return [
+            'district' => $district,
+            'association' => $district->association,
+            'union' => $district->association?->union,
+        ];
+    }
+
+    protected function buildClubHierarchyFields(Church $church, District $district): array
+    {
+        $hierarchy = $this->resolveDistrictHierarchy($district);
+
+        return [
+            'church_name' => $church->church_name,
+            'pastor_name' => $church->pastor_name,
+            'conference_name' => $hierarchy['association']?->name,
+            'evaluation_system' => $hierarchy['union']?->evaluation_system ?: 'honors',
+            'district_id' => $district->id,
+            'church_id' => $church->id,
+        ];
     }
 
     protected function enforceChurchClubTypeRule(int $churchId, string $clubType, ?int $ignoreClubId = null): void
@@ -48,6 +77,160 @@ class ClubController extends Controller
         }
     }
 
+    protected function normalizeCatalogName(?string $value): string
+    {
+        return mb_strtolower(trim((string) $value));
+    }
+
+    protected function normalizeClubTypeValue(?string $value): string
+    {
+        $normalized = str_replace(['-', '_'], ' ', $this->normalizeCatalogName($value));
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+
+        return match ($normalized) {
+            'adventurers', 'adventurer', 'aventureros', 'aventurero' => 'adventurers',
+            'pathfinders', 'pathfinder', 'conquistadores', 'conquistador' => 'pathfinders',
+            'master guide', 'master guides', 'guia mayor', 'guia mayores', 'guia mayor avanzado' => 'master_guide',
+            default => $normalized,
+        };
+    }
+
+    protected function clubTypeMatches(?string $left, ?string $right): bool
+    {
+        return $this->normalizeClubTypeValue($left) === $this->normalizeClubTypeValue($right);
+    }
+
+    protected function attachUnionCarpetaDefinitions($clubs)
+    {
+        if ($clubs->isEmpty()) {
+            return $clubs;
+        }
+
+        $unionIds = $clubs
+            ->map(fn ($club) => $club->district?->association?->union?->id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($unionIds->isEmpty()) {
+            foreach ($clubs as $club) {
+                $club->published_carpeta_year = null;
+            }
+
+            return $clubs;
+        }
+
+        $publishedYears = UnionCarpetaYear::query()
+            ->with(['requirements' => fn ($query) => $query
+                ->where('status', 'active')
+                ->orderBy('sort_order')
+                ->orderBy('id')])
+            ->whereIn('union_id', $unionIds)
+            ->where('status', 'published')
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->get()
+            ->unique('union_id')
+            ->keyBy('union_id');
+
+        $unions = Union::query()
+            ->with(['clubCatalogs.classCatalogs' => fn ($query) => $query
+                ->where('status', 'active')
+                ->orderBy('sort_order')
+                ->orderBy('id')])
+            ->whereIn('id', $unionIds)
+            ->get()
+            ->keyBy('id');
+
+        $allActivationStaffIds = $clubs
+            ->flatMap(fn ($club) => $club->carpetaClassActivations->pluck('assigned_staff_id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $carpetaStaffNamesById = [];
+        if (!empty($allActivationStaffIds)) {
+            $carpetaStaff = Staff::query()
+                ->whereIn('id', $allActivationStaffIds)
+                ->with('user:id,name')
+                ->get(['id', 'id_data', 'type', 'user_id']);
+
+            foreach ($carpetaStaff as $staff) {
+                $name = $staff->user?->name;
+                if (!$name) {
+                    $detail = ClubHelper::staffDetail($staff);
+                    $name = $detail['name'] ?? null;
+                }
+                if ($name) {
+                    $carpetaStaffNamesById[(int) $staff->id] = $name;
+                }
+            }
+        }
+
+        foreach ($clubs as $club) {
+            $unionId = $club->district?->association?->union?->id;
+            $publishedYear = $unionId ? $publishedYears->get($unionId) : null;
+            $union = $unionId ? $unions->get($unionId) : null;
+            $clubCatalog = $union?->clubCatalogs
+                ?->first(fn ($catalog) => $this->clubTypeMatches($catalog->name, $club->club_type));
+            $activationsByCatalogId = $club->carpetaClassActivations
+                ->keyBy(fn ($activation) => (int) $activation->union_class_catalog_id);
+
+            $club->union_class_catalogs = $clubCatalog
+                ? $clubCatalog->classCatalogs
+                    ->map(function ($catalogClass) use ($club, $publishedYear, $activationsByCatalogId, $carpetaStaffNamesById) {
+                        $activation = $activationsByCatalogId->get((int) $catalogClass->id);
+
+                        $requirements = $publishedYear
+                            ? $publishedYear->requirements
+                                ->filter(fn ($requirement) => $this->clubTypeMatches($requirement->club_type, $club->club_type)
+                                    && $this->normalizeCatalogName($requirement->class_name) === $this->normalizeCatalogName($catalogClass->name))
+                                ->map(fn ($requirement) => [
+                                    'id' => $requirement->id,
+                                    'title' => $requirement->title,
+                                    'description' => $requirement->description,
+                                    'requirement_type' => $requirement->requirement_type,
+                                    'validation_mode' => $requirement->validation_mode,
+                                    'allowed_evidence_types' => $requirement->allowed_evidence_types ?? [],
+                                    'evidence_instructions' => $requirement->evidence_instructions,
+                                    'sort_order' => $requirement->sort_order,
+                                ])
+                                ->values()
+                                ->all()
+                            : [];
+
+                        return [
+                            'id' => $catalogClass->id,
+                            'name' => $catalogClass->name,
+                            'sort_order' => $catalogClass->sort_order,
+                            'is_active' => (bool) $activation,
+                            'activation' => $activation ? [
+                                'id' => $activation->id,
+                                'union_class_catalog_id' => $activation->union_class_catalog_id,
+                                'assigned_staff_name' => $activation->assigned_staff_id
+                                    ? ($carpetaStaffNamesById[(int) $activation->assigned_staff_id] ?? null)
+                                    : null,
+                            ] : null,
+                            'carpeta_requirements' => $requirements,
+                        ];
+                    })
+                    ->values()
+                    ->all()
+                : [];
+
+            $club->published_carpeta_year = $publishedYear
+                ? [
+                    'id' => $publishedYear->id,
+                    'year' => $publishedYear->year,
+                    'published_at' => $publishedYear->published_at,
+                ]
+                : null;
+        }
+
+        return $clubs;
+    }
+
     public function storeBySuperadmin(Request $request)
     {
         if (auth()->user()?->profile_type !== 'superadmin') {
@@ -57,16 +240,20 @@ class ClubController extends Controller
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
             'church_id' => 'required|exists:churches,id',
+            'district_id' => 'required|exists:districts,id',
             'director_user_id' => 'required|exists:users,id',
             'creation_date' => 'nullable|date',
             'pastor_name' => 'nullable|string|max:255',
             'conference_name' => 'nullable|string|max:255',
             'conference_region' => 'nullable|string|max:255',
             'club_type' => 'required|in:adventurers,pathfinders,master_guide',
+            'evaluation_system' => 'required|in:honors,carpetas',
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
+        $district = District::findOrFail($validated['district_id']);
         $director = User::findOrFail($validated['director_user_id']);
+        $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
 
         $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type']);
 
@@ -79,15 +266,16 @@ class ClubController extends Controller
         $club = Club::create([
             'user_id' => $director->id,
             'club_name' => $validated['club_name'],
-            'church_name' => $church->church_name,
+            'church_name' => $hierarchyFields['church_name'],
             'director_name' => $director->name,
             'creation_date' => $validated['creation_date'] ?? null,
-            'pastor_name' => $validated['pastor_name'] ?? null,
-            'conference_name' => $validated['conference_name'] ?? null,
+            'pastor_name' => $hierarchyFields['pastor_name'],
+            'conference_name' => $hierarchyFields['conference_name'],
             'conference_region' => $validated['conference_region'] ?? null,
             'club_type' => $validated['club_type'],
-            'evaluation_system' => $this->resolveEvaluationSystemForChurch($church),
-            'church_id' => $church->id,
+            'evaluation_system' => $hierarchyFields['evaluation_system'],
+            'church_id' => $hierarchyFields['church_id'],
+            'district_id' => $hierarchyFields['district_id'],
             'status' => 'active',
         ]);
 
@@ -114,16 +302,20 @@ class ClubController extends Controller
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
             'church_id' => 'required|exists:churches,id',
+            'district_id' => 'required|exists:districts,id',
             'director_user_id' => 'required|exists:users,id',
             'creation_date' => 'nullable|date',
             'pastor_name' => 'nullable|string|max:255',
             'conference_name' => 'nullable|string|max:255',
             'conference_region' => 'nullable|string|max:255',
             'club_type' => 'required|in:adventurers,pathfinders,master_guide',
+            'evaluation_system' => 'required|in:honors,carpetas',
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
+        $district = District::findOrFail($validated['district_id']);
         $director = User::findOrFail($validated['director_user_id']);
+        $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
 
         $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type'], (int) $club->id);
 
@@ -138,15 +330,16 @@ class ClubController extends Controller
         $club->update([
             'user_id' => $director->id,
             'club_name' => $validated['club_name'],
-            'church_name' => $church->church_name,
+            'church_name' => $hierarchyFields['church_name'],
             'director_name' => $director->name,
             'creation_date' => $validated['creation_date'] ?? null,
-            'pastor_name' => $validated['pastor_name'] ?? null,
-            'conference_name' => $validated['conference_name'] ?? null,
+            'pastor_name' => $hierarchyFields['pastor_name'],
+            'conference_name' => $hierarchyFields['conference_name'],
             'conference_region' => $validated['conference_region'] ?? null,
             'club_type' => $validated['club_type'],
-            'evaluation_system' => $this->resolveEvaluationSystemForChurch($church),
-            'church_id' => $church->id,
+            'evaluation_system' => $hierarchyFields['evaluation_system'],
+            'church_id' => $hierarchyFields['church_id'],
+            'district_id' => $hierarchyFields['district_id'],
         ]);
 
         DB::table('club_user')->updateOrInsert(
@@ -226,21 +419,29 @@ class ClubController extends Controller
 
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
-            'church_name' => 'required|string|max:255',
-            'director_name' => 'required|string|max:255',
             'creation_date' => 'nullable|date',
-            'pastor_name' => 'nullable|string|max:255',
-            'conference_name' => 'nullable|string|max:255',
             'conference_region' => 'nullable|string|max:255',
             'club_type' => 'required|in:adventurers,pathfinders,master_guide',
             'church_id' => 'required|exists:churches,id',
+            'district_id' => 'required|exists:districts,id',
+            'evaluation_system' => 'required|in:honors,carpetas',
         ]);
 
         $this->enforceChurchClubTypeRule((int) $validated['church_id'], $validated['club_type']);
 
+        $church = Church::findOrFail($validated['church_id']);
+        $district = District::findOrFail($validated['district_id']);
+        $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
+
         $club = Club::create(array_merge($validated, [
             'user_id' => auth()->id(),
-            'evaluation_system' => $this->resolveEvaluationSystemForChurch(Church::findOrFail($validated['church_id'])),
+            'church_name' => $hierarchyFields['church_name'],
+            'director_name' => auth()->user()->name,
+            'pastor_name' => $hierarchyFields['pastor_name'],
+            'conference_name' => $hierarchyFields['conference_name'],
+            'evaluation_system' => $hierarchyFields['evaluation_system'],
+            'church_id' => $hierarchyFields['church_id'],
+            'district_id' => $hierarchyFields['district_id'],
         ]));
         // Link user to this club in pivot table with status
         $club->users()->attach(auth()->id(), ['status' => 'active']);
@@ -264,20 +465,41 @@ class ClubController extends Controller
 
     public function update(Request $request)
     {
-        // Remove policy if not using it
-        $club = Club::where('user_id', auth()->id())->firstOrFail();
-
         $validated = $request->validate([
+            'id' => 'required|exists:clubs,id',
             'club_name' => 'required|string|max:255',
-            'church_name' => 'required|string|max:255',
             'creation_date' => 'nullable|date',
-            'pastor_name' => 'nullable|string|max:255',
-            'conference_name' => 'nullable|string|max:255',
             'conference_region' => 'nullable|string|max:255',
             'club_type' => 'required|in:adventurers,pathfinders,master_guide',
+            'church_id' => 'required|exists:churches,id',
+            'district_id' => 'required|exists:districts,id',
+            'evaluation_system' => 'required|in:honors,carpetas',
         ]);
 
-        $club->update($validated);
+        $club = Club::query()
+            ->where('id', (int) $validated['id'])
+            ->where(function ($query) {
+                $query->where('user_id', auth()->id())
+                    ->orWhereHas('users', function ($userQuery) {
+                        $userQuery->where('users.id', auth()->id());
+                    });
+            })
+            ->firstOrFail();
+
+        $this->enforceChurchClubTypeRule((int) $validated['church_id'], $validated['club_type'], (int) $club->id);
+
+        $church = Church::findOrFail($validated['church_id']);
+        $district = District::findOrFail($validated['district_id']);
+        $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
+
+        $club->update(array_merge(\Illuminate\Support\Arr::except($validated, ['id']), [
+            'church_name' => $hierarchyFields['church_name'],
+            'pastor_name' => $hierarchyFields['pastor_name'],
+            'conference_name' => $hierarchyFields['conference_name'],
+            'evaluation_system' => $hierarchyFields['evaluation_system'],
+            'church_id' => $hierarchyFields['church_id'],
+            'district_id' => $hierarchyFields['district_id'],
+        ]));
 
         if ($request->wantsJson()) {
             return response()->json(['message' => 'Club updated successfully.']);
@@ -323,7 +545,7 @@ class ClubController extends Controller
 
         if ($authUser->profile_type === 'superadmin' && (int) $authUser->id === (int) $user->id) {
             $query = Club::query()
-                ->with(['clubClasses.investitureRequirements', 'staffAdventurers', 'localObjectives'])
+                ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'district.association.union'])
                 ->orderBy('club_name');
 
             $contextClubId = session('superadmin_context.club_id');
@@ -342,7 +564,7 @@ class ClubController extends Controller
         $clubIds = ClubHelper::clubIdsForUser($user);
 
         $clubs = Club::whereIn('id', $clubIds)
-            ->with(['clubClasses.investitureRequirements', 'staffAdventurers', 'localObjectives'])
+            ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'district.association.union'])
             ->orderBy('club_name')
             ->get();
 
@@ -368,7 +590,7 @@ class ClubController extends Controller
 
     public function getClubsByChurchId($churchId)
     {
-        $clubs = Club::with('clubClasses.investitureRequirements', 'staffAdventurers', 'users:id,name,email', 'localObjectives')
+        $clubs = Club::with('clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'users:id,name,email', 'localObjectives', 'district.association.union')
             ->where('church_id', $churchId)
             ->orderBy('club_name')
             ->get();
@@ -612,34 +834,46 @@ class ClubController extends Controller
             return $clubs;
         }
 
+        foreach ($clubs as $club) {
+            $club->district_name = $club->district?->name;
+            $club->association_name = $club->district?->association?->name;
+            $club->union_name = $club->district?->association?->union?->name;
+        }
+
         $clubIds = $clubs->pluck('id');
+
+        // Only query honors-style assignments; carpeta staff names are attached in attachUnionCarpetaDefinitions
+        $honorsClubIds = $clubs
+            ->filter(fn ($club) => ($club->evaluation_system ?? 'honors') !== 'carpetas')
+            ->pluck('id');
+
         $staffRecords = Staff::query()
-            ->whereIn('club_id', $clubIds)
+            ->whereIn('club_id', $honorsClubIds)
             ->whereNotNull('assigned_class')
-            ->get(['id', 'id_data', 'club_id', 'assigned_class', 'type']);
+            ->with('user:id,name')
+            ->get(['id', 'id_data', 'club_id', 'assigned_class', 'type', 'user_id']);
 
         if ($staffRecords->isEmpty()) {
-            return $clubs;
+            return $this->attachUnionCarpetaDefinitions($clubs);
         }
 
-        $adventurerIds = $staffRecords
-            ->where('type', 'adventurers')
-            ->pluck('id_data')
-            ->filter()
-            ->unique();
+        $adventurerDetailNames = StaffAdventurer::whereIn('id',
+            $staffRecords->where('type', 'adventurers')->pluck('id_data')->filter()->unique()->values()
+        )->get(['id', 'name'])->keyBy('id');
 
-        $staffNames = [];
-        if ($adventurerIds->isNotEmpty()) {
-            $staffNames = StaffAdventurer::whereIn('id', $adventurerIds)
-                ->get(['id', 'name'])
-                ->keyBy('id');
-        }
+        $pathfinderDetailNames = StaffPathfinder::whereIn('id',
+            $staffRecords->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id_data')->filter()->unique()->values()
+        )->get(['id', 'staff_name'])->keyBy('id');
 
         $byClass = [];
         foreach ($staffRecords as $record) {
-            $name = null;
-            if ($record->type === 'adventurers' && $record->id_data && isset($staffNames[$record->id_data])) {
-                $name = $staffNames[$record->id_data]->name;
+            $name = $record->user?->name;
+            if (!$name && $record->id_data) {
+                if ($record->type === 'adventurers') {
+                    $name = $adventurerDetailNames->get($record->id_data)?->name;
+                } elseif (in_array($record->type, ['pathfinders', 'temp_pathfinder'], true)) {
+                    $name = $pathfinderDetailNames->get($record->id_data)?->staff_name;
+                }
             }
             $byClass[$record->assigned_class] = [
                 'staff_id' => $record->id,
@@ -656,7 +890,7 @@ class ClubController extends Controller
             }
         }
 
-        return $clubs;
+        return $this->attachUnionCarpetaDefinitions($clubs);
     }
 
 

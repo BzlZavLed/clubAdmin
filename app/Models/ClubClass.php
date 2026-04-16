@@ -11,6 +11,7 @@ class ClubClass extends Model
 
     protected $fillable = [
         'club_id',
+        'union_class_catalog_id',
         'class_order',
         'class_name',
         'assigned_staff_id',
@@ -35,5 +36,10 @@ class ClubClass extends Model
     public function investitureRequirements()
     {
         return $this->hasMany(ClassInvestitureRequirement::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function unionClassCatalog()
+    {
+        return $this->belongsTo(UnionClassCatalog::class, 'union_class_catalog_id');
     }
 }

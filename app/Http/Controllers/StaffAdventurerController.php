@@ -20,11 +20,72 @@ use Illuminate\Support\Facades\DB as FacadesDB;
 
 use Auth;
 use App\Models\ClubClass;
+use App\Models\ClubCarpetaClassActivation;
 use App\Models\SubRole; // Import the SubRole model
 use App\Support\ClubHelper;
 
 class StaffAdventurerController extends Controller
 {
+    protected function applyAssignedClassToStaffRecord(Staff $staffRecord, int $clubId, $assignedClassId): void
+    {
+        if (empty($assignedClassId)) {
+            $this->clearPreviousActivationStaff($staffRecord);
+            $staffRecord->assigned_class = null;
+            $staffRecord->assigned_carpeta_class_activation_id = null;
+            $staffRecord->save();
+            $staffRecord->classes()->sync([]);
+            return;
+        }
+
+        $club = Club::findOrFail($clubId);
+        if (($club->evaluation_system ?? 'honors') === 'carpetas') {
+            $activation = ClubCarpetaClassActivation::query()
+                ->where('id', (int) $assignedClassId)
+                ->where('club_id', (int) $club->id)
+                ->first();
+
+            if (!$activation) {
+                abort(422, 'La clase seleccionada no esta activa para este club. Activa la clase primero desde Mi club.');
+            }
+
+            $this->clearPreviousActivationStaff($staffRecord);
+
+            $staffRecord->assigned_class = null;
+            $staffRecord->assigned_carpeta_class_activation_id = $activation->id;
+            $staffRecord->save();
+            $staffRecord->classes()->sync([]);
+
+            $activation->assigned_staff_id = $staffRecord->id;
+            $activation->save();
+            return;
+        }
+
+        $class = ClubClass::query()
+            ->where('id', (int) $assignedClassId)
+            ->where('club_id', (int) $club->id)
+            ->first();
+
+        if (!$class) {
+            abort(422, 'La clase seleccionada no pertenece a este club.');
+        }
+
+        $this->clearPreviousActivationStaff($staffRecord);
+
+        $staffRecord->assigned_class = $class->id;
+        $staffRecord->assigned_carpeta_class_activation_id = null;
+        $staffRecord->save();
+        $staffRecord->classes()->sync([$class->id => ['club_id' => $clubId]]);
+    }
+
+    private function clearPreviousActivationStaff(Staff $staffRecord): void
+    {
+        if ($staffRecord->assigned_carpeta_class_activation_id) {
+            ClubCarpetaClassActivation::where('id', $staffRecord->assigned_carpeta_class_activation_id)
+                ->where('assigned_staff_id', $staffRecord->id)
+                ->update(['assigned_staff_id' => null]);
+        }
+    }
+
     public function staffView() //TEST VIEW LOADER
     {
         $subRoles = SubRole::all();
@@ -132,6 +193,10 @@ class StaffAdventurerController extends Controller
                     'status' => 'pending',
                 ]
             );
+
+            if (!empty($assignedClass)) {
+                $this->applyAssignedClassToStaffRecord($newStaff, (int) $staff->club_id, $assignedClass);
+            }
 
             $user = null;
 
@@ -268,11 +333,11 @@ class StaffAdventurerController extends Controller
             Log::info('Staff updated.', ['staff_id' => $staff->id]);
 
             // Update new staff table assignment if present
-            if (!empty($assignedClass)) {
-                Staff::where('id_data', $staff->id)->update([
-                    'assigned_class' => $assignedClass,
-                    'club_id' => $validated['club_id'],
-                ]);
+            $staffRecord = Staff::where('id_data', $staff->id)->first();
+            if ($staffRecord) {
+                $staffRecord->club_id = $validated['club_id'];
+                $staffRecord->save();
+                $this->applyAssignedClassToStaffRecord($staffRecord, (int) $validated['club_id'], $assignedClass);
                 Log::info('Assigned class updated on staff table.', ['class_id' => $assignedClass]);
             }
 
@@ -343,7 +408,7 @@ class StaffAdventurerController extends Controller
         $staffActive = Staff::query()
             ->where('club_id', $clubId)
             ->where('status', 'active')
-            ->with(['user:id,name,email', 'classes:id,class_name'])
+            ->with(['user:id,name,email', 'classes:id,class_name', 'assignedCarpetaClassActivation.unionClassCatalog:id,name'])
             ->get()
             ->map(function ($s) {
                 $displayName = $s->user?->name;
@@ -366,11 +431,14 @@ class StaffAdventurerController extends Controller
                     'email' => $pathfinderStaff?->staff_email ?? $s->user?->email,
                     'club_id' => $s->club_id,
                     'status' => $s->status,
-                    'class_names' => $s->classes->pluck('class_name')->values(),
+                    'class_names' => $s->assignedCarpetaClassActivation
+                        ? collect([$s->assignedCarpetaClassActivation->unionClassCatalog?->name])
+                        : $s->classes->pluck('class_name')->values(),
                     'user_id' => $s->user_id,
                     'create_user' => empty($s->user_id),
                     'id_data' => $s->id_data,
                     'assigned_class' => $s->assigned_class,
+                    'assigned_carpeta_class_activation_id' => $s->assigned_carpeta_class_activation_id,
                     'staff_dob' => $pathfinderStaff?->staff_dob,
                     'staff_age' => $pathfinderStaff?->staff_age,
                     'cell_phone' => $pathfinderStaff?->staff_phone,
@@ -680,16 +748,13 @@ class StaffAdventurerController extends Controller
     {
         $data = $request->validate([
             'staff_id' => 'required|integer',
-            'class_id' => 'required|exists:club_classes,id',
+            'class_id' => 'required|integer',
         ]);
 
         // Try staff table first (handles temp/pathfinder and normal staff)
         $staff = Staff::find($data['staff_id']);
         if ($staff) {
-            $staff->assigned_class = $data['class_id'];
-            $staff->save();
-            // Only one class per staff: replace pivot links
-            $staff->classes()->sync([$data['class_id']]);
+            $this->applyAssignedClassToStaffRecord($staff, (int) $staff->club_id, $data['class_id']);
 
             return response()->json(['message' => 'Assigned class updated']);
         }

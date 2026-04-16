@@ -24,4 +24,9 @@ class Union extends Model
     {
         return $this->hasMany(UnionCarpetaYear::class)->orderByDesc('year')->orderByDesc('id');
     }
+
+    public function clubCatalogs()
+    {
+        return $this->hasMany(UnionClubCatalog::class)->orderBy('sort_order')->orderBy('id');
+    }
 }

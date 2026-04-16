@@ -188,6 +188,21 @@ export const createOrUpdateClass = async (classData, isEditing = false) => {
     }
 };
 
+export const activateCarpetaClassForClub = async (clubId, unionClassCatalogId) => {
+    const { data } = await axios.post(
+        route('clubs.carpeta-class-activations.store', { club: clubId }),
+        { union_class_catalog_id: unionClassCatalogId }
+    );
+    return data;
+};
+
+export const deactivateCarpetaClassForClub = async (activationId) => {
+    const { data } = await axios.delete(
+        route('clubs.carpeta-class-activations.destroy', { activation: activationId })
+    );
+    return data;
+};
+
 export const createInvestitureRequirement = async (clubClassId, payload) => {
     const { data } = await axios.post(
         route("investiture-requirements.store", { clubClass: clubClassId }),
