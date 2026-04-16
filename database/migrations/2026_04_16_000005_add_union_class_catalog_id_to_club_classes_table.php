@@ -21,16 +21,13 @@ return new class extends Migration
 
         DB::statement("
             UPDATE club_classes AS cc
-            SET union_class_catalog_id = ucc.id
-            FROM clubs AS c
+            JOIN clubs AS c ON cc.club_id = c.id
             JOIN districts AS d ON d.id = c.district_id
             JOIN associations AS a ON a.id = d.association_id
-            JOIN union_club_catalogs AS ucl
-              ON ucl.union_id = a.union_id
-            JOIN union_class_catalogs AS ucc
-              ON ucc.union_club_catalog_id = ucl.id
-            WHERE cc.club_id = c.id
-              AND c.evaluation_system = 'carpetas'
+            JOIN union_club_catalogs AS ucl ON ucl.union_id = a.union_id
+            JOIN union_class_catalogs AS ucc ON ucc.union_club_catalog_id = ucl.id
+            SET cc.union_class_catalog_id = ucc.id
+            WHERE c.evaluation_system = 'carpetas'
               AND cc.union_class_catalog_id IS NULL
               AND LOWER(TRIM(ucl.name)) = LOWER(TRIM(c.club_type))
               AND LOWER(TRIM(ucc.name)) = LOWER(TRIM(cc.class_name))
