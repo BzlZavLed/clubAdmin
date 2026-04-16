@@ -9,13 +9,15 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('club_carpeta_class_activations', function (Blueprint $table) {
-            $table->foreignId('assigned_staff_id')
-                ->nullable()
-                ->after('union_class_catalog_id')
-                ->constrained('staff')
-                ->nullOnDelete();
-        });
+        if (!Schema::hasColumn('club_carpeta_class_activations', 'assigned_staff_id')) {
+            Schema::table('club_carpeta_class_activations', function (Blueprint $table) {
+                $table->foreignId('assigned_staff_id')
+                    ->nullable()
+                    ->after('union_class_catalog_id')
+                    ->constrained('staff')
+                    ->nullOnDelete();
+            });
+        }
 
         // Backfill from existing staff assignments
         DB::statement("
@@ -31,8 +33,10 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('club_carpeta_class_activations', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('assigned_staff_id');
-        });
+        if (Schema::hasColumn('club_carpeta_class_activations', 'assigned_staff_id')) {
+            Schema::table('club_carpeta_class_activations', function (Blueprint $table) {
+                $table->dropConstrainedForeignId('assigned_staff_id');
+            });
+        }
     }
 };

@@ -9,13 +9,15 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('class_staff', function (Blueprint $table) {
-            $table->foreignId('club_id')
-                ->nullable()
-                ->after('id')
-                ->constrained('clubs')
-                ->nullOnDelete();
-        });
+        if (!Schema::hasColumn('class_staff', 'club_id')) {
+            Schema::table('class_staff', function (Blueprint $table) {
+                $table->foreignId('club_id')
+                    ->nullable()
+                    ->after('id')
+                    ->constrained('clubs')
+                    ->nullOnDelete();
+            });
+        }
 
         // Backfill club_id from the related club_class
         DB::statement("
@@ -29,8 +31,10 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('class_staff', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('club_id');
-        });
+        if (Schema::hasColumn('class_staff', 'club_id')) {
+            Schema::table('class_staff', function (Blueprint $table) {
+                $table->dropConstrainedForeignId('club_id');
+            });
+        }
     }
 };

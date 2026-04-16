@@ -9,15 +9,23 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('club_classes', function (Blueprint $table) {
-            $table->foreignId('union_class_catalog_id')
-                ->nullable()
-                ->after('club_id')
-                ->constrained('union_class_catalogs')
-                ->nullOnDelete();
+        if (!Schema::hasColumn('club_classes', 'union_class_catalog_id')) {
+            Schema::table('club_classes', function (Blueprint $table) {
+                $table->foreignId('union_class_catalog_id')
+                    ->nullable()
+                    ->after('club_id')
+                    ->constrained('union_class_catalogs')
+                    ->nullOnDelete();
+            });
+        }
 
-            $table->unique(['club_id', 'union_class_catalog_id'], 'club_classes_club_union_class_unique');
-        });
+        // Add unique index if not already present
+        $indexes = collect(DB::select("SHOW INDEX FROM club_classes WHERE Key_name = 'club_classes_club_union_class_unique'"));
+        if ($indexes->isEmpty()) {
+            Schema::table('club_classes', function (Blueprint $table) {
+                $table->unique(['club_id', 'union_class_catalog_id'], 'club_classes_club_union_class_unique');
+            });
+        }
 
         DB::statement("
             UPDATE club_classes AS cc
@@ -36,9 +44,17 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('club_classes', function (Blueprint $table) {
-            $table->dropUnique('club_classes_club_union_class_unique');
-            $table->dropConstrainedForeignId('union_class_catalog_id');
-        });
+        $indexes = collect(DB::select("SHOW INDEX FROM club_classes WHERE Key_name = 'club_classes_club_union_class_unique'"));
+        if ($indexes->isNotEmpty()) {
+            Schema::table('club_classes', function (Blueprint $table) {
+                $table->dropUnique('club_classes_club_union_class_unique');
+            });
+        }
+
+        if (Schema::hasColumn('club_classes', 'union_class_catalog_id')) {
+            Schema::table('club_classes', function (Blueprint $table) {
+                $table->dropConstrainedForeignId('union_class_catalog_id');
+            });
+        }
     }
 };
