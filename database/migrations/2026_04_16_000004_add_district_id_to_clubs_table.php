@@ -9,13 +9,15 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('clubs', function (Blueprint $table) {
-            $table->foreignId('district_id')
-                ->nullable()
-                ->after('church_id')
-                ->constrained('districts')
-                ->nullOnDelete();
-        });
+        if (!Schema::hasColumn('clubs', 'district_id')) {
+            Schema::table('clubs', function (Blueprint $table) {
+                $table->foreignId('district_id')
+                    ->nullable()
+                    ->after('church_id')
+                    ->constrained('districts')
+                    ->nullOnDelete();
+            });
+        }
 
         DB::statement('
             UPDATE clubs
@@ -27,8 +29,10 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('clubs', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('district_id');
-        });
+        if (Schema::hasColumn('clubs', 'district_id')) {
+            Schema::table('clubs', function (Blueprint $table) {
+                $table->dropConstrainedForeignId('district_id');
+            });
+        }
     }
 };
