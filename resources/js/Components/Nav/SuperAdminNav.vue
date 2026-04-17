@@ -163,7 +163,7 @@ function toggleDropdown(itemName) {
     <nav class="flex-1 px-4 py-6 space-y-2">
         <template v-for="item in menuItems" :key="item.name">
             <!-- Regular Link -->
-            <Link v-if="!item.children" :href="item.href" class="flex items-center px-2 py-2 rounded text-sm" :class="[
+            <Link v-if="!item.children" :href="item.href" class="flex w-full items-center rounded px-2 py-2.5 text-sm touch-manipulation select-none" :class="[
                 route().current(item.route)
                     ? 'bg-yellow-100 text-red-700 font-semibold'
                     : 'text-gray-700 hover:text-red-600'
@@ -175,7 +175,7 @@ function toggleDropdown(itemName) {
             <!-- Dropdown Parent -->
             <div v-else>
                 <button @click="toggleDropdown(item.name)"
-                    class="w-full flex items-center px-2 py-2 rounded text-sm text-left" :class="[
+                    class="flex w-full items-center rounded px-2 py-2.5 text-left text-sm touch-manipulation select-none" :class="[
                         openDropdown === item.name
                             ? 'bg-yellow-100 text-red-700 font-semibold'
                             : 'text-gray-700 hover:text-red-600'
@@ -192,7 +192,7 @@ function toggleDropdown(itemName) {
                 <!-- Dropdown Items -->
                 <div v-if="openDropdown === item.name && !isCollapsed" class="ml-8 mt-1 space-y-1">
                     <Link v-for="child in item.children" :key="child.name" :href="child.href"
-                        class="flex items-center text-sm px-2 py-1 rounded" :class="[
+                        class="flex w-full items-center rounded px-2 py-2 text-sm touch-manipulation select-none" :class="[
                             route().current(child.route)
                                 ? 'bg-yellow-100 text-red-700 font-semibold'
                                 : 'text-gray-600 hover:text-red-600'

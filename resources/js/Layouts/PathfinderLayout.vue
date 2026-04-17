@@ -75,6 +75,9 @@ const sidebarTransformClass = computed(() => {
     if (!isMobile.value) return 'translate-x-0'
     return isMobileOpen.value ? 'translate-x-0' : '-translate-x-full'
 })
+const sidebarTransitionClass = computed(() => {
+    return isMobile.value ? 'transition-transform' : 'transition-all'
+})
 const mainOffsetClass = computed(() => {
     if (isMobile.value) return 'ml-0'
     return isCollapsed.value ? 'ml-20' : 'ml-64'
@@ -84,9 +87,10 @@ const mainOffsetClass = computed(() => {
 <div class="min-h-screen flex bg-gray-100 overflow-hidden">
     <!-- Sidebar -->
     <aside :class="[
-    'fixed top-0 left-0 bottom-0 bg-white border-r border-gray-200 transition-all duration-300 shadow-md z-30',
+    'fixed inset-y-0 left-0 bg-white border-r border-gray-200 duration-300 shadow-md z-40 overflow-y-auto overscroll-contain',
     sidebarWidthClass,
-    sidebarTransformClass
+    sidebarTransformClass,
+    sidebarTransitionClass
 ]" class="flex flex-col">
         <!-- Logo + Toggle -->
         <div class="flex items-center justify-between px-4 py-4 border-b">
@@ -125,10 +129,10 @@ const mainOffsetClass = computed(() => {
         </div>
     </aside>
 
-    <div v-if="isMobile && isMobileOpen" class="fixed inset-0 bg-black/40 z-20" @click="closeMobileSidebar"></div>
+    <div v-if="isMobile && isMobileOpen" class="fixed inset-0 bg-black/40 z-30" @click="closeMobileSidebar"></div>
 
     <!-- Main content -->
-    <main :class="[mainOffsetClass]" class="flex-1 h-screen overflow-y-auto p-4 sm:p-6 md:p-8">
+    <main :class="[mainOffsetClass]" class="flex-1 min-h-screen md:h-screen md:overflow-y-auto p-4 sm:p-6 md:p-8">
         <div class="max-w-5xl mx-auto">
             <div class="mb-4 flex items-center gap-3 md:hidden">
                 <button @click="openMobileSidebar"
