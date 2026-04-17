@@ -34,6 +34,7 @@ const activeClubName = computed(() =>
 const MAX_RECEIPT_MB = 5
 const MAX_RECEIPT_BYTES = MAX_RECEIPT_MB * 1024 * 1024
 const MAX_RECEIPT_DIM = 1600
+const RECEIPT_ACCEPT = 'image/*,application/pdf'
 
 const form = useForm({
     club_id: null,
@@ -233,9 +234,21 @@ const fmtBytes = (bytes) => {
     return `${mb.toFixed(2)}MB`
 }
 
+const isImageFile = (file) => file?.type?.startsWith('image/')
+
 const onNewReceiptChange = (event) => {
     const [file] = event.target.files || []
     if (!file) return
+    if (!isImageFile(file)) {
+        if (file.size > MAX_RECEIPT_BYTES) {
+            showToast(`El archivo supera ${MAX_RECEIPT_MB}MB. Actual ${fmtBytes(file.size)}.`, 'error')
+            form.receipt_image = null
+            if (newReceiptInput.value) newReceiptInput.value.value = ''
+            return
+        }
+        form.receipt_image = file
+        return
+    }
     if (file.size > MAX_RECEIPT_BYTES) {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
@@ -264,7 +277,15 @@ const handleReceiptSelected = async (expenseId, event) => {
     event.target.value = ''
     if (!file) return
     let uploadFile = file
-    if (file.size > MAX_RECEIPT_BYTES) {
+    if (!isImageFile(file)) {
+        if (file.size > MAX_RECEIPT_BYTES) {
+            rowErrors.value = {
+                ...rowErrors.value,
+                [expenseId]: `El archivo supera ${MAX_RECEIPT_MB}MB. Actual ${fmtBytes(file.size)}.`,
+            }
+            return
+        }
+    } else if (file.size > MAX_RECEIPT_BYTES) {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         try {
             uploadFile = await compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM })
@@ -304,6 +325,19 @@ const handleReimbursementReceiptSelected = (expense, event) => {
     const [file] = event.target.files || []
     event.target.value = ''
     if (!file) return
+    if (!isImageFile(file)) {
+        if (file.size > MAX_RECEIPT_BYTES) {
+            showToast(`El archivo supera ${MAX_RECEIPT_MB}MB. Actual ${fmtBytes(file.size)}.`, 'error')
+            return
+        }
+        if (isPendingReimbursement(expense)) {
+            reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: file }
+            rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
+            return
+        }
+        uploadReimbursementReceiptNow(expense, file)
+        return
+    }
     if (file.size > MAX_RECEIPT_BYTES) {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
@@ -478,10 +512,10 @@ const repairBalances = async () => {
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Imagen del recibo (opcional)</label>
-                        <input type="file" accept="image/*" @change="onNewReceiptChange" ref="newReceiptInput"
+                        <label class="block text-sm font-medium text-gray-700">Recibo (imagen o PDF, opcional)</label>
+                        <input type="file" :accept="RECEIPT_ACCEPT" @change="onNewReceiptChange" ref="newReceiptInput"
                             class="mt-1 block w-full text-sm text-gray-700" />
-                        <p class="mt-1 text-xs text-gray-500">Adjunta ahora para marcar como completado, o agrega luego desde la tabla.</p>
+                        <p class="mt-1 text-xs text-gray-500">Adjunta una imagen o PDF ahora para marcar como completado, o agrega el archivo luego desde la tabla.</p>
                         <div v-if="form.errors.receipt_image" class="mt-1 text-sm text-red-600">{{ form.errors.receipt_image }}</div>
                     </div>
 
@@ -548,7 +582,7 @@ const repairBalances = async () => {
                                     class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
                                     <span>Adjuntar recibo reembolso</span>
                                 </button>
-                                <input type="file" accept="image/*" class="hidden"
+                                <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                     :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
                                     @change="(ev) => handleReimbursementReceiptSelected(e, ev)" />
                                 <button
@@ -559,7 +593,7 @@ const repairBalances = async () => {
                                     <ArrowPathIcon v-if="uploadingId === e.id" class="h-3.5 w-3.5 animate-spin" />
                                     <span>{{ uploadingId === e.id ? 'Subiendo…' : 'Cargar imagen' }}</span>
                                 </button>
-                                <input type="file" accept="image/*" class="hidden"
+                                <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                     :ref="el => { if (el) receiptInputs[e.id] = el }"
                                     @change="(ev) => handleReceiptSelected(e.id, ev)" />
                             </div>
@@ -660,7 +694,7 @@ const repairBalances = async () => {
                                                 class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
                                                 <span>Adjuntar recibo reembolso</span>
                                             </button>
-                                            <input type="file" accept="image/*" class="hidden"
+                                            <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                                 :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
                                                 @change="(ev) => handleReimbursementReceiptSelected(e, ev)" />
 
@@ -672,7 +706,7 @@ const repairBalances = async () => {
                                                 <ArrowPathIcon v-if="uploadingId === e.id" class="h-3.5 w-3.5 animate-spin" />
                                                 <span>{{ uploadingId === e.id ? 'Subiendo…' : 'Cargar imagen' }}</span>
                                             </button>
-                                            <input type="file" accept="image/*" class="hidden"
+                                            <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                                 :ref="el => { if (el) receiptInputs[e.id] = el }"
                                                 @change="(ev) => handleReceiptSelected(e.id, ev)" />
                                         </div>

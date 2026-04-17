@@ -109,7 +109,7 @@ class ExpenseController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'expense_date' => ['required', 'date'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'receipt_image' => ['nullable', 'image', 'max:5120'],
+            'receipt_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
         ]);
 
         $clubId = (int) $validated['club_id'];
@@ -245,7 +245,7 @@ class ExpenseController extends Controller
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
 
         $validated = $request->validate([
-            'receipt_image' => ['required', 'image', 'max:5120'],
+            'receipt_image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
         ]);
 
         $path = $request->file('receipt_image')->store('expense-receipts', 'public');
@@ -274,7 +274,7 @@ class ExpenseController extends Controller
         }
 
         $validated = $request->validate([
-            'receipt_image' => ['required', 'image', 'max:5120'],
+            'receipt_image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
         ]);
 
         $path = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
@@ -299,7 +299,7 @@ class ExpenseController extends Controller
 
         $validated = $request->validate([
             'pay_to' => ['required', 'string', 'max:255'],
-            'receipt_image' => ['required', 'image', 'max:5120'],
+            'receipt_image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
         ]);
 
         if ($expense->pay_to !== 'reimbursement_to' || $expense->status !== 'pending_reimbursement') {
