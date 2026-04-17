@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
-import { fetchFinancialReportBootstrap, fetchFinancialAccountBalances, uploadReimbursementReceipt } from '@/Services/api'
+import { fetchFinancialReportBootstrap, fetchFinancialAccountBalances, uploadReimbursementReceipt, recalculateAccounts } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { compressImage } from '@/Utils/imageCompression'
 import { useAuth } from '@/Composables/useAuth'
@@ -71,6 +71,24 @@ const loadBalances = async (clubId = null) => {
     } catch (e) {
         console.error(e)
         balancesError.value = e?.response?.data?.message || 'No se pudieron cargar los saldos.'
+    } finally {
+        balancesLoading.value = false
+    }
+}
+
+const refreshBalances = async (clubId = null) => {
+    const targetClubId = clubId || selectedClubId.value
+    if (!targetClubId) return
+
+    balancesError.value = ''
+    balancesLoading.value = true
+    try {
+        await recalculateAccounts(targetClubId)
+        await loadBalances(targetClubId)
+        showToast('Saldos recalculados.', 'success')
+    } catch (e) {
+        console.error(e)
+        balancesError.value = e?.response?.data?.message || 'No se pudieron recalcular los saldos.'
     } finally {
         balancesLoading.value = false
     }
@@ -165,7 +183,7 @@ watch(selectedClubId, async (id, old) => {
                             <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />
                             <span>{{ loading ? 'Recargando…' : 'Recargar cuentas' }}</span>
                         </button>
-                        <button @click="() => loadBalances(selectedClubId)" :disabled="balancesLoading"
+                        <button @click="() => refreshBalances(selectedClubId)" :disabled="balancesLoading"
                             class="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60">
                             <ArrowPathIcon v-if="balancesLoading" class="h-4 w-4 animate-spin" />
                             <span>{{ balancesLoading ? 'Actualizando…' : 'Actualizar saldos' }}</span>

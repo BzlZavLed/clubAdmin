@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ArrowPathIcon, BanknotesIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
-import { fetchExpenses, createExpense, uploadExpenseReceipt, uploadReimbursementReceipt, markExpenseReimbursed, recalculateAccounts } from '@/Services/api'
+import { fetchExpenses, createExpense, uploadExpenseReceipt, uploadReimbursementReceipt, markExpenseReimbursed } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { compressImage } from '@/Utils/imageCompression'
 import { useAuth } from '@/Composables/useAuth'
@@ -16,7 +16,6 @@ const clubs = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const saving = ref(false)
-const recalculatingBalances = ref(false)
 const uploadingId = ref(null)
 const rowErrors = ref({})
 const reimbursingId = ref(null)
@@ -413,21 +412,6 @@ const markReimbursed = async (expense) => {
     }
 }
 
-const repairBalances = async () => {
-    if (!form.club_id || recalculatingBalances.value) return
-
-    recalculatingBalances.value = true
-    try {
-        await recalculateAccounts(form.club_id)
-        await loadData(form.club_id)
-        showToast('Saldos recalculados.', 'success')
-    } catch (e) {
-        showToast(e?.response?.data?.message || 'No se pudieron recalcular los saldos.', 'error')
-        console.error(e)
-    } finally {
-        recalculatingBalances.value = false
-    }
-}
 </script>
 
 <template>
@@ -445,14 +429,7 @@ const repairBalances = async () => {
                 <div class="flex items-center justify-between gap-3">
                     <h2 class="text-base font-semibold text-gray-900">Nuevo gasto</h2>
                     <div class="flex items-center gap-2">
-                        <button
-                            @click="repairBalances"
-                            :disabled="recalculatingBalances || !form.club_id"
-                            class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">
-                            <ArrowPathIcon v-if="recalculatingBalances" class="h-4 w-4 animate-spin" />
-                            <span>{{ recalculatingBalances ? 'Recalculando…' : 'Recalcular saldos' }}</span>
-                        </button>
-                        <button @click="loadData" :disabled="loading || recalculatingBalances"
+                        <button @click="loadData" :disabled="loading"
                             class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
                             <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />
                             <span>{{ loading ? 'Recargando…' : 'Recargar' }}</span>
