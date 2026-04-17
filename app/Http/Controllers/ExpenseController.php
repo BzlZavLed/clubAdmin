@@ -44,9 +44,12 @@ class ExpenseController extends Controller
                 return ['value' => $a->pay_to, 'label' => $a->label];
             })
             ->values();
-        $clubs = \App\Models\Club::where('user_id', $request->user()->id)
-            ->orderBy('club_name')
-            ->get(['id', 'club_name']);
+        $clubs = ClubHelper::clubsForUser($request->user())
+            ->map(fn($club) => [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+            ])
+            ->values();
         $expenses = Expense::query()
             ->where('club_id', $club->id)
             ->orderByDesc('expense_date')
@@ -379,11 +382,9 @@ class ExpenseController extends Controller
 
     protected function ensureExpenseBelongsToUser($user, Expense $expense): void
     {
-        $ownsExpenseClub = \App\Models\Club::where('user_id', $user->id)
-            ->where('id', $expense->club_id)
-            ->exists();
+        $allowedClubIds = ClubHelper::clubIdsForUser($user);
 
-        abort_unless($ownsExpenseClub, 403, 'Unauthorized.');
+        abort_unless($allowedClubIds->contains((int) $expense->club_id), 403, 'Unauthorized.');
     }
 
     protected function reimbursementBalances(int $clubId)
