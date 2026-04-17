@@ -46,9 +46,14 @@ class RebuildAccountBalances extends Command
                     ->groupBy('payment_concepts.pay_to')
                     ->pluck('total', 'pay_to');
 
-                // Sum expenses by pay_to
+                // Sum expenses by pay_to.
+                // For reimbursement_to, only pending entries count against the clearing account.
                 $expenseSums = Expense::query()
                     ->where('club_id', $club->id)
+                    ->where(fn ($q) => $q
+                        ->where('pay_to', '!=', 'reimbursement_to')
+                        ->orWhere('status', 'pending_reimbursement')
+                    )
                     ->selectRaw('pay_to, COALESCE(SUM(amount),0) as total')
                     ->groupBy('pay_to')
                     ->pluck('total', 'pay_to');

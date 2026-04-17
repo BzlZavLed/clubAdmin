@@ -120,10 +120,7 @@ class ExpenseController extends Controller
         $expense = null;
         $splitExpense = null;
         \DB::transaction(function () use ($club, $validated, $request, &$expense, &$splitExpense, $payeeId, $payeeName) {
-            $account = Account::firstOrCreate(
-                ['club_id' => $club->id, 'pay_to' => $validated['pay_to']],
-                ['label' => $validated['pay_to'], 'balance' => 0]
-            );
+            $account = $this->resolveAccount($club->id, $validated['pay_to']);
 
             $amount = (float) $validated['amount'];
             $available = max((float) $account->balance, 0.0);
@@ -205,6 +202,8 @@ class ExpenseController extends Controller
             }
 
             if ($shortfall > 0 && $reimbursementConcept) {
+                $reimbursementAccount = $this->resolveAccount($club->id, 'reimbursement_to');
+
                 $splitExpense = Expense::create([
                     'club_id' => $club->id,
                     'pay_to' => 'reimbursement_to',
@@ -218,6 +217,8 @@ class ExpenseController extends Controller
                     'status' => 'pending_reimbursement',
                     'receipt_path' => null,
                 ]);
+
+                $reimbursementAccount->decrement('balance', $shortfall);
             }
         });
 
@@ -300,10 +301,7 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'Invalid funding account.'], 422);
         }
 
-        $account = Account::firstOrCreate(
-            ['club_id' => $expense->club_id, 'pay_to' => $validated['pay_to']],
-            ['label' => $validated['pay_to'], 'balance' => 0]
-        );
+        $account = $this->resolveAccount($expense->club_id, $validated['pay_to']);
 
         if ((float) $account->balance < (float) $expense->amount) {
             return response()->json([
@@ -319,6 +317,8 @@ class ExpenseController extends Controller
         }
 
         \DB::transaction(function () use ($expense, $account, $receiptPath, $request) {
+            $reimbursementAccount = $this->resolveAccount($expense->club_id, 'reimbursement_to');
+
             // Outflow expense against the funding account — makes the deduction visible in reports
             Expense::create([
                 'club_id'             => $expense->club_id,
@@ -333,6 +333,7 @@ class ExpenseController extends Controller
             ]);
 
             $account->decrement('balance', (float) $expense->amount);
+            $reimbursementAccount->increment('balance', (float) $expense->amount);
 
             // Mark original pending_reimbursement as settled, attach proof
             $expense->update([
@@ -345,6 +346,14 @@ class ExpenseController extends Controller
             'message' => 'Reimbursement recorded',
             'data' => $expense->refresh(),
         ]);
+    }
+
+    protected function resolveAccount(int $clubId, string $payTo): Account
+    {
+        return Account::firstOrCreate(
+            ['club_id' => $clubId, 'pay_to' => $payTo],
+            ['label' => $payTo, 'balance' => 0]
+        );
     }
 
     protected function resolveClubForUser($user, $clubId = null)

@@ -197,6 +197,7 @@ class EventBudgetItemController extends Controller
         $reimbursementExpense = null;
         if ($shortfall > 0) {
             [$reimbursementConcept, $reimburseTo] = $this->resolveReimbursementTarget($event, $userId);
+            $reimbursementAccount = $this->resolveAccount($event->club_id, 'reimbursement_to');
 
             $reimbursementExpense = Expense::create([
                 'club_id' => $event->club_id,
@@ -212,6 +213,8 @@ class EventBudgetItemController extends Controller
                 'status' => 'pending_reimbursement',
                 'receipt_path' => null,
             ]);
+
+            $reimbursementAccount->decrement('balance', $shortfall);
         }
 
         $item->update([
@@ -229,6 +232,8 @@ class EventBudgetItemController extends Controller
         }
 
         if ($item->reimbursementExpense) {
+            $reimbursementAccount = $this->resolveAccount($event->club_id, 'reimbursement_to');
+            $reimbursementAccount->increment('balance', (float) $item->reimbursementExpense->amount);
             $item->reimbursementExpense->delete();
         }
 
