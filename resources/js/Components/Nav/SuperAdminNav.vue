@@ -79,7 +79,7 @@ const menuItems = [
                 icon: DocumentTextIcon
             },
             {
-                name: 'Finanzas',
+                name: 'Cuentas y conceptos',
                 href: '/club-director/my-club-finances',
                 route: 'club.my-club-finances',
                 icon: CurrencyDollarIcon
