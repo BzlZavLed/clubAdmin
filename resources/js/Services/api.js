@@ -544,6 +544,10 @@ export const uploadExpenseReceipt = async (expenseId, file) => {
     })
 }
 
+export const removeExpenseReceipt = async (expenseId) => {
+    return await axios.delete(route('club.director.expenses.removeReceipt', expenseId))
+}
+
 export const uploadReimbursementReceipt = async (expenseId, file) => {
     const fd = new FormData()
     fd.append('receipt_image', file)
@@ -551,6 +555,10 @@ export const uploadReimbursementReceipt = async (expenseId, file) => {
     return await axios.post(route('club.director.expenses.uploadReimbursementReceipt', expenseId), fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
     })
+}
+
+export const removeReimbursementReceipt = async (expenseId) => {
+    return await axios.delete(route('club.director.expenses.removeReimbursementReceipt', expenseId))
 }
 
 export const markExpenseReimbursed = async (expenseId, payTo, receiptFile) => {

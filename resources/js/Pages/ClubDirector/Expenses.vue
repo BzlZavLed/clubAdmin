@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ArrowPathIcon, BanknotesIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
-import { fetchExpenses, createExpense, uploadExpenseReceipt, uploadReimbursementReceipt, markExpenseReimbursed } from '@/Services/api'
+import { fetchExpenses, createExpense, uploadExpenseReceipt, removeExpenseReceipt, uploadReimbursementReceipt, removeReimbursementReceipt, markExpenseReimbursed } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { compressImage } from '@/Utils/imageCompression'
 import { useAuth } from '@/Composables/useAuth'
@@ -33,7 +33,7 @@ const activeClubName = computed(() =>
 const MAX_RECEIPT_MB = 5
 const MAX_RECEIPT_BYTES = MAX_RECEIPT_MB * 1024 * 1024
 const MAX_RECEIPT_DIM = 1600
-const RECEIPT_ACCEPT = 'image/*,application/pdf'
+const RECEIPT_ACCEPT = 'image/*'
 
 const form = useForm({
     club_id: null,
@@ -233,21 +233,9 @@ const fmtBytes = (bytes) => {
     return `${mb.toFixed(2)}MB`
 }
 
-const isImageFile = (file) => file?.type?.startsWith('image/')
-
 const onNewReceiptChange = (event) => {
     const [file] = event.target.files || []
     if (!file) return
-    if (!isImageFile(file)) {
-        if (file.size > MAX_RECEIPT_BYTES) {
-            showToast(`El archivo supera ${MAX_RECEIPT_MB}MB. Actual ${fmtBytes(file.size)}.`, 'error')
-            form.receipt_image = null
-            if (newReceiptInput.value) newReceiptInput.value.value = ''
-            return
-        }
-        form.receipt_image = file
-        return
-    }
     if (file.size > MAX_RECEIPT_BYTES) {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
@@ -276,15 +264,7 @@ const handleReceiptSelected = async (expenseId, event) => {
     event.target.value = ''
     if (!file) return
     let uploadFile = file
-    if (!isImageFile(file)) {
-        if (file.size > MAX_RECEIPT_BYTES) {
-            rowErrors.value = {
-                ...rowErrors.value,
-                [expenseId]: `El archivo supera ${MAX_RECEIPT_MB}MB. Actual ${fmtBytes(file.size)}.`,
-            }
-            return
-        }
-    } else if (file.size > MAX_RECEIPT_BYTES) {
+    if (file.size > MAX_RECEIPT_BYTES) {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         try {
             uploadFile = await compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM })
@@ -320,23 +300,30 @@ const triggerReimbursementReceiptUpload = (expenseId) => {
     if (input) input.click()
 }
 
+const removeReceiptNow = async (expense) => {
+    if (!expense?.id) return
+    rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
+    uploadingId.value = expense.id
+    try {
+        const { data } = await removeExpenseReceipt(expense.id)
+        const idx = expenses.value.findIndex(e => e.id === expense.id)
+        if (idx !== -1) expenses.value[idx] = data?.data
+        showToast('Recibo eliminado.', 'success')
+    } catch (e) {
+        rowErrors.value = {
+            ...rowErrors.value,
+            [expense.id]: e?.response?.data?.message || 'No se pudo eliminar el recibo.',
+        }
+        console.error(e)
+    } finally {
+        uploadingId.value = null
+    }
+}
+
 const handleReimbursementReceiptSelected = (expense, event) => {
     const [file] = event.target.files || []
     event.target.value = ''
     if (!file) return
-    if (!isImageFile(file)) {
-        if (file.size > MAX_RECEIPT_BYTES) {
-            showToast(`El archivo supera ${MAX_RECEIPT_MB}MB. Actual ${fmtBytes(file.size)}.`, 'error')
-            return
-        }
-        if (isPendingReimbursement(expense)) {
-            reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: file }
-            rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
-            return
-        }
-        uploadReimbursementReceiptNow(expense, file)
-        return
-    }
     if (file.size > MAX_RECEIPT_BYTES) {
         showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
@@ -361,6 +348,26 @@ const handleReimbursementReceiptSelected = (expense, event) => {
         return
     }
     uploadReimbursementReceiptNow(expense, file)
+}
+
+const removeReimbursementReceiptNow = async (expense) => {
+    if (!expense?.id) return
+    rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
+    uploadingId.value = expense.id
+    try {
+        const { data } = await removeReimbursementReceipt(expense.id)
+        const idx = expenses.value.findIndex(e => e.id === expense.id)
+        if (idx !== -1) expenses.value[idx] = data?.data
+        showToast('Recibo de reembolso eliminado.', 'success')
+    } catch (e) {
+        rowErrors.value = {
+            ...rowErrors.value,
+            [expense.id]: e?.response?.data?.message || 'No se pudo eliminar el recibo de reembolso.',
+        }
+        console.error(e)
+    } finally {
+        uploadingId.value = null
+    }
 }
 
 const uploadReimbursementReceiptNow = async (expense, file) => {
@@ -489,10 +496,10 @@ const markReimbursed = async (expense) => {
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Recibo (imagen o PDF, opcional)</label>
+                        <label class="block text-sm font-medium text-gray-700">Imagen del recibo (opcional)</label>
                         <input type="file" :accept="RECEIPT_ACCEPT" @change="onNewReceiptChange" ref="newReceiptInput"
                             class="mt-1 block w-full text-sm text-gray-700" />
-                        <p class="mt-1 text-xs text-gray-500">Adjunta una imagen o PDF ahora para marcar como completado, o agrega el archivo luego desde la tabla.</p>
+                        <p class="mt-1 text-xs text-gray-500">Adjunta ahora para marcar como completado, o agrega luego desde la tabla.</p>
                         <div v-if="form.errors.receipt_image" class="mt-1 text-sm text-red-600">{{ form.errors.receipt_image }}</div>
                     </div>
 
@@ -553,6 +560,20 @@ const markReimbursed = async (expense) => {
                                     class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
                                     Recibo reembolso
                                 </a>
+                                <button
+                                    v-if="receiptHref(e)"
+                                    @click="removeReceiptNow(e)"
+                                    :disabled="uploadingId === e.id"
+                                    class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
+                                    <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo gasto' }}</span>
+                                </button>
+                                <button
+                                    v-if="reimbursementReceiptHref(e)"
+                                    @click="removeReimbursementReceiptNow(e)"
+                                    :disabled="uploadingId === e.id"
+                                    class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
+                                    <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo reembolso' }}</span>
+                                </button>
                                 <button
                                     v-if="e.pay_to === 'reimbursement_to' && isCompletedExpense(e) && !reimbursementReceiptHref(e)"
                                     @click="triggerReimbursementReceiptUpload(e.id)"
@@ -665,6 +686,20 @@ const markReimbursed = async (expense) => {
                                                 class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
                                                 Recibo reembolso
                                             </a>
+                                            <button
+                                                v-if="receiptHref(e)"
+                                                @click="removeReceiptNow(e)"
+                                                :disabled="uploadingId === e.id"
+                                                class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
+                                                <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo gasto' }}</span>
+                                            </button>
+                                            <button
+                                                v-if="reimbursementReceiptHref(e)"
+                                                @click="removeReimbursementReceiptNow(e)"
+                                                :disabled="uploadingId === e.id"
+                                                class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
+                                                <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo reembolso' }}</span>
+                                            </button>
                                             <button
                                                 v-if="e.pay_to === 'reimbursement_to' && isCompletedExpense(e) && !reimbursementReceiptHref(e)"
                                                 @click="triggerReimbursementReceiptUpload(e.id)"

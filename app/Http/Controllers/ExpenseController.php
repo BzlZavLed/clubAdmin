@@ -109,7 +109,7 @@ class ExpenseController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'expense_date' => ['required', 'date'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'receipt_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
+            'receipt_image' => ['nullable', 'image', 'max:5120'],
         ]);
 
         $clubId = (int) $validated['club_id'];
@@ -245,7 +245,7 @@ class ExpenseController extends Controller
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
 
         $validated = $request->validate([
-            'receipt_image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
+            'receipt_image' => ['required', 'image', 'max:5120'],
         ]);
 
         $path = $request->file('receipt_image')->store('expense-receipts', 'public');
@@ -265,6 +265,27 @@ class ExpenseController extends Controller
         ]);
     }
 
+    public function removeReceipt(Request $request, Expense $expense)
+    {
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
+
+        if (!$expense->receipt_path) {
+            return response()->json(['message' => 'No receipt to remove.'], 422);
+        }
+
+        Storage::disk('public')->delete($expense->receipt_path);
+
+        $expense->update([
+            'receipt_path' => null,
+            'status' => 'working',
+        ]);
+
+        return response()->json([
+            'message' => 'Receipt removed',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
     public function uploadReimbursementReceipt(Request $request, Expense $expense)
     {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
@@ -274,7 +295,7 @@ class ExpenseController extends Controller
         }
 
         $validated = $request->validate([
-            'receipt_image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
+            'receipt_image' => ['required', 'image', 'max:5120'],
         ]);
 
         $path = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
@@ -293,13 +314,33 @@ class ExpenseController extends Controller
         ]);
     }
 
+    public function removeReimbursementReceipt(Request $request, Expense $expense)
+    {
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
+
+        if (!$expense->reimbursement_receipt_path) {
+            return response()->json(['message' => 'No reimbursement receipt to remove.'], 422);
+        }
+
+        Storage::disk('public')->delete($expense->reimbursement_receipt_path);
+
+        $expense->update([
+            'reimbursement_receipt_path' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Reimbursement receipt removed',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
     public function markReimbursed(Request $request, Expense $expense)
     {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
 
         $validated = $request->validate([
             'pay_to' => ['required', 'string', 'max:255'],
-            'receipt_image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,pdf', 'max:10240'],
+            'receipt_image' => ['required', 'image', 'max:5120'],
         ]);
 
         if ($expense->pay_to !== 'reimbursement_to' || $expense->status !== 'pending_reimbursement') {
