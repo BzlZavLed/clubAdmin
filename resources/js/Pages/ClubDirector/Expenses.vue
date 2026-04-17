@@ -10,6 +10,7 @@ import { useAuth } from '@/Composables/useAuth'
 
 const payToOptions = ref([])
 const expenses = ref([])
+const expenseStatuses = ref([])
 const accounts = ref([])
 const clubs = ref([])
 const loading = ref(false)
@@ -53,6 +54,9 @@ const payToLabel = (val) => {
     return m?.label || (val ?? 'Sin asignar')
 }
 const reimbursePayToOptions = computed(() => accounts.value.filter(a => a.pay_to !== 'reimbursement_to'))
+const expenseStatusMap = computed(() =>
+    Object.fromEntries((expenseStatuses.value || []).map((status) => [status.status, status]))
+)
 const defaultReimbursePayTo = computed(() => {
     const clubBudget = reimbursePayToOptions.value.find(a => a.pay_to === 'club_budget')
     return clubBudget?.pay_to || reimbursePayToOptions.value[0]?.pay_to || null
@@ -96,6 +100,31 @@ const reimbursementReceiptHref = (expense) => {
     return null
 }
 
+const WORKING_STATUS = 'working'
+const COMPLETED_STATUS = 'completed'
+const PENDING_REIMBURSEMENT_STATUS = 'pending_reimbursement'
+
+const expenseStatusLabel = (status) => {
+    return expenseStatusMap.value[status]?.name || status || 'Sin estado'
+}
+
+const expenseStatusDescription = (status) => {
+    return expenseStatusMap.value[status]?.description || ''
+}
+
+const expenseStatusBadgeClass = (status) => {
+    if (status === COMPLETED_STATUS) return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+    if (status === PENDING_REIMBURSEMENT_STATUS) return 'bg-purple-50 text-purple-700 ring-1 ring-purple-100'
+    return 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+}
+
+const isPendingReimbursement = (expense) => expense?.status === PENDING_REIMBURSEMENT_STATUS
+const isCompletedExpense = (expense) => expense?.status === COMPLETED_STATUS
+const settlementAccountLabel = (expense) => {
+    const payTo = expense?.settlement_expense?.pay_to
+    return payTo ? payToLabel(payTo) : null
+}
+
 const loadData = async (clubId = null) => {
     loading.value = true
     loadError.value = ''
@@ -105,11 +134,12 @@ const loadData = async (clubId = null) => {
         payToOptions.value = data?.pay_to || []
         accounts.value = data?.accounts || []
         expenses.value = Array.isArray(data?.expenses) ? data.expenses : []
+        expenseStatuses.value = Array.isArray(data?.expense_statuses) ? data.expense_statuses : []
         reimbursementReceiptFiles.value = {}
         expensePage.value = 1
         clubs.value = Array.isArray(data?.clubs) ? data.clubs : []
         expenses.value.forEach((e) => {
-            if (e.status === 'pending_reimbursement' && !reimbursePayToByExpense.value[e.id]) {
+            if (isPendingReimbursement(e) && !reimbursePayToByExpense.value[e.id]) {
                 reimbursePayToByExpense.value[e.id] = defaultReimbursePayTo.value
             }
         })
@@ -281,7 +311,7 @@ const handleReimbursementReceiptSelected = (expense, event) => {
                 showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, 'error')
                 return
             }
-            if (expense?.status === 'pending_reimbursement') {
+            if (isPendingReimbursement(expense)) {
                 reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: compressed }
                 rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
                 return
@@ -292,7 +322,7 @@ const handleReimbursementReceiptSelected = (expense, event) => {
         })
         return
     }
-    if (expense?.status === 'pending_reimbursement') {
+    if (isPendingReimbursement(expense)) {
         reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: file }
         rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
         return
@@ -321,7 +351,7 @@ const uploadReimbursementReceiptNow = async (expense, file) => {
 }
 
 const markReimbursed = async (expense) => {
-    if (!expense || expense.status !== 'pending_reimbursement') return
+    if (!expense || !isPendingReimbursement(expense)) return
     const payTo = reimbursePayToByExpense.value[expense.id] || defaultReimbursePayTo.value
     if (!payTo) {
         rowErrors.value = { ...rowErrors.value, [expense.id]: 'Selecciona una cuenta para reembolsar.' }
@@ -474,7 +504,7 @@ const repairBalances = async () => {
                     <div>Mostrando {{ expenses.length ? expenseStartIdx + 1 : 0 }}–{{ expenseEndIdx }} de {{ expenses.length }}</div>
                     <div>10 por pagina</div>
                 </div>
-                <div v-else class="mt-3">
+                <div v-if="!loading && expenses.length" class="mt-3">
                     <div class="space-y-3 md:hidden">
                         <div v-for="e in pagedExpenses" :key="e.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                             <div class="flex items-start justify-between gap-3">
@@ -483,27 +513,21 @@ const repairBalances = async () => {
                                     <div class="text-xs text-gray-600">{{ new Date(e.expense_date).toLocaleDateString() }}</div>
                                 </div>
                                 <span
+                                    :title="expenseStatusDescription(e.status)"
                                     :class="[
                                         'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
-                                        e.status === 'completed'
-                                            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
-                                            : e.status === 'pending_reimbursement'
-                                            ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-100'
-                                            : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                                        expenseStatusBadgeClass(e.status)
                                     ]">
-                                    {{
-                                        e.status === 'completed'
-                                            ? 'Completado'
-                                            : e.status === 'pending_reimbursement'
-                                            ? 'Reembolso pendiente'
-                                            : 'En proceso'
-                                    }}
+                                    {{ expenseStatusLabel(e.status) }}
                                 </span>
                             </div>
                             <div class="mt-2 text-xs text-gray-600">
                                 <div><span class="font-medium text-gray-700">Cuenta:</span> {{ payToLabel(e.pay_to) }}</div>
                                 <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
                                 <div><span class="font-medium text-gray-700">Reembolsado a:</span> {{ e.reimbursed_to || '—' }}</div>
+                                <div v-if="e.pay_to === 'reimbursement_to' && settlementAccountLabel(e)">
+                                    <span class="font-medium text-gray-700">Liquidado con:</span> {{ settlementAccountLabel(e) }}
+                                </div>
                             </div>
                             <div class="mt-3 flex flex-wrap items-center gap-2">
                                 <a v-if="receiptHref(e)" :href="receiptHref(e)" target="_blank" rel="noreferrer"
@@ -519,7 +543,7 @@ const repairBalances = async () => {
                                     Recibo reembolso
                                 </a>
                                 <button
-                                    v-if="e.pay_to === 'reimbursement_to' && e.status === 'completed' && !reimbursementReceiptHref(e)"
+                                    v-if="e.pay_to === 'reimbursement_to' && isCompletedExpense(e) && !reimbursementReceiptHref(e)"
                                     @click="triggerReimbursementReceiptUpload(e.id)"
                                     class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
                                     <span>Adjuntar recibo reembolso</span>
@@ -528,7 +552,7 @@ const repairBalances = async () => {
                                     :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
                                     @change="(ev) => handleReimbursementReceiptSelected(e, ev)" />
                                 <button
-                                    v-if="e.status !== 'completed'"
+                                    v-if="!isCompletedExpense(e)"
                                     @click="triggerReceiptUpload(e.id)"
                                     :disabled="uploadingId === e.id"
                                     class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
@@ -540,7 +564,7 @@ const repairBalances = async () => {
                                     @change="(ev) => handleReceiptSelected(e.id, ev)" />
                             </div>
                             <div v-if="rowErrors[e.id]" class="mt-2 text-xs text-red-600">{{ rowErrors[e.id] }}</div>
-                            <div v-if="e.status === 'pending_reimbursement'" class="mt-3 flex flex-wrap items-center gap-2">
+                            <div v-if="isPendingReimbursement(e)" class="mt-3 flex flex-wrap items-center gap-2">
                                 <select
                                     v-model="reimbursePayToByExpense[e.id]"
                                     class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
@@ -585,23 +609,14 @@ const repairBalances = async () => {
                                 <td class="px-4 py-2">{{ fmtMoney(e.amount) }}</td>
                                 <td class="px-4 py-2">
                                     <span
+                                        :title="expenseStatusDescription(e.status)"
                                         :class="[
                                             'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                                            e.status === 'completed'
-                                                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
-                                                : e.status === 'pending_reimbursement'
-                                                ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-100'
-                                                : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                                            expenseStatusBadgeClass(e.status)
                                         ]">
-                                        {{
-                                            e.status === 'completed'
-                                                ? 'Completado'
-                                                : e.status === 'pending_reimbursement'
-                                                ? 'Reembolso pendiente'
-                                                : 'En proceso'
-                                        }}
+                                        {{ expenseStatusLabel(e.status) }}
                                     </span>
-                                    <div v-if="e.status === 'pending_reimbursement'" class="mt-2 flex flex-wrap items-center gap-2">
+                                    <div v-if="isPendingReimbursement(e)" class="mt-2 flex flex-wrap items-center gap-2">
                                         <select
                                             v-model="reimbursePayToByExpense[e.id]"
                                             class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
@@ -640,7 +655,7 @@ const repairBalances = async () => {
                                                 Recibo reembolso
                                             </a>
                                             <button
-                                                v-if="e.pay_to === 'reimbursement_to' && e.status === 'completed' && !reimbursementReceiptHref(e)"
+                                                v-if="e.pay_to === 'reimbursement_to' && isCompletedExpense(e) && !reimbursementReceiptHref(e)"
                                                 @click="triggerReimbursementReceiptUpload(e.id)"
                                                 class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
                                                 <span>Adjuntar recibo reembolso</span>
@@ -650,7 +665,7 @@ const repairBalances = async () => {
                                                 @change="(ev) => handleReimbursementReceiptSelected(e, ev)" />
 
                                             <button
-                                                v-if="e.status !== 'completed'"
+                                                v-if="!isCompletedExpense(e)"
                                                 @click="triggerReceiptUpload(e.id)"
                                                 :disabled="uploadingId === e.id"
                                                 class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
@@ -666,6 +681,9 @@ const repairBalances = async () => {
                                 </td>
                                 <td class="px-4 py-2">
                                     <div>{{ e.reimbursed_to || '—' }}</div>
+                                    <div v-if="e.pay_to === 'reimbursement_to' && settlementAccountLabel(e)" class="text-xs text-gray-500 mt-1">
+                                        Liquidado con: {{ settlementAccountLabel(e) }}
+                                    </div>
                                     <div v-if="rowErrors[e.id]" class="text-xs text-red-600 mt-1">{{ rowErrors[e.id] }}</div>
                                 </td>
                                 <td class="px-4 py-2">{{ e.description || '—' }}</td>

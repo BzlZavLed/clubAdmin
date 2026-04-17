@@ -896,7 +896,9 @@ class ReportController extends Controller
             $expensesQ->whereDate('expense_date', $filters['date']);
         }
 
-        $expenses = $expensesQ->get([
+        $expenses = $expensesQ
+            ->with(['settlementExpense:id,pay_to,expense_date'])
+            ->get([
             'id',
             'pay_to',
             'amount',
@@ -906,6 +908,7 @@ class ReportController extends Controller
             'reimbursed_to',
             'receipt_path',
             'reimbursement_receipt_path',
+            'settles_expense_id',
         ]);
 
         $accountLabels = Account::query()
@@ -964,6 +967,12 @@ class ReportController extends Controller
                 'concept' => $e->description ?? '—',
                 'member' => null,
                 'staff' => $e->reimbursed_to,
+                'status' => $e->status,
+                'settlement_account' => $e->settlementExpense?->pay_to,
+                'settlement_account_label' => $e->settlementExpense?->pay_to
+                    ? ($accountLabels[$e->settlementExpense->pay_to] ?? $e->settlementExpense->pay_to)
+                    : null,
+                'settlement_date' => $e->settlementExpense?->expense_date,
                 'receipt_ref' => count($receiptRefs) ? implode(', ', $receiptRefs) : null,
                 'receipt_refs' => $receiptRefs,
             ];

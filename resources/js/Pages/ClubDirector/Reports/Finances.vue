@@ -57,6 +57,11 @@ const payToLabel = (val) => {
     const m = payTo.value.find(p => p.value === val)
     return m?.label || (val ?? '—')
 }
+const settlementSummary = (entry) => {
+    if (!entry?.settlement_account_label) return null
+    const base = `Liquidado con ${entry.settlement_account_label}`
+    return entry?.settlement_date ? `${base} el ${formatDateMDY(entry.settlement_date)}` : base
+}
 
 const selectedConcept = computed(() =>
     (concepts.value || []).find(c => c.id === selectedConceptId.value) || null
@@ -440,6 +445,9 @@ watch(selectedClubId, async (id, old) => {
                             <div v-if="acc.pay_to === 'reimbursement_to'" class="mt-1 text-xs text-gray-600">
                                 <span class="font-medium text-gray-700">Miembro/Personal:</span> {{ e.member ?? e.staff ?? '—' }}
                             </div>
+                            <div v-if="acc.pay_to === 'reimbursement_to' && settlementSummary(e)" class="mt-1 text-xs text-gray-600">
+                                <span class="font-medium text-gray-700">Liquidacion:</span> {{ settlementSummary(e) }}
+                            </div>
                             <div v-if="e.receipt_ref" class="mt-1 text-xs text-gray-600">
                                 <span class="font-medium text-gray-700">Ref:</span> {{ e.receipt_ref }}
                             </div>
@@ -481,6 +489,7 @@ watch(selectedClubId, async (id, old) => {
                                     <th class="px-4 py-2 text-left font-semibold">Fecha</th>
                                     <th class="px-4 py-2 text-left font-semibold">Tipo</th>
                                     <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
+                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Liquidacion</th>
                                     <th class="px-4 py-2 text-left font-semibold">Concepto</th>
                                     <th class="px-4 py-2 text-left font-semibold">Ref.</th>
                                     <th class="px-4 py-2 text-right font-semibold">Cargos</th>
@@ -499,6 +508,7 @@ watch(selectedClubId, async (id, old) => {
                                         </span>
                                     </td>
                                     <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ e.member ?? e.staff ?? '—' }}</td>
+                                    <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ settlementSummary(e) ?? '—' }}</td>
                                     <td class="px-4 py-2">{{ e.concept }}</td>
                                     <td class="px-4 py-2">{{ e.receipt_ref ?? '—' }}</td>
                                     <td class="px-4 py-2 text-right">
@@ -513,12 +523,12 @@ watch(selectedClubId, async (id, old) => {
                             </tbody>
                             <tfoot>
                                 <tr class="border-t bg-gray-50 font-semibold">
-                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 5 : 4">Totales</td>
+                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 6 : 4">Totales</td>
                                     <td class="px-4 py-2 text-right text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</td>
                                     <td class="px-4 py-2 text-right text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</td>
                                 </tr>
                                 <tr class="border-t bg-white font-semibold">
-                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 5 : 4">Saldo de la cuenta</td>
+                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 6 : 4">Saldo de la cuenta</td>
                                     <td class="px-4 py-2 text-right" :colspan="2">{{ fmtMoney(acc.totals.net) }}</td>
                                 </tr>
                             </tfoot>

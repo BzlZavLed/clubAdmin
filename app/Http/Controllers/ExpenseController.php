@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Expense;
+use App\Models\ExpenseStatusCatalog;
 use App\Models\PayToOption;
 use App\Models\Account;
 use App\Models\PaymentConcept;
@@ -52,6 +53,8 @@ class ExpenseController extends Controller
             ->values();
         $expenses = Expense::query()
             ->where('club_id', $club->id)
+            ->whereNull('settles_expense_id')
+            ->with(['settlementExpense:id,pay_to,settles_expense_id,amount,expense_date'])
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
             ->get([
@@ -68,8 +71,12 @@ class ExpenseController extends Controller
                 'status',
                 'receipt_path',
                 'reimbursement_receipt_path',
+                'settles_expense_id',
                 'created_at',
             ]);
+        $expenseStatuses = ExpenseStatusCatalog::query()
+            ->orderBy('id')
+            ->get(['id', 'status', 'name', 'description']);
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -79,6 +86,7 @@ class ExpenseController extends Controller
                     'accounts' => $accounts,
                     'clubs' => $clubs,
                     'expenses' => $expenses,
+                    'expense_statuses' => $expenseStatuses,
                 ]
             ]);
         }
@@ -89,6 +97,7 @@ class ExpenseController extends Controller
             'accounts' => $accounts,
             'clubs' => $clubs,
             'expenses' => $expenses,
+            'expense_statuses' => $expenseStatuses,
         ]);
     }
 
@@ -319,6 +328,21 @@ class ExpenseController extends Controller
         \DB::transaction(function () use ($expense, $account, $receiptPath, $request) {
             $reimbursementAccount = $this->resolveAccount($expense->club_id, 'reimbursement_to');
 
+            Payment::create([
+                'club_id' => $expense->club_id,
+                'payment_concept_id' => $expense->payment_concept_id,
+                'concept_text' => 'Liquidacion de reembolso',
+                'pay_to' => 'reimbursement_to',
+                'account_id' => $reimbursementAccount->id,
+                'amount_paid' => (float) $expense->amount,
+                'expected_amount' => null,
+                'balance_due_after' => null,
+                'payment_date' => now()->toDateString(),
+                'payment_type' => 'internal',
+                'received_by_user_id' => $request->user()->id,
+                'notes' => 'Credito automatico para saldar reembolso pendiente.',
+            ]);
+
             // Outflow expense against the funding account — makes the deduction visible in reports
             Expense::create([
                 'club_id'             => $expense->club_id,
@@ -330,6 +354,7 @@ class ExpenseController extends Controller
                 'created_by_user_id'  => $request->user()->id,
                 'status'              => 'completed',
                 'receipt_path'        => $receiptPath,
+                'settles_expense_id'  => $expense->id,
             ]);
 
             $account->decrement('balance', (float) $expense->amount);

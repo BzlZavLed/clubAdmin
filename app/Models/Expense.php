@@ -23,6 +23,7 @@ class Expense extends Model
         'status',
         'receipt_path',
         'reimbursement_receipt_path',
+        'settles_expense_id',
     ];
 
     protected $casts = [
@@ -45,6 +46,16 @@ class Expense extends Model
     public function event()
     {
         return $this->belongsTo(Event::class);
+    }
+
+    public function settlementExpense()
+    {
+        return $this->hasOne(self::class, 'settles_expense_id');
+    }
+
+    public function settledReimbursement()
+    {
+        return $this->belongsTo(self::class, 'settles_expense_id');
     }
 
     public function getReceiptUrlAttribute(): ?string
