@@ -519,6 +519,10 @@ export const fetchExpenses = async (clubId = null) => {
     return data
 }
 
+export const recalculateAccounts = async (clubId) => {
+    return await axios.post(route('clubs.accounts.recalculate', clubId))
+}
+
 export const createExpense = async (payload) => {
     const fd = new FormData()
     Object.entries(payload).forEach(([k, v]) => {

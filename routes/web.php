@@ -626,6 +626,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('clubs/{club}')->name('clubs.')->group(function () {
         Route::get('accounts', [\App\Http\Controllers\AccountController::class, 'index'])->name('accounts.index');
         Route::post('accounts', [\App\Http\Controllers\AccountController::class, 'store'])->name('accounts.store');
+        Route::post('accounts/recalculate', [\App\Http\Controllers\AccountController::class, 'recalculate'])->name('accounts.recalculate');
         Route::put('accounts/{account}', [\App\Http\Controllers\AccountController::class, 'update'])->name('accounts.update');
         Route::delete('accounts/{account}', [\App\Http\Controllers\AccountController::class, 'destroy'])->name('accounts.destroy');
 
