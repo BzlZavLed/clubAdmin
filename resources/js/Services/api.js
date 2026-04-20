@@ -494,6 +494,26 @@ export const deleteClubPayment = async (paymentId) => {
     return await axios.delete(route("club.payments.destroy", { payment: paymentId }));
 };
 
+export const fetchAccountingCorrections = async (clubId = null) => {
+    const { data } = await axios.get(route('club.director.accounting-corrections'), {
+        params: clubId ? { club_id: clubId } : {}
+    })
+
+    return data
+}
+
+export const reverseAccountingPayment = async (paymentId, payload) => {
+    return await axios.post(route('club.director.accounting-corrections.payments.reverse', paymentId), payload)
+}
+
+export const reverseAccountingExpense = async (expenseId, payload) => {
+    return await axios.post(route('club.director.accounting-corrections.expenses.reverse', expenseId), payload)
+}
+
+export const reverseAccountingReimbursement = async (expenseId, payload) => {
+    return await axios.post(route('club.director.accounting-corrections.reimbursements.reverse', expenseId), payload)
+}
+
 // Director Financial Report — bootstrap data
 export const fetchFinancialReportBootstrap = async (clubId = null) => {
     const { data } = await axios.get(route('financial.preload'), {

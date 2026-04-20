@@ -21,6 +21,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AssistanceReportController;
 use App\Http\Controllers\ClubPaymentController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\AccountingCorrectionController;
 use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
 use App\Http\Controllers\ReportController;
@@ -263,10 +264,14 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
         'churches' => Church::query()
             ->with('district.association.union:id,name,evaluation_system')
             ->orderBy('church_name')
-            ->get(['id', 'district_id', 'church_name'])
+            ->get(['id', 'district_id', 'church_name', 'pastor_name', 'conference'])
             ->map(fn ($church) => [
                 'id' => $church->id,
+                'district_id' => $church->district_id,
                 'church_name' => $church->church_name,
+                'pastor_name' => $church->pastor_name,
+                'conference' => $church->conference,
+                'association_name' => $church->district?->association?->name,
                 'union_name' => $church->district?->association?->union?->name,
                 'evaluation_system' => $church->district?->association?->union?->evaluation_system ?: 'honors',
             ])
@@ -277,7 +282,8 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
             ->orderBy('name')
             ->get(),
         'clubs' => Club::query()
-            ->select('id', 'club_name', 'church_name', 'director_name', 'creation_date', 'pastor_name', 'conference_name', 'conference_region', 'club_type', 'evaluation_system', 'church_id', 'user_id', 'status')
+            ->withoutGlobalScopes()
+            ->select('id', 'club_name', 'church_name', 'director_name', 'creation_date', 'pastor_name', 'conference_name', 'conference_region', 'club_type', 'evaluation_system', 'church_id', 'district_id', 'user_id', 'status')
             ->orderBy('club_name')
             ->get(),
     ]))->name('superadmin.clubs.manage');
@@ -287,7 +293,11 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::delete('/super-admin/clubs/{club}', [ClubController::class, 'deleteBySuperadmin'])->name('superadmin.clubs.delete');
     Route::get('/super-admin/users', fn() => Inertia::render('SuperAdmin/Users', [
         'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
-        'clubs' => Club::select('id', 'club_name', 'church_id')->orderBy('club_name')->get(),
+        'clubs' => Club::query()
+            ->withoutGlobalScopes()
+            ->select('id', 'club_name', 'church_id', 'status')
+            ->orderBy('club_name')
+            ->get(),
         'districts' => \App\Models\District::query()
             ->with('association.union:id,name')
             ->where('status', '!=', 'deleted')
@@ -403,7 +413,6 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.expenses.removeReimbursementReceipt');
     Route::post('/club-director/expenses/{expense}/reimburse', [ExpenseController::class, 'markReimbursed'])
         ->name('club.director.expenses.reimburse');
-
     Route::get('/club-director/staff', function () {
         $authUser = auth()->user();
         $activeClub = \App\Support\ClubHelper::activeClubForUser($authUser);
@@ -698,6 +707,17 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 
     Route::get('/clubs/by-church-name', [ClubController::class, 'getByChurchNames'])->name('clubs.by-church-name');
+});
+
+Route::middleware(['auth', 'verified', 'profile:club_director,superadmin'])->group(function () {
+    Route::get('/club-director/accounting-corrections', [AccountingCorrectionController::class, 'index'])
+        ->name('club.director.accounting-corrections');
+    Route::post('/club-director/accounting-corrections/payments/{payment}/reverse', [AccountingCorrectionController::class, 'reversePayment'])
+        ->name('club.director.accounting-corrections.payments.reverse');
+    Route::post('/club-director/accounting-corrections/expenses/{expense}/reverse', [AccountingCorrectionController::class, 'reverseExpense'])
+        ->name('club.director.accounting-corrections.expenses.reverse');
+    Route::post('/club-director/accounting-corrections/reimbursements/{expense}/reverse', [AccountingCorrectionController::class, 'reverseReimbursement'])
+        ->name('club.director.accounting-corrections.reimbursements.reverse');
 });
 
 require __DIR__ . '/auth.php';

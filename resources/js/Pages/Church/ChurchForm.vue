@@ -41,10 +41,6 @@
                     <label class="block mb-1">Correo del pastor</label>
                     <input v-model="form.pastor_email" type="email" class="border p-2 w-full" />
                 </div>
-                <div class="mb-4">
-                    <label class="block mb-1">Conferencia</label>
-                    <input v-model="form.conference" type="text" class="border p-2 w-full" />
-                </div>
                 <Link :href="route('register')" class="text-sm text-yellow-600 hover:underline">
                 Registrar personal
                 </Link><br>
@@ -158,8 +154,7 @@ const form = reactive({
     phone_number: '',
     email: '',
     pastor_name: '',
-    pastor_email: '',
-    conference: ''
+    pastor_email: ''
 })
 
 const churches = ref([])
@@ -170,7 +165,6 @@ const editForm = reactive({
     church_name: '',
     email: '',
     phone_number: '',
-    conference: '',
     address: '',
     ethnicity: '',
     pastor_name: '',
@@ -217,7 +211,6 @@ const submitChurch = async () => {
         form.email = ''
         form.pastor_name = ''
         form.pastor_email = ''
-        form.conference = ''
         await fetchChurches()
     } catch (err) {
         alert('Error al crear la iglesia. Revisa el formulario.')
@@ -231,7 +224,6 @@ const startEdit = (church) => {
     editForm.church_name = church.church_name || ''
     editForm.email = church.email || ''
     editForm.phone_number = church.phone_number || ''
-    editForm.conference = church.conference || ''
     editForm.address = church.address || ''
     editForm.ethnicity = church.ethnicity || ''
     editForm.pastor_name = church.pastor_name || ''
@@ -249,7 +241,6 @@ const saveEdit = async (churchId) => {
             church_name: editForm.church_name,
             email: editForm.email,
             phone_number: editForm.phone_number,
-            conference: editForm.conference,
             address: editForm.address,
             ethnicity: editForm.ethnicity,
             pastor_name: editForm.pastor_name,

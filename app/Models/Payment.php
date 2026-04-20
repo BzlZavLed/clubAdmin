@@ -26,6 +26,8 @@ class Payment extends Model
         'check_image_path',
         'received_by_user_id',
         'notes',
+        'reversed_payment_id',
+        'settles_expense_id',
     ];
 
     protected $casts = [
@@ -65,6 +67,21 @@ class Payment extends Model
     public function receipt()
     {
         return $this->hasOne(PaymentReceipt::class);
+    }
+
+    public function reversedPayment()
+    {
+        return $this->belongsTo(self::class, 'reversed_payment_id');
+    }
+
+    public function reversalPayment()
+    {
+        return $this->hasOne(self::class, 'reversed_payment_id');
+    }
+
+    public function settledExpense()
+    {
+        return $this->belongsTo(Expense::class, 'settles_expense_id');
     }
 
     public function getIsFullyPaidAttribute(): bool

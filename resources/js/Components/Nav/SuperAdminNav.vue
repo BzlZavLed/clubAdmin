@@ -12,6 +12,7 @@ import {
     BanknotesIcon,
     CalendarDaysIcon,
     BuildingOffice2Icon,
+    ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 
@@ -95,6 +96,12 @@ const menuItems = [
                 href: '/club-director/expenses',
                 route: 'club.director.expenses',
                 icon: CurrencyDollarIcon
+            },
+            {
+                name: 'Correcciones contables',
+                href: '/club-director/accounting-corrections',
+                route: 'club.director.accounting-corrections',
+                icon: ArrowPathIcon
             },
             {
                 name: 'Plan de trabajo',

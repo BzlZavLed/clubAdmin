@@ -24,6 +24,7 @@ class Expense extends Model
         'receipt_path',
         'reimbursement_receipt_path',
         'settles_expense_id',
+        'reversed_expense_id',
     ];
 
     protected $casts = [
@@ -56,6 +57,16 @@ class Expense extends Model
     public function settledReimbursement()
     {
         return $this->belongsTo(self::class, 'settles_expense_id');
+    }
+
+    public function reversedExpense()
+    {
+        return $this->belongsTo(self::class, 'reversed_expense_id');
+    }
+
+    public function reversalExpense()
+    {
+        return $this->hasOne(self::class, 'reversed_expense_id');
     }
 
     public function getReceiptUrlAttribute(): ?string

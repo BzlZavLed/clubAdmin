@@ -20,12 +20,37 @@ return new class extends Migration
             });
         }
 
-        DB::statement("
-            INSERT IGNORE INTO club_carpeta_class_activations (club_id, union_class_catalog_id, created_at, updated_at)
-            SELECT DISTINCT club_id, union_class_catalog_id, NOW(), NOW()
-            FROM club_classes
-            WHERE union_class_catalog_id IS NOT NULL
-        ");
+        $driver = DB::getDriverName();
+
+        if ($driver === 'sqlite') {
+            DB::table('club_classes')
+                ->whereNotNull('union_class_catalog_id')
+                ->distinct()
+                ->get(['club_id', 'union_class_catalog_id'])
+                ->each(function ($row) {
+                    DB::table('club_carpeta_class_activations')->insertOrIgnore([
+                        'club_id' => $row->club_id,
+                        'union_class_catalog_id' => $row->union_class_catalog_id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                });
+        } elseif ($driver === 'pgsql') {
+            DB::statement("
+                INSERT INTO club_carpeta_class_activations (club_id, union_class_catalog_id, created_at, updated_at)
+                SELECT DISTINCT club_id, union_class_catalog_id, NOW(), NOW()
+                FROM club_classes
+                WHERE union_class_catalog_id IS NOT NULL
+                ON CONFLICT (club_id, union_class_catalog_id) DO NOTHING
+            ");
+        } else {
+            DB::statement("
+                INSERT IGNORE INTO club_carpeta_class_activations (club_id, union_class_catalog_id, created_at, updated_at)
+                SELECT DISTINCT club_id, union_class_catalog_id, NOW(), NOW()
+                FROM club_classes
+                WHERE union_class_catalog_id IS NOT NULL
+            ");
+        }
     }
 
     public function down(): void

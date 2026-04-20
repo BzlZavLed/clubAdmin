@@ -149,7 +149,10 @@ const churchNameById = (churchId) => {
 
 const clubNameById = (clubId) => {
     const club = props.clubs.find((item) => Number(item.id) === Number(clubId))
-    return club?.club_name || '-'
+    if (!club) return '-'
+    return club.status === 'inactive'
+        ? `${club.club_name} (${tr('inactivo', 'inactive')})`
+        : club.club_name
 }
 
 const scopeLabel = (user) => {
@@ -265,7 +268,7 @@ const deleteUser = (user) => {
                             <select id="club_id" v-model="form.club_id" class="mt-1 block w-full rounded-md border-gray-300">
                                 <option value="">{{ tr('Sin club por ahora', 'No club for now') }}</option>
                                 <option v-for="club in filteredClubs" :key="club.id" :value="club.id">
-                                    {{ club.club_name }}
+                                    {{ club.status === 'inactive' ? `${club.club_name} (${tr('inactivo', 'inactive')})` : club.club_name }}
                                 </option>
                             </select>
                             <InputError class="mt-2" :message="form.errors.club_id" />

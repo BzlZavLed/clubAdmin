@@ -241,7 +241,8 @@ class ClubController extends Controller
             'club_name' => 'required|string|max:255',
             'church_id' => 'required|exists:churches,id',
             'district_id' => 'required|exists:districts,id',
-            'director_user_id' => 'required|exists:users,id',
+            'director_user_id' => 'nullable|exists:users,id',
+            'status' => 'required|in:active,inactive',
             'creation_date' => 'nullable|date',
             'pastor_name' => 'nullable|string|max:255',
             'conference_name' => 'nullable|string|max:255',
@@ -252,22 +253,36 @@ class ClubController extends Controller
 
         $church = Church::findOrFail($validated['church_id']);
         $district = District::findOrFail($validated['district_id']);
-        $director = User::findOrFail($validated['director_user_id']);
+        $director = !empty($validated['director_user_id'])
+            ? User::findOrFail($validated['director_user_id'])
+            : null;
         $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
 
         $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type']);
 
-        if ($director->profile_type !== 'club_director') {
+        if ($director && $director->profile_type !== 'club_director') {
             return back()->withErrors([
                 'director_user_id' => 'Selected user must have club_director profile.',
             ]);
         }
 
+        if ($validated['status'] === 'active' && !$director) {
+            return back()->withErrors([
+                'director_user_id' => 'An active club must have a director assigned.',
+            ])->withInput();
+        }
+
+        if ($validated['status'] === 'inactive' && $director) {
+            return back()->withErrors([
+                'director_user_id' => 'Remove the director before saving the club as inactive.',
+            ])->withInput();
+        }
+
         $club = Club::create([
-            'user_id' => $director->id,
+            'user_id' => $director?->id,
             'club_name' => $validated['club_name'],
             'church_name' => $hierarchyFields['church_name'],
-            'director_name' => $director->name,
+            'director_name' => $director?->name,
             'creation_date' => $validated['creation_date'] ?? null,
             'pastor_name' => $hierarchyFields['pastor_name'],
             'conference_name' => $hierarchyFields['conference_name'],
@@ -276,34 +291,46 @@ class ClubController extends Controller
             'evaluation_system' => $hierarchyFields['evaluation_system'],
             'church_id' => $hierarchyFields['church_id'],
             'district_id' => $hierarchyFields['district_id'],
-            'status' => 'active',
+            'status' => $validated['status'],
         ]);
 
-        DB::table('club_user')->updateOrInsert(
-            ['user_id' => $director->id, 'club_id' => $club->id],
-            ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+        if ($director) {
+            DB::table('club_user')->updateOrInsert(
+                ['user_id' => $director->id, 'club_id' => $club->id],
+                ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+            );
+
+            $director->church_id = $church->id;
+            $director->church_name = $church->church_name;
+            $director->club_id = $club->id;
+            $director->status = $director->status ?: 'active';
+            $director->save();
+        }
+
+        return back()->with(
+            'success',
+            $director
+                ? 'Club created and linked to director successfully.'
+                : 'Club created as inactive. Link a director later to activate it.'
         );
-
-        $director->church_id = $church->id;
-        $director->church_name = $church->church_name;
-        $director->club_id = $club->id;
-        $director->status = $director->status ?: 'active';
-        $director->save();
-
-        return back()->with('success', 'Club created and linked to director successfully.');
     }
 
-    public function updateBySuperadmin(Request $request, Club $club)
+    public function updateBySuperadmin(Request $request, int $club)
     {
         if (auth()->user()?->profile_type !== 'superadmin') {
             abort(403, 'Only superadmin can update clubs here.');
         }
 
+        $club = Club::query()
+            ->withoutGlobalScopes()
+            ->findOrFail($club);
+
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
             'church_id' => 'required|exists:churches,id',
             'district_id' => 'required|exists:districts,id',
-            'director_user_id' => 'required|exists:users,id',
+            'director_user_id' => 'nullable|exists:users,id',
+            'status' => 'required|in:active,inactive',
             'creation_date' => 'nullable|date',
             'pastor_name' => 'nullable|string|max:255',
             'conference_name' => 'nullable|string|max:255',
@@ -314,24 +341,39 @@ class ClubController extends Controller
 
         $church = Church::findOrFail($validated['church_id']);
         $district = District::findOrFail($validated['district_id']);
-        $director = User::findOrFail($validated['director_user_id']);
+        $director = !empty($validated['director_user_id'])
+            ? User::findOrFail($validated['director_user_id'])
+            : null;
         $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
 
         $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type'], (int) $club->id);
 
-        if ($director->profile_type !== 'club_director') {
+        if ($director && $director->profile_type !== 'club_director') {
             return back()->withErrors([
                 'director_user_id' => 'Selected user must have club_director profile.',
             ]);
         }
 
+        if ($validated['status'] === 'active' && !$director) {
+            return back()->withErrors([
+                'director_user_id' => 'An active club must have a director assigned.',
+            ])->withInput();
+        }
+
+        if ($validated['status'] === 'inactive' && $director) {
+            return back()->withErrors([
+                'director_user_id' => 'Remove the director before saving the club as inactive.',
+            ])->withInput();
+        }
+
         $previousDirectorId = $club->user_id;
+        $nextDirectorId = $validated['status'] === 'active' ? $director?->id : null;
 
         $club->update([
-            'user_id' => $director->id,
+            'user_id' => $nextDirectorId,
             'club_name' => $validated['club_name'],
             'church_name' => $hierarchyFields['church_name'],
-            'director_name' => $director->name,
+            'director_name' => $nextDirectorId ? $director?->name : null,
             'creation_date' => $validated['creation_date'] ?? null,
             'pastor_name' => $hierarchyFields['pastor_name'],
             'conference_name' => $hierarchyFields['conference_name'],
@@ -340,35 +382,47 @@ class ClubController extends Controller
             'evaluation_system' => $hierarchyFields['evaluation_system'],
             'church_id' => $hierarchyFields['church_id'],
             'district_id' => $hierarchyFields['district_id'],
+            'status' => $validated['status'],
         ]);
 
-        DB::table('club_user')->updateOrInsert(
-            ['user_id' => $director->id, 'club_id' => $club->id],
-            ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
-        );
+        if ($nextDirectorId) {
+            DB::table('club_user')->updateOrInsert(
+                ['user_id' => $director->id, 'club_id' => $club->id],
+                ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+            );
 
-        $director->church_id = $church->id;
-        $director->church_name = $church->church_name;
-        $director->club_id = $club->id;
-        $director->status = $director->status ?: 'active';
-        $director->save();
+            $director->church_id = $church->id;
+            $director->church_name = $church->church_name;
+            $director->club_id = $club->id;
+            $director->status = $director->status ?: 'active';
+            $director->save();
+        }
 
-        if ($previousDirectorId && $previousDirectorId !== $director->id) {
+        if ($previousDirectorId && $previousDirectorId !== $nextDirectorId) {
             $previousDirector = User::find($previousDirectorId);
             if ($previousDirector && (int) $previousDirector->club_id === (int) $club->id) {
                 $previousDirector->club_id = null;
                 $previousDirector->save();
             }
+
+            DB::table('club_user')
+                ->where('user_id', $previousDirectorId)
+                ->where('club_id', $club->id)
+                ->update(['status' => 'inactive', 'updated_at' => now()]);
         }
 
         return back()->with('success', 'Club updated successfully.');
     }
 
-    public function deactivateBySuperadmin(Club $club)
+    public function deactivateBySuperadmin(int $club)
     {
         if (auth()->user()?->profile_type !== 'superadmin') {
             abort(403, 'Only superadmin can deactivate clubs here.');
         }
+
+        $club = Club::query()
+            ->withoutGlobalScopes()
+            ->findOrFail($club);
 
         $club->update(['status' => 'inactive']);
 
@@ -381,11 +435,15 @@ class ClubController extends Controller
         return back()->with('success', 'Club deactivated successfully.');
     }
 
-    public function deleteBySuperadmin(Club $club)
+    public function deleteBySuperadmin(int $club)
     {
         if (auth()->user()?->profile_type !== 'superadmin') {
             abort(403, 'Only superadmin can delete clubs here.');
         }
+
+        $club = Club::query()
+            ->withoutGlobalScopes()
+            ->findOrFail($club);
 
         $club->update(['status' => 'deleted']);
 
@@ -726,6 +784,13 @@ class ClubController extends Controller
             $targetUser->save();
         }
 
+        if ((int) ($club->user_id ?? 0) !== (int) $targetUser->id || $club->status !== 'active') {
+            $club->user_id = $targetUser->id;
+            $club->director_name = $targetUser->name;
+            $club->status = 'active';
+            $club->save();
+        }
+
         $request->session()->put('club_context.club_id', $club->id);
         $request->session()->put('club_context.church_id', $club->church_id);
 
@@ -776,12 +841,6 @@ class ClubController extends Controller
             ->where('users.status', 'active')
             ->get();
 
-        if ($activeDirectors->count() <= 1) {
-            return response()->json([
-                'message' => 'No puedes desvincularte hasta que otro director este vinculado a este club.',
-            ], 422);
-        }
-
         DB::table('club_user')
             ->where('user_id', $targetUser->id)
             ->where('club_id', $club->id)
@@ -790,9 +849,17 @@ class ClubController extends Controller
         $replacementDirector = $activeDirectors
             ->firstWhere('id', '!=', $targetUser->id);
 
-        if ((int) $club->user_id === (int) $targetUser->id && $replacementDirector) {
-            $club->user_id = $replacementDirector->id;
-            $club->director_name = $replacementDirector->name;
+        if ($replacementDirector) {
+            if ((int) $club->user_id === (int) $targetUser->id || $club->status !== 'active') {
+                $club->user_id = $replacementDirector->id;
+                $club->director_name = $replacementDirector->name;
+                $club->status = 'active';
+                $club->save();
+            }
+        } else {
+            $club->user_id = null;
+            $club->director_name = null;
+            $club->status = 'inactive';
             $club->save();
         }
 

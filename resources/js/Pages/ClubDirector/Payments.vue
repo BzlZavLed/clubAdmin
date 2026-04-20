@@ -11,7 +11,7 @@ import {
     ArrowPathIcon,
     UserGroupIcon
 } from '@heroicons/vue/24/outline'
-import { createClubPayment, updateClubPayment, deleteClubPayment, downloadBulkReceipts } from '@/Services/api'
+import { createClubPayment, updateClubPayment, downloadBulkReceipts } from '@/Services/api'
 
 const props = defineProps({
     auth_user: { type: Object, required: true },
@@ -31,7 +31,6 @@ const props = defineProps({
 })
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin')
 const canEditPayments = computed(() => ['club_director', 'superadmin'].includes(props.auth_user?.profile_type))
-const canDeletePayments = computed(() => props.auth_user?.profile_type === 'club_director')
 const currentClubName = computed(() =>
     allowedClubs.value.find(c => Number(c.id) === Number(form.club_id))?.club_name
     || props.club?.club_name
@@ -688,23 +687,6 @@ const submitEditPayment = async () => {
     }
 }
 
-const deletePaymentRecord = async (payment) => {
-    if (!canDeletePayments.value) return
-    const confirmed = window.confirm(`¿Seguro que deseas eliminar el pago de ${payment.member_display_name ?? payment.staff_display_name ?? 'este registro'}?`)
-    if (!confirmed) return
-
-    try {
-        if (editingPaymentId.value === payment.id) {
-            cancelEditPayment()
-        }
-        await deleteClubPayment(payment.id)
-        reloadPaymentData()
-    } catch (err) {
-        console.error(err)
-        form.setError('form', err?.response?.data?.message || 'No se pudo eliminar el pago.')
-    }
-}
-
 const downloadReceipt = (payment) => {
     const receiptId = payment?.receipt?.id
     if (!receiptId) return
@@ -1239,7 +1221,7 @@ const setFormMode = (mode) => {
                                     <div class="text-xs text-gray-600">
                                         {{ formatISODateLocal(p.payment_date) }}
                                     </div>
-                                    <div v-if="canEditPayments || canDeletePayments" class="mt-2 flex items-center justify-end gap-3">
+                                    <div v-if="canEditPayments" class="mt-2 flex items-center justify-end gap-3">
                                         <button
                                             v-if="p.receipt?.id"
                                             type="button"
@@ -1256,17 +1238,12 @@ const setFormMode = (mode) => {
                                         >
                                             Editar
                                         </button>
-                                        <button
-                                            v-if="canDeletePayments"
-                                            type="button"
-                                            class="text-xs font-medium text-red-600 hover:underline"
-                                            @click="deletePaymentRecord(p)"
-                                        >
-                                            Eliminar
-                                        </button>
                                     </div>
                                     <div v-if="p.receipt?.id" class="mt-1 text-[11px] text-gray-500">
                                         Ultima descarga: {{ formatDateTimeLocal(p.receipt.last_downloaded_at) }}
+                                    </div>
+                                    <div v-if="props.auth_user?.profile_type === 'club_director'" class="mt-1 text-[11px] text-gray-500">
+                                        Correcciones: usa el modulo de correcciones contables para revertir ingresos.
                                     </div>
                                 </div>
                             </div>

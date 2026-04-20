@@ -19,7 +19,7 @@ A web-based Club Management System built with **Laravel**, **Vue.js**, and **Tai
 * **Frontend**: Vue.js
 * **Styling**: Tailwind CSS
 * **Build Tools**: Vite
-* **Database**: MySQL
+* **Database**: PostgreSQL in development/testing, MySQL in production
 
 ## Installation
 
@@ -28,7 +28,8 @@ A web-based Club Management System built with **Laravel**, **Vue.js**, and **Tai
 * PHP >= 8.2
 * Composer
 * Node.js >= 18
-* MySQL or MariaDB
+* PostgreSQL for development/testing
+* MySQL for production
 
 ### Setup
 
@@ -36,6 +37,7 @@ A web-based Club Management System built with **Laravel**, **Vue.js**, and **Tai
 git clone <repository-url>
 cd club-portal
 cp .env.example .env
+cp .env.testing.example .env.testing
 composer install
 php artisan key:generate
 npm install
@@ -118,13 +120,15 @@ Configure your `.env` file:
 ```env
 APP_NAME="Club Portal"
 APP_URL=http://localhost
-DB_CONNECTION=mysql
+DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
-DB_PORT=3306
+DB_PORT=5432
 DB_DATABASE=club_portal
-DB_USERNAME=root
+DB_USERNAME=postgres
 DB_PASSWORD=
 ```
+
+For tests, use `.env.testing` with a dedicated PostgreSQL database. `phpunit.xml` no longer forces SQLite.
 
 ## Contributing
 

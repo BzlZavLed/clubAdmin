@@ -909,6 +909,7 @@ class ReportController extends Controller
             'receipt_path',
             'reimbursement_receipt_path',
             'settles_expense_id',
+            'created_at',
         ]);
 
         $accountLabels = Account::query()
@@ -931,6 +932,7 @@ class ReportController extends Controller
                 'entry_type' => 'payment',
                 'id' => $p->id,
                 'date' => $p->payment_date,
+                'created_at' => $p->created_at?->format('Y-m-d H:i:s.u'),
                 'amount' => (float) $p->amount_paid,
                 'payment_type' => $p->payment_type,
                 'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
@@ -962,6 +964,7 @@ class ReportController extends Controller
                 'entry_type' => 'expense',
                 'id' => $e->id,
                 'date' => $e->expense_date,
+                'created_at' => $e->created_at?->format('Y-m-d H:i:s.u'),
                 'amount' => (float) $e->amount,
                 'payment_type' => null,
                 'concept' => $e->description ?? '—',
@@ -981,7 +984,17 @@ class ReportController extends Controller
         $accounts = collect($entriesByAccount)
             ->map(function ($entries, $payToKey) use ($accountLabels) {
                 usort($entries, function ($a, $b) {
-                    return [$a['date'], $a['id'], $a['entry_type']] <=> [$b['date'], $b['id'], $b['entry_type']];
+                    return [
+                        $a['date'],
+                        $a['created_at'] ?? '',
+                        $a['id'],
+                        $a['entry_type'],
+                    ] <=> [
+                        $b['date'],
+                        $b['created_at'] ?? '',
+                        $b['id'],
+                        $b['entry_type'],
+                    ];
                 });
 
                 $paid = array_sum(array_map(fn($e) => $e['entry_type'] === 'payment' ? $e['amount'] : 0, $entries));

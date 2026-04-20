@@ -7,22 +7,43 @@
     <style>
         @page {
             size: A4 landscape;
-            margin: 14mm;
+            margin: 8mm 9mm;
         }
 
         body {
             font-family: DejaVu Sans, sans-serif;
-            font-size: 11px;
+            font-size: 10.5px;
+            line-height: 1.35;
             color: #111827;
             margin: 0;
         }
 
+        .sheet {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
         .page-header {
-            margin-bottom: 16px;
+            display: table;
+            width: 100%;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #d1d5db;
+        }
+
+        .page-header-main,
+        .page-header-meta {
+            display: table-cell;
+            vertical-align: top;
+        }
+
+        .page-header-meta {
+            width: 40%;
+            text-align: right;
         }
 
         .title {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: bold;
             margin: 0 0 4px;
         }
@@ -33,8 +54,22 @@
             color: #4b5563;
         }
 
+        .filters {
+            margin-top: 6px;
+            font-size: 10px;
+        }
+
+        .meta-stack {
+            margin: 0;
+            color: #374151;
+        }
+
+        .meta-stack + .meta-stack {
+            margin-top: 4px;
+        }
+
         .account-block {
-            margin-top: 18px;
+            margin-top: 14px;
         }
 
         .account-block + .account-block {
@@ -70,12 +105,13 @@
         table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: fixed;
         }
 
         th,
         td {
             border: 1px solid #d1d5db;
-            padding: 6px 8px;
+            padding: 5px 7px;
             vertical-align: top;
         }
 
@@ -107,6 +143,15 @@
 
         .text-center {
             text-align: center;
+        }
+
+        .nowrap {
+            white-space: nowrap;
+        }
+
+        .wrap {
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
 
         .income {
@@ -179,13 +224,13 @@
 
         @media screen {
             body {
-                padding: 24px;
+                padding: 16px;
                 background: #f3f4f6;
             }
 
             .sheet {
                 background: #fff;
-                padding: 24px;
+                padding: 18px;
                 box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
             }
         }
@@ -236,22 +281,31 @@
 <body>
     <div class="sheet">
         <div class="page-header">
-            <p class="title">Reporte financiero por cuenta</p>
-            <p class="subtitle">{{ $club->club_name ?? 'Club' }}</p>
-            <p class="filters">
-                Generado: {{ $generatedAt->format('m-d-Y h:i A') }}
-                @if(!empty($filters['pay_to']))
-                    | Cuenta: {{ $accounts->first()['label'] ?? $filters['pay_to'] }}
-                @endif
-                @if(!empty($filters['concept']))
-                    | Concepto: {{ $filters['concept']->concept }}
-                @endif
-                @if(!empty($filters['date_from']) || !empty($filters['date_to']))
-                    | Fechas: {{ $filters['date_from'] ?: 'Inicio' }} a {{ $filters['date_to'] ?: 'Hoy' }}
-                @elseif(!empty($filters['date']))
-                    | Fecha: {{ $filters['date'] }}
-                @endif
-            </p>
+            <div class="page-header-main">
+                <p class="title">Reporte financiero por cuenta</p>
+                <p class="subtitle">{{ $club->club_name ?? 'Club' }}</p>
+                <p class="filters">
+                    Generado: {{ $generatedAt->format('m-d-Y h:i A') }}
+                    @if(!empty($filters['pay_to']))
+                        | Cuenta: {{ $accounts->first()['label'] ?? $filters['pay_to'] }}
+                    @endif
+                    @if(!empty($filters['concept']))
+                        | Concepto: {{ $filters['concept']->concept }}
+                    @endif
+                    @if(!empty($filters['date_from']) || !empty($filters['date_to']))
+                        | Fechas: {{ $filters['date_from'] ?: 'Inicio' }} a {{ $filters['date_to'] ?: 'Hoy' }}
+                    @elseif(!empty($filters['date']))
+                        | Fecha: {{ $filters['date'] }}
+                    @endif
+                </p>
+            </div>
+            <div class="page-header-meta">
+                <p class="meta-stack">Cuentas: {{ count($accounts) }}</p>
+                <p class="meta-stack">
+                    Movimientos:
+                    {{ collect($accounts)->sum(fn ($account) => count($account['entries'] ?? [])) }}
+                </p>
+            </div>
         </div>
 
         @forelse($accounts as $acc)
@@ -270,31 +324,36 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 10%">Fecha</th>
-                            <th style="width: 10%">Tipo</th>
-                            <th style="width: 16%">Miembro / Personal</th>
-                            <th>Concepto</th>
-                            <th style="width: 10%" class="text-center">Ref.</th>
-                            <th style="width: 12%" class="text-right">Gastos</th>
-                            <th style="width: 12%" class="text-right">Ingresos</th>
+                            <th style="width: 9%" class="nowrap">Fecha</th>
+                            <th style="width: 8%" class="nowrap">Tipo</th>
+                            <th style="width: 55%">Concepto</th>
+                            <th style="width: 8%" class="text-center nowrap">Ref.</th>
+                            <th style="width: 10%" class="text-right nowrap">Gastos</th>
+                            <th style="width: 10%" class="text-right nowrap">Ingresos</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach(($acc['entries'] ?? []) as $entry)
                             <tr class="{{ $entry['entry_type'] === 'payment' ? 'entry-row-income' : 'entry-row-expense' }}">
-                                <td>{{ \Illuminate\Support\Carbon::parse($entry['date'])->format('m-d-Y') }}</td>
-                                <td>{{ $entry['entry_type'] === 'payment' ? 'Ingreso' : 'Gasto' }}</td>
-                                <td>{{ $entry['member'] ?? $entry['staff'] ?? '—' }}</td>
-                                <td>{{ $entry['concept'] ?? '—' }}</td>
-                                <td class="text-center">{{ $entry['receipt_ref'] ?? '—' }}</td>
-                                <td class="text-right">
+                                <td class="nowrap">{{ \Illuminate\Support\Carbon::parse($entry['date'])->format('m-d-Y') }}</td>
+                                <td class="nowrap">{{ $entry['entry_type'] === 'payment' ? 'Ingreso' : 'Gasto' }}</td>
+                                <td class="wrap">
+                                    {{ $entry['concept'] ?? '—' }}
+                                    @if(!empty($entry['member']) || !empty($entry['staff']))
+                                        <div style="margin-top: 3px; color: #4b5563;">
+                                            {{ $entry['member'] ?? $entry['staff'] }}
+                                        </div>
+                                    @endif
+                                </td>
+                                <td class="text-center nowrap">{{ $entry['receipt_ref'] ?? '—' }}</td>
+                                <td class="text-right nowrap">
                                     @if($entry['entry_type'] === 'expense')
                                         <span class="expense">-${{ number_format($entry['amount'] ?? 0, 2) }}</span>
                                     @else
                                         —
                                     @endif
                                 </td>
-                                <td class="text-right">
+                                <td class="text-right nowrap">
                                     @if($entry['entry_type'] === 'payment')
                                         <span class="income">${{ number_format($entry['amount'] ?? 0, 2) }}</span>
                                     @else
@@ -306,12 +365,12 @@
                     </tbody>
                     <tfoot>
                         <tr class="totals-row">
-                            <td colspan="5">Totales</td>
+                            <td colspan="4">Totales</td>
                             <td class="text-right expense">-${{ number_format($acc['totals']['spent'] ?? 0, 2) }}</td>
                             <td class="text-right income">${{ number_format($acc['totals']['paid'] ?? 0, 2) }}</td>
                         </tr>
                         <tr class="balance-row">
-                            <td colspan="5">Saldo final</td>
+                            <td colspan="4">Saldo final</td>
                             <td colspan="2" class="text-right">${{ number_format($acc['totals']['net'] ?? 0, 2) }}</td>
                         </tr>
                     </tfoot>

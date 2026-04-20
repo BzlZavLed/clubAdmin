@@ -77,8 +77,13 @@ class ChurchController extends Controller
             'email' => 'required|email|max:255',
             'pastor_name' => 'nullable|string',
             'pastor_email' => 'nullable|email|max:255',
-            'conference' => 'nullable|string',
         ]);
+
+        $district = !empty($validated['district_id'])
+            ? District::query()->with('association:id,name')->find($validated['district_id'])
+            : null;
+
+        $validated['conference'] = $district?->association?->name;
 
         $church = Church::updateOrCreate(
             ['email' => $validated['email']],
@@ -127,8 +132,13 @@ class ChurchController extends Controller
             'email' => 'required|email|max:255',
             'pastor_name' => 'nullable|string',
             'pastor_email' => 'nullable|email|max:255',
-            'conference' => 'nullable|string',
         ]);
+
+        $district = !empty($validated['district_id'])
+            ? District::query()->with('association:id,name')->find($validated['district_id'])
+            : null;
+
+        $validated['conference'] = $district?->association?->name;
 
         $church->update($validated);
 

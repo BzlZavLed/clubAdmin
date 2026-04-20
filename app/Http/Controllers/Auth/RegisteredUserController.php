@@ -19,6 +19,57 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 class RegisteredUserController extends Controller
 {
+    private function detachOwnedClubsFromDirector(User $user, ?int $nextPrimaryClubId = null): void
+    {
+        $ownedClubs = Club::query()
+            ->withoutGlobalScopes()
+            ->where('user_id', $user->id)
+            ->get();
+
+        foreach ($ownedClubs as $club) {
+            if ($nextPrimaryClubId && (int) $club->id === $nextPrimaryClubId) {
+                continue;
+            }
+
+            $replacementDirector = User::query()
+                ->select('users.id', 'users.name')
+                ->join('club_user', 'club_user.user_id', '=', 'users.id')
+                ->where('club_user.club_id', $club->id)
+                ->where('club_user.status', 'active')
+                ->where('users.profile_type', 'club_director')
+                ->where('users.status', 'active')
+                ->where('users.id', '!=', $user->id)
+                ->orderBy('users.name')
+                ->first();
+
+            if ($replacementDirector) {
+                $club->update([
+                    'user_id' => $replacementDirector->id,
+                    'director_name' => $replacementDirector->name,
+                    'status' => 'active',
+                ]);
+
+                continue;
+            }
+
+            $club->update([
+                'user_id' => null,
+                'director_name' => null,
+                'status' => 'inactive',
+            ]);
+        }
+    }
+
+    private function syncDirectorOwnershipBeforeUserMutation(User $user, array $validated, array $scopeData): void
+    {
+        $isRemainingDirector = ($validated['profile_type'] ?? null) === 'club_director';
+        $nextPrimaryClubId = $isRemainingDirector ? ($scopeData['club_id'] ?? null) : null;
+
+        if ($user->profile_type === 'club_director') {
+            $this->detachOwnedClubsFromDirector($user, $nextPrimaryClubId);
+        }
+    }
+
     private function superadminManageableProfiles(): array
     {
         return [
@@ -210,7 +261,10 @@ class RegisteredUserController extends Controller
         }
 
         if (in_array($validated['profile_type'], ['club_director', 'club_personal'], true) && !empty($validated['club_id'])) {
-            $clubBelongsToChurch = Club::where('id', $validated['club_id'])
+            $clubBelongsToChurch = Club::query()
+                ->withoutGlobalScopes()
+                ->where('status', '!=', 'deleted')
+                ->where('id', $validated['club_id'])
                 ->where('church_id', $validated['church_id'])
                 ->exists();
 
@@ -248,6 +302,7 @@ class RegisteredUserController extends Controller
                     'director_name' => $user->name,
                     'church_id' => $validated['church_id'],
                     'church_name' => $scopeData['church_name'],
+                    'status' => 'active',
                 ]);
             }
         }
@@ -285,7 +340,10 @@ class RegisteredUserController extends Controller
         }
 
         if (in_array($validated['profile_type'], ['club_director', 'club_personal'], true) && !empty($validated['club_id'])) {
-            $clubBelongsToChurch = Club::where('id', $validated['club_id'])
+            $clubBelongsToChurch = Club::query()
+                ->withoutGlobalScopes()
+                ->where('status', '!=', 'deleted')
+                ->where('id', $validated['club_id'])
                 ->where('church_id', $validated['church_id'])
                 ->exists();
 
@@ -295,6 +353,7 @@ class RegisteredUserController extends Controller
         }
 
         $scopeData = $this->resolveManagedUserScope($validated);
+        $this->syncDirectorOwnershipBeforeUserMutation($user, $validated, $scopeData);
 
         $user->name = $validated['name'];
         $user->email = $validated['email'];
@@ -325,6 +384,7 @@ class RegisteredUserController extends Controller
                     'director_name' => $user->name,
                     'church_id' => $validated['church_id'],
                     'church_name' => $scopeData['church_name'],
+                    'status' => 'active',
                 ]);
             }
         }
@@ -339,15 +399,7 @@ class RegisteredUserController extends Controller
         }
 
         if ($user->profile_type === 'club_director') {
-            $ownsActiveClub = Club::where('user_id', $user->id)
-                ->where('status', 'active')
-                ->exists();
-
-            if ($ownsActiveClub) {
-                return back()->withErrors([
-                    'user' => 'Cannot deactivate a director who owns an active club. Reassign the club first.',
-                ]);
-            }
+            $this->detachOwnedClubsFromDirector($user);
         }
 
         $user->status = 'inactive';
@@ -373,15 +425,7 @@ class RegisteredUserController extends Controller
         }
 
         if ($user->profile_type === 'club_director') {
-            $ownsActiveClub = Club::where('user_id', $user->id)
-                ->where('status', 'active')
-                ->exists();
-
-            if ($ownsActiveClub) {
-                return back()->withErrors([
-                    'user' => 'Cannot delete a director who owns an active club. Reassign the club first.',
-                ]);
-            }
+            $this->detachOwnedClubsFromDirector($user);
         }
 
         $user->status = 'deleted';
@@ -423,7 +467,10 @@ class RegisteredUserController extends Controller
                     if (!is_numeric($value)) {
                         return $fail('The club id must be an integer.');
                     }
-                    $exists = Club::where('id', $value)
+                    $exists = Club::query()
+                        ->withoutGlobalScopes()
+                        ->where('status', '!=', 'deleted')
+                        ->where('id', $value)
                         ->where('church_id', $request->input('church_id'))
                         ->exists();
                     if (!$exists) {

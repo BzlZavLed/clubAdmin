@@ -9,9 +9,13 @@ use App\Models\ClubClass;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\Payment;
+use App\Models\Account;
+use App\Models\District;
+use App\Models\Association;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
 use App\Models\User;
+use App\Models\Union;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -22,7 +26,19 @@ class SystemSmokeTest extends TestCase
 
     public function test_church_creation_generates_invite_code(): void
     {
-        $response = $this->postJson('/churches', [
+        $hierarchy = $this->makeHierarchy();
+        $superadmin = User::factory()->create([
+            'profile_type' => 'superadmin',
+            'role_key' => 'superadmin',
+            'scope_type' => 'global',
+            'scope_id' => null,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this->actingAs($superadmin)->postJson('/churches', [
+            'district_id' => $hierarchy['district']->id,
             'church_name' => 'Pacto de amor',
             'address' => '14230 Scaggsville Road',
             'ethnicity' => 'Hispanic',
@@ -82,8 +98,11 @@ class SystemSmokeTest extends TestCase
 
     public function test_director_can_setup_club_classes_workplan_members_and_payments(): void
     {
+        $hierarchy = $this->makeHierarchy();
+
         // Church + invite code
         $church = Church::create([
+            'district_id' => $hierarchy['district']->id,
             'church_name' => 'Pacto de amor',
             'email' => 'pactodeamor@gmail.com',
         ]);
@@ -100,14 +119,12 @@ class SystemSmokeTest extends TestCase
         // Create club
         $clubResponse = $this->actingAs($director)->post('/club', [
             'club_name' => 'Valdenses aventureros',
-            'church_name' => $church->church_name,
-            'director_name' => $director->name,
             'creation_date' => now()->toDateString(),
-            'pastor_name' => 'Orlando Cruz',
-            'conference_name' => 'Chesapeake',
             'conference_region' => '1',
             'club_type' => 'adventurers',
             'church_id' => $church->id,
+            'district_id' => $hierarchy['district']->id,
+            'evaluation_system' => 'honors',
         ]);
         $clubResponse->assertStatus(302);
 
@@ -185,6 +202,13 @@ class SystemSmokeTest extends TestCase
         $this->actingAs($director)->postJson(route('club.workplan.confirm'), $workplanPayload)
             ->assertOk()
             ->assertJsonPath('workplan.club_id', $club->id);
+
+        Account::create([
+            'club_id' => $club->id,
+            'pay_to' => 'club_budget',
+            'label' => 'Club budget',
+            'balance' => 0,
+        ]);
 
         // Create payment concept (class scope)
         $conceptRes = $this->actingAs($director)->postJson(route('clubs.payment-concepts.store', ['club' => $club->id]), [
@@ -269,5 +293,27 @@ class SystemSmokeTest extends TestCase
         $staffUser->refresh();
         $this->assertTrue(password_verify('newpassword123', $staffUser->password));
     }
-}
 
+    protected function makeHierarchy(): array
+    {
+        $union = Union::create([
+            'name' => 'Test Union',
+            'evaluation_system' => 'honors',
+            'status' => 'active',
+        ]);
+
+        $association = Association::create([
+            'union_id' => $union->id,
+            'name' => 'Test Association',
+            'status' => 'active',
+        ]);
+
+        $district = District::create([
+            'association_id' => $association->id,
+            'name' => 'Test District',
+            'status' => 'active',
+        ]);
+
+        return compact('union', 'association', 'district');
+    }
+}

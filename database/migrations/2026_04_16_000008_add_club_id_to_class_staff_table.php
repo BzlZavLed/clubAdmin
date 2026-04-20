@@ -20,13 +20,30 @@ return new class extends Migration
         }
 
         // Backfill club_id from the related club_class
-        DB::statement("
-            UPDATE class_staff cs
-            SET club_id = (
-                SELECT cc.club_id FROM club_classes cc WHERE cc.id = cs.club_class_id
-            )
-            WHERE cs.club_id IS NULL
-        ");
+        if (DB::getDriverName() === 'sqlite') {
+            DB::table('class_staff')
+                ->whereNull('club_id')
+                ->get(['id', 'club_class_id'])
+                ->each(function ($row) {
+                    $clubId = DB::table('club_classes')
+                        ->where('id', $row->club_class_id)
+                        ->value('club_id');
+
+                    if ($clubId) {
+                        DB::table('class_staff')
+                            ->where('id', $row->id)
+                            ->update(['club_id' => $clubId]);
+                    }
+                });
+        } else {
+            DB::statement("
+                UPDATE class_staff cs
+                SET club_id = (
+                    SELECT cc.club_id FROM club_classes cc WHERE cc.id = cs.club_class_id
+                )
+                WHERE cs.club_id IS NULL
+            ");
+        }
     }
 
     public function down(): void

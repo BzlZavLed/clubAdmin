@@ -4,7 +4,7 @@ import InputError from '@/Components/InputError.vue'
 import InputLabel from '@/Components/InputLabel.vue'
 import PrimaryButton from '@/Components/PrimaryButton.vue'
 import { router, useForm } from '@inertiajs/vue3'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
@@ -19,7 +19,9 @@ const { tr } = useLocale()
 const form = useForm({
     club_name: '',
     church_id: '',
+    district_id: '',
     director_user_id: '',
+    status: 'inactive',
     creation_date: '',
     pastor_name: '',
     conference_name: '',
@@ -33,6 +35,7 @@ const isEditing = computed(() => editingClubId.value !== null)
 const resetForm = () => {
     editingClubId.value = null
     form.reset()
+    form.status = 'inactive'
     form.club_type = 'pathfinders'
     form.evaluation_system = 'honors'
 }
@@ -41,7 +44,9 @@ const editClub = (club) => {
     editingClubId.value = club.id
     form.club_name = club.club_name || ''
     form.church_id = club.church_id || ''
+    form.district_id = club.district_id || selectedChurch.value?.district_id || ''
     form.director_user_id = club.user_id || ''
+    form.status = club.status || 'inactive'
     form.creation_date = club.creation_date || ''
     form.pastor_name = club.pastor_name || ''
     form.conference_name = club.conference_name || ''
@@ -60,6 +65,42 @@ const inheritedEvaluationSystemLabel = computed(() => {
         ? tr('Carpetas', 'Carpetas')
         : tr('Honores / requisitos', 'Honors / requirements')
 })
+
+watch(
+    () => form.church_id,
+    () => {
+        const church = selectedChurch.value
+        if (!church) {
+            form.district_id = ''
+            form.pastor_name = ''
+            form.conference_name = ''
+            return
+        }
+
+        form.district_id = church.district_id || ''
+        form.pastor_name = church.pastor_name || ''
+        form.conference_name = church.association_name || church.conference || ''
+        form.evaluation_system = church.evaluation_system || 'honors'
+    }
+)
+
+watch(
+    () => form.status,
+    (status) => {
+        if (status === 'inactive') {
+            form.director_user_id = ''
+        }
+    }
+)
+
+watch(
+    () => form.director_user_id,
+    (directorUserId) => {
+        if (directorUserId && form.status !== 'active') {
+            form.status = 'active'
+        }
+    }
+)
 
 const submit = () => {
     const options = {
@@ -126,18 +167,34 @@ const deleteClub = (club) => {
                                 {{ church.church_name }}{{ church.union_name ? ` - ${church.union_name}` : '' }}
                             </option>
                         </select>
+                        <p v-if="selectedChurch" class="mt-1 text-xs text-gray-500">
+                            {{ tr('Distrito detectado:', 'Detected district:') }} {{ selectedChurch.district_id ?? '—' }}
+                        </p>
                         <InputError class="mt-2" :message="form.errors.church_id" />
+                        <InputError class="mt-2" :message="form.errors.district_id" />
                     </div>
 
                     <div>
                         <InputLabel for="director_user_id" :value="tr('Director (usuario)', 'Director (user)')" />
-                        <select id="director_user_id" v-model="form.director_user_id" class="mt-1 block w-full rounded-md border-gray-300" required>
-                            <option disabled value="">{{ tr('Selecciona un director', 'Select a director') }}</option>
+                        <select id="director_user_id" v-model="form.director_user_id" class="mt-1 block w-full rounded-md border-gray-300" :disabled="form.status === 'inactive'">
+                            <option value="">{{ tr('Asignar despues', 'Assign later') }}</option>
                             <option v-for="director in props.directors" :key="director.id" :value="director.id">
                                 {{ director.name }} ({{ director.email }})
                             </option>
                         </select>
                         <InputError class="mt-2" :message="form.errors.director_user_id" />
+                        <p class="mt-1 text-xs text-gray-500">
+                            {{ tr('Un club activo requiere director. Si lo marcas inactivo, el director se limpia al guardar.', 'An active club requires a director. If you mark it inactive, the director is cleared on save.') }}
+                        </p>
+                    </div>
+
+                    <div>
+                        <InputLabel for="status" :value="tr('Estado', 'Status')" />
+                        <select id="status" v-model="form.status" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <option value="inactive">{{ tr('Inactivo', 'Inactive') }}</option>
+                            <option value="active">{{ tr('Activo', 'Active') }}</option>
+                        </select>
+                        <InputError class="mt-2" :message="form.errors.status" />
                     </div>
 
                     <div>

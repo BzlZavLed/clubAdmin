@@ -19,12 +19,40 @@ return new class extends Migration
             });
         }
 
-        DB::statement('
-            UPDATE clubs
-            JOIN churches ON clubs.church_id = churches.id
-            SET clubs.district_id = churches.district_id
-            WHERE clubs.district_id IS NULL
-        ');
+        $driver = DB::getDriverName();
+
+        if ($driver === 'sqlite') {
+            DB::table('clubs')
+                ->whereNull('district_id')
+                ->whereNotNull('church_id')
+                ->get(['id', 'church_id'])
+                ->each(function ($club) {
+                    $districtId = DB::table('churches')
+                        ->where('id', $club->church_id)
+                        ->value('district_id');
+
+                    if ($districtId) {
+                        DB::table('clubs')
+                            ->where('id', $club->id)
+                            ->update(['district_id' => $districtId]);
+                    }
+                });
+        } elseif ($driver === 'pgsql') {
+            DB::statement('
+                UPDATE clubs
+                SET district_id = churches.district_id
+                FROM churches
+                WHERE clubs.church_id = churches.id
+                  AND clubs.district_id IS NULL
+            ');
+        } else {
+            DB::statement('
+                UPDATE clubs
+                JOIN churches ON clubs.church_id = churches.id
+                SET clubs.district_id = churches.district_id
+                WHERE clubs.district_id IS NULL
+            ');
+        }
     }
 
     public function down(): void

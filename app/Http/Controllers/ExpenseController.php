@@ -375,6 +375,7 @@ class ExpenseController extends Controller
                 'concept_text' => 'Liquidacion de reembolso',
                 'pay_to' => 'reimbursement_to',
                 'account_id' => $reimbursementAccount->id,
+                'settles_expense_id' => $expense->id,
                 'amount_paid' => (float) $expense->amount,
                 'expected_amount' => null,
                 'balance_due_after' => null,

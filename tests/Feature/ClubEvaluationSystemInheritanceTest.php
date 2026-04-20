@@ -60,9 +60,11 @@ class ClubEvaluationSystemInheritanceTest extends TestCase
             ->post('/super-admin/clubs', [
                 'club_name' => 'Club Carpeta',
                 'church_id' => $church->id,
+                'district_id' => $district->id,
                 'director_user_id' => $director->id,
                 'creation_date' => now()->toDateString(),
                 'club_type' => 'pathfinders',
+                'evaluation_system' => 'carpetas',
             ])
             ->assertRedirect();
 

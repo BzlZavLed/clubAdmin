@@ -25,6 +25,8 @@ class SuperAdminContextController extends Controller
 
         if (!empty($validated['club_id'])) {
             $selectedClub = Club::query()
+                ->withoutGlobalScopes()
+                ->where('status', '!=', 'deleted')
                 ->where('id', (int) $validated['club_id'])
                 ->firstOrFail(['id', 'club_name', 'church_id']);
         }
@@ -59,4 +61,3 @@ class SuperAdminContextController extends Controller
         ]);
     }
 }
-

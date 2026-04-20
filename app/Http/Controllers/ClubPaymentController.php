@@ -776,38 +776,9 @@ class ClubPaymentController extends Controller
 
     public function destroy(Request $request, Payment $payment): JsonResponse
     {
-        $user = $request->user();
-        if ($user?->profile_type !== 'club_director') {
-            return response()->json(['message' => 'Solo el director puede eliminar pagos registrados.'], 403);
-        }
-
-        $allowedClubIds = ClubHelper::clubIdsForUser($user);
-        if (!$allowedClubIds->contains((int) $payment->club_id)) {
-            abort(403, 'You cannot delete payments for this club.');
-        }
-
-        $receiptPath = $payment->check_image_path;
-        $account = $payment->account;
-        $deletedPaymentSnapshot = clone $payment;
-
-        DB::transaction(function () use ($payment, $account) {
-            if ($account) {
-                $account->decrement('balance', (float) $payment->amount_paid);
-            }
-            $payment->delete();
-        });
-
-        if ($receiptPath) {
-            try {
-                Storage::disk('public')->delete($receiptPath);
-            } catch (\Throwable $e) {
-            }
-        }
-
-        $this->paymentReceiptService->deleteForPayment($deletedPaymentSnapshot);
-        $this->recalculatePaymentBalances($deletedPaymentSnapshot);
-
-        return response()->json(['message' => 'Payment deleted']);
+        return response()->json([
+            'message' => 'Los pagos ya no se eliminan. Usa el modulo de correcciones contables para generar el movimiento opuesto.',
+        ], 422);
     }
 
 
