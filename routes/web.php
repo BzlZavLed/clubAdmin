@@ -46,6 +46,10 @@ use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\AssociationController;
 use App\Http\Controllers\DistrictController;
+use App\Models\Association;
+use App\Models\District;
+use App\Models\Union;
+use App\Support\SuperadminContext;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -113,6 +117,24 @@ Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->g
     Route::get('/association/dashboard', fn() => Inertia::render('Association/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('association.dashboard');
+    Route::get('/association/programs', [AssociationController::class, 'programs'])->name('association.programs');
+    Route::get('/association/districts', [AssociationController::class, 'districtEvaluation'])->name('association.districts');
+    Route::post('/association/districts', [AssociationController::class, 'storeDistrict'])->name('association.districts.store');
+    Route::patch('/association/districts/{district}', [AssociationController::class, 'updateDistrict'])->name('association.districts.update');
+    Route::post('/association/evaluators', [AssociationController::class, 'storeEvaluator'])->name('association.evaluators.store');
+    Route::delete('/association/evaluators/{evaluator}', [AssociationController::class, 'destroyEvaluator'])->name('association.evaluators.destroy');
+    Route::get('/association/clubs', [AssociationController::class, 'associationClubs'])->name('association.clubs');
+    Route::post('/association/clubs', [AssociationController::class, 'storeAssociationClub'])->name('association.clubs.store');
+    Route::post('/association/clubs/{club}/director', [AssociationController::class, 'storeClubDirector'])->name('association.clubs.director.store');
+    Route::patch('/association/clubs/{club}/members/{member}/insurance', [AssociationController::class, 'toggleMemberInsurance'])->name('association.clubs.members.insurance');
+    Route::get('/association/settings', [AssociationController::class, 'associationSettings'])->name('association.settings');
+    Route::patch('/association/settings', [AssociationController::class, 'updateAssociationSettings'])->name('association.settings.update');
+    Route::get('/association/churches', [AssociationController::class, 'churches'])->name('association.churches');
+    Route::post('/association/churches', [AssociationController::class, 'storeChurch'])->name('association.churches.store');
+    Route::patch('/association/churches/{church}', [AssociationController::class, 'updateChurch'])->name('association.churches.update');
+    Route::delete('/association/churches/{church}', [AssociationController::class, 'destroyChurch'])->name('association.churches.destroy');
+    Route::post('/association/programs/honor-sessions', [AssociationController::class, 'storeHonorSession'])->name('association.programs.honor-sessions.store');
+    Route::delete('/association/programs/honor-sessions/{session}', [AssociationController::class, 'destroyHonorSession'])->name('association.programs.honor-sessions.destroy');
 
     Route::get('/association/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [
@@ -227,17 +249,31 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function () {
     Route::get('/super-admin/dashboard', function () {
-        $selectedClubId = session('superadmin_context.club_id');
+        $context = SuperadminContext::fromSession();
 
         return Inertia::render('SuperAdmin/Dashboard', [
             'auth_user' => auth()->user(),
+            'unions' => Union::query()
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'associations' => Association::query()
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(['id', 'union_id', 'name']),
+            'districts' => District::query()
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(['id', 'association_id', 'name']),
+            'churches' => Church::query()
+                ->orderBy('church_name')
+                ->get(['id', 'district_id', 'church_name']),
             'clubs' => Club::query()
+                ->withoutGlobalScopes()
                 ->select('id', 'club_name', 'church_id')
                 ->orderBy('club_name')
                 ->get(),
-            'context' => [
-                'club_id' => $selectedClubId ? (int) $selectedClubId : null,
-            ],
+            'context' => $context,
         ]);
     })->name('superadmin.dashboard');
     Route::post('/super-admin/context', [SuperAdminContextController::class, 'set'])

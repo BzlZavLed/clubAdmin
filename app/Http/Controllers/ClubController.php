@@ -22,6 +22,43 @@ class ClubController extends Controller
 {
     use AuthorizesRequests;
 
+    protected function syncEnrollmentPaymentConcept(Club $club): void
+    {
+        $amount = (float) ($club->enrollment_payment_amount ?? 0);
+
+        $concept = PaymentConcept::query()
+            ->where('club_id', $club->id)
+            ->where('concept', 'Cuota de inscripción')
+            ->where('pay_to', 'club_budget')
+            ->first();
+
+        if ($amount <= 0) {
+            if ($concept) {
+                $concept->update(['amount' => 0]);
+            }
+
+            return;
+        }
+
+        $concept ??= PaymentConcept::query()->create([
+            'club_id' => $club->id,
+            'concept' => 'Cuota de inscripción',
+            'pay_to' => 'club_budget',
+            'type' => 'mandatory',
+            'status' => 'active',
+            'created_by' => auth()->id(),
+            'amount' => $amount,
+            'reusable' => true,
+        ]);
+
+        $concept->update([
+            'amount' => $amount,
+            'type' => 'mandatory',
+            'status' => 'active',
+            'reusable' => true,
+        ]);
+    }
+
     protected function resolveEvaluationSystemForChurch(Church $church): string
     {
         $church->loadMissing('district.association.union:id,evaluation_system');
@@ -249,6 +286,7 @@ class ClubController extends Controller
             'conference_region' => 'nullable|string|max:255',
             'club_type' => 'required|in:adventurers,pathfinders,master_guide',
             'evaluation_system' => 'required|in:honors,carpetas',
+            'enrollment_payment_amount' => 'nullable|numeric|min:0|max:9999.99',
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
@@ -292,7 +330,10 @@ class ClubController extends Controller
             'church_id' => $hierarchyFields['church_id'],
             'district_id' => $hierarchyFields['district_id'],
             'status' => $validated['status'],
+            'enrollment_payment_amount' => $validated['enrollment_payment_amount'] ?? null,
         ]);
+
+        $this->syncEnrollmentPaymentConcept($club);
 
         if ($director) {
             DB::table('club_user')->updateOrInsert(
@@ -337,6 +378,7 @@ class ClubController extends Controller
             'conference_region' => 'nullable|string|max:255',
             'club_type' => 'required|in:adventurers,pathfinders,master_guide',
             'evaluation_system' => 'required|in:honors,carpetas',
+            'enrollment_payment_amount' => 'nullable|numeric|min:0|max:9999.99',
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
@@ -383,7 +425,10 @@ class ClubController extends Controller
             'church_id' => $hierarchyFields['church_id'],
             'district_id' => $hierarchyFields['district_id'],
             'status' => $validated['status'],
+            'enrollment_payment_amount' => $validated['enrollment_payment_amount'] ?? null,
         ]);
+
+        $this->syncEnrollmentPaymentConcept($club);
 
         if ($nextDirectorId) {
             DB::table('club_user')->updateOrInsert(
@@ -483,6 +528,7 @@ class ClubController extends Controller
             'church_id' => 'required|exists:churches,id',
             'district_id' => 'required|exists:districts,id',
             'evaluation_system' => 'required|in:honors,carpetas',
+            'enrollment_payment_amount' => 'nullable|numeric|min:0|max:9999.99',
         ]);
 
         $this->enforceChurchClubTypeRule((int) $validated['church_id'], $validated['club_type']);
@@ -501,6 +547,8 @@ class ClubController extends Controller
             'church_id' => $hierarchyFields['church_id'],
             'district_id' => $hierarchyFields['district_id'],
         ]));
+
+        $this->syncEnrollmentPaymentConcept($club);
         // Link user to this club in pivot table with status
         $club->users()->attach(auth()->id(), ['status' => 'active']);
 
@@ -532,17 +580,23 @@ class ClubController extends Controller
             'church_id' => 'required|exists:churches,id',
             'district_id' => 'required|exists:districts,id',
             'evaluation_system' => 'required|in:honors,carpetas',
+            'enrollment_payment_amount' => 'nullable|numeric|min:0|max:9999.99',
         ]);
 
-        $club = Club::query()
-            ->where('id', (int) $validated['id'])
-            ->where(function ($query) {
+        $clubQuery = Club::query()
+            ->withoutGlobalScopes()
+            ->where('id', (int) $validated['id']);
+
+        if (auth()->user()?->profile_type !== 'superadmin') {
+            $clubQuery->where(function ($query) {
                 $query->where('user_id', auth()->id())
                     ->orWhereHas('users', function ($userQuery) {
                         $userQuery->where('users.id', auth()->id());
                     });
-            })
-            ->firstOrFail();
+            });
+        }
+
+        $club = $clubQuery->firstOrFail();
 
         $this->enforceChurchClubTypeRule((int) $validated['church_id'], $validated['club_type'], (int) $club->id);
 
@@ -558,6 +612,8 @@ class ClubController extends Controller
             'church_id' => $hierarchyFields['church_id'],
             'district_id' => $hierarchyFields['district_id'],
         ]));
+
+        $this->syncEnrollmentPaymentConcept($club);
 
         if ($request->wantsJson()) {
             return response()->json(['message' => 'Club updated successfully.']);

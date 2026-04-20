@@ -22,6 +22,11 @@ class Club extends Model
         'status',
         'church_id',
         'district_id',
+        'enrollment_payment_amount',
+    ];
+
+    protected $casts = [
+        'enrollment_payment_amount' => 'decimal:2',
     ];
     protected static function booted(): void
     {
@@ -37,6 +42,11 @@ class Club extends Model
     public function adventurerMembers()
     {
         return $this->hasMany(MemberAdventurer::class, 'club_id');
+    }
+
+    public function pathfinderMembers()
+    {
+        return $this->hasMany(MemberPathfinder::class, 'club_id');
     }
     public function staffAdventurers()
     {

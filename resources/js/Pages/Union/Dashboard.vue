@@ -6,7 +6,8 @@ import { useLocale } from '@/Composables/useLocale'
 
 const page = usePage()
 const user = page.props.auth?.user ?? null
-const scope = user?.scope_summary ?? null
+const scope = page.props.auth?.effective_scope_summary ?? user?.scope_summary ?? null
+const effectiveRole = page.props.auth?.effective_role ?? user?.effective_role ?? user?.role_key ?? user?.profile_type ?? null
 const { tr } = useLocale()
 </script>
 
@@ -21,8 +22,12 @@ const { tr } = useLocale()
 
                 <div class="mt-4 space-y-2 text-sm text-gray-700">
                     <div><span class="font-medium">{{ tr('Usuario:', 'User:') }}</span> {{ user?.name || '—' }}</div>
-                    <div><span class="font-medium">{{ tr('Rol:', 'Role:') }}</span> {{ user?.role_key || user?.profile_type || '—' }}</div>
-                    <div><span class="font-medium">Scope:</span> {{ user?.scope_type || '—' }} #{{ user?.scope_id || '—' }}</div>
+                    <div><span class="font-medium">{{ tr('Rol:', 'Role:') }}</span> {{ effectiveRole || '—' }}</div>
+                    <div><span class="font-medium">{{ tr('Union:', 'Union:') }}</span> {{ scope?.union_name || scope?.name || '—' }}</div>
+                    <div><span class="font-medium">{{ tr('Asociación:', 'Association:') }}</span> {{ scope?.association_name || '—' }}</div>
+                    <div><span class="font-medium">{{ tr('Distrito:', 'District:') }}</span> {{ scope?.district_name || '—' }}</div>
+                    <div><span class="font-medium">{{ tr('Iglesia:', 'Church:') }}</span> {{ scope?.church_name || '—' }}</div>
+                    <div><span class="font-medium">{{ tr('Club:', 'Club:') }}</span> {{ scope?.club_name || '—' }}</div>
                     <div><span class="font-medium">{{ tr('Nombre del scope:', 'Scope name:') }}</span> {{ scope?.name || '—' }}</div>
                     <div><span class="font-medium">{{ tr('Iglesias accesibles:', 'Accessible churches:') }}</span> {{ user?.accessible_church_count ?? 0 }}</div>
                     <div><span class="font-medium">{{ tr('Clubes accesibles:', 'Accessible clubs:') }}</span> {{ user?.accessible_club_count ?? 0 }}</div>

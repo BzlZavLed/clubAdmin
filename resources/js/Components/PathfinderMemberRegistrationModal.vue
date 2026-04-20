@@ -59,7 +59,16 @@ const form = useForm({
     insurance_number: '',
     parent_guardian_signature: '',
     signed_at: '',
+    mark_insurance_paid: false,
+    mark_enrollment_paid: false,
 })
+
+const insuranceAmount = computed(() => Number(props.selectedClub?.insurance_payment_amount || 0))
+const enrollmentAmount = computed(() => Number(props.selectedClub?.enrollment_payment_amount || 0))
+const canMarkInsurancePaid = computed(() =>
+    (props.selectedClub?.evaluation_system || 'honors') === 'carpetas' && insuranceAmount.value > 0
+)
+const canMarkEnrollmentPaid = computed(() => enrollmentAmount.value > 0)
 
 const selectedClubLabel = computed(() => {
     if (!props.selectedClub) return 'Sin club seleccionado'
@@ -80,6 +89,8 @@ const resetForm = () => {
     pickupAuthorizedText.value = ''
     showError.value = false
     fillClubFields()
+    form.mark_insurance_paid = false
+    form.mark_enrollment_paid = false
 }
 
 const populateForEdit = (member) => {
@@ -124,6 +135,8 @@ const populateForEdit = (member) => {
     form.insurance_number = member.insurance_number || ''
     form.parent_guardian_signature = member.signature || ''
     form.signed_at = member.signed_at ? String(member.signed_at).slice(0, 10) : ''
+    form.mark_insurance_paid = Boolean(member.insurance_paid)
+    form.mark_enrollment_paid = Boolean(member.enrollment_paid)
     showError.value = false
     form.clearErrors()
 }
@@ -197,6 +210,8 @@ const onSubmit = () => {
         insurance_number: form.insurance_number,
         parent_guardian_signature: form.parent_guardian_signature,
         signed_at: form.signed_at,
+        mark_insurance_paid: form.mark_insurance_paid,
+        mark_enrollment_paid: form.mark_enrollment_paid,
     }
 
     console.log('Submitting Pathfinder member payload', payload)
@@ -415,6 +430,20 @@ const onSubmit = () => {
                             <label class="mb-1 block text-sm font-medium text-gray-700">Fecha</label>
                             <input v-model="form.signed_at" type="date" class="w-full rounded border p-2" />
                         </div>
+                    </div>
+                </section>
+
+                <section v-if="canMarkInsurancePaid || canMarkEnrollmentPaid" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-900">Pagos al registrar</h3>
+                    <div class="space-y-3">
+                        <label v-if="canMarkInsurancePaid" class="flex items-start gap-3">
+                            <input v-model="form.mark_insurance_paid" type="checkbox" class="mt-1" :disabled="editingMember && form.mark_insurance_paid" />
+                            <span class="text-sm text-emerald-900">{{ editingMember ? 'Seguro pagado' : 'Marcar seguro como pagado' }} (${{ insuranceAmount.toFixed(2) }})</span>
+                        </label>
+                        <label v-if="canMarkEnrollmentPaid" class="flex items-start gap-3">
+                            <input v-model="form.mark_enrollment_paid" type="checkbox" class="mt-1" :disabled="editingMember && form.mark_enrollment_paid" />
+                            <span class="text-sm text-emerald-900">{{ editingMember ? 'Inscripción pagada' : 'Marcar inscripción como pagada' }} (${{ enrollmentAmount.toFixed(2) }})</span>
+                        </label>
                     </div>
                 </section>
 

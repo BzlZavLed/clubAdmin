@@ -14,6 +14,7 @@ const isMobileOpen = ref(false)
 const isMobile = ref(false)
 const page = usePage()
 const user = computed(() => page.props.auth?.user ?? null)
+const effectiveRole = computed(() => page.props.auth?.effective_role || user.value?.effective_role || user.value?.role_key || user.value?.profile_type || null)
 const primaryDirectorClub = computed(() => page.props.auth?.primary_director_club ?? null)
 const activeClub = computed(() => page.props.auth?.active_club ?? null)
 const sidebarClubLabel = computed(() => primaryDirectorClub.value?.club_name || activeClub.value?.club_name || null)
@@ -42,7 +43,7 @@ onBeforeUnmount(() => {
 })
 const navCollapsed = computed(() => (isMobile.value ? false : isCollapsed.value))
 const getNavComponent = () => {
-    const profileType = user.value?.profile_type
+    const profileType = effectiveRole.value
 
     if (profileType === 'club_director') {
         return h(ClubDirectorNav, { isCollapsed: navCollapsed.value })
@@ -50,7 +51,7 @@ const getNavComponent = () => {
         return h(SuperAdminNav, { isCollapsed: navCollapsed.value })
     } else if (profileType === 'club_personal') {
         return h(ClubPersonalNav, { isCollapsed: navCollapsed.value })
-    } else if (profileType === 'union_youth_director' || profileType === 'union_manager') {
+    } else if (['union_youth_director', 'union_manager', 'association_youth_director', 'district_pastor', 'district_secretary'].includes(profileType)) {
         return h(UnionNav, { isCollapsed: navCollapsed.value })
     } else if (profileType === 'parent') {
         return h(ParentNav, { isCollapsed: navCollapsed.value })

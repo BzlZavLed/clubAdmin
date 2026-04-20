@@ -8,7 +8,11 @@ use App\Models\Staff;
 use App\Models\ClubClass;
 use App\Models\Club;
 use App\Models\Church;
+use App\Models\District;
+use App\Models\Association;
+use App\Models\Union;
 use App\Support\ClubHelper;
+use App\Support\SuperadminContext;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -65,15 +69,66 @@ class HandleInertiaRequests extends Middleware
         }
 
         $isSuperadmin = $user?->profile_type === 'superadmin';
+        $superadminContext = $isSuperadmin ? SuperadminContext::fromSession() : null;
         $availableClubs = $user ? ClubHelper::clubsForUser($user) : collect();
         $availableChurches = $user ? ClubHelper::churchesForUser($user) : collect();
         $scopeSummary = $user ? ClubHelper::scopeSummaryForUser($user) : null;
-        $hierarchyWidget = $user ? ClubHelper::hierarchyWidgetDataForUser($user) : null;
+        $effectiveContextUser = null;
+        if ($isSuperadmin && !empty($superadminContext['role']) && $superadminContext['role'] !== 'superadmin') {
+            $effectiveScopeId = match ($superadminContext['role']) {
+                'union_youth_director' => $superadminContext['union_id'] ?? null,
+                'association_youth_director' => $superadminContext['association_id'] ?? null,
+                'district_pastor', 'district_secretary' => $superadminContext['district_id'] ?? null,
+                'club_director' => $superadminContext['club_id'] ?? null,
+                default => null,
+            };
+
+            if ($effectiveScopeId) {
+                $effectiveContextUser = (object) [
+                    'profile_type' => $superadminContext['role'],
+                    'role_key' => $superadminContext['role'],
+                    'scope_id' => $effectiveScopeId,
+                ];
+            }
+        }
+
+        $hierarchyWidget = $effectiveContextUser
+            ? ClubHelper::hierarchyWidgetDataForUser($effectiveContextUser)
+            : ($user ? ClubHelper::hierarchyWidgetDataForUser($user) : null);
         $activeClub = $user ? ClubHelper::activeClubForUser($user) : null;
         $effectiveClubId = $activeClub?->id ?: ($isSuperadmin ? $request->session()->get('superadmin_context.club_id') : ($request->session()->get('club_context.club_id') ?: $user?->club_id));
         $effectiveChurchId = $activeClub?->church_id ?: ($isSuperadmin
             ? $request->session()->get('superadmin_context.church_id')
             : ($request->session()->get('club_context.church_id') ?: $user?->church_id));
+        $effectiveRole = $isSuperadmin ? ($superadminContext['role'] ?? 'superadmin') : ($user?->role_key ?: $user?->profile_type);
+        $effectiveScopeSummary = $isSuperadmin
+            ? [
+                'role' => $effectiveRole,
+                'name' => $superadminContext['club_name']
+                    ?? $superadminContext['district_name']
+                    ?? $superadminContext['association_name']
+                    ?? $superadminContext['union_name']
+                    ?? 'Superadmin',
+                'evaluation_system' => $superadminContext['evaluation_system'] ?? 'honors',
+                'union_name' => $superadminContext['union_name'] ?? null,
+                'association_name' => $superadminContext['association_name'] ?? null,
+                'district_name' => $superadminContext['district_name'] ?? null,
+                'church_name' => $superadminContext['church_name'] ?? null,
+                'club_name' => $superadminContext['club_name'] ?? null,
+            ]
+            : $scopeSummary;
+        $contextUnions = $isSuperadmin
+            ? Union::query()->where('status', '!=', 'deleted')->orderBy('name')->get(['id', 'name'])
+            : collect();
+        $contextAssociations = $isSuperadmin
+            ? Association::query()->where('status', '!=', 'deleted')->orderBy('name')->get(['id', 'union_id', 'name'])
+            : collect();
+        $contextDistricts = $isSuperadmin
+            ? District::query()->where('status', '!=', 'deleted')->orderBy('name')->get(['id', 'association_id', 'name'])
+            : collect();
+        $contextChurches = $isSuperadmin
+            ? Church::query()->orderBy('church_name')->get(['id', 'district_id', 'church_name'])
+            : collect();
 
         $effectiveChurch = $effectiveChurchId
             ? Church::query()->where('id', $effectiveChurchId)->first(['id', 'church_name'])
@@ -115,6 +170,12 @@ class HandleInertiaRequests extends Middleware
                             'club_type' => $club->club_type,
                             'church_id' => $club->church_id,
                             'church_name' => $club->church_name,
+                            'district_id' => $club->district_id,
+                            'director_name' => $club->director_name,
+                            'evaluation_system' => $club->evaluation_system,
+                            'status' => $club->status,
+                            'enrollment_payment_amount' => $club->enrollment_payment_amount,
+                            'insurance_payment_amount' => $club->district?->association?->insurance_payment_amount,
                         ]),
                         'churches' => $availableChurches->map(fn($church) => [
                             'id' => $church->id,
@@ -125,7 +186,9 @@ class HandleInertiaRequests extends Middleware
                         'accessible_club_count' => $availableClubs->count(),
                         'accessible_church_count' => $availableChurches->count(),
                         'scope_summary' => $scopeSummary,
+                        'effective_scope_summary' => $effectiveScopeSummary,
                         'hierarchy_widget' => $hierarchyWidget,
+                        'effective_role' => $effectiveRole,
                         'staff' => $staffRecord ? [
                             'id' => $staffRecord->id,
                             'club_id' => $staffRecord->club_id,
@@ -162,6 +225,11 @@ class HandleInertiaRequests extends Middleware
                     'evaluation_system' => $club->evaluation_system,
                     'church_id' => $club->church_id,
                     'church_name' => $club->church_name,
+                    'district_id' => $club->district_id,
+                    'director_name' => $club->director_name,
+                    'status' => $club->status,
+                    'enrollment_payment_amount' => $club->enrollment_payment_amount,
+                    'insurance_payment_amount' => $club->district?->association?->insurance_payment_amount,
                 ])->values(),
                 'club_context' => fn() => !$isSuperadmin ? [
                     'church_id' => $effectiveChurchId ? (int) $effectiveChurchId : null,
@@ -172,6 +240,15 @@ class HandleInertiaRequests extends Middleware
                 'is_in_club' => fn() => session('is_in_club', false),
                 'user_club_ids' => fn() => session('user_club_ids', []),
                 'superadmin_context' => fn() => $isSuperadmin ? [
+                    'role' => $superadminContext['role'] ?? 'superadmin',
+                    'dashboard_url' => $superadminContext['dashboard_url'] ?? '/super-admin/dashboard',
+                    'evaluation_system' => $superadminContext['evaluation_system'] ?? 'honors',
+                    'union_id' => $superadminContext['union_id'] ?? null,
+                    'union_name' => $superadminContext['union_name'] ?? null,
+                    'association_id' => $superadminContext['association_id'] ?? null,
+                    'association_name' => $superadminContext['association_name'] ?? null,
+                    'district_id' => $superadminContext['district_id'] ?? null,
+                    'district_name' => $superadminContext['district_name'] ?? null,
                     'church_id' => $effectiveChurchId ? (int) $effectiveChurchId : null,
                     'church_name' => $effectiveChurch?->church_name,
                     'club_id' => $effectiveClubId ? (int) $effectiveClubId : null,
@@ -183,8 +260,34 @@ class HandleInertiaRequests extends Middleware
                         'evaluation_system' => $club->evaluation_system,
                         'church_id' => $club->church_id,
                         'church_name' => $club->church_name,
+                        'district_id' => $club->district_id,
+                        'director_name' => $club->director_name,
+                        'status' => $club->status,
+                        'enrollment_payment_amount' => $club->enrollment_payment_amount,
+                        'insurance_payment_amount' => $club->district?->association?->insurance_payment_amount,
+                    ])->values(),
+                    'available_unions' => $contextUnions->map(fn($union) => [
+                        'id' => $union->id,
+                        'name' => $union->name,
+                    ])->values(),
+                    'available_associations' => $contextAssociations->map(fn($association) => [
+                        'id' => $association->id,
+                        'union_id' => $association->union_id,
+                        'name' => $association->name,
+                    ])->values(),
+                    'available_districts' => $contextDistricts->map(fn($district) => [
+                        'id' => $district->id,
+                        'association_id' => $district->association_id,
+                        'name' => $district->name,
+                    ])->values(),
+                    'available_churches' => $contextChurches->map(fn($church) => [
+                        'id' => $church->id,
+                        'district_id' => $church->district_id,
+                        'church_name' => $church->church_name,
                     ])->values(),
                 ] : null,
+                'effective_role' => fn() => $effectiveRole,
+                'effective_scope_summary' => fn() => $effectiveScopeSummary,
             ],
         ]);
     }

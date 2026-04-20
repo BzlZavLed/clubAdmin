@@ -30,12 +30,20 @@ class MemberAdventurer extends Model
         'email_address',
         'signature',
         'status',
-        'notes_deleted'
+        'notes_deleted',
+        'insurance_paid',
+        'insurance_paid_at',
+        'enrollment_paid',
+        'enrollment_paid_at',
     ];
 
     protected $casts = [
         'investiture_classes' => 'array',
         'birthdate' => 'date',
+        'insurance_paid' => 'boolean',
+        'insurance_paid_at' => 'datetime',
+        'enrollment_paid' => 'boolean',
+        'enrollment_paid_at' => 'datetime',
     ];
 
 

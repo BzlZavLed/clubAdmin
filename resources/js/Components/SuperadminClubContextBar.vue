@@ -22,48 +22,157 @@ const availableClubs = computed(() => page.props.auth?.available_clubs ?? [])
 const activeClub = computed(() => page.props.auth?.active_club ?? null)
 const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
 const context = computed(() => isSuperadmin.value ? superadminContext.value : userContext.value)
-const clubs = computed(() => context.value?.available_clubs ?? availableClubs.value ?? [])
-const selectedClubId = ref(context.value?.club_id ? String(context.value.club_id) : (activeClub.value?.id ? String(activeClub.value.id) : ''))
+
+const selectedUnionId = ref(superadminContext.value?.union_id ? String(superadminContext.value.union_id) : '')
+const selectedAssociationId = ref(superadminContext.value?.association_id ? String(superadminContext.value.association_id) : '')
+const selectedDistrictId = ref(superadminContext.value?.district_id ? String(superadminContext.value.district_id) : '')
+const selectedChurchId = ref(superadminContext.value?.church_id ? String(superadminContext.value.church_id) : '')
+const selectedClubId = ref(
+    isSuperadmin.value
+        ? (superadminContext.value?.club_id ? String(superadminContext.value.club_id) : '')
+        : (context.value?.club_id ? String(context.value.club_id) : (activeClub.value?.id ? String(activeClub.value.id) : ''))
+)
 const saving = ref(false)
 const error = ref('')
 
-watch(
-    () => [context.value?.club_id, activeClub.value?.id],
-    (clubId) => {
-        const resolvedClubId = Array.isArray(clubId) ? clubId[0] || clubId[1] : clubId
-        selectedClubId.value = resolvedClubId ? String(resolvedClubId) : ''
+const unions = computed(() => superadminContext.value?.available_unions ?? [])
+const associations = computed(() => superadminContext.value?.available_associations ?? [])
+const districts = computed(() => superadminContext.value?.available_districts ?? [])
+const churches = computed(() => superadminContext.value?.available_churches ?? [])
+const clubs = computed(() => {
+    if (isSuperadmin.value) {
+        return superadminContext.value?.available_clubs ?? []
     }
+
+    return context.value?.available_clubs ?? availableClubs.value ?? []
+})
+
+const filteredAssociations = computed(() => {
+    if (!selectedUnionId.value) return []
+    return associations.value.filter((association) => String(association.union_id) === String(selectedUnionId.value))
+})
+
+const filteredDistricts = computed(() => {
+    if (!selectedAssociationId.value) return []
+    return districts.value.filter((district) => String(district.association_id) === String(selectedAssociationId.value))
+})
+
+const filteredChurches = computed(() => {
+    if (!selectedDistrictId.value) return []
+    return churches.value.filter((church) => String(church.district_id) === String(selectedDistrictId.value))
+})
+
+const filteredClubs = computed(() => {
+    if (isSuperadmin.value) {
+        if (!selectedChurchId.value) return []
+        return clubs.value.filter((club) => String(club.church_id) === String(selectedChurchId.value))
+    }
+
+    return clubs.value
+})
+
+watch(
+    () => superadminContext.value,
+    (value) => {
+        if (!isSuperadmin.value || !value) return
+        selectedUnionId.value = value.union_id ? String(value.union_id) : ''
+        selectedAssociationId.value = value.association_id ? String(value.association_id) : ''
+        selectedDistrictId.value = value.district_id ? String(value.district_id) : ''
+        selectedChurchId.value = value.church_id ? String(value.church_id) : ''
+        selectedClubId.value = value.club_id ? String(value.club_id) : ''
+    },
+    { deep: true }
 )
+
+watch(selectedUnionId, () => {
+    if (!isSuperadmin.value) return
+    const exists = filteredAssociations.value.some((association) => String(association.id) === String(selectedAssociationId.value))
+    if (!exists) {
+        selectedAssociationId.value = ''
+        selectedDistrictId.value = ''
+        selectedChurchId.value = ''
+        selectedClubId.value = ''
+    }
+})
+
+watch(selectedAssociationId, () => {
+    if (!isSuperadmin.value) return
+    const exists = filteredDistricts.value.some((district) => String(district.id) === String(selectedDistrictId.value))
+    if (!exists) {
+        selectedDistrictId.value = ''
+        selectedChurchId.value = ''
+        selectedClubId.value = ''
+    }
+})
+
+watch(selectedDistrictId, () => {
+    if (!isSuperadmin.value) return
+    const exists = filteredChurches.value.some((church) => String(church.id) === String(selectedChurchId.value))
+    if (!exists) {
+        selectedChurchId.value = ''
+        selectedClubId.value = ''
+    }
+})
+
+watch(selectedChurchId, () => {
+    if (!isSuperadmin.value) return
+    const exists = filteredClubs.value.some((club) => String(club.id) === String(selectedClubId.value))
+    if (!exists) {
+        selectedClubId.value = ''
+    }
+})
 
 const selectedClub = computed(() =>
-    clubs.value.find((club) => String(club.id) === String(selectedClubId.value)) ?? null
+    filteredClubs.value.find((club) => String(club.id) === String(selectedClubId.value)) ?? null
 )
 
+const selectedLabel = computed(() => {
+    if (!isSuperadmin.value) {
+        return selectedClub.value?.club_name || 'Selecciona un club'
+    }
+
+    return (
+        selectedClub.value?.club_name
+        || filteredChurches.value.find((church) => String(church.id) === String(selectedChurchId.value))?.church_name
+        || filteredDistricts.value.find((district) => String(district.id) === String(selectedDistrictId.value))?.name
+        || filteredAssociations.value.find((association) => String(association.id) === String(selectedAssociationId.value))?.name
+        || unions.value.find((union) => String(union.id) === String(selectedUnionId.value))?.name
+        || 'Superadmin'
+    )
+})
+
 const isVisible = computed(() => {
+    if (isSuperadmin.value) return true
+
     const path = page.url || ''
     const isClubFacingPage = path.startsWith('/club-director') || path.startsWith('/club-personal') || path.startsWith('/director/children')
     if (!isClubFacingPage) return false
 
-    if (isSuperadmin.value) return true
-
     return clubs.value.length > 1
 })
 
-const saveClubContext = async () => {
+const saveContext = async () => {
     saving.value = true
     error.value = ''
 
     try {
         if (isSuperadmin.value) {
-            await axios.post(route('superadmin.context.set'), {
+            const { data } = await axios.post(route('superadmin.context.set'), {
+                union_id: selectedUnionId.value ? Number(selectedUnionId.value) : null,
+                association_id: selectedAssociationId.value ? Number(selectedAssociationId.value) : null,
+                district_id: selectedDistrictId.value ? Number(selectedDistrictId.value) : null,
+                church_id: selectedChurchId.value ? Number(selectedChurchId.value) : null,
                 club_id: selectedClubId.value ? Number(selectedClubId.value) : null,
             })
-        } else {
-            await axios.post(route('club.select'), {
-                club_id: selectedClubId.value ? Number(selectedClubId.value) : null,
-                user_id: user.value?.id,
-            })
+
+            window.location.href = data?.context?.dashboard_url || route('superadmin.dashboard')
+            return
         }
+
+        await axios.post(route('club.select'), {
+            club_id: selectedClubId.value ? Number(selectedClubId.value) : null,
+            user_id: user.value?.id,
+        })
 
         router.reload({
             only: ['auth'],
@@ -73,7 +182,7 @@ const saveClubContext = async () => {
             },
         })
     } catch (err) {
-        error.value = err?.response?.data?.message || 'No se pudo cambiar el club activo.'
+        error.value = err?.response?.data?.message || 'No se pudo cambiar el contexto activo.'
     } finally {
         saving.value = false
     }
@@ -91,51 +200,126 @@ const saveClubContext = async () => {
                     <p class="text-xs font-semibold uppercase tracking-wide text-blue-900">
                         {{ isSuperadmin ? 'Contexto' : 'Club activo' }}
                     </p>
-                    <p class="mt-1 text-xs text-blue-800">
-                        {{ selectedClub?.club_name || 'Selecciona un club' }}
+                    <p class="mt-1 text-xs text-blue-800 truncate">
+                        {{ selectedLabel }}
+                    </p>
+                    <p v-if="isSuperadmin && superadminContext?.role" class="mt-1 text-[11px] text-blue-700">
+                        {{ superadminContext.role }}
                     </p>
                 </div>
 
-                <div class="space-y-2">
+                <div v-if="isSuperadmin" class="space-y-2">
+                    <select v-model="selectedUnionId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800">
+                        <option value="">Union</option>
+                        <option v-for="union in unions" :key="union.id" :value="String(union.id)">
+                            {{ union.name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedAssociationId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedUnionId">
+                        <option value="">Asociacion</option>
+                        <option v-for="association in filteredAssociations" :key="association.id" :value="String(association.id)">
+                            {{ association.name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedDistrictId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedAssociationId">
+                        <option value="">Distrito</option>
+                        <option v-for="district in filteredDistricts" :key="district.id" :value="String(district.id)">
+                            {{ district.name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedChurchId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
+                        <option value="">Iglesia</option>
+                        <option v-for="church in filteredChurches" :key="church.id" :value="String(church.id)">
+                            {{ church.church_name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedChurchId">
+                        <option value="">Club</option>
+                        <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
+                            {{ club.club_name }}
+                        </option>
+                    </select>
+                </div>
+
+                <div v-else class="space-y-2">
                     <select
                         v-model="selectedClubId"
                         class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800"
                     >
                         <option value="">Selecciona un club</option>
-                        <option v-for="club in clubs" :key="club.id" :value="String(club.id)">
+                        <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                             {{ club.club_name }}
                         </option>
                     </select>
-
-                    <button
-                        type="button"
-                        class="w-full rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="saving"
-                        @click="saveClubContext"
-                    >
-                        {{ saving ? 'Guardando...' : 'Cambiar' }}
-                    </button>
                 </div>
+
+                <button
+                    type="button"
+                    class="w-full rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="saving"
+                    @click="saveContext"
+                >
+                    {{ saving ? 'Guardando...' : (isSuperadmin ? 'Entrar' : 'Cambiar') }}
+                </button>
 
                 <p v-if="error" class="text-xs text-red-600">{{ error }}</p>
             </div>
         </template>
 
         <template v-else>
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div class="flex flex-col gap-3">
                 <div class="min-w-0">
                     <p class="text-sm font-semibold text-blue-900">
                         {{ isSuperadmin ? 'Contexto de superadministrador' : 'Club activo' }}
                     </p>
                     <p class="text-xs text-blue-800">
-                        {{ isSuperadmin ? 'Trabajas en vistas de club usando un solo club activo.' : 'Este club se mantendra activo en todas las vistas del club durante tu sesion.' }}
-                        <span v-if="selectedClub">
-                            Iglesia: {{ selectedClub.church_name || 'Sin iglesia' }}
-                        </span>
+                        <span>{{ selectedLabel }}</span>
+                        <span v-if="isSuperadmin && superadminContext?.role"> | {{ superadminContext.role }}</span>
                     </p>
                 </div>
 
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div v-if="isSuperadmin" class="grid grid-cols-1 md:grid-cols-5 gap-2">
+                    <select v-model="selectedUnionId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800">
+                        <option value="">Union</option>
+                        <option v-for="union in unions" :key="union.id" :value="String(union.id)">
+                            {{ union.name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedAssociationId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedUnionId">
+                        <option value="">Asociacion</option>
+                        <option v-for="association in filteredAssociations" :key="association.id" :value="String(association.id)">
+                            {{ association.name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedDistrictId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedAssociationId">
+                        <option value="">Distrito</option>
+                        <option v-for="district in filteredDistricts" :key="district.id" :value="String(district.id)">
+                            {{ district.name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedChurchId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
+                        <option value="">Iglesia</option>
+                        <option v-for="church in filteredChurches" :key="church.id" :value="String(church.id)">
+                            {{ church.church_name }}
+                        </option>
+                    </select>
+
+                    <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedChurchId">
+                        <option value="">Club</option>
+                        <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
+                            {{ club.club_name }}
+                        </option>
+                    </select>
+                </div>
+
+                <div v-else class="flex flex-col gap-2 sm:flex-row sm:items-end">
                     <div class="min-w-[280px]">
                         <label class="mb-1 block text-xs font-medium text-blue-900">Club activo</label>
                         <select
@@ -143,19 +327,21 @@ const saveClubContext = async () => {
                             class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800"
                         >
                             <option value="">Selecciona un club</option>
-                            <option v-for="club in clubs" :key="club.id" :value="String(club.id)">
+                            <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                                 {{ club.club_name }} ({{ club.club_type }})
                             </option>
                         </select>
                     </div>
+                </div>
 
+                <div>
                     <button
                         type="button"
                         class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
                         :disabled="saving"
-                        @click="saveClubContext"
+                        @click="saveContext"
                     >
-                        {{ saving ? 'Guardando...' : 'Cambiar club' }}
+                        {{ saving ? 'Guardando...' : (isSuperadmin ? 'Guardar y entrar' : 'Cambiar club') }}
                     </button>
                 </div>
             </div>

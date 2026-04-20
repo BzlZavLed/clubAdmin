@@ -13,6 +13,11 @@ class Association extends Model
         'union_id',
         'name',
         'status',
+        'insurance_payment_amount',
+    ];
+
+    protected $casts = [
+        'insurance_payment_amount' => 'decimal:2',
     ];
 
     public function union()
@@ -23,5 +28,15 @@ class Association extends Model
     public function districts()
     {
         return $this->hasMany(District::class);
+    }
+
+    public function honorClassSessions()
+    {
+        return $this->hasMany(AssociationHonorClassSession::class)->orderBy('session_date')->orderBy('id');
+    }
+
+    public function evaluators()
+    {
+        return $this->hasMany(\App\Models\AssociationEvaluator::class)->orderBy('name');
     }
 }

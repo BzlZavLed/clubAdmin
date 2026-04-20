@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 
 const props = defineProps(['show', 'clubs', 'selectedClub', 'editingMember'])
@@ -33,8 +33,16 @@ const form = useForm({
     home_address: '',
     email_address: '',
     signature: '',
+    mark_insurance_paid: false,
+    mark_enrollment_paid: false,
 })
 const sameAsHomeAddress = ref(false)
+const insuranceAmount = computed(() => Number(selectedClub.value?.insurance_payment_amount || 0))
+const enrollmentAmount = computed(() => Number(selectedClub.value?.enrollment_payment_amount || 0))
+const canMarkInsurancePaid = computed(() =>
+    (selectedClub.value?.evaluation_system || 'honors') === 'carpetas' && insuranceAmount.value > 0
+)
+const canMarkEnrollmentPaid = computed(() => enrollmentAmount.value > 0)
 
 watch(sameAsHomeAddress, (checked) => {
     if (checked) {
@@ -62,6 +70,8 @@ const resetToDefaults = () => {
     showError.value = false
     sameAsHomeAddress.value = false
     fillClubFields()
+    form.mark_insurance_paid = false
+    form.mark_enrollment_paid = false
 }
 
 const populateForEdit = (member) => {
@@ -87,6 +97,8 @@ const populateForEdit = (member) => {
     form.home_address = member.home_address || ''
     form.email_address = member.email_address || ''
     form.signature = member.signature || ''
+    form.mark_insurance_paid = Boolean(member.insurance_paid)
+    form.mark_enrollment_paid = Boolean(member.enrollment_paid)
 }
 
 watch(() => props.selectedClub, () => {
@@ -212,6 +224,17 @@ function onParentCellNumberInput(event) {
             </div>
             <div><label>Email Address</label><input v-model="form.email_address" type="email" class="w-full p-2 border rounded" /></div>
             <div><label>Signature (typed)</label><input v-model="form.signature" type="text" class="w-full p-2 border rounded" /></div>
+            <div v-if="canMarkInsurancePaid || canMarkEnrollmentPaid" class="rounded border border-emerald-200 bg-emerald-50 p-4">
+                <h3 class="mb-2 text-sm font-semibold text-emerald-900">Pagos al registrar</h3>
+                <label v-if="canMarkInsurancePaid" class="mb-2 flex items-start gap-2 text-sm text-emerald-900">
+                    <input v-model="form.mark_insurance_paid" type="checkbox" class="mt-1" :disabled="editingMember && form.mark_insurance_paid" />
+                    <span>{{ editingMember ? 'Seguro pagado' : 'Marcar seguro como pagado' }} (${{ insuranceAmount.toFixed(2) }})</span>
+                </label>
+                <label v-if="canMarkEnrollmentPaid" class="flex items-start gap-2 text-sm text-emerald-900">
+                    <input v-model="form.mark_enrollment_paid" type="checkbox" class="mt-1" :disabled="editingMember && form.mark_enrollment_paid" />
+                    <span>{{ editingMember ? 'Inscripción pagada' : 'Marcar inscripción como pagada' }} (${{ enrollmentAmount.toFixed(2) }})</span>
+                </label>
+            </div>
             <div v-if="showError && Object.keys(showError).length" class="mb-4 text-red-700 bg-red-100 p-3 rounded">
                 <ul class="list-disc list-inside">
                     <li v-for="(message, field) in showError" :key="field">{{ message }}</li>

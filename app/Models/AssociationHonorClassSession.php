@@ -5,30 +5,27 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class District extends Model
+class AssociationHonorClassSession extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'association_id',
-        'name',
-        'pastor_name',
-        'pastor_email',
-        'is_evaluator',
+        'club_type',
+        'class_name',
+        'title',
+        'session_date',
+        'location',
+        'notes',
         'status',
     ];
 
     protected $casts = [
-        'is_evaluator' => 'boolean',
+        'session_date' => 'date',
     ];
 
     public function association()
     {
         return $this->belongsTo(Association::class);
-    }
-
-    public function churches()
-    {
-        return $this->hasMany(Church::class);
     }
 }

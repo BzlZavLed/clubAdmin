@@ -10,6 +10,7 @@ use App\Models\Union;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use App\Support\SuperadminContext;
 
 class UnionController extends Controller
 {
@@ -304,6 +305,16 @@ class UnionController extends Controller
         $user = $request->user();
         if (!$user) {
             abort(401);
+        }
+
+        if ($user->profile_type === 'superadmin') {
+            $context = SuperadminContext::fromSession();
+
+            if (($context['role'] ?? null) !== 'union_youth_director' || empty($context['union_id'])) {
+                abort(403);
+            }
+
+            return Union::query()->findOrFail((int) $context['union_id']);
         }
 
         if ($user->profile_type !== 'union_youth_director' || $user->scope_type !== 'union' || empty($user->scope_id)) {

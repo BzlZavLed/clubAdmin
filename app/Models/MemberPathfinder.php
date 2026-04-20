@@ -56,6 +56,10 @@ class MemberPathfinder extends Model
         'additional_signatures',
         'application_data',
         'status',
+        'insurance_paid',
+        'insurance_paid_at',
+        'enrollment_paid',
+        'enrollment_paid_at',
 
         // Legacy aliases preserved during transition from temp_member_pathfinder.
         'nombre',
@@ -74,6 +78,10 @@ class MemberPathfinder extends Model
         'application_data' => 'array',
         'consent_acknowledged' => 'boolean',
         'photo_release' => 'boolean',
+        'insurance_paid' => 'boolean',
+        'insurance_paid_at' => 'datetime',
+        'enrollment_paid' => 'boolean',
+        'enrollment_paid_at' => 'datetime',
     ];
 
     protected $appends = [

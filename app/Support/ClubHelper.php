@@ -33,8 +33,9 @@ class ClubHelper
 
         if (($user->profile_type ?? null) === 'superadmin') {
             return Club::query()
+                ->with('district.association:id,insurance_payment_amount')
                 ->orderBy('club_name')
-                ->get(['id', 'club_name', 'club_type', 'church_id', 'church_name', 'user_id']);
+                ->get(['id', 'club_name', 'club_type', 'church_id', 'church_name', 'user_id', 'director_name', 'evaluation_system', 'status', 'district_id', 'enrollment_payment_amount']);
         }
 
         $clubIds = self::clubIdsForUser($user);
@@ -43,9 +44,10 @@ class ClubHelper
         }
 
         return Club::query()
+            ->with('district.association:id,insurance_payment_amount')
             ->whereIn('id', $clubIds)
             ->orderBy('club_name')
-            ->get(['id', 'club_name', 'club_type', 'church_id', 'church_name', 'user_id']);
+            ->get(['id', 'club_name', 'club_type', 'church_id', 'church_name', 'user_id', 'director_name', 'evaluation_system', 'status', 'district_id', 'enrollment_payment_amount']);
     }
 
     /**
@@ -215,6 +217,7 @@ class ClubHelper
                 'name' => $district->name,
                 'association_name' => $district->association?->name,
                 'union_name' => $district->association?->union?->name,
+                'evaluation_system' => $district->association?->union?->evaluation_system ?: 'honors',
             ] : null;
         }
 
@@ -225,6 +228,7 @@ class ClubHelper
                 'id' => $association->id,
                 'name' => $association->name,
                 'union_name' => $association->union?->name,
+                'evaluation_system' => $association->union?->evaluation_system ?: 'honors',
             ] : null;
         }
 
@@ -234,6 +238,7 @@ class ClubHelper
                 'type' => 'union',
                 'id' => $union->id,
                 'name' => $union->name,
+                'evaluation_system' => $union->evaluation_system ?: 'honors',
             ] : null;
         }
 

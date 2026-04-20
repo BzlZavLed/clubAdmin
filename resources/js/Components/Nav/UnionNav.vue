@@ -1,30 +1,111 @@
 <script setup>
-import { Link } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import {
     HomeIcon,
     Squares2X2Icon,
     FolderOpenIcon,
     DocumentTextIcon,
     BanknotesIcon,
+    CalendarDaysIcon,
+    MapIcon,
+    BuildingLibraryIcon,
+    UserGroupIcon,
+    Cog6ToothIcon,
 } from '@heroicons/vue/24/outline'
+import { computed } from 'vue'
 
-const sections = [
-    {
-        title: 'Catálogos',
-        items: [
-            { name: 'Panel', href: '/union/dashboard', route: 'union.dashboard', icon: HomeIcon },
-            { name: 'Clubes y clases', href: '/union/catalog/clubs-classes', route: 'union.catalog', icon: Squares2X2Icon },
-            { name: 'Carpeta de investidura', href: '/union/carpeta-builder', route: 'union.carpeta-builder', icon: FolderOpenIcon },
-        ],
-    },
-    {
-        title: 'Reportes',
-        items: [
-            { name: 'Reporte de asistencia', href: '/union/reports/assistance', route: 'union.reports.assistance', icon: DocumentTextIcon },
-            { name: 'Reporte financiero', href: '/union/reports/finances', route: 'union.reports.finances', icon: BanknotesIcon },
-        ],
-    },
-]
+const page = usePage()
+const effectiveRole = computed(() => page.props.auth?.effective_role || page.props.auth?.user?.effective_role || 'union_youth_director')
+const effectiveScope = computed(() => page.props.auth?.effective_scope_summary || page.props.auth?.user?.effective_scope_summary || {})
+const evaluationSystem = computed(() => effectiveScope.value?.evaluation_system || page.props.auth?.superadmin_context?.evaluation_system || 'honors')
+
+const sections = computed(() => {
+    if (effectiveRole.value === 'association_youth_director') {
+        return [
+            {
+                title: 'Asociación',
+                items: [
+                    { name: 'Panel', href: '/association/dashboard', route: 'association.dashboard', icon: HomeIcon },
+                    {
+                        name: evaluationSystem.value === 'carpetas' ? 'Requisitos de carpeta' : 'Planificación de clases',
+                        href: '/association/programs',
+                        route: 'association.programs',
+                        icon: evaluationSystem.value === 'carpetas' ? FolderOpenIcon : CalendarDaysIcon,
+                    },
+                    ...(evaluationSystem.value === 'carpetas' ? [
+                        {
+                            name: 'Distritos y evaluadores',
+                            href: '/association/districts',
+                            route: 'association.districts',
+                            icon: MapIcon,
+                        },
+                        {
+                            name: 'Iglesias',
+                            href: '/association/churches',
+                            route: 'association.churches',
+                            icon: BuildingLibraryIcon,
+                        },
+                        {
+                            name: 'Clubes',
+                            href: '/association/clubs',
+                            route: 'association.clubs',
+                            icon: UserGroupIcon,
+                        },
+                    ] : []),
+                ],
+            },
+            {
+                title: 'Reportes',
+                items: [
+                    { name: 'Reporte de asistencia', href: '/association/reports/assistance', route: 'association.reports.assistance', icon: DocumentTextIcon },
+                    { name: 'Reporte financiero', href: '/association/reports/finances', route: 'association.reports.finances', icon: BanknotesIcon },
+                ],
+            },
+            {
+                title: 'Administración',
+                items: [
+                    { name: 'Configuración', href: '/association/settings', route: 'association.settings', icon: Cog6ToothIcon },
+                ],
+            },
+        ]
+    }
+
+    if (effectiveRole.value === 'district_pastor' || effectiveRole.value === 'district_secretary') {
+        return [
+            {
+                title: 'Distrito',
+                items: [
+                    { name: 'Panel', href: '/district/dashboard', route: 'district.dashboard', icon: HomeIcon },
+                ],
+            },
+            {
+                title: 'Reportes',
+                items: [
+                    { name: 'Reporte de asistencia', href: '/district/reports/assistance', route: 'district.reports.assistance', icon: DocumentTextIcon },
+                    { name: 'Reporte financiero', href: '/district/reports/finances', route: 'district.reports.finances', icon: BanknotesIcon },
+                ],
+            },
+        ]
+    }
+
+    return [
+        {
+            title: 'Catálogos',
+            items: [
+                { name: 'Panel', href: '/union/dashboard', route: 'union.dashboard', icon: HomeIcon },
+                { name: 'Clubes y clases', href: '/union/catalog/clubs-classes', route: 'union.catalog', icon: Squares2X2Icon },
+                { name: 'Carpeta de investidura', href: '/union/carpeta-builder', route: 'union.carpeta-builder', icon: FolderOpenIcon },
+            ],
+        },
+        {
+            title: 'Reportes',
+            items: [
+                { name: 'Reporte de asistencia', href: '/union/reports/assistance', route: 'union.reports.assistance', icon: DocumentTextIcon },
+                { name: 'Reporte financiero', href: '/union/reports/finances', route: 'union.reports.finances', icon: BanknotesIcon },
+            ],
+        },
+    ]
+})
 
 defineProps({
     isCollapsed: Boolean,

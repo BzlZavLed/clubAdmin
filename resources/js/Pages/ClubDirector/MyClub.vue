@@ -138,6 +138,7 @@ const clubForm = useForm({
     district_id: initialDistrict.value?.id || '',
     district_name: initialDistrict.value?.name || '',
     union_name: initialDistrict.value?.union_name || '',
+    enrollment_payment_amount: '',
 })
 const churchSearch = ref(initialChurch?.church_name || user.value.church_name || '')
 const showChurchSuggestions = ref(false)
@@ -671,10 +672,11 @@ const startCreatingClub = () => {
         conference_name: selectedDistrict?.association_name || '',
         conference_region: '',
         club_type: '',
-    evaluation_system: initialDistrict.value?.evaluation_system || 'honors',
+        evaluation_system: initialDistrict.value?.evaluation_system || 'honors',
         district_id: selectedDistrict?.id || '',
         district_name: selectedDistrict?.name || '',
         union_name: selectedDistrict?.union_name || '',
+        enrollment_payment_amount: '',
     })
     syncChurchFields(selected)
     syncDistrictFields(selectedDistrict)
@@ -1095,6 +1097,21 @@ onMounted(fetchClubs);
                     </p>
                 </div>
 
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Costo de inscripción</label>
+                    <input
+                        v-model="clubForm.enrollment_payment_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="w-full mt-1 p-2 border rounded"
+                        placeholder="0.00"
+                    />
+                    <p class="mt-1 text-xs text-gray-500">
+                        Este monto se usa en el formulario de nuevos miembros y actualiza automaticamente el concepto de ingreso de inscripción.
+                    </p>
+                </div>
+
                 <div class="flex items-center space-x-4">
                     <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
                         {{ isEditing ? 'Actualizar club' : 'Guardar club' }}
@@ -1141,6 +1158,7 @@ onMounted(fetchClubs);
                                 <th class="p-2 text-left">Distrito</th>
                                 <th class="p-2 text-left">Tipo</th>
                                 <th class="p-2 text-left">Sistema</th>
+                                <th class="p-2 text-left">Inscripción</th>
                                 <th class="p-2 text-left">Creado</th>
                                 <th class="p-2 text-left">Acciones</th>
                             </tr>
@@ -1151,6 +1169,7 @@ onMounted(fetchClubs);
                                 <td class="p-2">{{ club.district_name || '—' }}</td>
                                 <td class="p-2 capitalize">{{ club.club_type }}</td>
                                 <td class="p-2 capitalize">{{ club.evaluation_system || 'honors' }}</td>
+                                <td class="p-2">{{ club.enrollment_payment_amount || '0.00' }}</td>
                                 <td class="p-2">{{ club.creation_date }}</td>
                                 <td class="p-2 space-x-2">
                                     <button @click="editClub(club)" class="text-blue-600 hover:underline">Editar</button>

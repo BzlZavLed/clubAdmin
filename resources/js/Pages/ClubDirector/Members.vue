@@ -18,6 +18,7 @@ import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import { formatDate } from '@/Helpers/general'
 import {
+    fetchClubsByUserId,
     fetchMembersByClub,
     fetchClubClasses,
     assignMemberToClass,
@@ -67,7 +68,8 @@ const inactiveTabClass = 'text-gray-500 hover:text-gray-700 pb-2'
 // Fetch clubs
 const fetchClubs = async () => {
     try {
-        clubs.value = Array.isArray(user.value?.clubs) ? user.value.clubs : []
+        const loadedClubs = await fetchClubsByUserId(user.value.id)
+        clubs.value = Array.isArray(loadedClubs) ? loadedClubs : []
 
         if (!clubs.value.length) {
             selectedClub.value = null
@@ -320,6 +322,12 @@ const progressColumnLabel = computed(() =>
     selectedClub.value?.club_type === 'pathfinders' ? 'Clase actual' : 'Ultima completada'
 )
 
+const paymentBadgeClass = (paid) => (
+    paid
+        ? 'inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700'
+        : 'inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700'
+)
+
 const normalizedMemberSearch = computed(() => memberSearch.value.trim().toLowerCase())
 
 const filteredMembers = computed(() => {
@@ -498,6 +506,8 @@ watch(filteredMembers, () => {
                             <th class="p-2 text-left">Nombre</th>
                             <th class="p-2 text-left">Direccion</th>
                             <th class="p-2 text-left">{{ progressColumnLabel }}</th>
+                            <th class="p-2 text-left">Inscripción</th>
+                            <th class="p-2 text-left">Seguro</th>
                             <th class="p-2 text-left">Celular del padre</th>
                             <th class="p-2 text-left">Acciones</th>
                         </tr>
@@ -514,6 +524,17 @@ watch(filteredMembers, () => {
                                 <td class="p-2 font-semibold">{{ member.applicant_name }}</td>
                                 <td class="p-2">{{ member.home_address }}</td>
                                 <td class="p-2">{{ lastCompletedDisplay(member) }}</td>
+                                <td class="p-2">
+                                    <span :class="paymentBadgeClass(member.enrollment_paid)">
+                                        {{ member.enrollment_paid ? 'Pagada' : 'Pendiente' }}
+                                    </span>
+                                </td>
+                                <td class="p-2">
+                                    <span v-if="selectedClub?.evaluation_system === 'carpetas'" :class="paymentBadgeClass(member.insurance_paid)">
+                                        {{ member.insurance_paid ? 'Pagado' : 'Pendiente' }}
+                                    </span>
+                                    <span v-else class="text-xs text-gray-400">N/A</span>
+                                </td>
                                 <td class="p-2">{{ member.parent_cell }}</td>
                                 <td class="p-2">
                                     <button class="text-green-600 hover:underline" @click="toggleExpanded(member.id)">
@@ -548,7 +569,7 @@ watch(filteredMembers, () => {
 
                             <!-- Expandable Child Row -->
                             <tr v-if="expandedRows.has(member.id)" class="bg-gray-50 border-t">
-                                <td colspan="6" class="p-4">
+                                <td colspan="8" class="p-4">
                                     <div v-if="member.member_type === 'temp_pathfinder'" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
                                         <div><strong>Fecha de nacimiento:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
                                         <div><strong>Edad:</strong> {{ member.age ?? '—' }}</div>
@@ -570,6 +591,8 @@ watch(filteredMembers, () => {
                                         <div><strong>Telefono del medico:</strong> {{ member.physician_phone || '—' }}</div>
                                         <div><strong>Seguro medico:</strong> {{ member.insurance_provider || '—' }}</div>
                                         <div><strong>Numero de poliza:</strong> {{ member.insurance_number || '—' }}</div>
+                                        <div><strong>Inscripción:</strong> {{ member.enrollment_paid ? 'Pagada' : 'Pendiente' }}</div>
+                                        <div><strong>Seguro:</strong> {{ member.insurance_paid ? 'Pagado' : 'Pendiente' }}</div>
                                         <div class="md:col-span-2">
                                             <strong>Tarjeta de seguro:</strong>
                                             <span v-if="member.insurance_card_url">
@@ -598,6 +621,8 @@ watch(filteredMembers, () => {
                                         <div><strong>Direccion postal:</strong> {{ member.mailing_address }}</div>
                                         <div><strong>Numero celular:</strong> {{ member.cell_number }}</div>
                                         <div><strong>Contacto de emergencia:</strong> {{ member.emergency_contact }}</div>
+                                        <div><strong>Inscripción:</strong> {{ member.enrollment_paid ? 'Pagada' : 'Pendiente' }}</div>
+                                        <div><strong>Seguro:</strong> {{ member.insurance_paid ? 'Pagado' : 'Pendiente' }}</div>
                                         <div><strong>Alergias:</strong> {{ member.allergies }}</div>
                                         <div><strong>Restricciones fisicas:</strong> {{ member.physical_restrictions }}
                                         </div>
@@ -610,7 +635,7 @@ watch(filteredMembers, () => {
                             </tr>
                         </template>
                         <tr v-if="paginatedMembers.length === 0">
-                            <td colspan="6" class="p-4 text-center text-gray-500">
+                            <td colspan="8" class="p-4 text-center text-gray-500">
                                 No se encontraron miembros con ese criterio.
                             </td>
                         </tr>

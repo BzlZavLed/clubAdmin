@@ -6,6 +6,10 @@ use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
 use App\Models\MemberPathfinderInsuranceCard;
 use App\Models\Club;
+use App\Models\Account;
+use App\Models\Payment;
+use App\Models\PaymentConcept;
+use App\Models\User;
 use Illuminate\Http\Request;
 use PhpOffice\PhpWord\TemplateProcessor;
 use Illuminate\Support\Str;
@@ -24,15 +28,31 @@ use DB;
 use Auth;
 class MemberAdventurerController extends Controller
 {
+    protected function resolveClubDirectorName(Club $club): ?string
+    {
+        if (!empty($club->director_name)) {
+            return $club->director_name;
+        }
+
+        if (!empty($club->user_id)) {
+            return User::query()->where('id', $club->user_id)->value('name');
+        }
+
+        return null;
+    }
+
     public function store(Request $request)
     {
         $request->validate([
             'club_id' => 'required|exists:clubs,id',
+            'mark_insurance_paid' => 'nullable|boolean',
+            'mark_enrollment_paid' => 'nullable|boolean',
         ]);
 
         $club = Club::findOrFail($request->input('club_id'));
         $clubType = strtolower($club->club_type ?? '');
         $parentId = auth()->user()?->profile_type === 'parent' ? auth()->id() : null;
+        $directorName = $this->resolveClubDirectorName($club);
 
         if ($clubType === 'pathfinders') {
             $validated = $request->validate([
@@ -72,12 +92,14 @@ class MemberAdventurerController extends Controller
                 'insurance_number' => 'nullable|string|max:255',
                 'parent_guardian_signature' => 'nullable|string|max:255',
                 'signed_at' => 'nullable|date',
+                'mark_insurance_paid' => 'nullable|boolean',
+                'mark_enrollment_paid' => 'nullable|boolean',
             ]);
 
             $validated['club_id'] = $club->id;
-            $validated['club_name'] = $club->club_name ?? null;
-            $validated['director_name'] = $club->director_name ?? null;
-            $validated['church_name'] = $club->church_name ?? null;
+            $validated['club_name'] = $club->club_name;
+            $validated['director_name'] = $directorName;
+            $validated['church_name'] = $club->church_name;
             $validated['status'] = 'active';
 
             $tempMember = MemberPathfinder::create($validated);
@@ -93,11 +115,19 @@ class MemberAdventurerController extends Controller
             ]);
 
             $tempMember->update(['member_id' => $member->id]);
+
+            if ($request->boolean('mark_insurance_paid')) {
+                $this->handleInsurancePayment($club, $tempMember, $member);
+            }
+
+            if ($request->boolean('mark_enrollment_paid')) {
+                $this->handleEnrollmentPayment($club, $tempMember, $member);
+            }
         } else {
             $validated = $request->validate([
-                'club_name' => 'required|string|max:255',
-                'director_name' => 'required|string|max:255',
-                'church_name' => 'required|string|max:255',
+                'club_name' => 'nullable|string|max:255',
+                'director_name' => 'nullable|string|max:255',
+                'church_name' => 'nullable|string|max:255',
 
                 'applicant_name' => 'required|string|max:255',
                 'birthdate' => 'required|date',
@@ -118,17 +148,19 @@ class MemberAdventurerController extends Controller
                 'home_address' => 'required|string',
                 'email_address' => 'required|email',
                 'signature' => 'required|string|max:255',
+                'mark_insurance_paid' => 'nullable|boolean',
+                'mark_enrollment_paid' => 'nullable|boolean',
             ]);
 
             $validated['status'] = 'active';
             $validated['club_id'] = $club->id;
-            $validated['club_name'] = $club->club_name ?? $validated['club_name'];
-            $validated['director_name'] = $club->director_name ?? $validated['director_name'];
-            $validated['church_name'] = $club->church_name ?? $validated['church_name'];
+            $validated['club_name'] = $club->club_name;
+            $validated['director_name'] = $directorName;
+            $validated['church_name'] = $club->church_name;
 
             $member = MemberAdventurer::create($validated);
 
-            Member::firstOrCreate(
+            $memberRecord = Member::firstOrCreate(
                 [
                     'type' => 'adventurers',
                     'id_data' => $member->id,
@@ -141,6 +173,14 @@ class MemberAdventurerController extends Controller
                     'status' => 'active',
                 ]
             );
+
+            if ($request->boolean('mark_insurance_paid')) {
+                $this->handleInsurancePayment($club, $member, $memberRecord);
+            }
+
+            if ($request->boolean('mark_enrollment_paid')) {
+                $this->handleEnrollmentPayment($club, $member, $memberRecord);
+            }
         }
 
         if (auth()->user()?->profile_type === 'parent') {
@@ -148,6 +188,119 @@ class MemberAdventurerController extends Controller
         }
 
         return redirect()->back()->with('success', 'Member registered successfully.');
+    }
+
+    protected function handleInsurancePayment(Club $club, $memberDetail, Member $memberRecord): void
+    {
+        if (($club->evaluation_system ?? 'honors') !== 'carpetas') {
+            return;
+        }
+
+        $club->loadMissing('district.association');
+        $association = $club->district?->association;
+        $insuranceAmount = $association?->insurance_payment_amount;
+
+        if (!$insuranceAmount || (float) $insuranceAmount <= 0) {
+            return;
+        }
+
+        $memberDetail->update([
+            'insurance_paid' => true,
+            'insurance_paid_at' => now(),
+        ]);
+
+        $concept = PaymentConcept::firstOrCreate(
+            [
+                'club_id' => $club->id,
+                'concept' => 'Seguro de membresía',
+                'pay_to' => 'church_budget',
+            ],
+            [
+                'type' => 'mandatory',
+                'status' => 'active',
+                'created_by' => auth()->id(),
+            ]
+        );
+
+        $account = Account::firstOrCreate(
+            ['club_id' => $club->id, 'pay_to' => 'church_budget'],
+            ['label' => 'Church Budget', 'balance' => 0]
+        );
+
+        $account->increment('balance', (float) $insuranceAmount);
+
+        Payment::create([
+            'club_id'             => $club->id,
+            'payment_concept_id'  => $concept->id,
+            'concept_text'        => 'Seguro de membresía — ' . ($memberDetail->applicant_name ?? ''),
+            'pay_to'              => 'church_budget',
+            'account_id'          => $account->id,
+            'member_id'           => $memberRecord->id,
+            'amount_paid'         => (float) $insuranceAmount,
+            'expected_amount'     => (float) $insuranceAmount,
+            'payment_date'        => now()->toDateString(),
+            'payment_type'        => 'insurance',
+            'balance_due_after'   => 0,
+            'received_by_user_id' => auth()->id(),
+        ]);
+    }
+
+    protected function handleEnrollmentPayment(Club $club, $memberDetail, Member $memberRecord): void
+    {
+        $enrollmentAmount = (float) ($club->enrollment_payment_amount ?? 0);
+
+        if ($enrollmentAmount <= 0) {
+            return;
+        }
+
+        $memberDetail->update([
+            'enrollment_paid' => true,
+            'enrollment_paid_at' => now(),
+        ]);
+
+        $concept = PaymentConcept::firstOrCreate(
+            [
+                'club_id' => $club->id,
+                'concept' => 'Cuota de inscripción',
+                'pay_to' => 'club_budget',
+            ],
+            [
+                'type' => 'mandatory',
+                'status' => 'active',
+                'created_by' => auth()->id(),
+                'amount' => $enrollmentAmount,
+                'reusable' => true,
+            ]
+        );
+
+        $concept->update([
+            'amount' => $enrollmentAmount,
+            'status' => 'active',
+            'type' => 'mandatory',
+            'reusable' => true,
+        ]);
+
+        $account = Account::firstOrCreate(
+            ['club_id' => $club->id, 'pay_to' => 'club_budget'],
+            ['label' => 'Club Budget', 'balance' => 0]
+        );
+
+        $account->increment('balance', $enrollmentAmount);
+
+        Payment::create([
+            'club_id' => $club->id,
+            'payment_concept_id' => $concept->id,
+            'concept_text' => 'Cuota de inscripción — ' . ($memberDetail->applicant_name ?? ''),
+            'pay_to' => 'club_budget',
+            'account_id' => $account->id,
+            'member_id' => $memberRecord->id,
+            'amount_paid' => $enrollmentAmount,
+            'expected_amount' => $enrollmentAmount,
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'enrollment',
+            'balance_due_after' => 0,
+            'received_by_user_id' => auth()->id(),
+        ]);
     }
 
     public function destroy(Request $request, $id)
@@ -165,6 +318,8 @@ class MemberAdventurerController extends Controller
     {
         $validatedClub = $request->validate([
             'club_id' => 'required|exists:clubs,id',
+            'mark_insurance_paid' => 'nullable|boolean',
+            'mark_enrollment_paid' => 'nullable|boolean',
         ]);
 
         $club = Club::findOrFail($validatedClub['club_id']);
@@ -174,6 +329,7 @@ class MemberAdventurerController extends Controller
         }
 
         $clubType = strtolower($club->club_type ?? '');
+        $directorName = $this->resolveClubDirectorName($club);
 
         if ($clubType === 'pathfinders') {
             $validated = $request->validate([
@@ -213,14 +369,34 @@ class MemberAdventurerController extends Controller
                 'insurance_number' => 'nullable|string|max:255',
                 'parent_guardian_signature' => 'nullable|string|max:255',
                 'signed_at' => 'nullable|date',
+                'mark_insurance_paid' => 'nullable|boolean',
+                'mark_enrollment_paid' => 'nullable|boolean',
             ]);
 
             $validated['club_name'] = $club->club_name ?? null;
-            $validated['director_name'] = $club->director_name ?? null;
+            $validated['director_name'] = $directorName;
             $validated['church_name'] = $club->church_name ?? null;
 
             $member = MemberPathfinder::findOrFail($id);
+            $wasInsurancePaid = (bool) $member->insurance_paid;
+            $wasEnrollmentPaid = (bool) $member->enrollment_paid;
             $member->update($validated);
+
+            $memberRecord = Member::query()
+                ->whereIn('type', ['pathfinders', 'temp_pathfinder'])
+                ->where('id_data', $member->id)
+                ->where('club_id', $club->id)
+                ->first();
+
+            if ($memberRecord) {
+                if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
+                    $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
+                }
+
+                if ($request->boolean('mark_enrollment_paid') && !$wasEnrollmentPaid) {
+                    $this->handleEnrollmentPayment($club, $member->fresh(), $memberRecord);
+                }
+            }
 
             return redirect()->back()->with('success', 'Pathfinder member updated successfully.');
         }
@@ -245,15 +421,35 @@ class MemberAdventurerController extends Controller
             'home_address' => 'required|string',
             'email_address' => 'required|email',
             'signature' => 'required|string|max:255',
+            'mark_insurance_paid' => 'nullable|boolean',
+            'mark_enrollment_paid' => 'nullable|boolean',
         ]);
 
         $validated['club_id'] = $club->id;
         $validated['club_name'] = $club->club_name ?? $validated['club_name'];
-        $validated['director_name'] = $club->director_name ?? $validated['director_name'];
+        $validated['director_name'] = $directorName ?? $validated['director_name'];
         $validated['church_name'] = $club->church_name ?? $validated['church_name'];
 
         $member = MemberAdventurer::findOrFail($id);
+        $wasInsurancePaid = (bool) $member->insurance_paid;
+        $wasEnrollmentPaid = (bool) $member->enrollment_paid;
         $member->update($validated);
+
+        $memberRecord = Member::query()
+            ->where('type', 'adventurers')
+            ->where('id_data', $member->id)
+            ->where('club_id', $club->id)
+            ->first();
+
+        if ($memberRecord) {
+            if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
+                $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
+            }
+
+            if ($request->boolean('mark_enrollment_paid') && !$wasEnrollmentPaid) {
+                $this->handleEnrollmentPayment($club, $member->fresh(), $memberRecord);
+            }
+        }
 
         return redirect()->back()->with('success', 'Adventurer member updated successfully.');
     }
@@ -735,6 +931,10 @@ class MemberAdventurerController extends Controller
                     'emergency_contact_phone' => $row->emergency_contact_phone,
                     'insurance_provider' => $row->insurance_provider,
                     'insurance_number' => $row->insurance_number,
+                    'insurance_paid' => (bool) $row->insurance_paid,
+                    'insurance_paid_at' => $row->insurance_paid_at,
+                    'enrollment_paid' => (bool) $row->enrollment_paid,
+                    'enrollment_paid_at' => $row->enrollment_paid_at,
                     'insurance_card_url' => $row->insuranceCard?->url,
                     'signed_at' => $row->signed_at,
                     'class_assignments' => $assignments,
