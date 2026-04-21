@@ -8,25 +8,53 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('members_adventurers', function (Blueprint $table) {
-            $table->boolean('insurance_paid')->default(false)->after('status');
-            $table->timestamp('insurance_paid_at')->nullable()->after('insurance_paid');
-        });
+        if (!Schema::hasColumn('members_adventurers', 'insurance_paid')) {
+            Schema::table('members_adventurers', function (Blueprint $table) {
+                $table->boolean('insurance_paid')->default(false);
+            });
+        }
 
-        Schema::table('members_pathfinders', function (Blueprint $table) {
-            $table->boolean('insurance_paid')->default(false)->after('status');
-            $table->timestamp('insurance_paid_at')->nullable()->after('insurance_paid');
-        });
+        if (!Schema::hasColumn('members_adventurers', 'insurance_paid_at')) {
+            Schema::table('members_adventurers', function (Blueprint $table) {
+                $table->timestamp('insurance_paid_at')->nullable();
+            });
+        }
+
+        if (!Schema::hasColumn('members_pathfinders', 'insurance_paid')) {
+            Schema::table('members_pathfinders', function (Blueprint $table) {
+                $table->boolean('insurance_paid')->default(false);
+            });
+        }
+
+        if (!Schema::hasColumn('members_pathfinders', 'insurance_paid_at')) {
+            Schema::table('members_pathfinders', function (Blueprint $table) {
+                $table->timestamp('insurance_paid_at')->nullable();
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('members_adventurers', function (Blueprint $table) {
-            $table->dropColumn(['insurance_paid', 'insurance_paid_at']);
-        });
+        $adventurerColumns = collect(['insurance_paid', 'insurance_paid_at'])
+            ->filter(fn ($column) => Schema::hasColumn('members_adventurers', $column))
+            ->values()
+            ->all();
 
-        Schema::table('members_pathfinders', function (Blueprint $table) {
-            $table->dropColumn(['insurance_paid', 'insurance_paid_at']);
-        });
+        if (!empty($adventurerColumns)) {
+            Schema::table('members_adventurers', function (Blueprint $table) use ($adventurerColumns) {
+                $table->dropColumn($adventurerColumns);
+            });
+        }
+
+        $pathfinderColumns = collect(['insurance_paid', 'insurance_paid_at'])
+            ->filter(fn ($column) => Schema::hasColumn('members_pathfinders', $column))
+            ->values()
+            ->all();
+
+        if (!empty($pathfinderColumns)) {
+            Schema::table('members_pathfinders', function (Blueprint $table) use ($pathfinderColumns) {
+                $table->dropColumn($pathfinderColumns);
+            });
+        }
     }
 };
