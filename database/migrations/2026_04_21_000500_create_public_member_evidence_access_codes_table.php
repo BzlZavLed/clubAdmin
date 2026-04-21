@@ -29,10 +29,12 @@ return new class extends Migration
 
         Schema::table('parent_carpeta_requirement_evidences', function (Blueprint $table) {
             if (!Schema::hasColumn('parent_carpeta_requirement_evidences', 'submitted_by_member_id')) {
-                $table->foreignId('submitted_by_member_id')
+                $table->unsignedBigInteger('submitted_by_member_id')
                     ->nullable()
-                    ->after('submitted_by_user_id')
-                    ->constrained('members')
+                    ->after('submitted_by_user_id');
+                $table->foreign('submitted_by_member_id', 'pcre_submitted_by_member_fk')
+                    ->references('id')
+                    ->on('members')
                     ->nullOnDelete();
             }
 
@@ -72,7 +74,8 @@ return new class extends Migration
                 $table->dropConstrainedForeignId('access_code_id');
             }
             if (Schema::hasColumn('parent_carpeta_requirement_evidences', 'submitted_by_member_id')) {
-                $table->dropConstrainedForeignId('submitted_by_member_id');
+                $table->dropForeign('pcre_submitted_by_member_fk');
+                $table->dropColumn('submitted_by_member_id');
             }
             if (Schema::hasColumn('parent_carpeta_requirement_evidences', 'submitted_via')) {
                 $table->dropColumn('submitted_via');
