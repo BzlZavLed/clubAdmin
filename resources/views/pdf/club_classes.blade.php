@@ -6,6 +6,10 @@
     <style>
         body { font-family: Arial, sans-serif; font-size: 11px; margin: 24px; color: #111; }
         h1 { font-size: 18px; margin-bottom: 6px; }
+        .document-header { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+        .document-header td { vertical-align: middle; }
+        .logo-cell { width: 62px; }
+        .club-logo { width: 50px; height: 50px; object-fit: contain; border: 1px solid #ddd; border-radius: 7px; padding: 3px; }
         .meta { margin-bottom: 12px; color: #444; }
         .meta div { margin-bottom: 2px; }
         .class-page { page-break-before: always; }
@@ -22,7 +26,14 @@
     </style>
 </head>
 <body>
-    <h1>{{ $title }}</h1>
+    <table class="document-header">
+        <tr>
+            @if(!empty($clubLogoDataUri))
+                <td class="logo-cell"><img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club"></td>
+            @endif
+            <td><h1>{{ $title }}</h1></td>
+        </tr>
+    </table>
     <div class="meta">
         <div><strong>Generado:</strong> {{ $generatedAt }}</div>
         <div><strong>Club:</strong> {{ $clubName ?: '—' }}</div>

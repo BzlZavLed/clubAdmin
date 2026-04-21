@@ -4,7 +4,8 @@ import { useLocale } from '@/Composables/useLocale'
 import {
     HomeIcon,
     UserGroupIcon,
-    ClipboardDocumentListIcon
+    ClipboardDocumentListIcon,
+    FolderOpenIcon,
 } from '@heroicons/vue/24/outline'
 
 defineProps({
@@ -17,6 +18,7 @@ const menuItems = [
     { name: tr('Panel', 'Dashboard'), href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
     { name: tr('Solicitud', 'Application'), href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
     { name: tr('Hijos', 'Children'), href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
+    { name: tr('Carpeta de investidura', 'Investiture folder'), href: '/parent/carpeta-investidura', route: 'parent.carpeta-investidura', icon: FolderOpenIcon },
 ]
 </script>
 

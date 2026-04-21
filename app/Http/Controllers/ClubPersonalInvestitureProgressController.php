@@ -11,6 +11,7 @@ use App\Models\RepAssistanceAdv;
 use App\Models\RepAssistanceAdvMerit;
 use App\Models\Staff;
 use App\Models\UnionCarpetaYear;
+use App\Services\ClubLogoService;
 use App\Support\ClubHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -167,13 +168,16 @@ class ClubPersonalInvestitureProgressController extends Controller
             ->first();
     }
 
-    public function pdf(Request $request)
+    public function pdf(Request $request, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         $data = $this->buildProgressData($user);
         if (!$data) {
             abort(422, 'No class assigned to current staff.');
         }
+        $logoClub = !empty($data['club']['id'])
+            ? Club::withoutGlobalScopes()->find((int) $data['club']['id'])
+            : null;
 
         $pdf = Pdf::loadView('pdf.investiture_requirements_progress', [
             'generatedAt' => now()->toDateTimeString(),
@@ -182,6 +186,7 @@ class ClubPersonalInvestitureProgressController extends Controller
             'assignedClass' => $data['assigned_class'],
             'membersCount' => count($data['members']),
             'requirements' => $data['requirements'],
+            'clubLogoDataUri' => $clubLogoService->dataUri($logoClub),
         ]);
 
         $classId = (int) ($data['assigned_class']['id'] ?? 0);

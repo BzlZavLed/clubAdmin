@@ -4,17 +4,58 @@
     <meta charset="utf-8">
     <title>Account Balances</title>
     <style>
+        @page { size: A4 landscape; margin: 10mm 10mm 25mm; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 12px; color: #111; }
         h1,h2 { margin: 0 0 6px 0; }
         table { width: 100%; border-collapse: collapse; margin-top: 8px; }
         th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
         th { background: #f5f5f5; }
+        .document-header { width: 100%; border-collapse: collapse; margin: 0 0 12px; border-bottom: 1px solid #d1d5db; }
+        .document-header td { border: 0; padding: 0 0 8px; vertical-align: middle; }
+        .logo-cell { width: 18mm; padding-right: 8px !important; }
+        .club-logo { width: 15mm; height: 15mm; object-fit: contain; border: 1px solid #d1d5db; border-radius: 6px; padding: 2px; }
+        .generated-copy { margin: 0; color: #4b5563; }
         .section { margin-bottom: 18px; }
+        .validation-footer { position: fixed; left: 0; right: 0; bottom: -19mm; height: 17mm; border-top: 1px solid #d1d5db; padding-top: 2mm; font-size: 8px; color: #4b5563; }
+        .validation-footer table { width: 100%; border-collapse: collapse; margin: 0; }
+        .validation-footer td { border: 0; padding: 0; vertical-align: top; }
+        .qr { width: 14mm; height: 14mm; }
+        .break-all { word-break: break-all; }
     </style>
 </head>
 <body>
-    <h1>Account Balances</h1>
-    <p>{{ $club->club_name ?? 'Club' }}</p>
+    @if(!empty($qrCodeDataUri) && !empty($validationUrl))
+        <div class="validation-footer">
+            <table>
+                <tr>
+                    <td style="width: 17mm;">
+                        <img class="qr" src="{{ $qrCodeDataUri }}" alt="QR de validación">
+                    </td>
+                    <td>
+                        <div><strong>Validación digital:</strong> escanee el QR para confirmar este reporte contra el sistema.</div>
+                        <div class="break-all"><strong>URL:</strong> {{ $validationUrl }}</div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    @endif
+
+    <table class="document-header">
+        <tr>
+            @if(!empty($clubLogoDataUri))
+                <td class="logo-cell">
+                    <img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club">
+                </td>
+            @endif
+            <td>
+                <h1>Account Balances</h1>
+                <p class="generated-copy">{{ $club->club_name ?? 'Club' }}</p>
+                @if(!empty($generatedAt))
+                    <p class="generated-copy">Generated: {{ $generatedAt->format('Y-m-d H:i') }}</p>
+                @endif
+            </td>
+        </tr>
+    </table>
 
     <div class="section">
         <h2>Accounts</h2>

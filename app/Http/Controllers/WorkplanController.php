@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use App\Support\ClubHelper;
+use App\Services\ClubLogoService;
 
 class WorkplanController extends Controller
 {
@@ -336,7 +337,7 @@ class WorkplanController extends Controller
             ->all();
     }
 
-    public function pdf(Request $request)
+    public function pdf(Request $request, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         $clubIds = $user->profile_type === 'parent'
@@ -424,13 +425,14 @@ class WorkplanController extends Controller
             'eventsByDate' => $eventsByDate,
             'start' => $start,
             'end' => $end,
+            'clubLogoDataUri' => $clubLogoService->dataUri($workplan->club),
         ])->setPaper('a4', 'portrait');
 
         $filename = 'workplan-' . ($workplan->club->club_name ?? 'club') . '.pdf';
         return $pdf->download($filename);
     }
 
-    public function tablePdf(Request $request)
+    public function tablePdf(Request $request, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))->orderBy('club_name')->get(['id', 'club_name']);
@@ -475,6 +477,7 @@ class WorkplanController extends Controller
             'departments' => $departments,
             'objectives' => $objectives,
             'localObjectives' => $localObjectives,
+            'clubLogoDataUri' => $clubLogoService->dataUri($workplan->club),
         ])->setPaper('a4', 'landscape');
 
         $filename = 'workplan-table-' . ($workplan->club->club_name ?? 'club') . '.pdf';
@@ -737,7 +740,7 @@ class WorkplanController extends Controller
         ]);
     }
 
-    public function classPlansPdf(Request $request)
+    public function classPlansPdf(Request $request, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         $clubIds = $user->profile_type === 'parent'
@@ -817,6 +820,7 @@ class WorkplanController extends Controller
             'plans' => $plans,
             'class_name' => $className,
             'staff_names' => $staffNames,
+            'clubLogoDataUri' => $clubLogoService->dataUri($workplan->club),
         ])->setPaper('a4', 'portrait');
 
         $filename = 'class-plans-' . ($className ?: 'all') . '.pdf';

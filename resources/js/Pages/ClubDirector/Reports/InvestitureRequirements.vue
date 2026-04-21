@@ -11,6 +11,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    report_type: {
+        type: String,
+        default: 'honors',
+    },
 })
 
 const itemLabelPlural = computed(() =>
@@ -21,16 +25,25 @@ const itemLabelSingular = computed(() =>
     props.club?.club_type === 'adventurers' ? 'Honor' : 'Requisito'
 )
 const showPendingMembers = ref(false)
+const expandedMemberKey = ref(null)
+
+const isCarpetas = computed(() => props.report_type === 'carpetas' || props.club?.evaluation_system === 'carpetas')
 
 const totalRequirements = computed(() =>
     props.classes.reduce((sum, clubClass) => sum + (clubClass.requirements_count || 0), 0)
 )
 
 const totalCompletions = computed(() =>
-    props.classes.reduce(
-        (sum, clubClass) => sum + (clubClass.requirements || []).reduce((inner, requirement) => inner + (requirement.completed_count || 0), 0),
-        0
-    )
+    isCarpetas.value
+        ? props.classes.reduce((sum, clubClass) => sum + (clubClass.members || []).reduce((inner, member) => inner + (member.completed_count || 0), 0), 0)
+        : props.classes.reduce(
+            (sum, clubClass) => sum + (clubClass.requirements || []).reduce((inner, requirement) => inner + (requirement.completed_count || 0), 0),
+            0
+        )
+)
+
+const totalMembers = computed(() =>
+    props.classes.reduce((sum, clubClass) => sum + (clubClass.members_count || 0), 0)
 )
 
 const formatDate = (value) => {
@@ -43,6 +56,27 @@ const getPendingMembers = (clubClass, requirement) => {
     const completedIds = new Set((requirement?.completions || []).map((entry) => Number(entry.member_id)))
     return (clubClass?.members || []).filter((member) => !completedIds.has(Number(member.id)))
 }
+
+const memberKey = (clubClass, member) => `${clubClass.id}-${member.member_id}`
+
+const toggleMember = (clubClass, member) => {
+    const key = memberKey(clubClass, member)
+    expandedMemberKey.value = expandedMemberKey.value === key ? null : key
+}
+
+const evidenceLabel = (requirement) => {
+    const type = requirement?.evidence?.evidence_type
+    if (!type) return 'Sin evidencia'
+    const labels = {
+        photo: 'Foto',
+        file: 'Archivo',
+        text: 'Texto',
+        video_link: 'Video',
+        external_link: 'Enlace',
+        physical_only: 'Fisico',
+    }
+    return labels[type] || type
+}
 </script>
 
 <template>
@@ -50,7 +84,7 @@ const getPendingMembers = (clubClass, requirement) => {
         <div class="px-4 sm:px-6 lg:px-8 py-6 space-y-6">
             <div class="flex flex-col gap-2">
                 <h1 class="text-xl font-semibold text-gray-900">
-                    {{ itemLabelPlural }} por clase
+                    {{ isCarpetas ? 'Carpetas por clase' : `${itemLabelPlural} por clase` }}
                 </h1>
                 <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <p class="text-sm text-gray-600">
@@ -62,6 +96,7 @@ const getPendingMembers = (clubClass, requirement) => {
                             Mostrar miembros pendientes
                         </label>
                         <a
+                            v-if="!isCarpetas"
                             :href="route('club.reports.investiture-requirements.pdf', { club_id: club?.id, show_pending: showPendingMembers ? 1 : 0 })"
                             class="inline-flex items-center justify-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900"
                         >
@@ -77,11 +112,11 @@ const getPendingMembers = (clubClass, requirement) => {
                     <div class="mt-2 text-2xl font-semibold text-gray-900">{{ classes.length }}</div>
                 </div>
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ itemLabelPlural }}</div>
-                    <div class="mt-2 text-2xl font-semibold text-gray-900">{{ totalRequirements }}</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isCarpetas ? 'Miembros asignados' : itemLabelPlural }}</div>
+                    <div class="mt-2 text-2xl font-semibold text-gray-900">{{ isCarpetas ? totalMembers : totalRequirements }}</div>
                 </div>
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Cumplimientos registrados</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isCarpetas ? 'Evidencias completadas' : 'Cumplimientos registrados' }}</div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">{{ totalCompletions }}</div>
                 </div>
             </section>
@@ -90,7 +125,151 @@ const getPendingMembers = (clubClass, requirement) => {
                 No hay clases configuradas para el club activo.
             </section>
 
-            <section v-for="clubClass in classes" :key="clubClass.id" class="rounded-lg border bg-white shadow-sm">
+            <section v-if="isCarpetas" v-for="clubClass in classes" :key="`carpetas-${clubClass.id}`" class="rounded-lg border bg-white shadow-sm">
+                <div class="border-b px-5 py-4">
+                    <div class="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">
+                                {{ clubClass.class_order ? `${clubClass.class_order}. ` : '' }}{{ clubClass.class_name }}
+                            </h2>
+                            <p class="text-sm text-gray-600">
+                                {{ clubClass.members_count }} miembro(s) asignados, {{ clubClass.requirements_count }} requisitos definidos por la union
+                            </p>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            {{ clubClass.completed_requirements_count }} evidencia(s) registradas
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="!clubClass.members.length" class="px-5 py-4 text-sm text-gray-500">
+                    No hay miembros asignados a esta clase.
+                </div>
+
+                <div v-else class="divide-y">
+                    <article v-for="member in clubClass.members" :key="member.member_id" class="px-5 py-4">
+                        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <button
+                                type="button"
+                                class="min-w-0 text-left"
+                                @click="toggleMember(clubClass, member)"
+                            >
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h3 class="text-sm font-semibold text-gray-900">{{ member.name }}</h3>
+                                    <span
+                                        class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                        :class="member.all_completed ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'"
+                                    >
+                                        {{ member.completed_count }} / {{ member.requirements_count }}
+                                    </span>
+                                </div>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    Grado: {{ member.grade || '—' }} · Asignado: {{ formatDate(member.assigned_at) }}
+                                </p>
+                            </button>
+
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <button
+                                    type="button"
+                                    class="rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                    @click="toggleMember(clubClass, member)"
+                                >
+                                    {{ expandedMemberKey === memberKey(clubClass, member) ? 'Ocultar estado' : 'Ver estado' }}
+                                </button>
+                                <a
+                                    v-if="member.has_evidence"
+                                    :href="member.print_url"
+                                    class="rounded bg-gray-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-gray-900"
+                                >
+                                    Imprimir carpeta
+                                </a>
+                                <span v-else class="rounded border border-gray-200 px-3 py-2 text-center text-sm text-gray-500">
+                                    Sin evidencia para imprimir
+                                </span>
+                            </div>
+                        </div>
+
+                        <div v-if="expandedMemberKey === memberKey(clubClass, member)" class="mt-4 rounded-lg border bg-gray-50 p-4">
+                            <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <p class="text-sm font-semibold text-gray-900">Estado de carpeta</p>
+                                <p class="text-xs text-gray-500">{{ member.pending_count }} pendiente(s)</p>
+                            </div>
+
+                            <div v-if="!member.requirements.length" class="text-sm text-gray-500">
+                                Esta clase no tiene requisitos publicados para carpetas.
+                            </div>
+
+                            <div v-else class="space-y-3">
+                                <div
+                                    v-for="requirement in member.requirements"
+                                    :key="`${member.member_id}-${requirement.id}`"
+                                    class="rounded border bg-white p-3"
+                                >
+                                    <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                        <div>
+                                            <div class="text-sm font-semibold text-gray-900">
+                                                {{ requirement.sort_order ? `${requirement.sort_order}. ` : '' }}{{ requirement.title }}
+                                            </div>
+                                            <p v-if="requirement.description" class="mt-1 text-sm text-gray-600">
+                                                {{ requirement.description }}
+                                            </p>
+                                            <p class="mt-1 text-xs text-gray-500">
+                                                Tipo: {{ requirement.requirement_type || '—' }} · Validación: {{ requirement.validation_mode || 'electronic' }}
+                                            </p>
+                                        </div>
+                                        <span
+                                            class="inline-flex w-fit rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                            :class="requirement.completed ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'"
+                                        >
+                                            {{ requirement.completed ? 'Completado' : 'Pendiente' }}
+                                        </span>
+                                    </div>
+
+                                    <div v-if="requirement.evidence" class="mt-3 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
+                                        <div class="font-medium">{{ evidenceLabel(requirement) }}</div>
+                                        <div class="mt-1 text-xs text-blue-800">
+                                            Registrada: {{ requirement.evidence.submitted_at || '—' }}
+                                        </div>
+                                        <img
+                                            v-if="requirement.evidence.is_image && requirement.evidence.file_url"
+                                            :src="requirement.evidence.file_url"
+                                            alt="Evidencia"
+                                            class="mt-2 h-20 w-28 rounded border bg-white object-cover"
+                                        >
+                                        <a
+                                            v-else-if="requirement.evidence.file_url"
+                                            :href="requirement.evidence.file_url"
+                                            target="_blank"
+                                            class="mt-2 inline-flex text-blue-700 underline"
+                                        >
+                                            Ver archivo
+                                        </a>
+                                        <a
+                                            v-if="requirement.evidence.text_value && ['video_link', 'external_link'].includes(requirement.evidence.evidence_type)"
+                                            :href="requirement.evidence.text_value"
+                                            target="_blank"
+                                            class="mt-2 block break-all text-blue-700 underline"
+                                        >
+                                            {{ requirement.evidence.text_value }}
+                                        </a>
+                                        <p
+                                            v-else-if="requirement.evidence.text_value"
+                                            class="mt-2 whitespace-pre-wrap break-words text-blue-950"
+                                        >
+                                            {{ requirement.evidence.text_value }}
+                                        </p>
+                                        <p v-if="requirement.evidence.physical_completed" class="mt-2">
+                                            Requisito físico marcado como completado.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section v-else v-for="clubClass in classes" :key="clubClass.id" class="rounded-lg border bg-white shadow-sm">
                 <div class="border-b px-5 py-4">
                     <div class="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
                         <div>

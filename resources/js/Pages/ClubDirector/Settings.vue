@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
-import { fetchMyChurchAdminCatalog, saveMyChurchAdminConfig } from '@/Services/api'
+import { fetchMyChurchAdminCatalog, removeClubLogo, saveMyChurchAdminConfig, uploadClubLogo } from '@/Services/api'
 
 const props = defineProps({
     auth_user: Object,
@@ -17,6 +17,10 @@ const props = defineProps({
     },
     integration_config: {
         type: Object,
+        default: null
+    },
+    club_logo_url: {
+        type: String,
         default: null
     }
 })
@@ -42,6 +46,9 @@ const catalog = ref(
 )
 const catalogLoading = ref(false)
 const saving = ref(false)
+const logoUrl = ref(props.club_logo_url || null)
+const logoUploading = ref(false)
+const logoInput = ref(null)
 
 const hasClubSelected = computed(() => Boolean(selectedClubId.value))
 
@@ -49,6 +56,45 @@ watch(selectedClubId, (val) => {
     if (!val) return
     router.get(route('club.settings'), { club_id: val }, { replace: true })
 })
+
+watch(() => props.club_logo_url, (value) => {
+    logoUrl.value = value || null
+})
+
+async function handleLogoSelected(event) {
+    const file = event.target.files?.[0]
+    if (!file || !hasClubSelected.value) return
+
+    logoUploading.value = true
+    try {
+        const data = await uploadClubLogo({ clubId: selectedClubId.value, file })
+        logoUrl.value = data.logo_url
+        showToast('Logo del club actualizado')
+    } catch (error) {
+        console.error(error)
+        const message = error?.response?.data?.message || 'No se pudo subir el logo'
+        showToast(message, 'error')
+    } finally {
+        logoUploading.value = false
+        if (logoInput.value) logoInput.value.value = ''
+    }
+}
+
+async function deleteLogo() {
+    if (!hasClubSelected.value) return
+    logoUploading.value = true
+    try {
+        await removeClubLogo(selectedClubId.value)
+        logoUrl.value = null
+        showToast('Logo removido')
+    } catch (error) {
+        console.error(error)
+        const message = error?.response?.data?.message || 'No se pudo remover el logo'
+        showToast(message, 'error')
+    } finally {
+        logoUploading.value = false
+    }
+}
 
 async function fetchCatalog() {
     if (!hasClubSelected.value) return
@@ -118,6 +164,43 @@ async function saveConfig() {
         <template #title>Configuracion</template>
 
         <div class="space-y-6">
+            <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-800">Logo del club</h2>
+                        <p class="text-sm text-gray-600">Este logo se usará en recibos, reportes financieros y carpetas PDF del club.</p>
+                    </div>
+                    <div class="w-full sm:w-auto">
+                        <div v-if="logoUrl" class="flex items-center gap-3">
+                            <img :src="logoUrl" alt="Logo del club" class="h-20 w-20 rounded border object-contain bg-white p-2" />
+                            <button
+                                type="button"
+                                class="px-3 py-2 border border-red-200 text-red-700 rounded text-sm disabled:opacity-60"
+                                :disabled="logoUploading || !hasClubSelected"
+                                @click="deleteLogo"
+                            >
+                                Remover
+                            </button>
+                        </div>
+                        <div v-else class="h-20 w-20 rounded border border-dashed bg-gray-50 text-xs text-gray-500 flex items-center justify-center text-center p-2">
+                            Sin logo
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
+                    <input
+                        ref="logoInput"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        class="block w-full text-sm text-gray-700 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-blue-700"
+                        :disabled="logoUploading || !hasClubSelected"
+                        @change="handleLogoSelected"
+                    />
+                    <span class="text-xs text-gray-500">PNG, JPG o WEBP. Máximo 4MB.</span>
+                </div>
+            </div>
+
             <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>

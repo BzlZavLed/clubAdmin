@@ -109,7 +109,7 @@ class ClubPaymentController extends Controller
             ->orderByDesc('created_at')
             ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id', 'reusable']);
 
-        $recent = Payment::query()
+        $recentPayments = Payment::query()
             ->where('club_id', $club->id)
             ->whereNotNull('member_id')
             ->when(
@@ -128,7 +128,11 @@ class ClubPaymentController extends Controller
                 'receivedBy:id,name',
                 'receipt:id,payment_id,receipt_number,last_downloaded_at',
             ])
-            ->get()
+            ->get();
+
+        $this->syncMissingReceipts($recentPayments);
+
+        $recent = $recentPayments
             ->map(function ($p) {
                 $member = ClubHelper::memberDetail($p->member);
                 $staff = ClubHelper::staffDetail($p->staff);
@@ -268,7 +272,7 @@ class ClubPaymentController extends Controller
             ->orderBy('label')
             ->get(['id', 'club_id', 'pay_to', 'label', 'balance']);
 
-        $recent = Payment::query()
+        $recentPayments = Payment::query()
             ->whereIn('club_id', $clubIds)
             ->latest()
             ->take(50)
@@ -281,7 +285,11 @@ class ClubPaymentController extends Controller
                 'receivedBy:id,name',
                 'receipt:id,payment_id,receipt_number,last_downloaded_at',
             ])
-            ->get()
+            ->get();
+
+        $this->syncMissingReceipts($recentPayments);
+
+        $recent = $recentPayments
             ->map(function ($p) {
                 $member = ClubHelper::memberDetail($p->member);
                 $staff = ClubHelper::staffDetail($p->staff);
@@ -943,5 +951,15 @@ class ClubPaymentController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    protected function syncMissingReceipts(Collection $payments): void
+    {
+        $payments
+            ->filter(fn (Payment $payment) => !$payment->receipt && ($payment->member_id || $payment->staff_id))
+            ->each(function (Payment $payment) {
+                $receipt = $this->paymentReceiptService->syncForPayment($payment);
+                $payment->setRelation('receipt', $receipt);
+            });
     }
 }

@@ -4,19 +4,21 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\ClubIntegrationConfig;
+use App\Services\ClubLogoService;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Log;
 
 class ClubSettingsController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         $clubIds = ClubHelper::clubIdsForUser($user);
-        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'logo_path']);
         $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club settings.');
@@ -31,6 +33,52 @@ class ClubSettingsController extends Controller
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
             'integration_config' => $config,
+            'club_logo_url' => $clubLogoService->url($clubs->firstWhere('id', (int) $selectedClubId)),
+        ]);
+    }
+
+    public function uploadLogo(Request $request, ClubLogoService $clubLogoService)
+    {
+        $payload = $request->validate([
+            'club_id' => ['required', 'integer'],
+            'logo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+        ]);
+
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $oldPath = $club->logo_path;
+        $path = $request->file('logo')->store("club-logos/{$club->id}", 'public');
+
+        $club->forceFill(['logo_path' => $path])->save();
+
+        if ($oldPath && $oldPath !== $path) {
+            Storage::disk('public')->delete($oldPath);
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'logo_url' => $clubLogoService->url($club),
+            'club' => $club->only(['id', 'club_name', 'logo_path']),
+        ]);
+    }
+
+    public function removeLogo(Request $request)
+    {
+        $payload = $request->validate([
+            'club_id' => ['required', 'integer'],
+        ]);
+
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $oldPath = $club->logo_path;
+        $club->forceFill(['logo_path' => null])->save();
+
+        if ($oldPath) {
+            Storage::disk('public')->delete($oldPath);
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'logo_url' => null,
+            'club' => $club->only(['id', 'club_name', 'logo_path']),
         ]);
     }
 
@@ -79,6 +127,16 @@ class ClubSettingsController extends Controller
         }
 
         return response()->json($response->json());
+    }
+
+    private function resolveAllowedClub(Request $request, int $clubId): Club
+    {
+        $allowedClubIds = ClubHelper::clubIdsForUser($request->user())->map(fn ($id) => (int) $id)->all();
+        if (!in_array($clubId, $allowedClubIds, true)) {
+            abort(403, 'Not allowed to manage settings for this club.');
+        }
+
+        return Club::withoutGlobalScopes()->findOrFail($clubId);
     }
 
     public function saveConfig(Request $request)

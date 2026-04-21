@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClassInvestitureRequirement;
+use App\Models\ClassMemberAdventurer;
 use App\Models\ClassPlan;
+use App\Models\ClubCarpetaClassActivation;
+use App\Models\Member;
 use App\Models\RepAssistanceAdv;
 use App\Models\RepAssistanceAdvMerit;
 use Illuminate\Support\Carbon;
@@ -18,6 +21,10 @@ use App\Models\ScopeType;
 use App\Models\Payment;
 use App\Models\Expense;
 use App\Models\Account;
+use App\Models\ParentCarpetaRequirementEvidence;
+use App\Models\UnionCarpetaRequirement;
+use App\Models\UnionCarpetaYear;
+use App\Models\UnionClassCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
@@ -26,6 +33,8 @@ use Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Collection;
 use App\Support\ClubHelper;
+use App\Services\ClubLogoService;
+use App\Services\DocumentValidationService;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 class ReportController extends Controller
@@ -41,16 +50,22 @@ class ReportController extends Controller
                 'id' => $club->id,
                 'club_name' => $club->club_name,
                 'club_type' => $club->club_type,
+                'evaluation_system' => $club->evaluation_system,
             ],
-            'classes' => $this->buildClubInvestitureRequirementReport($club),
+            'report_type' => ($club->evaluation_system ?? 'honors') === 'carpetas' ? 'carpetas' : 'honors',
+            'classes' => ($club->evaluation_system ?? 'honors') === 'carpetas'
+                ? $this->buildClubCarpetaRequirementReport($club)
+                : $this->buildClubInvestitureRequirementReport($club),
         ]);
     }
 
-    public function investitureRequirementsReportPdf(Request $request)
+    public function investitureRequirementsReportPdf(Request $request, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         $club = $this->resolveClubForUser($user, $request->input('club_id'));
-        $classes = $this->buildClubInvestitureRequirementReport($club);
+        $classes = ($club->evaluation_system ?? 'honors') === 'carpetas'
+            ? $this->buildClubCarpetaRequirementReport($club)
+            : $this->buildClubInvestitureRequirementReport($club);
         $showPending = $request->boolean('show_pending');
         $itemLabelPlural = $club->club_type === 'adventurers' ? 'Honores' : 'Requisitos de investidura';
         $itemLabelSingular = $club->club_type === 'adventurers' ? 'Honor' : 'Requisito';
@@ -61,16 +76,125 @@ class ReportController extends Controller
                 'id' => $club->id,
                 'club_name' => $club->club_name,
                 'club_type' => $club->club_type,
+                'evaluation_system' => $club->evaluation_system,
             ],
             'classes' => $classes,
             'showPending' => $showPending,
             'itemLabelPlural' => $itemLabelPlural,
             'itemLabelSingular' => $itemLabelSingular,
+            'clubLogoDataUri' => $clubLogoService->dataUri($club),
         ]);
 
         $filename = 'investiture-requirements-club-' . $club->id . '-' . now()->format('Ymd-His') . '.pdf';
 
         return $pdf->download($filename);
+    }
+
+    public function carpetaMemberPdf(Request $request, Member $member, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
+    {
+        $club = $this->resolveClubForUser($request->user(), $member->club_id);
+        abort_unless((int) $member->club_id === (int) $club->id, 403);
+        abort_unless($member->type === 'adventurers', 404);
+        abort_unless(($club->evaluation_system ?? 'honors') === 'carpetas', 404);
+
+        $member->load(['club.church', 'club.district.association.union']);
+        $detail = MemberAdventurer::query()
+            ->where('id', $member->id_data)
+            ->first(['id', 'applicant_name', 'birthdate', 'grade', 'parent_name']);
+
+        $requirements = $this->carpetaRequirementsForMember($member);
+        $evidences = ParentCarpetaRequirementEvidence::query()
+            ->where('member_id', $member->id)
+            ->get()
+            ->keyBy('union_carpeta_requirement_id');
+
+        abort_if($evidences->isEmpty(), 404, 'No hay evidencias para generar la carpeta.');
+
+        $documentRequirements = collect($requirements)
+            ->map(function (array $requirement) use ($evidences) {
+                $evidence = $evidences->get($requirement['id']);
+                $evidencePayload = null;
+
+                if ($evidence) {
+                    $filePath = $evidence->file_path;
+                    $absolutePath = $filePath ? storage_path('app/public/' . ltrim($filePath, '/')) : null;
+
+                    $evidencePayload = [
+                        'id' => $evidence->id,
+                        'type' => $evidence->evidence_type,
+                        'text_value' => $evidence->text_value,
+                        'file_path' => $filePath,
+                        'file_url' => $filePath ? url('/storage/' . ltrim($filePath, '/')) : null,
+                        'absolute_path' => $absolutePath && file_exists($absolutePath) ? $absolutePath : null,
+                        'is_image' => $this->isCarpetaImageEvidence($evidence),
+                        'physical_completed' => (bool) $evidence->physical_completed,
+                        'status' => $evidence->status,
+                        'submitted_at' => optional($evidence->submitted_at)->format('Y-m-d H:i'),
+                        'updated_at' => optional($evidence->updated_at)->toISOString(),
+                    ];
+                }
+
+                return [
+                    ...$requirement,
+                    'evidence' => $evidencePayload,
+                    'completed' => (bool) ($evidence && ($evidence->file_path || $evidence->text_value || $evidence->physical_completed)),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $generatedAt = now();
+        $className = $this->carpetaClassNameForMember($member);
+        $validation = $documentValidationService->create(
+            documentType: 'carpeta_investidura',
+            title: 'Carpeta de investidura',
+            snapshot: [
+                'member_id' => $member->id,
+                'member_name' => $detail?->applicant_name,
+                'club_id' => $club->id,
+                'club_name' => $club->club_name,
+                'class_name' => $className,
+                'generated_at' => $generatedAt->toISOString(),
+                'requirements' => collect($documentRequirements)->map(fn ($requirement) => [
+                    'requirement_id' => $requirement['id'],
+                    'title' => $requirement['title'],
+                    'evidence_id' => $requirement['evidence']['id'] ?? null,
+                    'evidence_type' => $requirement['evidence']['type'] ?? null,
+                    'text_value' => $requirement['evidence']['text_value'] ?? null,
+                    'file_path' => $requirement['evidence']['file_path'] ?? null,
+                    'physical_completed' => $requirement['evidence']['physical_completed'] ?? false,
+                    'updated_at' => $requirement['evidence']['updated_at'] ?? null,
+                ])->all(),
+            ],
+            metadata: [
+                'Adventurero' => $detail?->applicant_name ?? '—',
+                'Club' => $club->club_name ?? '—',
+                'Iglesia' => $club?->church?->church_name ?? $club->church_name ?? '—',
+                'Distrito' => $club?->district?->name ?? '—',
+                'Unión' => $club?->district?->association?->union?->name ?? '—',
+                'Clase' => $className ?? '—',
+            ],
+            generatedBy: $request->user(),
+            generatedAt: $generatedAt,
+        );
+
+        $pdf = Pdf::loadView('pdf.parent_carpeta_portfolio', [
+            'member' => $member,
+            'detail' => $detail,
+            'club' => $club,
+            'church' => $club?->church,
+            'district' => $club?->district,
+            'association' => $club?->district?->association,
+            'union' => $club?->district?->association?->union,
+            'className' => $className,
+            'requirements' => $documentRequirements,
+            'generatedAt' => $generatedAt->format('Y-m-d H:i'),
+            'clubLogoDataUri' => $clubLogoService->dataUri($club),
+            'validationUrl' => $validation['url'],
+            'qrCodeDataUri' => $validation['qr_code_data_uri'],
+        ])->setPaper('letter', 'portrait');
+
+        return $pdf->download('carpeta-investidura-' . $member->id . '-' . $generatedAt->format('Ymd-His') . '.pdf');
     }
 
     public function generateAssistancePDF($id, $date)
@@ -448,6 +572,272 @@ class ReportController extends Controller
         })->values()->all();
     }
 
+    protected function buildClubCarpetaRequirementReport(Club $club): array
+    {
+        $club->loadMissing('district.association.union');
+        $unionId = $club?->district?->association?->union?->id;
+
+        if (!$unionId) {
+            return [];
+        }
+
+        $classes = UnionClassCatalog::query()
+            ->whereHas('clubCatalog', function ($query) use ($unionId, $club) {
+                $query->where('union_id', $unionId);
+            })
+            ->where('status', 'active')
+            ->with('clubCatalog:id,union_id,name')
+            ->orderByRaw('COALESCE(sort_order, 999999)')
+            ->orderBy('name')
+            ->get(['id', 'union_club_catalog_id', 'name', 'sort_order'])
+            ->filter(fn ($catalogClass) =>
+                $this->normalizeCarpetaClubType($catalogClass->clubCatalog?->name) === $this->normalizeCarpetaClubType($club->club_type)
+            )
+            ->values();
+
+        if ($classes->isEmpty()) {
+            return [];
+        }
+
+        $clubClasses = ClubClass::query()
+            ->where('club_id', $club->id)
+            ->whereIn('union_class_catalog_id', $classes->pluck('id'))
+            ->get(['id', 'club_id', 'union_class_catalog_id', 'class_name', 'class_order'])
+            ->keyBy('union_class_catalog_id');
+
+        $memberAssignments = ClassMemberAdventurer::query()
+            ->with('member:id,applicant_name,birthdate,grade,club_id')
+            ->whereIn('club_class_id', $clubClasses->pluck('id')->filter()->values())
+            ->where('active', true)
+            ->get(['id', 'members_adventurer_id', 'club_class_id', 'assigned_at', 'role']);
+
+        $canonicalMembers = Member::query()
+            ->where('club_id', $club->id)
+            ->where('type', 'adventurers')
+            ->whereIn('id_data', $memberAssignments->pluck('members_adventurer_id')->filter()->unique()->values())
+            ->get(['id', 'id_data', 'club_id', 'type', 'parent_id', 'status'])
+            ->keyBy('id_data');
+
+        $evidences = ParentCarpetaRequirementEvidence::query()
+            ->whereIn('member_id', $canonicalMembers->pluck('id')->filter()->values())
+            ->get()
+            ->keyBy(fn ($evidence) => $evidence->member_id . '|' . $evidence->union_carpeta_requirement_id);
+
+        $year = UnionCarpetaYear::query()
+            ->where('union_id', $unionId)
+            ->where('status', 'published')
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->first();
+
+        $requirements = $year
+            ? UnionCarpetaRequirement::query()
+                ->where('union_carpeta_year_id', $year->id)
+                ->where('status', 'active')
+                ->orderByRaw('COALESCE(sort_order, 999999)')
+                ->orderBy('id')
+                ->get()
+            : collect();
+
+        return $classes->map(function (UnionClassCatalog $catalogClass) use ($clubClasses, $memberAssignments, $canonicalMembers, $evidences, $requirements, $club) {
+            $clubClass = $clubClasses->get($catalogClass->id);
+            $assignedMembers = $clubClass
+                ? $memberAssignments->where('club_class_id', $clubClass->id)->values()
+                : collect();
+
+            $classRequirements = $requirements
+                ->filter(fn ($requirement) =>
+                    $this->normalizeCarpetaClubType($requirement->club_type) === $this->normalizeCarpetaClubType($club->club_type)
+                    && $this->normalizeCarpetaValue($requirement->class_name) === $this->normalizeCarpetaValue($catalogClass->name)
+                )
+                ->map(fn ($requirement) => [
+                    'id' => (int) $requirement->id,
+                    'title' => $requirement->title,
+                    'description' => $requirement->description,
+                    'requirement_type' => $requirement->requirement_type,
+                    'validation_mode' => $requirement->validation_mode,
+                    'allowed_evidence_types' => $requirement->allowed_evidence_types ?: [],
+                    'evidence_instructions' => $requirement->evidence_instructions,
+                    'sort_order' => $requirement->sort_order,
+                ])
+                ->values();
+
+            $members = $assignedMembers
+                ->map(function (ClassMemberAdventurer $assignment) use ($canonicalMembers, $classRequirements, $evidences) {
+                    $detail = $assignment->member;
+                    $member = $canonicalMembers->get($assignment->members_adventurer_id);
+
+                    if (!$detail || !$member) {
+                        return null;
+                    }
+
+                    $requirements = $classRequirements
+                        ->map(function (array $requirement) use ($member, $evidences) {
+                            $evidence = $evidences->get($member->id . '|' . $requirement['id']);
+                            $requirement['completed'] = (bool) ($evidence && ($evidence->file_path || $evidence->text_value || $evidence->physical_completed));
+                            $requirement['evidence'] = $evidence ? [
+                                'id' => (int) $evidence->id,
+                                'evidence_type' => $evidence->evidence_type,
+                                'text_value' => $evidence->text_value,
+                                'file_path' => $evidence->file_path,
+                                'file_url' => $evidence->file_path ? url('/storage/' . ltrim($evidence->file_path, '/')) : null,
+                                'is_image' => $this->isCarpetaImageEvidence($evidence),
+                                'physical_completed' => (bool) $evidence->physical_completed,
+                                'status' => $evidence->status,
+                                'submitted_at' => optional($evidence->submitted_at)->toDateTimeString(),
+                            ] : null;
+
+                            return $requirement;
+                        })
+                        ->values()
+                        ->all();
+
+                    $completedCount = collect($requirements)->where('completed', true)->count();
+
+                    return [
+                        'member_id' => (int) $member->id,
+                        'id_data' => (int) $detail->id,
+                        'name' => $detail->applicant_name ?? '—',
+                        'birthdate' => optional($detail->birthdate)->toDateString(),
+                        'grade' => $detail->grade,
+                        'assigned_at' => optional($assignment->assigned_at)->toDateString(),
+                        'requirements_count' => count($requirements),
+                        'completed_count' => $completedCount,
+                        'pending_count' => max(0, count($requirements) - $completedCount),
+                        'has_evidence' => collect($requirements)->contains(fn ($requirement) => !empty($requirement['evidence'])),
+                        'all_completed' => count($requirements) > 0 && collect($requirements)->every(fn ($requirement) => (bool) $requirement['completed']),
+                        'print_url' => route('club.reports.investiture-requirements.member.pdf', ['member' => $member->id]),
+                        'requirements' => $requirements,
+                    ];
+                })
+                ->filter()
+                ->sortBy(fn ($member) => mb_strtolower((string) $member['name']))
+                ->values();
+
+            return [
+                'id' => (int) $catalogClass->id,
+                'club_class_id' => $clubClass?->id,
+                'class_name' => $catalogClass->name,
+                'class_order' => $catalogClass->sort_order,
+                'members_count' => $members->count(),
+                'requirements_count' => $classRequirements->count(),
+                'completed_requirements_count' => $members->sum('completed_count'),
+                'members' => $members->all(),
+                'requirements' => $classRequirements->all(),
+            ];
+        })->values()->all();
+    }
+
+    protected function carpetaRequirementsForMember(Member $member): array
+    {
+        $club = Club::query()
+            ->with(['district.association.union'])
+            ->find($member->club_id);
+        $className = $this->carpetaClassNameForMember($member);
+        $unionId = $club?->district?->association?->union?->id;
+
+        if (!$club || !$className || !$unionId) {
+            return [];
+        }
+
+        $year = UnionCarpetaYear::query()
+            ->where('union_id', $unionId)
+            ->where('status', 'published')
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$year) {
+            return [];
+        }
+
+        return UnionCarpetaRequirement::query()
+            ->where('union_carpeta_year_id', $year->id)
+            ->where('status', 'active')
+            ->orderByRaw('COALESCE(sort_order, 999999)')
+            ->orderBy('id')
+            ->get()
+            ->filter(fn ($requirement) =>
+                $this->normalizeCarpetaClubType($requirement->club_type) === $this->normalizeCarpetaClubType($club->club_type)
+                && $this->normalizeCarpetaValue($requirement->class_name) === $this->normalizeCarpetaValue($className)
+            )
+            ->map(fn ($requirement) => [
+                'id' => (int) $requirement->id,
+                'title' => $requirement->title,
+                'description' => $requirement->description,
+                'requirement_type' => $requirement->requirement_type,
+                'validation_mode' => $requirement->validation_mode,
+                'allowed_evidence_types' => $requirement->allowed_evidence_types ?: [],
+                'evidence_instructions' => $requirement->evidence_instructions,
+                'sort_order' => $requirement->sort_order,
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function carpetaClassNameForMember(Member $member): ?string
+    {
+        $clubClass = $this->currentCarpetaClubClassForMember($member);
+
+        if ($clubClass?->unionClassCatalog) {
+            return $clubClass->unionClassCatalog->name;
+        }
+
+        return $clubClass?->class_name;
+    }
+
+    protected function currentCarpetaClubClassForMember(Member $member): ?ClubClass
+    {
+        if ($member->id_data) {
+            $assignment = ClassMemberAdventurer::query()
+                ->with('clubClass.unionClassCatalog')
+                ->where('members_adventurer_id', $member->id_data)
+                ->where('active', true)
+                ->orderByDesc('assigned_at')
+                ->orderByDesc('id')
+                ->first();
+
+            if ($assignment?->clubClass && (int) $assignment->clubClass->club_id === (int) $member->club_id) {
+                return $assignment->clubClass;
+            }
+        }
+
+        if (!$member->class_id) {
+            return null;
+        }
+
+        $clubClass = ClubClass::query()
+            ->with('unionClassCatalog')
+            ->where('club_id', $member->club_id)
+            ->where('id', $member->class_id)
+            ->first();
+
+        if ($clubClass) {
+            return $clubClass;
+        }
+
+        $activation = ClubCarpetaClassActivation::query()
+            ->with('unionClassCatalog')
+            ->where('club_id', $member->club_id)
+            ->where('id', $member->class_id)
+            ->first();
+
+        if (!$activation) {
+            return null;
+        }
+
+        return ClubClass::firstOrCreate(
+            [
+                'club_id' => $member->club_id,
+                'union_class_catalog_id' => $activation->union_class_catalog_id,
+            ],
+            [
+                'class_order' => $activation->unionClassCatalog?->sort_order,
+                'class_name' => $activation->unionClassCatalog?->name,
+            ]
+        );
+    }
+
     protected function normalizeReportDate($value): ?string
     {
         if (!$value) {
@@ -463,6 +853,35 @@ class ReportController extends Controller
         } catch (\Throwable $e) {
             return null;
         }
+    }
+
+    protected function isCarpetaImageEvidence(ParentCarpetaRequirementEvidence $evidence): bool
+    {
+        if ($evidence->evidence_type === 'photo') {
+            return true;
+        }
+
+        $extension = mb_strtolower(pathinfo((string) $evidence->file_path, PATHINFO_EXTENSION));
+
+        return in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'], true);
+    }
+
+    protected function normalizeCarpetaValue(?string $value): string
+    {
+        return mb_strtolower(trim((string) $value));
+    }
+
+    protected function normalizeCarpetaClubType(?string $value): string
+    {
+        $normalized = str_replace(['-', '_'], ' ', $this->normalizeCarpetaValue($value));
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+
+        return match ($normalized) {
+            'adventurers', 'adventurer', 'aventureros', 'aventurero' => 'adventurers',
+            'pathfinders', 'pathfinder', 'conquistadores', 'conquistador' => 'pathfinders',
+            'master guide', 'master guides', 'guia mayor', 'guia mayores', 'guia mayor avanzado' => 'master_guide',
+            default => $normalized,
+        };
     }
 
     public function financialReport(Request $request)
@@ -778,9 +1197,37 @@ class ReportController extends Controller
         }
     }
 
-    public function financialReportPdf(Request $request)
+    public function financialReportPdf(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
     {
         $payload = $this->buildFinancialLedgerPdfPayload($request);
+        $validation = $documentValidationService->create(
+            documentType: 'financial_ledger',
+            title: 'Reporte financiero por cuenta',
+            snapshot: [
+                'club_id' => $payload['club']->id,
+                'filters' => $payload['filters'],
+                'accounts' => collect($payload['accounts'])->map(fn ($account) => [
+                    'pay_to' => $account['pay_to'] ?? null,
+                    'label' => $account['label'] ?? null,
+                    'totals' => $account['totals'] ?? [],
+                    'entries' => collect($account['entries'] ?? [])->map(fn ($entry) => [
+                        'date' => $entry['date'] ?? null,
+                        'entry_type' => $entry['entry_type'] ?? null,
+                        'receipt_ref' => $entry['receipt_ref'] ?? null,
+                        'concept' => $entry['concept'] ?? null,
+                        'amount' => $entry['amount'] ?? null,
+                    ])->all(),
+                ])->all(),
+            ],
+            metadata: [
+                'Club' => $payload['club']->club_name,
+                'Documento' => 'Reporte financiero por cuenta',
+                'Cuentas' => (string) count($payload['accounts']),
+                'Movimientos' => (string) collect($payload['accounts'])->sum(fn ($account) => count($account['entries'] ?? [])),
+            ],
+            generatedBy: $request->user(),
+            generatedAt: $payload['generatedAt'],
+        );
 
         $pdf = Pdf::loadView('reports.financial_ledger_print', [
             'club' => $payload['club'],
@@ -788,6 +1235,9 @@ class ReportController extends Controller
             'receipts' => $payload['receipts'],
             'filters' => $payload['filters'],
             'generatedAt' => $payload['generatedAt'],
+            'clubLogoDataUri' => $clubLogoService->dataUri($payload['club']),
+            'validationUrl' => $validation['url'],
+            'qrCodeDataUri' => $validation['qr_code_data_uri'],
         ])->setPaper('a4', 'landscape');
 
         $filename = 'financial-ledger-club-' . $payload['club']->id . '-' . now()->format('Ymd-His') . '.pdf';
@@ -1113,11 +1563,43 @@ class ReportController extends Controller
         ];
     }
 
-    public function financialAccountBalancesPdf(Request $request)
+    public function financialAccountBalancesPdf(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         $club = $this->resolveClubForUser($user, $request->input('club_id'));
         $data = $this->buildAccountReportData($club);
+        $generatedAt = now();
+        $validation = $documentValidationService->create(
+            documentType: 'financial_account_balances',
+            title: 'Balance de cuentas',
+            snapshot: [
+                'club_id' => $club->id,
+                'accounts' => $data['accounts'],
+                'payments' => collect($data['payments'])->map(fn ($payment) => [
+                    'id' => $payment['id'] ?? null,
+                    'payment_date' => $payment['payment_date'] ?? null,
+                    'amount_paid' => $payment['amount_paid'] ?? null,
+                    'receipt_ref' => $payment['receipt_ref'] ?? null,
+                    'account' => $payment['account'] ?? null,
+                ])->all(),
+                'expenses' => collect($data['expenses'])->map(fn ($expense) => [
+                    'id' => $expense['id'] ?? null,
+                    'expense_date' => $expense['expense_date'] ?? null,
+                    'amount' => $expense['amount'] ?? null,
+                    'receipt_ref' => $expense['receipt_ref'] ?? null,
+                    'pay_to' => $expense['pay_to'] ?? null,
+                ])->all(),
+            ],
+            metadata: [
+                'Club' => $club->club_name,
+                'Documento' => 'Balance de cuentas',
+                'Cuentas' => (string) count($data['accounts']),
+                'Ingresos' => (string) count($data['payments']),
+                'Gastos' => (string) count($data['expenses']),
+            ],
+            generatedBy: $user,
+            generatedAt: $generatedAt,
+        );
 
         $pdf = Pdf::loadView('reports.account_balances', [
             'club' => $club,
@@ -1125,6 +1607,10 @@ class ReportController extends Controller
             'payments' => $data['payments'],
             'expenses' => $data['expenses'],
             'receipts' => $data['receipts'] ?? [],
+            'generatedAt' => $generatedAt,
+            'clubLogoDataUri' => $clubLogoService->dataUri($club),
+            'validationUrl' => $validation['url'],
+            'qrCodeDataUri' => $validation['qr_code_data_uri'],
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download('account-balances.pdf');

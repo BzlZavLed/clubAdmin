@@ -11,6 +11,10 @@
         body { font-family: Arial, sans-serif; color: #111; margin: 20px; }
         h1 { font-size: 20px; margin: 0 0 4px; }
         h2 { font-size: 16px; margin: 16px 0 6px; }
+        .document-header { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+        .document-header td { vertical-align: middle; }
+        .logo-cell { width: 62px; }
+        .club-logo { width: 50px; height: 50px; object-fit: contain; border: 1px solid #ddd; border-radius: 7px; padding: 3px; }
         .meta { font-size: 11px; color: #444; margin-bottom: 12px; }
         .calendar { width: 100%; border-collapse: collapse; margin-bottom: 18px; page-break-inside: avoid; }
         .calendar th { background: #f2f2f2; padding: 6px; font-size: 11px; text-align: center; }
@@ -27,7 +31,14 @@
     </style>
 </head>
 <body>
-    <h1>Club Workplan</h1>
+    <table class="document-header">
+        <tr>
+            @if(!empty($clubLogoDataUri))
+                <td class="logo-cell"><img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club"></td>
+            @endif
+            <td><h1>Club Workplan</h1></td>
+        </tr>
+    </table>
     <div class="meta">
         Club: {{ $workplan->club->club_name ?? 'Club' }}<br>
         Range: {{ Carbon::parse($start)->toDateString() }} to {{ Carbon::parse($end)->toDateString() }}

@@ -6,6 +6,10 @@
     <style>
         body { font-family: DejaVu Sans, sans-serif; font-size: 12px; color: #111827; }
         h1 { margin: 0 0 10px; font-size: 18px; }
+        .header-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        .header-table td { vertical-align: middle; }
+        .logo-cell { width: 62px; }
+        .club-logo { width: 50px; height: 50px; object-fit: contain; border: 1px solid #d1d5db; border-radius: 7px; padding: 3px; }
         .meta { margin-bottom: 16px; }
         .meta p { margin: 2px 0; }
         .req-card {
@@ -34,7 +38,14 @@
     </style>
 </head>
 <body>
-    <h1>Requisitos de investidura por clase</h1>
+    <table class="header-table">
+        <tr>
+            @if(!empty($clubLogoDataUri))
+                <td class="logo-cell"><img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club"></td>
+            @endif
+            <td><h1>Requisitos de investidura por clase</h1></td>
+        </tr>
+    </table>
 
     <div class="meta">
         <p><strong>Club:</strong> {{ $club['club_name'] ?? '—' }}</p>
@@ -84,4 +95,3 @@
     @endforelse
 </body>
 </html>
-

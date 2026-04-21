@@ -7,7 +7,7 @@
     <style>
         @page {
             size: A4 landscape;
-            margin: 8mm 9mm;
+            margin: 8mm 9mm 25mm;
         }
 
         body {
@@ -40,6 +40,32 @@
         .page-header-meta {
             width: 40%;
             text-align: right;
+        }
+
+        .brand-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: auto;
+        }
+
+        .brand-table td {
+            border: 0;
+            padding: 0;
+            vertical-align: middle;
+        }
+
+        .brand-logo-cell {
+            width: 18mm;
+            padding-right: 8px !important;
+        }
+
+        .brand-logo {
+            width: 15mm;
+            height: 15mm;
+            object-fit: contain;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 2px;
         }
 
         .title {
@@ -222,6 +248,35 @@
             object-fit: contain;
         }
 
+        .validation-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: -19mm;
+            height: 17mm;
+            border-top: 1px solid #d1d5db;
+            padding-top: 2mm;
+            font-size: 7px;
+            color: #4b5563;
+        }
+
+        .validation-footer table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: auto;
+        }
+
+        .validation-footer td {
+            border: 0;
+            padding: 0;
+            vertical-align: top;
+        }
+
+        .qr {
+            width: 14mm;
+            height: 14mm;
+        }
+
         @media screen {
             body {
                 padding: 16px;
@@ -279,25 +334,52 @@
     </style>
 </head>
 <body>
+    @if(!empty($qrCodeDataUri) && !empty($validationUrl))
+        <div class="validation-footer">
+            <table>
+                <tr>
+                    <td style="width: 17mm;">
+                        <img class="qr" src="{{ $qrCodeDataUri }}" alt="QR de validación">
+                    </td>
+                    <td>
+                        <div><strong>Validación digital:</strong> escanee el QR para confirmar este reporte contra el sistema.</div>
+                        <div class="wrap"><strong>URL:</strong> {{ $validationUrl }}</div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    @endif
+
     <div class="sheet">
         <div class="page-header">
             <div class="page-header-main">
-                <p class="title">Reporte financiero por cuenta</p>
-                <p class="subtitle">{{ $club->club_name ?? 'Club' }}</p>
-                <p class="filters">
-                    Generado: {{ $generatedAt->format('m-d-Y h:i A') }}
-                    @if(!empty($filters['pay_to']))
-                        | Cuenta: {{ $accounts->first()['label'] ?? $filters['pay_to'] }}
-                    @endif
-                    @if(!empty($filters['concept']))
-                        | Concepto: {{ $filters['concept']->concept }}
-                    @endif
-                    @if(!empty($filters['date_from']) || !empty($filters['date_to']))
-                        | Fechas: {{ $filters['date_from'] ?: 'Inicio' }} a {{ $filters['date_to'] ?: 'Hoy' }}
-                    @elseif(!empty($filters['date']))
-                        | Fecha: {{ $filters['date'] }}
-                    @endif
-                </p>
+                <table class="brand-table">
+                    <tr>
+                        @if(!empty($clubLogoDataUri))
+                            <td class="brand-logo-cell">
+                                <img class="brand-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club">
+                            </td>
+                        @endif
+                        <td>
+                            <p class="title">Reporte financiero por cuenta</p>
+                            <p class="subtitle">{{ $club->club_name ?? 'Club' }}</p>
+                            <p class="filters">
+                                Generado: {{ $generatedAt->format('m-d-Y h:i A') }}
+                                @if(!empty($filters['pay_to']))
+                                    | Cuenta: {{ $accounts->first()['label'] ?? $filters['pay_to'] }}
+                                @endif
+                                @if(!empty($filters['concept']))
+                                    | Concepto: {{ $filters['concept']->concept }}
+                                @endif
+                                @if(!empty($filters['date_from']) || !empty($filters['date_to']))
+                                    | Fechas: {{ $filters['date_from'] ?: 'Inicio' }} a {{ $filters['date_to'] ?: 'Hoy' }}
+                                @elseif(!empty($filters['date']))
+                                    | Fecha: {{ $filters['date'] }}
+                                @endif
+                            </p>
+                        </td>
+                    </tr>
+                </table>
             </div>
             <div class="page-header-meta">
                 <p class="meta-stack">Cuentas: {{ count($accounts) }}</p>

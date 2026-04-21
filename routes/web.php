@@ -8,6 +8,7 @@ use App\Http\Controllers\ClubController;
 use App\Http\Controllers\ClubCarpetaClassActivationController;
 use App\Http\Controllers\MemberAdventurerController;
 use App\Http\Controllers\ParentAuthController;
+use App\Http\Controllers\ParentCarpetaController;
 use App\Models\Club;
 use App\Models\AiRequestLog;
 use App\Models\Church;
@@ -46,9 +47,11 @@ use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\AssociationController;
 use App\Http\Controllers\DistrictController;
+use App\Http\Controllers\DocumentValidationController;
 use App\Models\Association;
 use App\Models\District;
 use App\Models\Union;
+use App\Support\ClubHelper;
 use App\Support\SuperadminContext;
 
 // ---------------------------------
@@ -77,6 +80,11 @@ Route::get('/force-logout', function () {
     request()->session()->regenerateToken();
     return redirect('/login');
 });
+
+Route::get('/documents/validate/{checksum}', [DocumentValidationController::class, 'show'])
+    ->name('documents.validate');
+Route::get('/carpeta-investidura/validate/{checksum}', [DocumentValidationController::class, 'show'])
+    ->name('carpeta-investidura.validate');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard', [
@@ -191,6 +199,7 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
 Route::middleware(['guest'])->group(function () {
 Route::post('/setup/superadmin', [RegisteredUserController::class, 'storeSuperadmin'])->name('superadmin.setup.store');
 Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
+Route::post('/register-parent/resolve-invite', [ParentAuthController::class, 'resolveInvite'])->name('parent.register.resolve-invite');
 Route::post('/register-parent', [ParentAuthController::class, 'register']);
 Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
 });
@@ -231,6 +240,9 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
     Route::put('/parent/children/{id}', [ParentMemberController::class, 'update'])->name('parent.children.update');
     Route::get('/parent/children/linkable', [ParentMemberController::class, 'linkable'])->name('parent.children.linkable');
     Route::post('/parent/children/link', [ParentMemberController::class, 'link'])->name('parent.children.link');
+    Route::get('/parent/carpeta-investidura', [ParentCarpetaController::class, 'index'])->name('parent.carpeta-investidura');
+    Route::get('/parent/carpeta-investidura/{member}/pdf', [ParentCarpetaController::class, 'pdf'])->name('parent.carpeta-investidura.pdf');
+    Route::post('/parent/carpeta-investidura/evidence', [ParentCarpetaController::class, 'storeEvidence'])->name('parent.carpeta-investidura.evidence.store');
 
     Route::get('/parent/workplan/data', [WorkplanController::class, 'data'])->name('parent.workplan.data');
     Route::get('/parent/workplan/pdf', [WorkplanController::class, 'pdf'])->name('parent.workplan.pdf');
@@ -381,7 +393,53 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     // 🔷 Frontend Views
     Route::get('/director/children', [ParentMemberController::class, 'index'])->name('parent-links.index.director');
 
-    Route::get('/club-director/dashboard', fn() => Inertia::render('ClubDirectorDashboard'))->name('club.dashboard');
+    Route::get('/club-director/dashboard', function () {
+        $activeClub = ClubHelper::activeClubForUser(Auth::user());
+        $club = $activeClub
+            ? Club::withoutGlobalScopes()
+                ->with([
+                    'church.district.association.union',
+                    'district.association.union',
+                ])
+                ->find($activeClub->id)
+            : null;
+
+        $district = $club?->district ?: $club?->church?->district;
+        $association = $district?->association;
+        $union = $association?->union;
+
+        return Inertia::render('ClubDirectorDashboard', [
+            'club_hierarchy' => $club ? [
+                'club' => [
+                    'id' => $club->id,
+                    'name' => $club->club_name,
+                    'type' => $club->club_type,
+                    'status' => $club->status,
+                    'evaluation_system' => $club->evaluation_system,
+                ],
+                'church' => $club->church ? [
+                    'id' => $club->church->id,
+                    'name' => $club->church->church_name,
+                ] : [
+                    'id' => $club->church_id,
+                    'name' => $club->church_name,
+                ],
+                'district' => $district ? [
+                    'id' => $district->id,
+                    'name' => $district->name,
+                ] : null,
+                'association' => $association ? [
+                    'id' => $association->id,
+                    'name' => $association->name,
+                ] : null,
+                'union' => $union ? [
+                    'id' => $union->id,
+                    'name' => $union->name,
+                    'evaluation_system' => $union->evaluation_system,
+                ] : null,
+            ] : null,
+        ]);
+    })->name('club.dashboard');
 
     Route::get(
         '/club-director/my-club',
@@ -515,6 +573,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/club-director/church/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'show'])->name('club.director.church.invite-code');
     Route::post('/club-director/church/invite-code/regenerate', [\App\Http\Controllers\ChurchInviteCodeController::class, 'regenerate'])->name('club.director.church.invite-code.regenerate');
     Route::get('/club-director/settings', [ClubSettingsController::class, 'index'])->name('club.settings');
+    Route::post('/club-director/settings/logo', [ClubSettingsController::class, 'uploadLogo'])->name('club.settings.logo');
+    Route::delete('/club-director/settings/logo', [ClubSettingsController::class, 'removeLogo'])->name('club.settings.logo.destroy');
     Route::post('/club-director/settings/catalog', [ClubSettingsController::class, 'fetchCatalog'])->name('club.settings.catalog');
     Route::post('/club-director/settings/save', [ClubSettingsController::class, 'saveConfig'])->name('club.settings.save');
 
@@ -543,6 +603,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.reports.investiture-requirements');
     Route::get('/club-director/reports/investiture-requirements/pdf', [ReportController::class, 'investitureRequirementsReportPdf'])
         ->name('club.reports.investiture-requirements.pdf');
+    Route::get('/club-director/reports/investiture-requirements/members/{member}/pdf', [ReportController::class, 'carpetaMemberPdf'])
+        ->name('club.reports.investiture-requirements.member.pdf');
 
     // 🟢 API Endpoints
 

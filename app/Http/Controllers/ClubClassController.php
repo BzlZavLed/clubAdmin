@@ -9,6 +9,7 @@ use App\Models\ClubClass;
 use App\Models\ClubCarpetaClassActivation;
 use App\Models\Staff;
 use App\Models\UnionClassCatalog;
+use App\Services\ClubLogoService;
 use App\Support\ClubHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -195,6 +196,17 @@ class ClubClassController extends Controller
                 ->where('club_id', $club->id)
                 ->get()
                 ->map(function ($activation) use ($club) {
+                    $clubClass = ClubClass::firstOrCreate(
+                        [
+                            'club_id' => $club->id,
+                            'union_class_catalog_id' => $activation->union_class_catalog_id,
+                        ],
+                        [
+                            'class_order' => $activation->unionClassCatalog?->sort_order,
+                            'class_name' => $activation->unionClassCatalog?->name,
+                        ]
+                    );
+
                     $staffName = null;
                     if ($activation->assignedStaff) {
                         $staffName = $activation->assignedStaff->user?->name;
@@ -204,10 +216,11 @@ class ClubClassController extends Controller
                         }
                     }
                     return [
-                        'id' => $activation->id,
+                        'id' => $clubClass->id,
+                        'activation_id' => $activation->id,
                         'club_id' => $club->id,
-                        'class_name' => $activation->unionClassCatalog?->name,
-                        'class_order' => $activation->unionClassCatalog?->sort_order,
+                        'class_name' => $clubClass->class_name,
+                        'class_order' => $clubClass->class_order,
                         'source' => 'carpeta_activation',
                         'union_class_catalog_id' => $activation->union_class_catalog_id,
                         'assigned_staff_id' => $activation->assigned_staff_id,
@@ -233,17 +246,17 @@ class ClubClassController extends Controller
         return response()->json($classes);
     }
 
-    public function pdf(Request $request)
+    public function pdf(Request $request, ClubLogoService $clubLogoService)
     {
-        return $this->downloadClassesPdf($request, false);
+        return $this->downloadClassesPdf($request, false, $clubLogoService);
     }
 
-    public function pdfWithRequirements(Request $request)
+    public function pdfWithRequirements(Request $request, ClubLogoService $clubLogoService)
     {
-        return $this->downloadClassesPdf($request, true);
+        return $this->downloadClassesPdf($request, true, $clubLogoService);
     }
 
-    protected function downloadClassesPdf(Request $request, bool $withRequirements)
+    protected function downloadClassesPdf(Request $request, bool $withRequirements, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
         if (!$user) {
@@ -271,6 +284,10 @@ class ClubClassController extends Controller
             ->get()
             ->values();
         $this->attachAssignedStaffNames($classes);
+        $logoClubId = $classes->pluck('club_id')->unique()->count() === 1
+            ? $classes->pluck('club_id')->unique()->first()
+            : null;
+        $logoClub = $logoClubId ? Club::withoutGlobalScopes()->find($logoClubId) : null;
 
         $title = $withRequirements
             ? 'Listado de clases y requisitos de investidura'
@@ -287,6 +304,7 @@ class ClubClassController extends Controller
                     ? $classes->pluck('club.club_name')->filter()->first()
                     : 'Varios clubes'),
             'generatedAt' => now()->toDateTimeString(),
+            'clubLogoDataUri' => $clubLogoService->dataUri($logoClub),
         ]);
 
         $suffix = $withRequirements ? 'with-requirements' : 'classes-only';

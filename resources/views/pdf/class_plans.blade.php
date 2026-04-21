@@ -7,6 +7,10 @@
         body { font-family: sans-serif; font-size: 12px; margin: 24px; }
         h1 { font-size: 20px; margin-bottom: 4px; }
         h2 { font-size: 16px; margin: 0 0 12px 0; }
+        .document-header { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+        .document-header td { vertical-align: middle; }
+        .logo-cell { width: 62px; }
+        .club-logo { width: 50px; height: 50px; object-fit: contain; border: 1px solid #ddd; border-radius: 7px; padding: 3px; }
         table { width: 100%; border-collapse: collapse; margin-top: 12px; }
         th, td { padding: 6px; border: 1px solid #ccc; text-align: left; }
         .meta { margin-bottom: 8px; }
@@ -14,7 +18,14 @@
     </style>
 </head>
 <body>
-    <h1>Class Plans</h1>
+    <table class="document-header">
+        <tr>
+            @if(!empty($clubLogoDataUri))
+                <td class="logo-cell"><img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club"></td>
+            @endif
+            <td><h1>Class Plans</h1></td>
+        </tr>
+    </table>
     <div class="meta">
         <div><strong>Club:</strong> {{ $workplan->club->club_name ?? 'N/A' }}</div>
         <div><strong>Class:</strong> {{ $class_name }}</div>

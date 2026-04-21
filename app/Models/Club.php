@@ -23,6 +23,7 @@ class Club extends Model
         'church_id',
         'district_id',
         'enrollment_payment_amount',
+        'logo_path',
     ];
 
     protected $casts = [

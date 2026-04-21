@@ -6,6 +6,10 @@
         * { box-sizing: border-box; }
         body { font-family: Arial, sans-serif; color: #111; margin: 20px; font-size: 12px; }
         h1 { font-size: 20px; margin: 0 0 6px; }
+        .document-header { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+        .document-header td { vertical-align: middle; }
+        .logo-cell { width: 62px; }
+        .club-logo { width: 50px; height: 50px; object-fit: contain; border: 1px solid #ddd; border-radius: 7px; padding: 3px; }
         h2 { font-size: 15px; margin: 16px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
         h3 { font-size: 13px; margin: 12px 0 4px; }
         .meta { font-size: 11px; color: #444; margin-bottom: 12px; line-height: 1.4; }
@@ -51,7 +55,14 @@
         };
     @endphp
 
-    <h1>Event Planner Report</h1>
+    <table class="document-header">
+        <tr>
+            @if(!empty($clubLogoDataUri))
+                <td class="logo-cell"><img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club"></td>
+            @endif
+            <td><h1>Event Planner Report</h1></td>
+        </tr>
+    </table>
     <div class="meta">
         <div><span class="label">Event:</span> {{ $event->title }}</div>
         <div><span class="label">Club:</span> {{ $event->club?->club_name ?? '—' }}</div>

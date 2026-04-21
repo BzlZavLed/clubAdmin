@@ -15,11 +15,14 @@ use PhpOffice\PhpWord\TemplateProcessor;
 use Illuminate\Support\Str;
 use App\Models\StaffAdventurer;
 use App\Services\DocumentExportService;
+use App\Services\ClubLogoService;
 use App\Models\Member;
+use App\Models\ClubCarpetaClassActivation;
 use App\Models\ClubClass;
 use App\Models\Staff;
 use App\Support\ClubHelper;
 use App\Models\ClassMemberPathfinder;
+use App\Services\PaymentReceiptService;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
@@ -229,7 +232,7 @@ class MemberAdventurerController extends Controller
 
         $account->increment('balance', (float) $insuranceAmount);
 
-        Payment::create([
+        $payment = Payment::create([
             'club_id'             => $club->id,
             'payment_concept_id'  => $concept->id,
             'concept_text'        => 'Seguro de membresía — ' . ($memberDetail->applicant_name ?? ''),
@@ -243,6 +246,8 @@ class MemberAdventurerController extends Controller
             'balance_due_after'   => 0,
             'received_by_user_id' => auth()->id(),
         ]);
+
+        app(PaymentReceiptService::class)->syncForPayment($payment);
     }
 
     protected function handleEnrollmentPayment(Club $club, $memberDetail, Member $memberRecord): void
@@ -287,7 +292,7 @@ class MemberAdventurerController extends Controller
 
         $account->increment('balance', $enrollmentAmount);
 
-        Payment::create([
+        $payment = Payment::create([
             'club_id' => $club->id,
             'payment_concept_id' => $concept->id,
             'concept_text' => 'Cuota de inscripción — ' . ($memberDetail->applicant_name ?? ''),
@@ -301,6 +306,8 @@ class MemberAdventurerController extends Controller
             'balance_due_after' => 0,
             'received_by_user_id' => auth()->id(),
         ]);
+
+        app(PaymentReceiptService::class)->syncForPayment($payment);
     }
 
     public function destroy(Request $request, $id)
@@ -501,7 +508,7 @@ class MemberAdventurerController extends Controller
         ]);
     }
 
-    public function classSummaryPdf(Request $request, $id)
+    public function classSummaryPdf(Request $request, $id, ClubLogoService $clubLogoService)
     {
         $user = Auth::user();
         $club = ClubHelper::clubForUser($user, $id);
@@ -549,6 +556,7 @@ class MemberAdventurerController extends Controller
             'classes' => $classBuckets,
             'options' => $options,
             'generatedAt' => now()->toDateTimeString(),
+            'clubLogoDataUri' => $clubLogoService->dataUri($club),
         ]);
 
         $filename = 'class-members-summary-' . $club->id . '-' . now()->format('Ymd-His') . '.pdf';
@@ -569,7 +577,7 @@ class MemberAdventurerController extends Controller
         return response()->download($outputPath)->deleteFileAfterSend(true);
     }
 
-    public function exportPathfinderPdf($id)
+    public function exportPathfinderPdf($id, ClubLogoService $clubLogoService)
     {
         $member = MemberPathfinder::with('insuranceCard')->findOrFail($id);
         $club = $member->club;
@@ -578,6 +586,7 @@ class MemberAdventurerController extends Controller
             'member' => $member,
             'club' => $club,
             'generatedAt' => now()->toDateTimeString(),
+            'clubLogoDataUri' => $clubLogoService->dataUri($club),
         ])->setPaper('letter', 'portrait');
 
         $filename = 'pathfinder-application-' . Str::slug($member->applicant_name ?: 'member') . '.pdf';
@@ -631,7 +640,7 @@ class MemberAdventurerController extends Controller
             'member_id' => 'nullable|integer|exists:members,id',
             // Backward compatibility: frontend previously sent members_adventurer_id (either adventurer id or temp id)
             'members_adventurer_id' => 'nullable|integer',
-            'club_class_id' => 'required|exists:club_classes,id',
+            'club_class_id' => 'required|integer',
             'role' => 'nullable|string|max:50',
             'assigned_at' => 'nullable|date',
         ]);
@@ -648,8 +657,46 @@ class MemberAdventurerController extends Controller
             return response()->json(['message' => 'Member not found'], 404);
         }
 
-        $clubClass = ClubClass::find($data['club_class_id']);
-        $newStaffId = $clubClass?->staff()->pluck('staff.id')->first();
+        $requestedClassId = (int) $data['club_class_id'];
+        $clubClass = ClubClass::query()
+            ->where('id', $requestedClassId)
+            ->where('club_id', $member->club_id)
+            ->first();
+
+        if (!$clubClass) {
+            $activation = ClubCarpetaClassActivation::query()
+                ->with('unionClassCatalog')
+                ->where('id', $requestedClassId)
+                ->where('club_id', $member->club_id)
+                ->first();
+
+            if ($activation) {
+                $clubClass = ClubClass::firstOrCreate(
+                    [
+                        'club_id' => $member->club_id,
+                        'union_class_catalog_id' => $activation->union_class_catalog_id,
+                    ],
+                    [
+                        'class_order' => $activation->unionClassCatalog?->sort_order,
+                        'class_name' => $activation->unionClassCatalog?->name,
+                    ]
+                );
+
+                $data['club_class_id'] = $clubClass->id;
+            }
+        }
+
+        if (!$clubClass) {
+            return response()->json(['message' => 'Selected class does not belong to the member club.'], 422);
+        }
+
+        $newStaffId = $clubClass->staff()->pluck('staff.id')->first();
+        if (!$newStaffId && $clubClass->union_class_catalog_id) {
+            $newStaffId = ClubCarpetaClassActivation::query()
+                ->where('club_id', $member->club_id)
+                ->where('union_class_catalog_id', $clubClass->union_class_catalog_id)
+                ->value('assigned_staff_id');
+        }
 
         $role = $data['role'] ?? 'student';
         $assignedAt = $data['assigned_at'] ?? now()->toDateString();

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\PaymentReceipt;
+use App\Services\ClubLogoService;
+use App\Services\DocumentValidationService;
 use App\Support\ClubHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
@@ -11,16 +13,16 @@ use Illuminate\Support\Str;
 
 class PaymentReceiptController extends Controller
 {
-    public function download(Request $request, PaymentReceipt $receipt)
+    public function download(Request $request, PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
     {
         $receipt = $this->loadReceiptContext($receipt);
         $this->authorizeReceipt($request->user(), $receipt);
         $this->markAsDownloaded(collect([$receipt]));
 
-        return $this->makeReceiptPdf($receipt)->download("{$receipt->receipt_number}.pdf");
+        return $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService, $request->user())->download("{$receipt->receipt_number}.pdf");
     }
 
-    public function downloadBulk(Request $request)
+    public function downloadBulk(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
     {
         $validated = $request->validate([
             'receipt_ids' => ['required', 'array', 'min:1'],
@@ -56,7 +58,7 @@ class PaymentReceiptController extends Controller
         foreach ($receipts as $receipt) {
             $zip->addFromString(
                 "{$receipt->receipt_number}.pdf",
-                $this->makeReceiptPdf($receipt)->output()
+                $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService, $request->user())->output()
             );
         }
 
@@ -179,8 +181,8 @@ class PaymentReceiptController extends Controller
     protected function loadReceiptContext(PaymentReceipt $receipt): PaymentReceipt
     {
         $receipt->loadMissing([
-            'club:id,club_name,church_name',
-            'payment.club:id,club_name,church_name',
+            'club:id,club_name,church_name,logo_path',
+            'payment.club:id,club_name,church_name,logo_path',
             'payment.member:id,type,id_data,parent_id',
             'payment.staff:id,type,id_data,user_id',
             'payment.concept:id,concept,amount,reusable',
@@ -193,20 +195,55 @@ class PaymentReceiptController extends Controller
         return $receipt;
     }
 
-    protected function makeReceiptPdf(PaymentReceipt $receipt)
+    protected function makeReceiptPdf(PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService, $generatedBy = null)
     {
         $payment = $receipt->payment;
         $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
         $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
+        $club = $receipt->club ?? $payment?->club;
+        $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? '—';
+        $generatedAt = now();
+        $validation = $documentValidationService->create(
+            documentType: 'payment_receipt',
+            title: 'Recibo de ingreso',
+            snapshot: [
+                'receipt_id' => $receipt->id,
+                'receipt_number' => $receipt->receipt_number,
+                'issued_at' => optional($receipt->issued_at)->toISOString(),
+                'club_id' => $club?->id,
+                'payment_id' => $payment?->id,
+                'payment_date' => optional($payment?->payment_date)->toDateString(),
+                'amount_paid' => $payment?->amount_paid,
+                'payment_type' => $payment?->payment_type,
+                'concept' => $payment?->concept?->concept ?? $payment?->concept_text,
+                'account' => $payment?->account?->label ?? $payment?->pay_to,
+                'recipient_name' => $recipientName,
+                'recipient_email' => $receipt->issued_to_email,
+                'member_name' => $memberDetail['name'] ?? null,
+                'staff_name' => $staffDetail['name'] ?? null,
+            ],
+            metadata: [
+                'Recibo' => $receipt->receipt_number,
+                'Club' => $club?->club_name ?? '—',
+                'Pagador' => $recipientName,
+                'Concepto' => $payment?->concept?->concept ?? $payment?->concept_text ?? '—',
+                'Importe' => '$' . number_format((float) ($payment?->amount_paid ?? 0), 2),
+            ],
+            generatedBy: $generatedBy,
+            generatedAt: $generatedAt,
+        );
 
         return Pdf::loadView('pdf.payment_receipt', [
             'receipt' => $receipt,
             'payment' => $payment,
-            'club' => $receipt->club ?? $payment?->club,
+            'club' => $club,
             'member_name' => $memberDetail['name'] ?? null,
             'staff_name' => $staffDetail['name'] ?? null,
-            'recipient_name' => $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? '—',
+            'recipient_name' => $recipientName,
             'recipient_email' => $receipt->issued_to_email,
+            'clubLogoDataUri' => $clubLogoService->dataUri($club),
+            'validationUrl' => $validation['url'],
+            'qrCodeDataUri' => $validation['qr_code_data_uri'],
         ])->setPaper('a4');
     }
 }

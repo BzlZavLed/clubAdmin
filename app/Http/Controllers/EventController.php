@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\PaymentConcept;
 use App\Models\PaymentConceptScope;
 use App\Models\Payment;
+use App\Services\ClubLogoService;
 use App\Services\EventTaskTemplateService;
 use App\Services\SerpApiUsageService;
 use App\Support\ClubHelper;
@@ -358,7 +359,7 @@ class EventController extends Controller
         ]);
     }
 
-    public function pdf(Event $event)
+    public function pdf(Event $event, ClubLogoService $clubLogoService)
     {
         $this->authorize('view', $event);
 
@@ -422,6 +423,7 @@ class EventController extends Controller
             'sections' => $sections,
             'drivers' => $drivers,
             'transport_mode' => $transportMode,
+            'clubLogoDataUri' => $clubLogoService->dataUri($event->club),
         ]);
 
         return $pdf->download('event-plan-' . $event->id . '.pdf');

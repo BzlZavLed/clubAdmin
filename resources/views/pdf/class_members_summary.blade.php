@@ -7,6 +7,10 @@
         body { font-family: Arial, sans-serif; font-size: 11px; margin: 24px; color: #111; }
         h1 { font-size: 18px; margin-bottom: 4px; }
         h2 { font-size: 14px; margin: 16px 0 6px 0; }
+        .document-header { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+        .document-header td { vertical-align: middle; }
+        .logo-cell { width: 62px; }
+        .club-logo { width: 50px; height: 50px; object-fit: contain; border: 1px solid #ddd; border-radius: 7px; padding: 3px; }
         .meta { margin-bottom: 10px; color: #444; }
         .meta div { margin-bottom: 2px; }
         table { width: 100%; border-collapse: collapse; margin-top: 6px; }
@@ -16,7 +20,14 @@
     </style>
 </head>
 <body>
-    <h1>Resumen de clases y miembros</h1>
+    <table class="document-header">
+        <tr>
+            @if(!empty($clubLogoDataUri))
+                <td class="logo-cell"><img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club"></td>
+            @endif
+            <td><h1>Resumen de clases y miembros</h1></td>
+        </tr>
+    </table>
     <div class="meta">
         <div><strong>Club:</strong> {{ $club->club_name ?? '—' }}</div>
         <div><strong>Generado:</strong> {{ $generatedAt }}</div>

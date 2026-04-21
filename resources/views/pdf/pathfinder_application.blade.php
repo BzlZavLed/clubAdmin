@@ -23,6 +23,14 @@
             padding-top: 24px;
             box-sizing: border-box;
         }
+        .club-logo {
+            width: 74px;
+            height: 74px;
+            object-fit: contain;
+            border: 1px solid #0b5fa5;
+            border-radius: 10px;
+            padding: 4px;
+        }
         .subtext { font-size: 10px; }
         .row-table { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
         .row-table td { vertical-align: bottom; padding-right: 8px; }
@@ -87,7 +95,9 @@
                     <div class="header-title">Pathfinder Application &amp; Health Record</div>
                 </td>
                 <td class="logo-cell">
-                    @if(file_exists($logoPath))
+                    @if(!empty($clubLogoDataUri))
+                        <img class="club-logo" src="{{ $clubLogoDataUri }}" alt="Logo del club">
+                    @elseif(file_exists($logoPath))
                         <img src="{{ $logoPath }}" alt="Pathfinder Logo" style="width: 78px; height: auto;">
                     @else
                         <div class="logo-box">PATHFINDER</div>

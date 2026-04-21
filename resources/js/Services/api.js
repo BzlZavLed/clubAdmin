@@ -690,6 +690,24 @@ export const saveMyChurchAdminConfig = async (payload) => {
     return data
 }
 
+export const uploadClubLogo = async ({ clubId, file }) => {
+    const fd = new FormData()
+    fd.append('club_id', clubId)
+    fd.append('logo', file)
+
+    const { data } = await axios.post(route('club.settings.logo'), fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+}
+
+export const removeClubLogo = async (clubId) => {
+    const { data } = await axios.delete(route('club.settings.logo.destroy'), {
+        data: { club_id: clubId },
+    })
+    return data
+}
+
 // Pathfinder temp data
 export const fetchTempMembersPathfinder = async (clubId) => {
     const { data } = await axios.get(route('clubs.temp-members.index', clubId))

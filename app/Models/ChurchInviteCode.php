@@ -27,4 +27,9 @@ class ChurchInviteCode extends Model
     {
         return Str::upper(Str::random(10));
     }
+
+    public function church()
+    {
+        return $this->belongsTo(Church::class);
+    }
 }
