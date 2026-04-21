@@ -5,27 +5,29 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
-        Schema::create('public_member_evidence_access_codes', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('member_id')->constrained('members')->cascadeOnDelete();
-            $table->foreignId('club_id')->constrained('clubs')->cascadeOnDelete();
-            $table->string('code_hash', 64)->unique();
-            $table->string('label')->nullable();
-            $table->timestamp('expires_at')->nullable();
-            $table->timestamp('revoked_at')->nullable();
-            $table->timestamp('last_used_at')->nullable();
-            $table->string('last_used_ip', 45)->nullable();
-            $table->text('last_used_user_agent')->nullable();
-            $table->foreignId('created_by_user_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamps();
+        if (!Schema::hasTable('public_member_evidence_access_codes')) {
+            Schema::create('public_member_evidence_access_codes', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('member_id')->constrained('members')->cascadeOnDelete();
+                $table->foreignId('club_id')->constrained('clubs')->cascadeOnDelete();
+                $table->string('code_hash', 64)->unique();
+                $table->string('label')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->timestamp('revoked_at')->nullable();
+                $table->timestamp('last_used_at')->nullable();
+                $table->string('last_used_ip', 45)->nullable();
+                $table->text('last_used_user_agent')->nullable();
+                $table->foreignId('created_by_user_id')->nullable()->constrained('users')->nullOnDelete();
+                $table->timestamps();
 
-            $table->index(['member_id', 'revoked_at']);
-            $table->index(['club_id', 'expires_at']);
-        });
+                $table->index(['member_id', 'revoked_at']);
+                $table->index(['club_id', 'expires_at']);
+            });
+        }
+
 
         Schema::table('parent_carpeta_requirement_evidences', function (Blueprint $table) {
             if (!Schema::hasColumn('parent_carpeta_requirement_evidences', 'submitted_by_member_id')) {
