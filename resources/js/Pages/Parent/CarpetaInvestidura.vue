@@ -7,6 +7,7 @@ import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     children: { type: Array, default: () => [] },
+    pathfinderEvidenceLinks: { type: Array, default: () => [] },
 })
 
 const { showToast } = useGeneral()
@@ -191,6 +192,30 @@ const submitEvidence = (child, requirement) => {
                 <p class="mt-3 rounded bg-blue-50 px-3 py-2 text-sm text-blue-800">
                     {{ tr('Cada hijo aparece abierto. Toca un requisito para expandirlo y subir evidencia o marcarlo como completado.', 'Each child appears open. Tap a requirement to expand it and upload evidence or mark it completed.') }}
                 </p>
+            </div>
+
+            <div v-if="pathfinderEvidenceLinks.length" class="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-5">
+                <h2 class="text-base font-semibold text-blue-950">{{ tr('Evidencias de conquistadores', 'Pathfinder evidence') }}</h2>
+                <div class="mt-3 space-y-3">
+                    <div v-for="link in pathfinderEvidenceLinks" :key="link.member_id" class="rounded border border-blue-100 bg-white p-3">
+                        <p class="text-sm font-semibold text-gray-900">{{ link.name }}</p>
+                        <p class="mt-1 text-sm text-gray-600">{{ link.club_name }}<span v-if="link.grade"> • {{ link.grade }}</span></p>
+                        <p class="mt-2 text-sm text-blue-900">
+                            Para subir evidencias de la carpeta de requisitos de conquistador por favor use este enlace
+                        </p>
+                        <a
+                            :href="link.url"
+                            target="_blank"
+                            rel="noopener"
+                            class="mt-2 inline-flex break-all rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                        >
+                            {{ link.url }}
+                        </a>
+                        <p v-if="link.expires_at" class="mt-2 text-xs text-blue-800">
+                            Expira: {{ link.expires_at }}
+                        </p>
+                    </div>
+                </div>
             </div>
 
             <div v-if="!children.length" class="rounded-lg border bg-white p-5 text-sm text-gray-600">

@@ -168,7 +168,10 @@ async function saveConfig() {
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-800">Logo del club</h2>
-                        <p class="text-sm text-gray-600">Este logo se usará en recibos, reportes financieros y carpetas PDF del club.</p>
+                        <p class="text-sm text-gray-600">
+                            Este logo se usará en recibos, reportes financieros y carpetas PDF del club.
+                            Si varios clubes pertenecen a la misma iglesia, pueden usar el mismo archivo de logo.
+                        </p>
                     </div>
                     <div class="w-full sm:w-auto">
                         <div v-if="logoUrl" class="flex items-center gap-3">

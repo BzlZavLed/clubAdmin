@@ -12,6 +12,11 @@ class ParentCarpetaRequirementEvidence extends Model
         'member_id',
         'union_carpeta_requirement_id',
         'submitted_by_user_id',
+        'submitted_by_member_id',
+        'submitted_via',
+        'access_code_id',
+        'submitted_ip',
+        'submitted_user_agent',
         'evidence_type',
         'text_value',
         'file_path',
@@ -38,5 +43,15 @@ class ParentCarpetaRequirementEvidence extends Model
     public function submittedBy()
     {
         return $this->belongsTo(User::class, 'submitted_by_user_id');
+    }
+
+    public function submittedByMember()
+    {
+        return $this->belongsTo(Member::class, 'submitted_by_member_id');
+    }
+
+    public function accessCode()
+    {
+        return $this->belongsTo(PublicMemberEvidenceAccessCode::class, 'access_code_id');
     }
 }

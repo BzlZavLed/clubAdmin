@@ -11,6 +11,8 @@ import {
     BuildingLibraryIcon,
     UserGroupIcon,
     Cog6ToothIcon,
+    ChartBarIcon,
+    ClipboardDocumentListIcon,
 } from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
 
@@ -95,13 +97,16 @@ const sections = computed(() => {
                 { name: 'Panel', href: '/union/dashboard', route: 'union.dashboard', icon: HomeIcon },
                 { name: 'Clubes y clases', href: '/union/catalog/clubs-classes', route: 'union.catalog', icon: Squares2X2Icon },
                 { name: 'Carpeta de investidura', href: '/union/carpeta-builder', route: 'union.carpeta-builder', icon: FolderOpenIcon },
+                { name: 'Plan de trabajo', href: '/union/workplan', route: 'union.workplan', icon: ClipboardDocumentListIcon },
             ],
         },
         {
             title: 'Reportes',
             items: [
                 { name: 'Reporte de asistencia', href: '/union/reports/assistance', route: 'union.reports.assistance', icon: DocumentTextIcon },
-                { name: 'Reporte financiero', href: '/union/reports/finances', route: 'union.reports.finances', icon: BanknotesIcon },
+                ...(evaluationSystem.value === 'carpetas' ? [
+                    { name: 'Progreso de requisitos', href: '/union/reports/progress', route: 'union.reports.progress', icon: ChartBarIcon },
+                ] : []),
             ],
         },
     ]

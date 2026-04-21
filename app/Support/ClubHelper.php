@@ -448,6 +448,14 @@ class ClubHelper
                 ->firstOrFail();
         }
 
+        $activeClub = self::activeClubForUser($user);
+        if ($activeClub && $ids->contains((int) $activeClub->id)) {
+            return Club::query()
+                ->whereIn('id', $ids)
+                ->where('id', $activeClub->id)
+                ->firstOrFail();
+        }
+
         return Club::query()->whereIn('id', $ids)->firstOrFail();
     }
 

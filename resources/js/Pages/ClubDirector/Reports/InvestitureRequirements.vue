@@ -1,6 +1,7 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { computed, ref } from 'vue'
+import axios from 'axios'
 
 const props = defineProps({
     club: {
@@ -26,8 +27,11 @@ const itemLabelSingular = computed(() =>
 )
 const showPendingMembers = ref(false)
 const expandedMemberKey = ref(null)
+const accessLinks = ref({})
+const accessLinkLoading = ref({})
 
 const isCarpetas = computed(() => props.report_type === 'carpetas' || props.club?.evaluation_system === 'carpetas')
+const canGeneratePublicLinks = computed(() => props.club?.club_type === 'pathfinders')
 
 const totalRequirements = computed(() =>
     props.classes.reduce((sum, clubClass) => sum + (clubClass.requirements_count || 0), 0)
@@ -76,6 +80,43 @@ const evidenceLabel = (requirement) => {
         physical_only: 'Fisico',
     }
     return labels[type] || type
+}
+
+const createAccessLink = async (member) => {
+    const key = member.member_id
+    accessLinkLoading.value = { ...accessLinkLoading.value, [key]: true }
+    try {
+        const { data } = await axios.post(route('club.reports.investiture-requirements.member.access-code.store', { member: member.member_id }), {
+            club_id: props.club?.id,
+        })
+        accessLinks.value = {
+            ...accessLinks.value,
+            [key]: data.data,
+        }
+    } finally {
+        accessLinkLoading.value = { ...accessLinkLoading.value, [key]: false }
+    }
+}
+
+const revokeAccessLinks = async (member) => {
+    const key = member.member_id
+    accessLinkLoading.value = { ...accessLinkLoading.value, [key]: true }
+    try {
+        await axios.delete(route('club.reports.investiture-requirements.member.access-codes.revoke', { member: member.member_id }), {
+            data: { club_id: props.club?.id },
+        })
+        const next = { ...accessLinks.value }
+        delete next[key]
+        accessLinks.value = next
+    } finally {
+        accessLinkLoading.value = { ...accessLinkLoading.value, [key]: false }
+    }
+}
+
+const copyAccessLink = async (member) => {
+    const url = accessLinks.value[member.member_id]?.url
+    if (!url || !navigator?.clipboard) return
+    await navigator.clipboard.writeText(url)
 }
 </script>
 
@@ -186,6 +227,46 @@ const evidenceLabel = (requirement) => {
                                 <span v-else class="rounded border border-gray-200 px-3 py-2 text-center text-sm text-gray-500">
                                     Sin evidencia para imprimir
                                 </span>
+                            </div>
+                        </div>
+
+                        <div v-if="canGeneratePublicLinks" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-900">Enlace publico temporal</p>
+                                    <p class="text-xs text-slate-600">
+                                        Permite que este miembro suba evidencias sin crear una cuenta. Puede revocarse en cualquier momento.
+                                    </p>
+                                </div>
+                                <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <button
+                                        type="button"
+                                        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                                        :disabled="accessLinkLoading[member.member_id]"
+                                        @click="createAccessLink(member)"
+                                    >
+                                        {{ accessLinkLoading[member.member_id] ? 'Generando...' : 'Generar enlace' }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                                        :disabled="accessLinkLoading[member.member_id]"
+                                        @click="revokeAccessLinks(member)"
+                                    >
+                                        Revocar enlaces
+                                    </button>
+                                </div>
+                            </div>
+                            <div v-if="accessLinks[member.member_id]" class="mt-3 rounded border bg-white p-3">
+                                <div class="break-all text-sm text-gray-800">{{ accessLinks[member.member_id].url }}</div>
+                                <div class="mt-1 text-xs text-gray-500">Expira: {{ accessLinks[member.member_id].expires_at || '—' }}</div>
+                                <button
+                                    type="button"
+                                    class="mt-2 rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                                    @click="copyAccessLink(member)"
+                                >
+                                    Copiar enlace
+                                </button>
                             </div>
                         </div>
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ClassInvestitureRequirement;
 use App\Models\ClassMemberAdventurer;
+use App\Models\ClassMemberPathfinder;
 use App\Models\ClassPlan;
 use App\Models\ClubCarpetaClassActivation;
 use App\Models\Member;
@@ -11,10 +12,12 @@ use App\Models\RepAssistanceAdv;
 use App\Models\RepAssistanceAdvMerit;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use App\Models\Club;
 use App\Models\PaymentConcept;
 use App\Models\PaymentConceptScope;
 use App\Models\MemberAdventurer;
+use App\Models\MemberPathfinder;
 use App\Models\StaffAdventurer;
 use App\Models\ClubClass;
 use App\Models\ScopeType;
@@ -22,6 +25,7 @@ use App\Models\Payment;
 use App\Models\Expense;
 use App\Models\Account;
 use App\Models\ParentCarpetaRequirementEvidence;
+use App\Models\PublicMemberEvidenceAccessCode;
 use App\Models\UnionCarpetaRequirement;
 use App\Models\UnionCarpetaYear;
 use App\Models\UnionClassCatalog;
@@ -94,13 +98,18 @@ class ReportController extends Controller
     {
         $club = $this->resolveClubForUser($request->user(), $member->club_id);
         abort_unless((int) $member->club_id === (int) $club->id, 403);
-        abort_unless($member->type === 'adventurers', 404);
+        abort_unless(in_array($member->type, ['adventurers', 'pathfinders', 'temp_pathfinder'], true), 404);
         abort_unless(($club->evaluation_system ?? 'honors') === 'carpetas', 404);
 
         $member->load(['club.church', 'club.district.association.union']);
-        $detail = MemberAdventurer::query()
-            ->where('id', $member->id_data)
-            ->first(['id', 'applicant_name', 'birthdate', 'grade', 'parent_name']);
+        $detail = in_array($member->type, ['pathfinders', 'temp_pathfinder'], true)
+            ? MemberPathfinder::query()
+                ->where('member_id', $member->id)
+                ->orWhere('id', $member->id_data)
+                ->first(['id', 'member_id', 'applicant_name', 'birthdate', 'grade'])
+            : MemberAdventurer::query()
+                ->where('id', $member->id_data)
+                ->first(['id', 'applicant_name', 'birthdate', 'grade', 'parent_name']);
 
         $requirements = $this->carpetaRequirementsForMember($member);
         $evidences = ParentCarpetaRequirementEvidence::query()
@@ -195,6 +204,59 @@ class ReportController extends Controller
         ])->setPaper('letter', 'portrait');
 
         return $pdf->download('carpeta-investidura-' . $member->id . '-' . $generatedAt->format('Ymd-His') . '.pdf');
+    }
+
+    public function createCarpetaMemberAccessCode(Request $request, Member $member)
+    {
+        $validated = $request->validate([
+            'club_id' => ['required', 'integer', 'exists:clubs,id'],
+            'expires_at' => ['nullable', 'date', 'after:now'],
+            'label' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $club = $this->resolveClubForUser($request->user(), $validated['club_id']);
+        abort_unless((int) $member->club_id === (int) $club->id, 403);
+        abort_unless(in_array($member->type, ['pathfinders', 'temp_pathfinder'], true), 404);
+        abort_unless($club->club_type === 'pathfinders', 404);
+        abort_unless(($club->evaluation_system ?? 'honors') === 'carpetas', 404);
+
+        $plainCode = PublicMemberEvidenceAccessCode::makePlainCode();
+        $accessCode = PublicMemberEvidenceAccessCode::query()->create([
+            'member_id' => $member->id,
+            'club_id' => $club->id,
+            'code_hash' => PublicMemberEvidenceAccessCode::hashCode($plainCode),
+            'code_encrypted' => Crypt::encryptString($plainCode),
+            'label' => $validated['label'] ?? null,
+            'expires_at' => $validated['expires_at'] ?? now()->addDays(30),
+            'created_by_user_id' => $request->user()?->id,
+        ]);
+
+        return response()->json([
+            'data' => [
+                'id' => $accessCode->id,
+                'url' => route('public.member-evidence.show', ['code' => $plainCode]),
+                'expires_at' => optional($accessCode->expires_at)->toDateTimeString(),
+            ],
+        ], 201);
+    }
+
+    public function revokeCarpetaMemberAccessCodes(Request $request, Member $member)
+    {
+        $validated = $request->validate([
+            'club_id' => ['required', 'integer', 'exists:clubs,id'],
+        ]);
+
+        $club = $this->resolveClubForUser($request->user(), $validated['club_id']);
+        abort_unless((int) $member->club_id === (int) $club->id, 403);
+        abort_unless(in_array($member->type, ['pathfinders', 'temp_pathfinder'], true), 404);
+        abort_unless($club->club_type === 'pathfinders', 404);
+
+        PublicMemberEvidenceAccessCode::query()
+            ->where('member_id', $member->id)
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => now(), 'updated_at' => now()]);
+
+        return response()->json(['status' => 'revoked']);
     }
 
     public function generateAssistancePDF($id, $date)
@@ -605,18 +667,41 @@ class ReportController extends Controller
             ->get(['id', 'club_id', 'union_class_catalog_id', 'class_name', 'class_order'])
             ->keyBy('union_class_catalog_id');
 
-        $memberAssignments = ClassMemberAdventurer::query()
-            ->with('member:id,applicant_name,birthdate,grade,club_id')
-            ->whereIn('club_class_id', $clubClasses->pluck('id')->filter()->values())
-            ->where('active', true)
-            ->get(['id', 'members_adventurer_id', 'club_class_id', 'assigned_at', 'role']);
+        if ($club->club_type === 'pathfinders') {
+            $memberAssignments = ClassMemberPathfinder::query()
+                ->with('member:id,type,id_data,club_id,status')
+                ->whereIn('club_class_id', $clubClasses->pluck('id')->filter()->values())
+                ->where('active', true)
+                ->get(['id', 'member_id', 'club_class_id', 'assigned_at', 'role']);
 
-        $canonicalMembers = Member::query()
-            ->where('club_id', $club->id)
-            ->where('type', 'adventurers')
-            ->whereIn('id_data', $memberAssignments->pluck('members_adventurer_id')->filter()->unique()->values())
-            ->get(['id', 'id_data', 'club_id', 'type', 'parent_id', 'status'])
-            ->keyBy('id_data');
+            $canonicalMembers = Member::query()
+                ->where('club_id', $club->id)
+                ->whereIn('type', ['pathfinders', 'temp_pathfinder'])
+                ->whereIn('id', $memberAssignments->pluck('member_id')->filter()->unique()->values())
+                ->get(['id', 'id_data', 'club_id', 'type', 'parent_id', 'status'])
+                ->keyBy('id');
+
+            $detailRows = MemberPathfinder::query()
+                ->whereIn('member_id', $canonicalMembers->pluck('id')->filter()->values())
+                ->orWhereIn('id', $canonicalMembers->pluck('id_data')->filter()->values())
+                ->get(['id', 'member_id', 'applicant_name', 'birthdate', 'grade'])
+                ->keyBy(fn ($row) => (int) ($row->member_id ?: 0) ?: ('legacy-' . $row->id));
+        } else {
+            $memberAssignments = ClassMemberAdventurer::query()
+                ->with('member:id,applicant_name,birthdate,grade,club_id')
+                ->whereIn('club_class_id', $clubClasses->pluck('id')->filter()->values())
+                ->where('active', true)
+                ->get(['id', 'members_adventurer_id', 'club_class_id', 'assigned_at', 'role']);
+
+            $canonicalMembers = Member::query()
+                ->where('club_id', $club->id)
+                ->where('type', 'adventurers')
+                ->whereIn('id_data', $memberAssignments->pluck('members_adventurer_id')->filter()->unique()->values())
+                ->get(['id', 'id_data', 'club_id', 'type', 'parent_id', 'status'])
+                ->keyBy('id_data');
+
+            $detailRows = collect();
+        }
 
         $evidences = ParentCarpetaRequirementEvidence::query()
             ->whereIn('member_id', $canonicalMembers->pluck('id')->filter()->values())
@@ -639,7 +724,7 @@ class ReportController extends Controller
                 ->get()
             : collect();
 
-        return $classes->map(function (UnionClassCatalog $catalogClass) use ($clubClasses, $memberAssignments, $canonicalMembers, $evidences, $requirements, $club) {
+        return $classes->map(function (UnionClassCatalog $catalogClass) use ($clubClasses, $memberAssignments, $canonicalMembers, $detailRows, $evidences, $requirements, $club) {
             $clubClass = $clubClasses->get($catalogClass->id);
             $assignedMembers = $clubClass
                 ? $memberAssignments->where('club_class_id', $clubClass->id)->values()
@@ -663,9 +748,16 @@ class ReportController extends Controller
                 ->values();
 
             $members = $assignedMembers
-                ->map(function (ClassMemberAdventurer $assignment) use ($canonicalMembers, $classRequirements, $evidences) {
-                    $detail = $assignment->member;
-                    $member = $canonicalMembers->get($assignment->members_adventurer_id);
+                ->map(function ($assignment) use ($canonicalMembers, $detailRows, $classRequirements, $evidences, $club) {
+                    if ($club->club_type === 'pathfinders') {
+                        $member = $canonicalMembers->get($assignment->member_id);
+                        $detail = $member
+                            ? ($detailRows->get((int) $member->id) ?: $detailRows->get('legacy-' . $member->id_data))
+                            : null;
+                    } else {
+                        $detail = $assignment->member;
+                        $member = $canonicalMembers->get($assignment->members_adventurer_id);
+                    }
 
                     if (!$detail || !$member) {
                         return null;
@@ -788,14 +880,24 @@ class ReportController extends Controller
 
     protected function currentCarpetaClubClassForMember(Member $member): ?ClubClass
     {
-        if ($member->id_data) {
-            $assignment = ClassMemberAdventurer::query()
-                ->with('clubClass.unionClassCatalog')
-                ->where('members_adventurer_id', $member->id_data)
-                ->where('active', true)
-                ->orderByDesc('assigned_at')
-                ->orderByDesc('id')
-                ->first();
+        if ($member->id_data || in_array($member->type, ['pathfinders', 'temp_pathfinder'], true)) {
+            if (in_array($member->type, ['pathfinders', 'temp_pathfinder'], true)) {
+                $assignment = ClassMemberPathfinder::query()
+                    ->with('clubClass.unionClassCatalog')
+                    ->where('member_id', $member->id)
+                    ->where('active', true)
+                    ->orderByDesc('assigned_at')
+                    ->orderByDesc('id')
+                    ->first();
+            } else {
+                $assignment = ClassMemberAdventurer::query()
+                    ->with('clubClass.unionClassCatalog')
+                    ->where('members_adventurer_id', $member->id_data)
+                    ->where('active', true)
+                    ->orderByDesc('assigned_at')
+                    ->orderByDesc('id')
+                    ->first();
+            }
 
             if ($assignment?->clubClass && (int) $assignment->clubClass->club_id === (int) $member->club_id) {
                 return $assignment->clubClass;

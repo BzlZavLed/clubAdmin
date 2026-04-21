@@ -9,6 +9,7 @@ use App\Http\Controllers\ClubCarpetaClassActivationController;
 use App\Http\Controllers\MemberAdventurerController;
 use App\Http\Controllers\ParentAuthController;
 use App\Http\Controllers\ParentCarpetaController;
+use App\Http\Controllers\PublicMemberEvidenceController;
 use App\Models\Club;
 use App\Models\AiRequestLog;
 use App\Models\Church;
@@ -45,6 +46,7 @@ use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 use App\Http\Controllers\SuperAdminContextController;
 use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\UnionController;
+use App\Http\Controllers\UnionWorkplanController;
 use App\Http\Controllers\AssociationController;
 use App\Http\Controllers\DistrictController;
 use App\Http\Controllers\DocumentValidationController;
@@ -85,6 +87,15 @@ Route::get('/documents/validate/{checksum}', [DocumentValidationController::clas
     ->name('documents.validate');
 Route::get('/carpeta-investidura/validate/{checksum}', [DocumentValidationController::class, 'show'])
     ->name('carpeta-investidura.validate');
+Route::get('/evidence/{code}', [PublicMemberEvidenceController::class, 'show'])
+    ->middleware('throttle:30,1')
+    ->name('public.member-evidence.show');
+Route::get('/evidence/{code}/pdf', [PublicMemberEvidenceController::class, 'pdf'])
+    ->middleware('throttle:12,1')
+    ->name('public.member-evidence.pdf');
+Route::post('/evidence/{code}', [PublicMemberEvidenceController::class, 'storeEvidence'])
+    ->middleware('throttle:12,1')
+    ->name('public.member-evidence.store');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard', [
@@ -178,19 +189,16 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
     Route::put('/union/carpeta-builder/years/{carpetaYear}/archive', [UnionController::class, 'archiveCarpetaYear'])
         ->name('union.carpeta-builder.years.archive');
 
-    Route::get('/union/reports/assistance', function () {
-        return Inertia::render('ClubDirector/Reports/Assistance', [
-            'auth_user' => auth()->user(),
-            'sub_roles' => SubRole::all(),
-        ]);
-    })->name('union.reports.assistance');
+    Route::get('/union/reports/assistance', [UnionController::class, 'attendanceReport'])->name('union.reports.assistance');
+    Route::get('/union/reports/assistance/csv', [UnionController::class, 'attendanceReportCsv'])->name('union.reports.assistance.csv');
 
-    Route::get('/union/reports/finances', function () {
-        return Inertia::render('ClubDirector/Reports/Finances', [
-            'auth_user' => auth()->user(),
-            'sub_roles' => SubRole::all(),
-        ]);
-    })->name('union.reports.finances');
+    Route::get('/union/workplan', [UnionWorkplanController::class, 'index'])->name('union.workplan');
+    Route::post('/union/workplan/events', [UnionWorkplanController::class, 'store'])->name('union.workplan.events.store');
+    Route::put('/union/workplan/events/{event}', [UnionWorkplanController::class, 'update'])->name('union.workplan.events.update');
+    Route::delete('/union/workplan/events/{event}', [UnionWorkplanController::class, 'destroy'])->name('union.workplan.events.destroy');
+
+    Route::get('/union/reports/progress', [UnionController::class, 'progressReport'])->name('union.reports.progress');
+    Route::get('/union/reports/progress/csv', [UnionController::class, 'progressReportCsv'])->name('union.reports.progress.csv');
 });
 
 // ---------------------------------
@@ -605,6 +613,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.reports.investiture-requirements.pdf');
     Route::get('/club-director/reports/investiture-requirements/members/{member}/pdf', [ReportController::class, 'carpetaMemberPdf'])
         ->name('club.reports.investiture-requirements.member.pdf');
+    Route::post('/club-director/reports/investiture-requirements/members/{member}/access-code', [ReportController::class, 'createCarpetaMemberAccessCode'])
+        ->name('club.reports.investiture-requirements.member.access-code.store');
+    Route::delete('/club-director/reports/investiture-requirements/members/{member}/access-codes', [ReportController::class, 'revokeCarpetaMemberAccessCodes'])
+        ->name('club.reports.investiture-requirements.member.access-codes.revoke');
 
     // 🟢 API Endpoints
 

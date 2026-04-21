@@ -75,7 +75,7 @@
 
     <table class="grid">
         <tr>
-            <td class="label">Adventurero</td>
+        <td class="label">{{ $memberLabel ?? 'Adventurero' }}</td>
             <td class="value">{{ $detail?->applicant_name ?? '—' }}</td>
             <td class="label">Fecha</td>
             <td class="value">{{ $generatedAt }}</td>
