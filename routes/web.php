@@ -66,7 +66,7 @@ Route::get('/', function () {
         return redirect(RedirectIfAuthenticated::redirectPath());
     }
 
-    return redirect('/login');
+    return Inertia::render('Landing');
 });
 Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
 
