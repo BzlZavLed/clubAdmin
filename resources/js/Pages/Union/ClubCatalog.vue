@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { router, useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import InputError from '@/Components/InputError.vue'
@@ -11,17 +11,26 @@ import { useLocale } from '@/Composables/useLocale'
 const props = defineProps({
     union: { type: Object, required: true },
     clubCatalogs: { type: Array, default: () => [] },
+    clubTypeOptions: { type: Array, default: () => [] },
 })
 
 const { tr } = useLocale()
 const { showToast } = useGeneral()
 
 const clubTypeForm = useForm({
-    name: '',
+    club_type: '',
     sort_order: '',
 })
 
 const classForms = ref({})
+
+const existingClubTypes = computed(() =>
+    new Set((props.clubCatalogs || []).map((catalog) => catalog.club_type).filter(Boolean))
+)
+
+const availableClubTypeOptions = computed(() =>
+    (props.clubTypeOptions || []).filter((option) => !existingClubTypes.value.has(option.code))
+)
 
 const getClassForm = (clubCatalogId) => {
     const key = String(clubCatalogId)
@@ -74,8 +83,13 @@ const submitClass = (clubCatalogId) => {
                 <form class="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end" @submit.prevent="submitClubType">
                     <div>
                         <InputLabel for="club_type_name" :value="tr('Tipo de club', 'Club type')" />
-                        <input id="club_type_name" v-model="clubTypeForm.name" type="text" class="mt-1 block w-full rounded-md border-gray-300" required />
-                        <InputError class="mt-2" :message="clubTypeForm.errors.name" />
+                        <select id="club_type_name" v-model="clubTypeForm.club_type" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <option value="">{{ tr('Selecciona un tipo de club', 'Select a club type') }}</option>
+                            <option v-for="option in availableClubTypeOptions" :key="option.code" :value="option.code">
+                                {{ option.name }}
+                            </option>
+                        </select>
+                        <InputError class="mt-2" :message="clubTypeForm.errors.club_type" />
                     </div>
 
                     <div>
@@ -84,9 +98,13 @@ const submitClass = (clubCatalogId) => {
                         <InputError class="mt-2" :message="clubTypeForm.errors.sort_order" />
                     </div>
 
-                    <PrimaryButton :disabled="clubTypeForm.processing" class="justify-self-start bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                    <PrimaryButton :disabled="clubTypeForm.processing || !availableClubTypeOptions.length" class="justify-self-start bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
                         {{ tr('Agregar tipo', 'Add type') }}
                     </PrimaryButton>
+
+                    <p v-if="!availableClubTypeOptions.length" class="md:col-span-3 text-xs text-gray-500">
+                        {{ tr('Todos los tipos de club soportados ya están en el catálogo.', 'All supported club types are already in the catalog.') }}
+                    </p>
                 </form>
             </section>
 
@@ -97,6 +115,9 @@ const submitClass = (clubCatalogId) => {
                             <h3 class="text-base font-semibold text-gray-900">{{ clubCatalog.name }}</h3>
                             <p class="mt-1 text-sm text-gray-600">
                                 {{ tr('Clases de referencia', 'Reference classes') }}: {{ (clubCatalog.class_catalogs || []).length }}
+                            </p>
+                            <p v-if="clubCatalog.club_type" class="mt-1 text-xs font-medium uppercase tracking-wide text-gray-400">
+                                {{ clubCatalog.club_type }}
                             </p>
                         </div>
                         <div class="text-sm text-gray-500">

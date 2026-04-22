@@ -12,6 +12,7 @@ class UnionClubCatalog extends Model
     protected $fillable = [
         'union_id',
         'name',
+        'club_type',
         'sort_order',
         'status',
     ];

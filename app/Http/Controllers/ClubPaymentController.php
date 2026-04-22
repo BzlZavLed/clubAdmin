@@ -277,13 +277,13 @@ class ClubPaymentController extends Controller
             ->latest()
             ->take(50)
             ->with([
-                'member:id,type,id_data',
+                'member:id,type,id_data,parent_id',
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
                 'concept:id,concept,amount,reusable',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
-                'receipt:id,payment_id,receipt_number,last_downloaded_at',
+                'receipt:id,payment_id,receipt_number,last_downloaded_at,issued_to_type,parent_user_id',
             ])
             ->get();
 
@@ -958,6 +958,20 @@ class ClubPaymentController extends Controller
         $payments
             ->filter(fn (Payment $payment) => !$payment->receipt && ($payment->member_id || $payment->staff_id))
             ->each(function (Payment $payment) {
+                $receipt = $this->paymentReceiptService->syncForPayment($payment);
+                $payment->setRelation('receipt', $receipt);
+            });
+
+        // Re-sync receipts that were created before a parent was linked to the member.
+        $payments
+            ->filter(function (Payment $payment) {
+                $receipt = $payment->receipt;
+                return $receipt
+                    && $receipt->issued_to_type === 'member_unlinked'
+                    && !empty($payment->member?->parent_id);
+            })
+            ->each(function (Payment $payment) {
+                $payment->unsetRelation('member');
                 $receipt = $this->paymentReceiptService->syncForPayment($payment);
                 $payment->setRelation('receipt', $receipt);
             });

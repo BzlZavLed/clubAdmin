@@ -26,7 +26,7 @@ class ClubClassController extends Controller
         if (
             !$clubUnionId ||
             (int) $catalogClass->clubCatalog?->union_id !== (int) $clubUnionId ||
-            mb_strtolower(trim((string) $catalogClass->clubCatalog?->name)) !== mb_strtolower(trim((string) $club->club_type))
+            mb_strtolower(trim((string) ($catalogClass->clubCatalog?->club_type ?: $catalogClass->clubCatalog?->name))) !== mb_strtolower(trim((string) $club->club_type))
         ) {
             abort(422, 'La clase seleccionada no coincide con el catalogo de la union para este tipo de club. Refresca la pagina y activa la clase desde la lista de carpetas del club.');
         }

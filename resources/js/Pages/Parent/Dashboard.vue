@@ -48,7 +48,16 @@ const load = async (clubId = null) => {
         clubs.value = c || []
         selectedClubId.value = selected_club_id || null
         workplan.value = wp
-        events.value = wp?.events || []
+        events.value = (wp?.events || []).map(ev => {
+            const sourceType = ev.source_type || ''
+            const isInherited = sourceType.includes('AssociationWorkplanEvent') || sourceType.includes('DistrictWorkplanEvent')
+            return {
+                ...ev,
+                classPlans: ev.classPlans || ev.class_plans || [],
+                _inherited: isInherited,
+                _source_level: sourceType.includes('District') ? 'district' : (sourceType.includes('Association') ? 'association' : null),
+            }
+        })
         memberships.value = m || []
     } catch (e) {
         console.error(e)
@@ -133,7 +142,7 @@ onMounted(() => {
                         :events="events"
                         :is-read-only="true"
                         :can-add="false"
-                        :initial-date="workplan?.start_date || new Date().toISOString().slice(0,10)"
+                        :initial-date="new Date().toISOString().slice(0,10)"
                         :pdf-href="workplanPdfHref"
                         :ics-href="workplanIcsHref"
                         @edit="openEvent"

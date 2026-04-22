@@ -116,6 +116,12 @@ Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secreta
     Route::get('/district/dashboard', fn() => Inertia::render('District/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('district.dashboard');
+    Route::get('/district/workplan', [DistrictController::class, 'workplan'])->name('district.workplan');
+    Route::post('/district/workplan/publish', [DistrictController::class, 'publishWorkplan'])->name('district.workplan.publish');
+    Route::post('/district/workplan/unpublish', [DistrictController::class, 'unpublishWorkplan'])->name('district.workplan.unpublish');
+    Route::post('/district/workplan/events', [DistrictController::class, 'storeWorkplanEvent'])->name('district.workplan.events.store');
+    Route::put('/district/workplan/events/{event}', [DistrictController::class, 'updateWorkplanEvent'])->name('district.workplan.events.update');
+    Route::delete('/district/workplan/events/{event}', [DistrictController::class, 'destroyWorkplanEvent'])->name('district.workplan.events.destroy');
 
     Route::get('/district/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [
@@ -136,6 +142,12 @@ Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->g
     Route::get('/association/dashboard', fn() => Inertia::render('Association/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('association.dashboard');
+    Route::get('/association/workplan', [AssociationController::class, 'workplan'])->name('association.workplan');
+    Route::post('/association/workplan/publish', [AssociationController::class, 'publishWorkplan'])->name('association.workplan.publish');
+    Route::post('/association/workplan/unpublish', [AssociationController::class, 'unpublishWorkplan'])->name('association.workplan.unpublish');
+    Route::post('/association/workplan/events', [AssociationController::class, 'storeWorkplanEvent'])->name('association.workplan.events.store');
+    Route::put('/association/workplan/events/{event}', [AssociationController::class, 'updateWorkplanEvent'])->name('association.workplan.events.update');
+    Route::delete('/association/workplan/events/{event}', [AssociationController::class, 'destroyWorkplanEvent'])->name('association.workplan.events.destroy');
     Route::get('/association/programs', [AssociationController::class, 'programs'])->name('association.programs');
     Route::get('/association/districts', [AssociationController::class, 'districtEvaluation'])->name('association.districts');
     Route::post('/association/districts', [AssociationController::class, 'storeDistrict'])->name('association.districts.store');
@@ -184,6 +196,8 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
         ->name('union.carpeta-builder.years.store');
     Route::post('/union/carpeta-builder/years/{carpetaYear}/requirements', [UnionController::class, 'storeCarpetaRequirement'])
         ->name('union.carpeta-builder.requirements.store');
+    Route::delete('/union/carpeta-builder/requirements/{requirement}', [UnionController::class, 'destroyCarpetaRequirement'])
+        ->name('union.carpeta-builder.requirements.destroy');
     Route::put('/union/carpeta-builder/years/{carpetaYear}/publish', [UnionController::class, 'publishCarpetaYear'])
         ->name('union.carpeta-builder.years.publish');
     Route::put('/union/carpeta-builder/years/{carpetaYear}/archive', [UnionController::class, 'archiveCarpetaYear'])
@@ -193,6 +207,9 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
     Route::get('/union/reports/assistance/csv', [UnionController::class, 'attendanceReportCsv'])->name('union.reports.assistance.csv');
 
     Route::get('/union/workplan', [UnionWorkplanController::class, 'index'])->name('union.workplan');
+    Route::get('/union/workplan/pdf', [UnionWorkplanController::class, 'pdf'])->name('union.workplan.pdf');
+    Route::post('/union/workplan/publish', [UnionWorkplanController::class, 'publish'])->name('union.workplan.publish');
+    Route::post('/union/workplan/unpublish', [UnionWorkplanController::class, 'unpublish'])->name('union.workplan.unpublish');
     Route::post('/union/workplan/events', [UnionWorkplanController::class, 'store'])->name('union.workplan.events.store');
     Route::put('/union/workplan/events/{event}', [UnionWorkplanController::class, 'update'])->name('union.workplan.events.update');
     Route::delete('/union/workplan/events/{event}', [UnionWorkplanController::class, 'destroy'])->name('union.workplan.events.destroy');

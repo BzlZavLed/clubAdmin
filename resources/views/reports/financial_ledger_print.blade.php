@@ -343,7 +343,6 @@
                     </td>
                     <td>
                         <div><strong>Validación digital:</strong> escanee el QR para confirmar este reporte contra el sistema.</div>
-                        <div class="wrap"><strong>URL:</strong> {{ $validationUrl }}</div>
                     </td>
                 </tr>
             </table>

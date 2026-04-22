@@ -648,12 +648,12 @@ class ReportController extends Controller
                 $query->where('union_id', $unionId);
             })
             ->where('status', 'active')
-            ->with('clubCatalog:id,union_id,name')
+            ->with('clubCatalog:id,union_id,name,club_type')
             ->orderByRaw('COALESCE(sort_order, 999999)')
             ->orderBy('name')
             ->get(['id', 'union_club_catalog_id', 'name', 'sort_order'])
             ->filter(fn ($catalogClass) =>
-                $this->normalizeCarpetaClubType($catalogClass->clubCatalog?->name) === $this->normalizeCarpetaClubType($club->club_type)
+                $this->normalizeCarpetaClubType($catalogClass->clubCatalog?->club_type ?: $catalogClass->clubCatalog?->name) === $this->normalizeCarpetaClubType($club->club_type)
             )
             ->values();
 

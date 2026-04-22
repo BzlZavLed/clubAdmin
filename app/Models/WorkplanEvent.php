@@ -24,6 +24,8 @@ class WorkplanEvent extends Model
         'is_edited',
         'status',
         'created_by',
+        'source_type',
+        'source_id',
     ];
 
     protected $casts = [

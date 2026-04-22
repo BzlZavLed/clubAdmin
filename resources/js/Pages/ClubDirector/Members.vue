@@ -444,7 +444,7 @@ watch(filteredMembers, () => {
             </div>
 
             <!-- Club Selector -->
-            <div v-if="isSuperadmin" class="max-w-xl mb-6">
+            <div v-if="clubs.length > 1" class="max-w-xl mb-6">
                 <label class="block mb-1 font-medium text-gray-700">Selecciona un club</label>
                 <select v-model="selectedClub" @change="onClubChange" class="w-full p-2 border rounded">
                     <option disabled value="">-- Selecciona un club --</option>

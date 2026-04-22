@@ -5,7 +5,6 @@ import {
     Squares2X2Icon,
     FolderOpenIcon,
     DocumentTextIcon,
-    BanknotesIcon,
     CalendarDaysIcon,
     MapIcon,
     BuildingLibraryIcon,
@@ -28,6 +27,7 @@ const sections = computed(() => {
                 title: 'Asociación',
                 items: [
                     { name: 'Panel', href: '/association/dashboard', route: 'association.dashboard', icon: HomeIcon },
+                    { name: 'Plan de trabajo', href: '/association/workplan', route: 'association.workplan', icon: ClipboardDocumentListIcon },
                     {
                         name: evaluationSystem.value === 'carpetas' ? 'Requisitos de carpeta' : 'Planificación de clases',
                         href: '/association/programs',
@@ -57,13 +57,6 @@ const sections = computed(() => {
                 ],
             },
             {
-                title: 'Reportes',
-                items: [
-                    { name: 'Reporte de asistencia', href: '/association/reports/assistance', route: 'association.reports.assistance', icon: DocumentTextIcon },
-                    { name: 'Reporte financiero', href: '/association/reports/finances', route: 'association.reports.finances', icon: BanknotesIcon },
-                ],
-            },
-            {
                 title: 'Administración',
                 items: [
                     { name: 'Configuración', href: '/association/settings', route: 'association.settings', icon: Cog6ToothIcon },
@@ -78,13 +71,7 @@ const sections = computed(() => {
                 title: 'Distrito',
                 items: [
                     { name: 'Panel', href: '/district/dashboard', route: 'district.dashboard', icon: HomeIcon },
-                ],
-            },
-            {
-                title: 'Reportes',
-                items: [
-                    { name: 'Reporte de asistencia', href: '/district/reports/assistance', route: 'district.reports.assistance', icon: DocumentTextIcon },
-                    { name: 'Reporte financiero', href: '/district/reports/finances', route: 'district.reports.finances', icon: BanknotesIcon },
+                    { name: 'Plan de trabajo', href: '/district/workplan', route: 'district.workplan', icon: ClipboardDocumentListIcon },
                 ],
             },
         ]
@@ -105,7 +92,7 @@ const sections = computed(() => {
             items: [
                 { name: 'Reporte de asistencia', href: '/union/reports/assistance', route: 'union.reports.assistance', icon: DocumentTextIcon },
                 ...(evaluationSystem.value === 'carpetas' ? [
-                    { name: 'Progreso de requisitos', href: '/union/reports/progress', route: 'union.reports.progress', icon: ChartBarIcon },
+                    { name: 'Reportes de requisitos', href: '/union/reports/progress', route: 'union.reports.progress', icon: ChartBarIcon },
                 ] : []),
             ],
         },

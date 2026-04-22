@@ -1,5 +1,6 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import Modal from '@/Components/Modal.vue'
 import { router, useForm } from '@inertiajs/vue3'
 import { ref, computed } from 'vue'
 
@@ -7,6 +8,7 @@ const props = defineProps({
     union:  { type: Object, required: true },
     year:   { type: Number, required: true },
     events: { type: Array, default: () => [] },
+    publication: { type: Object, default: null },
 })
 
 // ── Year navigation ───────────────────────────────────────────
@@ -14,10 +16,19 @@ const currentYear = new Date().getFullYear()
 const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - 1 + i)
 
 const changeYear = (y) => router.get(route('union.workplan'), { year: y }, { preserveScroll: true })
+const pdfHref = computed(() => route('union.workplan.pdf', { year: props.year }))
 
 // ── Modal state ───────────────────────────────────────────────
 const showModal   = ref(false)
 const editingEvent = ref(null)
+const publishing = ref(false)
+const confirmationModalOpen = ref(false)
+const confirmationTitle = ref('')
+const confirmationMessage = ref('')
+const confirmationConfirmLabel = ref('')
+const confirmationTone = ref('primary')
+const confirmationBusy = ref(false)
+const confirmationHandler = ref(null)
 
 const emptyForm = () => ({
     year:              props.year,
@@ -80,9 +91,87 @@ const submit = () => {
     }
 }
 
+const openConfirmationModal = ({ title, message, confirmLabel, tone = 'primary', onConfirm }) => {
+    confirmationTitle.value = title
+    confirmationMessage.value = message
+    confirmationConfirmLabel.value = confirmLabel
+    confirmationTone.value = tone
+    confirmationHandler.value = onConfirm
+    confirmationModalOpen.value = true
+}
+
+const closeConfirmationModal = () => {
+    if (confirmationBusy.value) return
+    confirmationModalOpen.value = false
+    confirmationTitle.value = ''
+    confirmationMessage.value = ''
+    confirmationConfirmLabel.value = ''
+    confirmationTone.value = 'primary'
+    confirmationHandler.value = null
+}
+
+const runConfirmation = async () => {
+    if (!confirmationHandler.value) return
+    confirmationBusy.value = true
+    try {
+        await confirmationHandler.value()
+        confirmationBusy.value = false
+        closeConfirmationModal()
+    } finally {
+        confirmationBusy.value = false
+    }
+}
+
 const deleteEvent = (ev) => {
-    if (!confirm(`¿Eliminar "${ev.title}"?`)) return
-    router.delete(route('union.workplan.events.destroy', ev.id))
+    openConfirmationModal({
+        title: 'Eliminar evento',
+        message: `¿Eliminar "${ev.title}"?`,
+        confirmLabel: 'Eliminar',
+        tone: 'danger',
+        onConfirm: () => new Promise((resolve) => {
+            router.delete(route('union.workplan.events.destroy', ev.id), {
+                preserveScroll: true,
+                onFinish: resolve,
+            })
+        }),
+    })
+}
+
+const publishCalendar = () => {
+    openConfirmationModal({
+        title: 'Publicar calendario',
+        message: `¿Publicar el calendario ${props.year} a todas las asociaciones de la unión?`,
+        confirmLabel: 'Publicar calendario',
+        onConfirm: () => new Promise((resolve) => {
+            publishing.value = true
+            router.post(route('union.workplan.publish'), { year: props.year }, {
+                preserveScroll: true,
+                onFinish: () => {
+                    publishing.value = false
+                    resolve()
+                },
+            })
+        }),
+    })
+}
+
+const unpublishCalendar = () => {
+    openConfirmationModal({
+        title: 'Despublicar calendario',
+        message: `¿Despublicar el calendario ${props.year}? Esto removerá los eventos propagados hacia asociaciones y clubes.`,
+        confirmLabel: 'Despublicar',
+        tone: 'danger',
+        onConfirm: () => new Promise((resolve) => {
+            publishing.value = true
+            router.post(route('union.workplan.unpublish'), { year: props.year }, {
+                preserveScroll: true,
+                onFinish: () => {
+                    publishing.value = false
+                    resolve()
+                },
+            })
+        }),
+    })
 }
 
 // ── Display helpers ───────────────────────────────────────────
@@ -94,12 +183,13 @@ const clubTypeOptions = [
     { value: 'adventurers',  label: 'Aventureros' },
     { value: 'master_guide', label: 'Guías Mayores' },
 ]
+const dateOnly = (value) => String(value || '').slice(0, 10)
 
 const eventsByMonth = computed(() => {
     const groups = {}
     for (let m = 1; m <= 12; m++) groups[m] = []
     for (const ev of props.events) {
-        const m = new Date(ev.date + 'T12:00:00').getMonth() + 1
+        const m = new Date(dateOnly(ev.date) + 'T12:00:00').getMonth() + 1
         if (groups[m]) groups[m].push(ev)
     }
     return groups
@@ -107,8 +197,13 @@ const eventsByMonth = computed(() => {
 
 const formatDate = (d) => {
     if (!d) return ''
-    const dt = new Date(d + 'T12:00:00')
+    const dt = new Date(dateOnly(d) + 'T12:00:00')
     return dt.toLocaleDateString('es', { day: 'numeric', month: 'short' })
+}
+
+const formatDateRange = (ev) => {
+    if (!ev?.end_date || dateOnly(ev.end_date) === dateOnly(ev.date)) return ''
+    return `${formatDate(ev.date)} - ${formatDate(ev.end_date)}`
 }
 
 const formatTime = (t) => t ? t.slice(0, 5) : ''
@@ -126,6 +221,7 @@ const toggleClubType = (val) => {
 }
 
 const activeMonths = computed(() => Object.entries(eventsByMonth.value).filter(([, evs]) => evs.length > 0))
+const isPublished = computed(() => props.publication?.status === 'published')
 </script>
 
 <template>
@@ -140,8 +236,11 @@ const activeMonths = computed(() => Object.entries(eventsByMonth.value).filter((
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
                         <p class="mt-0.5 text-sm text-gray-500">Calendario general de actividades para la unión</p>
+                        <p class="mt-1 text-xs" :class="isPublished ? 'text-green-700' : 'text-gray-400'">
+                            {{ isPublished ? `Publicado · ${publication?.published_at || ''}` : 'No publicado a asociaciones' }}
+                        </p>
                     </div>
-                    <div class="flex items-center gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
                         <!-- Year selector -->
                         <div class="flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-1 py-1">
                             <button
@@ -154,6 +253,32 @@ const activeMonths = computed(() => Object.entries(eventsByMonth.value).filter((
                                 @click="changeYear(y)"
                             >{{ y }}</button>
                         </div>
+                        <a
+                            :href="pdfHref"
+                            target="_blank"
+                            rel="noopener"
+                            class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                            Imprimir PDF
+                        </a>
+                        <button
+                            v-if="!isPublished"
+                            type="button"
+                            :disabled="publishing || !events.length"
+                            class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
+                            @click="publishCalendar"
+                        >
+                            Publicar calendario
+                        </button>
+                        <button
+                            v-else
+                            type="button"
+                            :disabled="publishing"
+                            class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
+                            @click="unpublishCalendar"
+                        >
+                            Despublicar
+                        </button>
                         <button
                             type="button"
                             class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 transition-colors"
@@ -207,12 +332,12 @@ const activeMonths = computed(() => Object.entries(eventsByMonth.value).filter((
                                 <!-- Date column -->
                                 <div class="w-14 shrink-0 text-center">
                                     <p class="text-lg font-bold text-gray-800 leading-none">
-                                        {{ new Date(ev.date + 'T12:00:00').getDate() }}
+                                        {{ new Date(dateOnly(ev.date) + 'T12:00:00').getDate() }}
                                     </p>
                                     <p class="text-[10px] uppercase text-gray-400 tracking-wide">
-                                        {{ MONTHS[new Date(ev.date + 'T12:00:00').getMonth()].slice(0, 3) }}
+                                        {{ MONTHS[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}
                                     </p>
-                                    <p v-if="ev.end_date && ev.end_date !== ev.date" class="mt-0.5 text-[10px] text-gray-400">
+                                    <p v-if="ev.end_date && dateOnly(ev.end_date) !== dateOnly(ev.date)" class="mt-0.5 text-[10px] text-gray-400">
                                         al {{ formatDate(ev.end_date) }}
                                     </p>
                                 </div>
@@ -240,7 +365,10 @@ const activeMonths = computed(() => Object.entries(eventsByMonth.value).filter((
 
                                     <p class="text-sm font-semibold text-gray-900 truncate">{{ ev.title }}</p>
 
-                                    <div v-if="ev.start_time || ev.location" class="mt-0.5 flex flex-wrap gap-3 text-xs text-gray-400">
+                                    <div v-if="formatDateRange(ev) || ev.start_time || ev.location" class="mt-0.5 flex flex-wrap gap-3 text-xs text-gray-400">
+                                        <span v-if="formatDateRange(ev)" class="font-medium text-gray-500">
+                                            {{ formatDateRange(ev) }}
+                                        </span>
                                         <span v-if="ev.start_time">
                                             {{ formatTime(ev.start_time) }}<template v-if="ev.end_time"> – {{ formatTime(ev.end_time) }}</template>
                                         </span>
@@ -426,6 +554,33 @@ const activeMonths = computed(() => Object.entries(eventsByMonth.value).filter((
                 </div>
             </Transition>
         </Teleport>
+
+        <Modal :show="confirmationModalOpen" max-width="md" @close="closeConfirmationModal">
+            <div class="p-6">
+                <h3 class="text-lg font-semibold text-gray-900">{{ confirmationTitle }}</h3>
+                <p class="mt-3 text-sm leading-6 text-gray-600">{{ confirmationMessage }}</p>
+
+                <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        class="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        :disabled="confirmationBusy"
+                        @click="closeConfirmationModal"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded px-4 py-2 text-sm font-medium text-white disabled:opacity-70"
+                        :class="confirmationTone === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-700 hover:bg-blue-800'"
+                        :disabled="confirmationBusy"
+                        @click="runConfirmation"
+                    >
+                        {{ confirmationBusy ? 'Procesando...' : confirmationConfirmLabel }}
+                    </button>
+                </div>
+            </div>
+        </Modal>
 
     </PathfinderLayout>
 </template>

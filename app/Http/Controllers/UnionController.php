@@ -12,6 +12,7 @@ use App\Models\RepAssistanceAdv;
 use App\Models\ParentCarpetaRequirementEvidence;
 use App\Models\UnionCarpetaYear;
 use App\Models\UnionCarpetaRequirement;
+use App\Models\ClubTypeCatalog;
 use App\Models\UnionClubCatalog;
 use App\Models\UnionClassCatalog;
 use App\Models\Union;
@@ -120,6 +121,7 @@ class UnionController extends Controller
                 'status' => $union->status,
             ],
             'clubCatalogs' => $this->catalogPayload($union),
+            'clubTypeOptions' => $this->clubTypeOptions(),
         ]);
     }
 
@@ -128,17 +130,23 @@ class UnionController extends Controller
         $union = $this->resolveScopedUnion($request);
 
         $validated = $request->validate([
-            'name' => [
+            'club_type' => [
                 'required',
                 'string',
-                'max:255',
-                Rule::unique('union_club_catalogs', 'name')->where(fn ($query) => $query->where('union_id', $union->id)),
+                Rule::exists('club_type_catalogs', 'code')->where(fn ($query) => $query->where('status', 'active')),
+                Rule::unique('union_club_catalogs', 'club_type')->where(fn ($query) => $query->where('union_id', $union->id)),
             ],
             'sort_order' => ['nullable', 'integer', 'min:1'],
         ]);
 
+        $clubType = ClubTypeCatalog::query()
+            ->where('code', $validated['club_type'])
+            ->where('status', 'active')
+            ->firstOrFail();
+
         $union->clubCatalogs()->create([
-            'name' => $validated['name'],
+            'name' => $clubType->name,
+            'club_type' => $clubType->code,
             'sort_order' => $validated['sort_order'] ?? ((int) $union->clubCatalogs()->max('sort_order') + 1),
             'status' => 'active',
         ]);
@@ -251,7 +259,7 @@ class UnionController extends Controller
         $requirement = $carpetaYear->requirements()->create([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'club_type' => $clubCatalog->name,
+            'club_type' => $clubCatalog->club_type ?: $clubCatalog->name,
             'class_name' => $classCatalog->name,
             'requirement_type' => $validated['requirement_type'],
             'validation_mode' => $validated['validation_mode'],
@@ -265,6 +273,31 @@ class UnionController extends Controller
             'message' => 'Requisito de carpeta creado.',
             'requirement' => $requirement,
         ], 201);
+    }
+
+    public function destroyCarpetaRequirement(Request $request, UnionCarpetaRequirement $requirement)
+    {
+        $union = $this->resolveScopedUnion($request);
+        $requirement->load('carpetaYear');
+
+        $this->assertOwnsCarpetaYear($union, $requirement->carpetaYear);
+
+        $evidenceCount = ParentCarpetaRequirementEvidence::query()
+            ->where('union_carpeta_requirement_id', $requirement->id)
+            ->count();
+
+        if ($evidenceCount > 0) {
+            return response()->json([
+                'message' => 'No se puede eliminar este requisito porque ya tiene evidencias registradas por clubes o miembros.',
+                'evidence_count' => $evidenceCount,
+            ], 422);
+        }
+
+        $requirement->delete();
+
+        return response()->json([
+            'message' => 'Requisito eliminado correctamente.',
+        ]);
     }
 
     public function publishCarpetaYear(Request $request, UnionCarpetaYear $carpetaYear)
@@ -1235,6 +1268,15 @@ class UnionController extends Controller
                 'sort_order',
                 'status'
             )])
-            ->get(['id', 'union_id', 'name', 'sort_order', 'status']);
+            ->get(['id', 'union_id', 'name', 'club_type', 'sort_order', 'status']);
+    }
+
+    protected function clubTypeOptions()
+    {
+        return ClubTypeCatalog::query()
+            ->where('status', 'active')
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['code', 'name']);
     }
 }

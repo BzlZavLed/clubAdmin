@@ -210,7 +210,7 @@ class ClubController extends Controller
             $publishedYear = $unionId ? $publishedYears->get($unionId) : null;
             $union = $unionId ? $unions->get($unionId) : null;
             $clubCatalog = $union?->clubCatalogs
-                ?->first(fn ($catalog) => $this->clubTypeMatches($catalog->name, $club->club_type));
+                ?->first(fn ($catalog) => $this->clubTypeMatches($catalog->club_type ?: $catalog->name, $club->club_type));
             $activationsByCatalogId = $club->carpetaClassActivations
                 ->keyBy(fn ($activation) => (int) $activation->union_class_catalog_id);
 

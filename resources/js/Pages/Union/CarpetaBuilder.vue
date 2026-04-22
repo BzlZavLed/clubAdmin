@@ -28,10 +28,18 @@ const yearForm = useForm({
 })
 
 const requirementModalOpen = ref(false)
+const confirmationModalOpen = ref(false)
+const confirmationTitle = ref('')
+const confirmationMessage = ref('')
+const confirmationConfirmLabel = ref('')
+const confirmationTone = ref('primary')
+const confirmationBusy = ref(false)
+const confirmationHandler = ref(null)
 const activeYear = ref(null)
 const activeClubCatalog = ref(null)
 const activeClassCatalog = ref(null)
 const savingRequirement = ref(false)
+const deletingRequirementId = ref(null)
 const evidenceTypeOptions = [
     { value: 'photo', label: 'Photo' },
     { value: 'file', label: 'File' },
@@ -79,7 +87,7 @@ const firstCatalogContext = computed(() => {
 
 const getRequirementsForClass = (yearRow, clubCatalog, classCatalog) => {
     return (yearRow?.requirements || []).filter((requirement) =>
-        String(requirement.club_type || '') === String(clubCatalog?.name || '') &&
+        String(requirement.club_type || '') === String(clubCatalog?.club_type || clubCatalog?.name || '') &&
         String(requirement.class_name || '') === String(classCatalog?.name || '')
     )
 }
@@ -102,6 +110,37 @@ const closeRequirementModal = () => {
 
 const refreshBuilder = () => {
     router.reload({ only: ['union', 'years'] })
+}
+
+const openConfirmationModal = ({ title, message, confirmLabel, tone = 'primary', onConfirm }) => {
+    confirmationTitle.value = title
+    confirmationMessage.value = message
+    confirmationConfirmLabel.value = confirmLabel
+    confirmationTone.value = tone
+    confirmationHandler.value = onConfirm
+    confirmationModalOpen.value = true
+}
+
+const closeConfirmationModal = () => {
+    if (confirmationBusy.value) return
+    confirmationModalOpen.value = false
+    confirmationTitle.value = ''
+    confirmationMessage.value = ''
+    confirmationConfirmLabel.value = ''
+    confirmationTone.value = 'primary'
+    confirmationHandler.value = null
+}
+
+const runConfirmation = async () => {
+    if (!confirmationHandler.value) return
+    confirmationBusy.value = true
+    try {
+        await confirmationHandler.value()
+        confirmationBusy.value = false
+        closeConfirmationModal()
+    } finally {
+        confirmationBusy.value = false
+    }
 }
 
 const submitSystem = () => {
@@ -174,23 +213,70 @@ const submitRequirement = async () => {
 }
 
 const publishYear = (yearRow) => {
-    if (!confirm(tr(`Publicar ciclo ${yearRow.year}?`, `Publish cycle ${yearRow.year}?`))) return
-    router.put(route('union.carpeta-builder.years.publish', yearRow.id), {}, {
-        preserveScroll: true,
-        onSuccess: () => {
-            showToast(tr('Ciclo anual publicado.', 'Yearly cycle published.'), 'success')
-            refreshBuilder()
-        },
+    openConfirmationModal({
+        title: tr('Publicar ciclo anual', 'Publish yearly cycle'),
+        message: tr(
+            `Publicar el ciclo ${yearRow.year} congelará esta definición para los clubes.`,
+            `Publishing cycle ${yearRow.year} will freeze this definition for clubs.`
+        ),
+        confirmLabel: tr('Publicar ciclo', 'Publish cycle'),
+        onConfirm: () => new Promise((resolve) => {
+            router.put(route('union.carpeta-builder.years.publish', yearRow.id), {}, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showToast(tr('Ciclo anual publicado.', 'Yearly cycle published.'), 'success')
+                    refreshBuilder()
+                },
+                onError: () => showToast(tr('No se pudo publicar el ciclo.', 'Could not publish the cycle.'), 'error'),
+                onFinish: resolve,
+            })
+        }),
     })
 }
 
 const archiveYear = (yearRow) => {
-    if (!confirm(tr(`Archivar ciclo ${yearRow.year}?`, `Archive cycle ${yearRow.year}?`))) return
-    router.put(route('union.carpeta-builder.years.archive', yearRow.id), {}, {
-        preserveScroll: true,
-        onSuccess: () => {
-            showToast(tr('Ciclo anual archivado.', 'Yearly cycle archived.'), 'success')
-            refreshBuilder()
+    openConfirmationModal({
+        title: tr('Archivar ciclo anual', 'Archive yearly cycle'),
+        message: tr(
+            `Archivar el ciclo ${yearRow.year} lo mantendrá como historial y dejará de ser editable para operación activa.`,
+            `Archiving cycle ${yearRow.year} keeps it as history and removes it from active operation.`
+        ),
+        confirmLabel: tr('Archivar ciclo', 'Archive cycle'),
+        tone: 'warning',
+        onConfirm: () => new Promise((resolve) => {
+            router.put(route('union.carpeta-builder.years.archive', yearRow.id), {}, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showToast(tr('Ciclo anual archivado.', 'Yearly cycle archived.'), 'success')
+                    refreshBuilder()
+                },
+                onError: () => showToast(tr('No se pudo archivar el ciclo.', 'Could not archive the cycle.'), 'error'),
+                onFinish: resolve,
+            })
+        }),
+    })
+}
+
+const requestDeleteRequirement = (requirement) => {
+    openConfirmationModal({
+        title: tr('Eliminar requisito', 'Delete requirement'),
+        message: tr(
+            `Se verificará que no existan evidencias registradas para "${requirement.title}". Si ya fue usado por algún club o miembro, no se podrá eliminar.`,
+            `The system will verify there is no evidence registered for "${requirement.title}". If it was already used by any club or member, it cannot be deleted.`
+        ),
+        confirmLabel: tr('Eliminar requisito', 'Delete requirement'),
+        tone: 'danger',
+        onConfirm: async () => {
+            deletingRequirementId.value = requirement.id
+            try {
+                const { data } = await axios.delete(route('union.carpeta-builder.requirements.destroy', requirement.id))
+                showToast(data?.message || tr('Requisito eliminado.', 'Requirement deleted.'), 'success')
+                refreshBuilder()
+            } catch (error) {
+                showError(error, tr('No se pudo eliminar el requisito.', 'Could not delete the requirement.'))
+            } finally {
+                deletingRequirementId.value = null
+            }
         },
     })
 }
@@ -363,7 +449,8 @@ const formatDateTime = (value) => {
                                                                 <th class="pb-2 pr-4 font-medium">{{ tr('Título', 'Title') }}</th>
                                                                 <th class="pb-2 pr-4 font-medium">{{ tr('Tipo', 'Type') }}</th>
                                                                 <th class="pb-2 pr-4 font-medium">{{ tr('Validación', 'Validation') }}</th>
-                                                                <th class="pb-2 font-medium">{{ tr('Evidencias', 'Evidence') }}</th>
+                                                                <th class="pb-2 pr-4 font-medium">{{ tr('Evidencias', 'Evidence') }}</th>
+                                                                <th class="pb-2 font-medium text-right">{{ tr('Acción', 'Action') }}</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
@@ -379,8 +466,18 @@ const formatDateTime = (value) => {
                                                                 </td>
                                                                 <td class="py-2 pr-4 text-gray-700">{{ requirement.requirement_type }}</td>
                                                                 <td class="py-2 pr-4 text-gray-700">{{ requirement.validation_mode }}</td>
-                                                                <td class="py-2 text-gray-700">
+                                                                <td class="py-2 pr-4 text-gray-700">
                                                                     {{ Array.isArray(requirement.allowed_evidence_types) && requirement.allowed_evidence_types.length ? requirement.allowed_evidence_types.join(', ') : '—' }}
+                                                                </td>
+                                                                <td class="py-2 text-right">
+                                                                    <button
+                                                                        type="button"
+                                                                        class="text-sm font-medium text-red-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400"
+                                                                        :disabled="deletingRequirementId === requirement.id"
+                                                                        @click="requestDeleteRequirement(requirement)"
+                                                                    >
+                                                                        {{ deletingRequirementId === requirement.id ? tr('Eliminando...', 'Deleting...') : tr('Eliminar', 'Delete') }}
+                                                                    </button>
                                                                 </td>
                                                             </tr>
                                                         </tbody>
@@ -396,6 +493,41 @@ const formatDateTime = (value) => {
                 </section>
             </template>
         </div>
+
+        <Modal :show="confirmationModalOpen" max-width="md" @close="closeConfirmationModal">
+            <div class="p-6">
+                <h3 class="text-lg font-semibold text-gray-900">
+                    {{ confirmationTitle }}
+                </h3>
+                <p class="mt-3 text-sm leading-6 text-gray-600">
+                    {{ confirmationMessage }}
+                </p>
+
+                <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        class="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="confirmationBusy"
+                        @click="closeConfirmationModal"
+                    >
+                        {{ tr('Cancelar', 'Cancel') }}
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+                        :class="{
+                            'bg-red-600 hover:bg-red-700': confirmationTone === 'danger',
+                            'bg-amber-600 hover:bg-amber-700': confirmationTone === 'warning',
+                            'bg-blue-600 hover:bg-blue-700': confirmationTone === 'primary',
+                        }"
+                        :disabled="confirmationBusy"
+                        @click="runConfirmation"
+                    >
+                        {{ confirmationBusy ? tr('Procesando...', 'Processing...') : confirmationConfirmLabel }}
+                    </button>
+                </div>
+            </div>
+        </Modal>
 
         <Modal :show="requirementModalOpen" max-width="2xl" @close="closeRequirementModal">
             <div class="p-6">

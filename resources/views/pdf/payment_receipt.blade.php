@@ -296,7 +296,6 @@
                     </td>
                     <td>
                         <div><strong>Validación digital:</strong> escanee el QR para confirmar este recibo contra el sistema.</div>
-                        <div class="break-all"><strong>URL:</strong> {{ $validationUrl }}</div>
                     </td>
                 </tr>
             </table>

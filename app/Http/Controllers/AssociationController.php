@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Association;
 use App\Models\AssociationEvaluator;
 use App\Models\AssociationHonorClassSession;
+use App\Models\AssociationWorkplanEvent;
+use App\Models\AssociationWorkplanPublication;
 use App\Models\Church;
 use App\Models\Club;
 use App\Models\District;
@@ -13,6 +15,7 @@ use App\Models\MemberPathfinder;
 use App\Models\Union;
 use App\Models\User;
 use App\Support\SuperadminContext;
+use App\Services\WorkplanPropagationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -305,6 +308,105 @@ class AssociationController extends Controller
                 'notes' => $e->notes,
             ])->values(),
         ]);
+    }
+
+    public function workplan(Request $request)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $year = (int) $request->input('year', now()->year);
+        $publication = AssociationWorkplanPublication::query()
+            ->where('association_id', $association->id)
+            ->where('year', $year)
+            ->first();
+        $lastChangedAt = AssociationWorkplanEvent::query()
+            ->where('association_id', $association->id)
+            ->where('year', $year)
+            ->max('updated_at');
+        $requiresRepublish = $publication?->status === 'published'
+            && $publication?->published_at
+            && $lastChangedAt
+            && strtotime((string) $lastChangedAt) > strtotime((string) $publication->published_at);
+
+        return Inertia::render('Association/Workplan', [
+            'association' => ['id' => $association->id, 'name' => $association->name],
+            'union' => [
+                'id' => $association->union?->id,
+                'name' => $association->union?->name,
+            ],
+            'year' => $year,
+            'events' => AssociationWorkplanEvent::query()
+                ->where('association_id', $association->id)
+                ->where('year', $year)
+                ->where('status', 'active')
+                ->orderBy('date')
+                ->orderBy('start_time')
+                ->get(),
+            'publication' => $publication,
+            'requiresRepublish' => $requiresRepublish,
+        ]);
+    }
+
+    public function storeWorkplanEvent(Request $request)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $validated = $this->validateWorkplanEvent($request, requireYear: true);
+
+        AssociationWorkplanEvent::query()->create([
+            ...$validated,
+            'association_id' => $association->id,
+            'status' => 'active',
+            'created_by' => $request->user()?->id,
+        ]);
+
+        return back()->with('success', 'Evento creado correctamente.');
+    }
+
+    public function updateWorkplanEvent(Request $request, AssociationWorkplanEvent $event)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $this->assertOwnsWorkplanEvent($association, $event);
+
+        $event->update($this->validateWorkplanEvent($request));
+
+        return back()->with('success', 'Evento actualizado correctamente.');
+    }
+
+    public function destroyWorkplanEvent(Request $request, AssociationWorkplanEvent $event)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $this->assertOwnsWorkplanEvent($association, $event);
+
+        if (!empty($event->union_workplan_event_id)) {
+            abort(422, 'Los eventos heredados de la union no se pueden eliminar desde la asociacion.');
+        }
+
+        $event->update(['status' => 'deleted']);
+
+        return back()->with('success', 'Evento eliminado.');
+    }
+
+    public function publishWorkplan(Request $request, WorkplanPropagationService $propagationService)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $result = $propagationService->publishAssociation($association, (int) $validated['year'], $request->user());
+
+        return back()->with('success', "Calendario publicado a {$result['clubs']} clubes.");
+    }
+
+    public function unpublishWorkplan(Request $request, WorkplanPropagationService $propagationService)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $result = $propagationService->unpublishAssociation($association, (int) $validated['year']);
+
+        return back()->with('success', "Calendario despublicado. Se removieron {$result['club_events']} eventos de clubes.");
     }
 
     public function storeDistrict(Request $request)
@@ -793,5 +895,30 @@ class AssociationController extends Controller
         }
 
         return Association::query()->findOrFail((int) $user->scope_id);
+    }
+
+    protected function validateWorkplanEvent(Request $request, bool $requireYear = false): array
+    {
+        return $request->validate([
+            'year' => [$requireYear ? 'required' : 'sometimes', 'integer', 'min:2000', 'max:2100'],
+            'date' => ['required', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_time' => ['nullable', 'date_format:H:i'],
+            'event_type' => ['required', Rule::in(['general', 'program'])],
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'target_club_types' => ['nullable', 'array'],
+            'target_club_types.*' => ['string', Rule::in(['pathfinders', 'adventurers', 'master_guide'])],
+            'is_mandatory' => ['boolean'],
+        ]);
+    }
+
+    protected function assertOwnsWorkplanEvent(Association $association, AssociationWorkplanEvent $event): void
+    {
+        if ((int) $event->association_id !== (int) $association->id) {
+            abort(403);
+        }
     }
 }

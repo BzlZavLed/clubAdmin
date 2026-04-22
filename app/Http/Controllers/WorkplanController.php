@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AssociationWorkplanEvent;
 use App\Models\Club;
 use App\Models\ClubClass;
 use App\Models\ClubObjective;
+use App\Models\DistrictWorkplanEvent;
 use App\Models\Member;
 use App\Models\Staff;
 use App\Models\Workplan;
@@ -21,6 +23,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use App\Support\ClubHelper;
+use App\Support\SuperadminContext;
 use App\Services\ClubLogoService;
 
 class WorkplanController extends Controller
@@ -34,14 +37,19 @@ class WorkplanController extends Controller
             'church',
         ]);
         if ($user->profile_type === 'superadmin') {
-            $clubs = Club::query()->orderBy('club_name')->get(['id', 'club_name', 'church_name']);
+            $context = SuperadminContext::fromSession();
+            $contextClubId = $context['club_id'] ?? null;
+            $clubs = $contextClubId
+                ? Club::withoutGlobalScopes()->where('id', $contextClubId)->get(['id', 'club_name', 'church_name'])
+                : collect();
+            $selectedClubId = $contextClubId;
         } else {
             $clubIds = ClubHelper::clubIdsForUser($user);
             $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'church_name']);
-        }
-        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
-        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
-            abort(403, 'Not allowed to view this club workplan.');
+            $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
+            if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
+                abort(403, 'Not allowed to view this club workplan.');
+            }
         }
 
         $workplan = null;
@@ -59,11 +67,20 @@ class WorkplanController extends Controller
             }
         }
 
+        $inheritedEvents = [];
+        if ($selectedClubId) {
+            $club = Club::withoutGlobalScopes()->with('district.association')->find($selectedClubId);
+            if ($club) {
+                $inheritedEvents = $this->loadInheritedEvents($club, now()->year, $workplan);
+            }
+        }
+
         return Inertia::render('ClubDirector/Workplan', [
             'auth_user' => Auth::user(),
             'workplan' => $workplan,
             'clubs' => $clubs,
             'selected_club_id' => $selectedClubId,
+            'inherited_events' => $inheritedEvents,
             'local_objectives' => $selectedClubId
                 ? ClubObjective::where('club_id', $selectedClubId)->where('status', 'active')->orderBy('name')->get()
                 : [],
@@ -825,6 +842,93 @@ class WorkplanController extends Controller
 
         $filename = 'class-plans-' . ($className ?: 'all') . '.pdf';
         return $pdf->download($filename);
+    }
+
+    private function loadInheritedEvents(Club $club, int $year, ?Workplan $workplan): array
+    {
+        $propagatedIds = [
+            AssociationWorkplanEvent::class => [],
+            DistrictWorkplanEvent::class => [],
+        ];
+
+        if ($workplan) {
+            $workplan->events()
+                ->whereNotNull('source_type')
+                ->whereNotNull('source_id')
+                ->get(['source_type', 'source_id'])
+                ->each(function ($ev) use (&$propagatedIds) {
+                    if (isset($propagatedIds[$ev->source_type])) {
+                        $propagatedIds[$ev->source_type][] = (int) $ev->source_id;
+                    }
+                });
+        }
+
+        $clubType = $club->club_type;
+        $inherited = [];
+
+        $associationId = $club->district?->association_id;
+        if ($associationId) {
+            AssociationWorkplanEvent::query()
+                ->where('association_id', $associationId)
+                ->where('year', $year)
+                ->where('status', 'active')
+                ->get()
+                ->each(function ($event) use (&$inherited, $propagatedIds, $clubType) {
+                    if (in_array($event->id, $propagatedIds[AssociationWorkplanEvent::class])) return;
+                    if (!$this->inheritedEventAppliesToClub($event->target_club_types, $clubType)) return;
+                    $inherited[] = $this->formatInheritedEvent($event, 'association');
+                });
+        }
+
+        if ($club->district_id) {
+            DistrictWorkplanEvent::query()
+                ->where('district_id', $club->district_id)
+                ->where('year', $year)
+                ->where('status', 'active')
+                ->get()
+                ->each(function ($event) use (&$inherited, $propagatedIds, $clubType) {
+                    if (in_array($event->id, $propagatedIds[DistrictWorkplanEvent::class])) return;
+                    if (!$this->inheritedEventAppliesToClub($event->target_club_types, $clubType)) return;
+                    $inherited[] = $this->formatInheritedEvent($event, 'district');
+                });
+        }
+
+        return $inherited;
+    }
+
+    private function inheritedEventAppliesToClub(?array $targetClubTypes, ?string $clubType): bool
+    {
+        if (empty($targetClubTypes)) return true;
+        $normalize = fn ($v) => str_replace(['-', '_', ' '], '', mb_strtolower((string) $v));
+        return in_array($normalize($clubType), array_map($normalize, $targetClubTypes), true);
+    }
+
+    private function formatInheritedEvent($event, string $sourceLevel): array
+    {
+        $date = $event->date instanceof \Carbon\Carbon ? $event->date->format('Y-m-d') : (string) $event->date;
+        $endDate = $event->end_date
+            ? ($event->end_date instanceof \Carbon\Carbon ? $event->end_date->format('Y-m-d') : (string) $event->end_date)
+            : null;
+
+        return [
+            'id' => 'inherited-' . $sourceLevel . '-' . $event->id,
+            '_source_id' => $event->id,
+            '_source_level' => $sourceLevel,
+            '_inherited' => true,
+            'date' => $date,
+            'end_date' => $endDate,
+            'start_time' => $event->start_time,
+            'end_time' => $event->end_time,
+            'title' => $event->title,
+            'description' => $event->description,
+            'location' => $event->location,
+            'event_type' => $event->event_type ?? 'general',
+            'target_club_types' => $event->target_club_types,
+            'is_mandatory' => (bool) $event->is_mandatory,
+            'meeting_type' => 'special',
+            'is_generated' => true,
+            'status' => 'active',
+        ];
     }
 
     private function escapeIcs(string $value): string

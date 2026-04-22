@@ -183,17 +183,23 @@ function rangePillClass(ev) {
 }
 
 function rangeBarClass(ev) {
-    return `${badgeColor(ev.meeting_type)} ${rangePillClass(ev)}`
+    const pill = rangePillClass(ev)
+    if (ev._inherited) return pill
+    if (ev.meeting_type === 'sabbath') return `bg-indigo-100 text-indigo-800 ${pill}`
+    if (ev.meeting_type === 'sunday') return `bg-teal-100 text-teal-800 ${pill}`
+    return `bg-amber-100 text-amber-800 ${pill}`
+}
+
+function rangeBarStyle(ev) {
+    if (!ev._inherited) return {}
+    if (ev._source_level === 'district') {
+        return { backgroundColor: '#f0fdf4', color: '#0f766e', borderLeft: '3px solid #2dd4bf' }
+    }
+    return { backgroundColor: '#faf5ff', color: '#7e22ce', borderLeft: '3px solid #a855f7' }
 }
 
 function isToday(dateStr) {
     return normalizeDate(dateStr) === todayIso
-}
-
-function badgeColor(type) {
-    if (type === 'sabbath') return 'bg-indigo-100 text-indigo-800'
-    if (type === 'sunday') return 'bg-teal-100 text-teal-800'
-    return 'bg-amber-100 text-amber-800'
 }
 
 function shiftMonth(delta) {
@@ -289,6 +295,7 @@ watch(() => props.events, (newVal) => {
                             :key="ev._occurrence_key || ev.id"
                             class="text-[11px] px-2 py-1 border cursor-pointer"
                             :class="rangeBarClass(ev)"
+                            :style="rangeBarStyle(ev)"
                             data-calendar-action
                             @click="emit('edit', ev)"
                         >
@@ -296,7 +303,12 @@ watch(() => props.events, (newVal) => {
                                 <div class="flex items-center justify-between gap-2">
                                     <span class="font-semibold truncate">{{ ev.title }}</span>
                                     <span
-                                        v-if="ev.is_generated"
+                                        v-if="ev._inherited"
+                                        class="inline-flex items-center justify-center text-[9px] font-bold px-1 rounded border shrink-0"
+                                        :class="ev._source_level === 'district' ? 'border-teal-500 text-teal-700 bg-teal-50' : 'border-purple-500 text-purple-700 bg-purple-50'"
+                                    >{{ ev._source_level === 'district' ? 'D' : 'A' }}</span>
+                                    <span
+                                        v-else-if="ev.is_generated"
                                         class="inline-flex items-center justify-center text-[10px] font-semibold w-5 h-5 rounded-full border border-black text-black bg-white"
                                     >
                                         A
@@ -347,6 +359,7 @@ watch(() => props.events, (newVal) => {
                                 :key="ev._occurrence_key || ev.id"
                                 class="text-[11px] sm:text-xs px-2 py-1 border cursor-pointer"
                                 :class="rangeBarClass(ev)"
+                                :style="rangeBarStyle(ev)"
                                 data-calendar-action
                                 @click="emit('edit', ev)"
                             >
@@ -354,7 +367,14 @@ watch(() => props.events, (newVal) => {
                                     <div class="flex items-center justify-between gap-2">
                                         <span class="font-semibold truncate">{{ ev.title }}</span>
                                         <span
-                                            v-if="ev.is_generated"
+                                            v-if="ev._inherited"
+                                            class="inline-flex items-center justify-center text-[9px] font-bold px-1 rounded border shrink-0"
+                                            :style="ev._source_level === 'district'
+                                                ? { borderColor: '#2dd4bf', color: '#0f766e', backgroundColor: '#f0fdf4' }
+                                                : { borderColor: '#a855f7', color: '#7e22ce', backgroundColor: '#faf5ff' }"
+                                        >{{ ev._source_level === 'district' ? 'D' : 'A' }}</span>
+                                        <span
+                                            v-else-if="ev.is_generated"
                                             class="inline-flex items-center justify-center text-[10px] font-semibold w-5 h-5 rounded-full border border-black text-black bg-white"
                                         >
                                             A

@@ -26,6 +26,16 @@ const clubTypes = [
 ]
 
 const selectedType = ref(props.club_type_filter ?? null)
+const openSections = ref({
+    progress: true,
+    requirements: true,
+})
+
+const toggleSection = (key) => {
+    openSections.value[key] = !openSections.value[key]
+}
+
+const isSectionOpen = (key) => openSections.value[key] !== false
 
 const applyFilter = (type) => {
     selectedType.value = type
@@ -152,11 +162,16 @@ const reqGrouped = computed(() => {
     }
     return Object.values(groups)
 })
+
+const requirementsReportTitle = computed(() => {
+    if (props.level === 'club') return 'Progreso de miembros'
+    return `Progreso por ${levelLabel.value.toLowerCase()}`
+})
 </script>
 
 <template>
     <PathfinderLayout>
-        <template #title>Progreso de requisitos</template>
+        <template #title>Reportes de requisitos</template>
 
         <div class="space-y-5">
 
@@ -166,7 +181,7 @@ const reqGrouped = computed(() => {
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
                         <p class="mt-0.5 text-sm text-gray-500">
-                            Reporte de progreso de carpeta de investidura
+                            Reportes de requisitos de carpeta de investidura
                             <span v-if="carpeta_year" class="font-medium text-gray-700"> · {{ carpeta_year.year }}</span>
                         </p>
                         <div v-if="!carpeta_year" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -224,194 +239,234 @@ const reqGrouped = computed(() => {
                     </button>
                 </div>
 
-                <!-- ── Rows (union / association / district level) ── -->
-                <div v-if="level !== 'club'" class="space-y-3">
-                    <div class="flex items-center justify-between">
-                        <p class="text-sm font-semibold text-gray-700">{{ levelLabel }}</p>
-                        <input
-                            v-model="rowSearch"
-                            type="search"
-                            placeholder="Buscar…"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 w-48"
-                        />
-                    </div>
-
-                    <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
-                        Sin datos.
-                    </div>
-
-                    <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                        <table class="min-w-full divide-y divide-gray-100">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                        {{ level === 'district' ? 'Club' : (level === 'association' ? 'Distrito' : 'Asociación') }}
-                                    </th>
-                                    <th v-if="level === 'district'" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Tipo</th>
-                                    <th v-if="level !== 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Clubes</th>
-                                    <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Miembros</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 min-w-[180px]">Progreso</th>
-                                    <th class="px-4 py-3" />
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                <tr
-                                    v-for="row in filteredRows"
-                                    :key="row.id"
-                                    class="group transition-colors"
-                                    :class="rowIsDrillable ? 'hover:bg-blue-50 cursor-pointer' : 'hover:bg-gray-50'"
-                                    @click="rowIsDrillable && drillInto(row)"
-                                >
-                                    <td class="px-6 py-4">
-                                        <p class="text-sm font-medium text-gray-900">{{ row.name ?? row.club_name }}</p>
-                                        <p v-if="row.church_name" class="text-xs text-gray-400">{{ row.church_name }}</p>
-                                    </td>
-                                    <td v-if="level === 'district'" class="px-4 py-4">
-                                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{{ clubTypeLabel(row.club_type) }}</span>
-                                    </td>
-                                    <td v-if="level !== 'district'" class="px-4 py-4 text-right text-sm text-gray-600">
-                                        {{ row.total_clubs ?? '—' }}
-                                    </td>
-                                    <td class="px-4 py-4 text-right text-sm text-gray-600">{{ row.member_count ?? row.total_members ?? 0 }}</td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-3">
-                                            <div class="flex-1 h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                                                <div
-                                                    class="h-2.5 rounded-full transition-all duration-500"
-                                                    :style="{ width: (row.progress_pct != null ? row.progress_pct : 0) + '%', backgroundColor: progressBarColor(row.progress_pct) }"
-                                                />
-                                            </div>
-                                            <span :class="['text-sm font-semibold w-12 text-right shrink-0', progressTextColor(row.progress_pct)]">
-                                                {{ row.progress_pct !== null && row.progress_pct !== undefined ? row.progress_pct + '%' : '—' }}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td class="px-4 py-4 text-right">
-                                        <span
-                                            v-if="rowIsDrillable"
-                                            class="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity select-none"
-                                        >
-                                            Ver detalle →
-                                        </span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- ── Members (club level) ── -->
-                <div v-else class="space-y-3">
-                    <div class="flex flex-wrap items-center justify-between gap-3">
+                <section class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <button
+                        type="button"
+                        class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50"
+                        @click="toggleSection('progress')"
+                    >
                         <div>
-                            <p class="text-sm font-semibold text-gray-700">
-                                {{ current_entity?.name }}
-                                <span v-if="current_entity?.club_type" class="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-500">
-                                    {{ clubTypeLabel(current_entity.club_type) }}
-                                </span>
+                            <p class="text-sm font-semibold text-gray-800">{{ requirementsReportTitle }}</p>
+                            <p class="text-xs text-gray-400">
+                                {{ level === 'club' ? `${members.length} miembros con clase asignada` : `${rows.length} registros disponibles` }}
                             </p>
-                            <p class="text-xs text-gray-400">{{ members.length }} miembros con clase asignada</p>
                         </div>
-                        <input
-                            v-model="memberSearch"
-                            type="search"
-                            placeholder="Buscar miembro…"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 w-48"
-                        />
-                    </div>
+                        <span class="text-lg leading-none text-gray-400">{{ isSectionOpen('progress') ? '−' : '+' }}</span>
+                    </button>
 
-                    <div v-if="!filteredMembers.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
-                        Sin miembros con clase asignada.
-                    </div>
+                    <div v-show="isSectionOpen('progress')" class="border-t border-gray-100 p-5">
+                        <!-- ── Rows (union / association / district level) ── -->
+                        <div v-if="level !== 'club'" class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <p class="text-sm font-semibold text-gray-700">{{ levelLabel }}</p>
+                                <input
+                                    v-model="rowSearch"
+                                    type="search"
+                                    placeholder="Buscar…"
+                                    class="w-48 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                />
+                            </div>
 
-                    <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                        <table class="min-w-full divide-y divide-gray-100">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Miembro</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Clase</th>
-                                    <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Completados</th>
-                                    <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Total</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 min-w-[180px]">Progreso</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                <tr v-for="member in filteredMembers" :key="member.id">
-                                    <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ member.name }}</td>
-                                    <td class="px-4 py-3 text-sm text-gray-600">{{ member.class_name }}</td>
-                                    <td class="px-4 py-3 text-right text-sm text-gray-700">{{ member.fulfilled }}</td>
-                                    <td class="px-4 py-3 text-right text-sm text-gray-400">{{ member.total }}</td>
-                                    <td class="px-6 py-3">
-                                        <div class="flex items-center gap-3">
-                                            <div class="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                                                <div
-                                                    class="h-2 rounded-full transition-all duration-500"
-                                                    :style="{ width: (member.progress_pct != null ? member.progress_pct : 0) + '%', backgroundColor: progressBarColor(member.progress_pct) }"
-                                                />
-                                            </div>
-                                            <span :class="['text-sm font-semibold w-12 text-right shrink-0', progressTextColor(member.progress_pct)]">
-                                                {{ member.progress_pct !== null && member.progress_pct !== undefined ? member.progress_pct + '%' : '—' }}
-                                            </span>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                            <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                                Sin datos.
+                            </div>
+
+                            <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                                <table class="min-w-full divide-y divide-gray-100">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                {{ level === 'district' ? 'Club' : (level === 'association' ? 'Distrito' : 'Asociación') }}
+                                            </th>
+                                            <th v-if="level === 'district'" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Tipo</th>
+                                            <th v-if="level !== 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Clubes</th>
+                                            <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Miembros</th>
+                                            <th class="min-w-[180px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Progreso</th>
+                                            <th class="px-4 py-3" />
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr
+                                            v-for="row in filteredRows"
+                                            :key="row.id"
+                                            class="group transition-colors"
+                                            :class="rowIsDrillable ? 'hover:bg-blue-50 cursor-pointer' : 'hover:bg-gray-50'"
+                                            @click="rowIsDrillable && drillInto(row)"
+                                        >
+                                            <td class="px-6 py-4">
+                                                <p class="text-sm font-medium text-gray-900">{{ row.name ?? row.club_name }}</p>
+                                                <p v-if="row.church_name" class="text-xs text-gray-400">{{ row.church_name }}</p>
+                                            </td>
+                                            <td v-if="level === 'district'" class="px-4 py-4">
+                                                <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{{ clubTypeLabel(row.club_type) }}</span>
+                                            </td>
+                                            <td v-if="level !== 'district'" class="px-4 py-4 text-right text-sm text-gray-600">
+                                                {{ row.total_clubs ?? '—' }}
+                                            </td>
+                                            <td class="px-4 py-4 text-right text-sm text-gray-600">{{ row.member_count ?? row.total_members ?? 0 }}</td>
+                                            <td class="px-6 py-4">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                                                        <div
+                                                            class="h-2.5 rounded-full transition-all duration-500"
+                                                            :style="{ width: (row.progress_pct != null ? row.progress_pct : 0) + '%', backgroundColor: progressBarColor(row.progress_pct) }"
+                                                        />
+                                                    </div>
+                                                    <span :class="['text-sm font-semibold w-12 text-right shrink-0', progressTextColor(row.progress_pct)]">
+                                                        {{ row.progress_pct !== null && row.progress_pct !== undefined ? row.progress_pct + '%' : '—' }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td class="px-4 py-4 text-right">
+                                                <span
+                                                    v-if="rowIsDrillable"
+                                                    class="select-none text-xs text-blue-500 opacity-0 transition-opacity group-hover:opacity-100"
+                                                >
+                                                    Ver detalle →
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- ── Members (club level) ── -->
+                        <div v-else class="space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-semibold text-gray-700">
+                                        {{ current_entity?.name }}
+                                        <span v-if="current_entity?.club_type" class="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-500">
+                                            {{ clubTypeLabel(current_entity.club_type) }}
+                                        </span>
+                                    </p>
+                                    <p class="text-xs text-gray-400">{{ members.length }} miembros con clase asignada</p>
+                                </div>
+                                <input
+                                    v-model="memberSearch"
+                                    type="search"
+                                    placeholder="Buscar miembro…"
+                                    class="w-48 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div v-if="!filteredMembers.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                                Sin miembros con clase asignada.
+                            </div>
+
+                            <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                                <table class="min-w-full divide-y divide-gray-100">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Miembro</th>
+                                            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Clase</th>
+                                            <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Completados</th>
+                                            <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Total</th>
+                                            <th class="min-w-[180px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Progreso</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="member in filteredMembers" :key="member.id">
+                                            <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ member.name }}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">{{ member.class_name }}</td>
+                                            <td class="px-4 py-3 text-right text-sm text-gray-700">{{ member.fulfilled }}</td>
+                                            <td class="px-4 py-3 text-right text-sm text-gray-400">{{ member.total }}</td>
+                                            <td class="px-6 py-3">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                                                        <div
+                                                            class="h-2 rounded-full transition-all duration-500"
+                                                            :style="{ width: (member.progress_pct != null ? member.progress_pct : 0) + '%', backgroundColor: progressBarColor(member.progress_pct) }"
+                                                        />
+                                                    </div>
+                                                    <span :class="['text-sm font-semibold w-12 text-right shrink-0', progressTextColor(member.progress_pct)]">
+                                                        {{ member.progress_pct !== null && member.progress_pct !== undefined ? member.progress_pct + '%' : '—' }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                </section>
 
                 <!-- ── Requirements effectiveness ── -->
-                <div v-if="requirements_report.length" class="space-y-3 pt-2">
-                    <div class="flex items-center justify-between">
+                <section v-if="requirements_report.length" class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <button
+                        type="button"
+                        class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50"
+                        @click="toggleSection('requirements')"
+                    >
                         <div>
-                            <p class="text-sm font-semibold text-gray-700">Efectividad de requisitos</p>
+                            <p class="text-sm font-semibold text-gray-800">Efectividad de requisitos</p>
                             <p class="text-xs text-gray-400">Cuántos miembros han completado cada requisito</p>
                         </div>
-                        <input
-                            v-model="reqSearch"
-                            type="search"
-                            placeholder="Buscar requisito…"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 w-52"
-                        />
-                    </div>
+                        <span class="text-lg leading-none text-gray-400">{{ isSectionOpen('requirements') ? '−' : '+' }}</span>
+                    </button>
 
-                    <div v-for="group in reqGrouped" :key="group.club_type + group.class_name" class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                        <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-5 py-3">
-                            <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">{{ clubTypeLabel(group.club_type) }}</span>
-                            <span class="text-sm font-semibold text-gray-700">{{ group.class_name }}</span>
+                    <div v-show="isSectionOpen('requirements')" class="space-y-3 border-t border-gray-100 p-5">
+                        <div class="flex justify-end">
+                            <input
+                                v-model="reqSearch"
+                                type="search"
+                                placeholder="Buscar requisito…"
+                                class="w-52 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            />
                         </div>
-                        <table class="min-w-full divide-y divide-gray-100">
-                            <thead class="bg-gray-50/50">
-                                <tr>
-                                    <th class="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Requisito</th>
-                                    <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Completaron</th>
-                                    <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Total</th>
-                                    <th class="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 min-w-[160px]">Adopción</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                <tr v-for="req in group.items" :key="req.id" class="hover:bg-gray-50">
-                                    <td class="px-5 py-3 text-sm text-gray-800">{{ req.title }}</td>
-                                    <td class="px-4 py-3 text-right text-sm font-semibold text-gray-700">{{ req.completed }}</td>
-                                    <td class="px-4 py-3 text-right text-sm text-gray-400">{{ req.total_members }}</td>
-                                    <td class="px-5 py-3">
-                                        <div class="flex items-center gap-2">
-                                            <div class="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                                                <div
-                                                    class="h-2 rounded-full transition-all duration-500"
-                                                    :style="{ width: (req.pct != null ? req.pct : 0) + '%', backgroundColor: progressBarColor(req.pct) }"
-                                                />
-                                            </div>
-                                            <span :class="['text-xs font-semibold w-10 text-right shrink-0', progressTextColor(req.pct)]">
-                                                {{ req.pct != null ? req.pct + '%' : '—' }}
-                                            </span>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+
+                        <div v-for="group in reqGrouped" :key="group.club_type + group.class_name" class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                            <button
+                                type="button"
+                                class="flex w-full items-center justify-between gap-3 border-b border-gray-100 bg-gray-50 px-5 py-3 text-left hover:bg-gray-100"
+                                @click="toggleSection(`requirements-${group.club_type}-${group.class_name}`)"
+                            >
+                                <span class="flex items-center gap-2">
+                                    <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">{{ clubTypeLabel(group.club_type) }}</span>
+                                    <span class="text-sm font-semibold text-gray-700">{{ group.class_name }}</span>
+                                    <span class="text-xs text-gray-400">({{ group.items.length }})</span>
+                                </span>
+                                <span class="text-lg leading-none text-gray-400">
+                                    {{ isSectionOpen(`requirements-${group.club_type}-${group.class_name}`) ? '−' : '+' }}
+                                </span>
+                            </button>
+                            <div v-show="isSectionOpen(`requirements-${group.club_type}-${group.class_name}`)" class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-100">
+                                    <thead class="bg-gray-50/50">
+                                        <tr>
+                                            <th class="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Requisito</th>
+                                            <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Completaron</th>
+                                            <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Total</th>
+                                            <th class="min-w-[160px] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Adopción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="req in group.items" :key="req.id" class="hover:bg-gray-50">
+                                            <td class="px-5 py-3 text-sm text-gray-800">{{ req.title }}</td>
+                                            <td class="px-4 py-3 text-right text-sm font-semibold text-gray-700">{{ req.completed }}</td>
+                                            <td class="px-4 py-3 text-right text-sm text-gray-400">{{ req.total_members }}</td>
+                                            <td class="px-5 py-3">
+                                                <div class="flex items-center gap-2">
+                                                    <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                                                        <div
+                                                            class="h-2 rounded-full transition-all duration-500"
+                                                            :style="{ width: (req.pct != null ? req.pct : 0) + '%', backgroundColor: progressBarColor(req.pct) }"
+                                                        />
+                                                    </div>
+                                                    <span :class="['text-xs font-semibold w-10 text-right shrink-0', progressTextColor(req.pct)]">
+                                                        {{ req.pct != null ? req.pct + '%' : '—' }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                </section>
 
             </template>
 

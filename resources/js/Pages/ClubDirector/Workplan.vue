@@ -33,6 +33,10 @@ const props = defineProps({
         type: Object,
         default: null
     },
+    inherited_events: {
+        type: Array,
+        default: () => []
+    },
     local_objectives: {
         type: Array,
         default: () => []
@@ -48,7 +52,7 @@ const isDirector = computed(() => props.auth_user?.profile_type === 'club_direct
 const isSuperadmin = computed(() => props.auth_user?.profile_type === 'superadmin')
 const isStaff = computed(() => props.auth_user?.profile_type === 'club_personal')
 const isReadOnly = computed(() => !isDirector.value)
-const canSelectClub = computed(() => isSuperadmin.value)
+const canSelectClub = computed(() => props.clubs?.length > 1)
 const selectedClubId = ref(props.selected_club_id || props.auth_user?.club_id || (props.clubs?.[0]?.id ?? ''))
 const hasClubSelected = computed(() => Boolean(selectedClubId.value))
 
@@ -79,10 +83,16 @@ if (recurrence.value.sabbath.length === 0 && recurrence.value.sunday.length === 
     recurrence.value.sabbath = [1]
 }
 
-const normalizeEvents = (list = []) => list.map(ev => ({
-    ...ev,
-    classPlans: ev.classPlans || ev.class_plans || []
-}))
+const normalizeEvents = (list = []) => list.map(ev => {
+    const sourceType = ev.source_type || ''
+    const isInherited = sourceType.includes('AssociationWorkplanEvent') || sourceType.includes('DistrictWorkplanEvent')
+    return {
+        ...ev,
+        classPlans: ev.classPlans || ev.class_plans || [],
+        _inherited: isInherited,
+        _source_level: sourceType.includes('District') ? 'district' : (sourceType.includes('Association') ? 'association' : null),
+    }
+})
 
 const events = ref(normalizeEvents(props.workplan?.events ?? []))
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
@@ -226,7 +236,13 @@ const plansPdfHref = computed(() => {
 
 const showIcsHelp = ref(false)
 const selectedEvent = ref(null)
+const inheritedEventModal = ref(null)
 const workplanModalOpen = ref(false)
+
+const allCalendarEvents = computed(() => [
+    ...events.value,
+    ...props.inherited_events,
+])
 const exportModalOpen = ref(false)
 const exportLoading = ref(false)
 const deletingWorkplan = ref(false)
@@ -1143,7 +1159,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm" @change="onClubChange">
                                 <option value="">Selecciona un club</option>
                                 <option v-for="club in clubs" :key="club.id" :value="club.id">
-                                    {{ isSuperadmin ? `${club.club_name} - ${club.church_name || 'Sin iglesia'}` : club.club_name }}
+                                    {{ club.club_name }}{{ club.church_name ? ` - ${club.church_name}` : '' }}
                                 </option>
                             </select>
                         </template>
@@ -1202,12 +1218,22 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
 
                 <div class="bg-white shadow-sm rounded-lg p-4 border">
                     <WorkplanCalendar
-                        :events="events"
+                        :events="allCalendarEvents"
                         :is-read-only="isReadOnly"
                         :can-add="!isReadOnly"
                         @add="date => openEventModal(null, date)"
-                        @edit="openEventModal"
+                        @edit="ev => ev._inherited ? (inheritedEventModal = ev) : openEventModal(ev)"
                     />
+                    <div v-if="props.inherited_events.length" class="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
+                        <span class="flex items-center gap-1">
+                            <span class="inline-block w-3 h-3 rounded" style="background:#faf5ff;border-left:3px solid #a855f7"></span>
+                            Eventos de asociación
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <span class="inline-block w-3 h-3 rounded" style="background:#f0fdf4;border-left:3px solid #2dd4bf"></span>
+                            Eventos de distrito
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -2021,6 +2047,51 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                     </div>
                 </div>
             </div>
+
+        <!-- Inherited event info modal -->
+        <Teleport to="body">
+            <div v-if="inheritedEventModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" @click.self="inheritedEventModal = null">
+                <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-6 space-y-4">
+                    <div class="flex items-start justify-between gap-2">
+                        <div>
+                            <h4 class="text-base font-semibold text-gray-900">{{ inheritedEventModal.title }}</h4>
+                            <span
+                                class="inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded"
+                                :class="inheritedEventModal._source_level === 'district' ? 'bg-teal-100 text-teal-700' : 'bg-purple-100 text-purple-700'"
+                            >
+                                {{ inheritedEventModal._source_level === 'district' ? 'Evento de distrito' : 'Evento de asociación' }}
+                            </span>
+                        </div>
+                        <button class="text-gray-400 hover:text-gray-600 text-lg leading-none" @click="inheritedEventModal = null">✕</button>
+                    </div>
+                    <dl class="space-y-2 text-sm">
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-24 shrink-0">Fecha</dt>
+                            <dd class="text-gray-900">{{ inheritedEventModal.date }}{{ inheritedEventModal.end_date && inheritedEventModal.end_date !== inheritedEventModal.date ? ' — ' + inheritedEventModal.end_date : '' }}</dd>
+                        </div>
+                        <div v-if="inheritedEventModal.start_time" class="flex gap-2">
+                            <dt class="text-gray-500 w-24 shrink-0">Hora</dt>
+                            <dd class="text-gray-900">{{ inheritedEventModal.start_time }}{{ inheritedEventModal.end_time ? ' – ' + inheritedEventModal.end_time : '' }}</dd>
+                        </div>
+                        <div v-if="inheritedEventModal.location" class="flex gap-2">
+                            <dt class="text-gray-500 w-24 shrink-0">Lugar</dt>
+                            <dd class="text-gray-900">{{ inheritedEventModal.location }}</dd>
+                        </div>
+                        <div v-if="inheritedEventModal.description" class="flex gap-2">
+                            <dt class="text-gray-500 w-24 shrink-0">Descripción</dt>
+                            <dd class="text-gray-900 whitespace-pre-line">{{ inheritedEventModal.description }}</dd>
+                        </div>
+                        <div v-if="inheritedEventModal.is_mandatory" class="flex gap-2">
+                            <dt class="text-gray-500 w-24 shrink-0">Obligatorio</dt>
+                            <dd class="text-gray-900">Sí</dd>
+                        </div>
+                    </dl>
+                    <div class="flex justify-end">
+                        <button class="px-4 py-2 border rounded text-sm" @click="inheritedEventModal = null">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 
         </div>
     </PathfinderLayout>

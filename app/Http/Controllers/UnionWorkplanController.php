@@ -4,7 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Union;
 use App\Models\UnionWorkplanEvent;
+use App\Models\UnionWorkplanPublication;
+use App\Services\DocumentValidationService;
+use App\Services\WorkplanPropagationService;
 use App\Support\SuperadminContext;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -26,6 +30,71 @@ class UnionWorkplanController extends Controller
             'union'       => ['id' => $union->id, 'name' => $union->name],
             'year'        => $year,
             'events'      => $events,
+            'publication' => UnionWorkplanPublication::query()
+                ->where('union_id', $union->id)
+                ->where('year', $year)
+                ->first(),
+        ]);
+    }
+
+    public function pdf(Request $request, DocumentValidationService $documentValidationService)
+    {
+        $union = $this->resolveScopedUnion($request);
+        $year  = (int) $request->input('year', now()->year);
+        abort_if($year < 2000 || $year > 2100, 422, 'Invalid year.');
+
+        $events = UnionWorkplanEvent::where('union_id', $union->id)
+            ->where('year', $year)
+            ->where('status', 'active')
+            ->orderBy('date')
+            ->orderBy('start_time')
+            ->get();
+
+        $generatedAt = now();
+        $validation = $documentValidationService->create(
+            documentType: 'union_workplan',
+            title: 'Plan de trabajo de unión',
+            snapshot: [
+                'union_id' => $union->id,
+                'union_name' => $union->name,
+                'year' => $year,
+                'events' => $events->map(fn (UnionWorkplanEvent $event) => [
+                    'id' => $event->id,
+                    'date' => optional($event->date)->format('Y-m-d'),
+                    'end_date' => optional($event->end_date)->format('Y-m-d'),
+                    'start_time' => $event->start_time,
+                    'end_time' => $event->end_time,
+                    'event_type' => $event->event_type,
+                    'title' => $event->title,
+                    'location' => $event->location,
+                    'target_club_types' => $event->target_club_types,
+                    'is_mandatory' => (bool) $event->is_mandatory,
+                ])->all(),
+            ],
+            metadata: [
+                'Union' => $union->name,
+                'Documento' => 'Plan de trabajo de unión',
+                'Año' => (string) $year,
+                'Eventos' => (string) $events->count(),
+            ],
+            generatedBy: $request->user(),
+            generatedAt: $generatedAt,
+        );
+
+        $pdf = Pdf::loadView('pdf.union_workplan', [
+            'union' => $union,
+            'year' => $year,
+            'events' => $events,
+            'generatedAt' => $generatedAt,
+            'validationUrl' => $validation['url'],
+            'qrCodeDataUri' => $validation['qr_code_data_uri'],
+        ])->setPaper('a4', 'portrait');
+
+        $filename = 'union-workplan-' . $union->id . '-' . $year . '.pdf';
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
         ]);
     }
 
@@ -90,6 +159,30 @@ class UnionWorkplanController extends Controller
         $event->update(['status' => 'deleted']);
 
         return back()->with('success', 'Evento eliminado.');
+    }
+
+    public function publish(Request $request, WorkplanPropagationService $propagationService)
+    {
+        $union = $this->resolveScopedUnion($request);
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $result = $propagationService->publishUnion($union, (int) $validated['year'], $request->user());
+
+        return back()->with('success', "Calendario publicado a {$result['associations']} asociaciones.");
+    }
+
+    public function unpublish(Request $request, WorkplanPropagationService $propagationService)
+    {
+        $union = $this->resolveScopedUnion($request);
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $result = $propagationService->unpublishUnion($union, (int) $validated['year']);
+
+        return back()->with('success', "Calendario despublicado. Se removieron {$result['club_events']} eventos de clubes.");
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

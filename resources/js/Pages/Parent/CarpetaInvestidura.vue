@@ -13,6 +13,7 @@ const props = defineProps({
 const { showToast } = useGeneral()
 const { tr } = useLocale()
 const expandedChildren = ref(new Set())
+const summaryOpen = ref(false)
 const expandedRequirements = ref({})
 const fileInputs = ref({})
 const drafts = ref({})
@@ -400,40 +401,54 @@ const submitEvidence = (child, requirement) => {
                 </div>
             </div>
 
-            <div v-if="evidenceSummary.length" class="rounded-lg border bg-white p-4 shadow-sm sm:p-5">
-                <h2 class="text-lg font-semibold text-gray-900">{{ tr('Resumen de evidencias completas', 'Completed evidence summary') }}</h2>
-                <div v-for="child in evidenceSummary" :key="`summary-${child.member_id}`" class="mt-4">
-                    <h3 class="font-semibold text-gray-800">{{ child.name }}</h3>
-                    <ul class="mt-2 space-y-2 text-sm">
-                        <li v-for="requirement in child.requirements" :key="`summary-${child.member_id}-${requirement.id}`" class="rounded border p-3">
-                            <div class="font-medium">{{ requirement.title }}</div>
-                            <a v-if="requirement.evidence?.file_url && requirement.evidence?.is_image" :href="requirement.evidence.file_url" target="_blank" rel="noopener" class="mt-2 block w-fit">
-                                <img :src="requirement.evidence.file_url" :alt="requirement.title" class="h-20 w-20 rounded border object-cover shadow-sm" />
-                            </a>
-                            <a v-if="requirement.evidence?.file_url" :href="requirement.evidence.file_url" target="_blank" rel="noopener" class="text-blue-700 underline">{{ tr('Archivo', 'File') }}</a>
-                            <div v-if="requirement.evidence?.evidence_type === 'video_link' && requirement.evidence?.text_value" class="mt-2">
-                                <div v-if="videoEmbedUrl(requirement.evidence.text_value)" class="aspect-video overflow-hidden rounded border bg-black">
-                                    <iframe
-                                        :src="videoEmbedUrl(requirement.evidence.text_value)"
-                                        class="h-full w-full"
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                        allowfullscreen
-                                    />
-                                </div>
-                                <a
-                                    v-else
-                                    :href="requirement.evidence.text_value"
-                                    target="_blank"
-                                    rel="noopener"
-                                    class="inline-block break-all text-blue-700 underline"
-                                >
-                                    {{ videoPlatformName(requirement.evidence.text_value) }}
+            <div v-if="evidenceSummary.length" class="rounded-lg border bg-white shadow-sm">
+                <button
+                    class="flex w-full items-center justify-between px-4 py-4 sm:px-5 text-left"
+                    @click="summaryOpen = !summaryOpen"
+                >
+                    <h2 class="text-lg font-semibold text-gray-900">{{ tr('Resumen de evidencias completas', 'Completed evidence summary') }}</h2>
+                    <svg
+                        class="h-5 w-5 text-gray-500 transition-transform duration-200 shrink-0"
+                        :class="summaryOpen ? 'rotate-180' : ''"
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+                    >
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+                <div v-if="summaryOpen" class="px-4 pb-4 sm:px-5 sm:pb-5 border-t">
+                    <div v-for="child in evidenceSummary" :key="`summary-${child.member_id}`" class="mt-4">
+                        <h3 class="font-semibold text-gray-800">{{ child.name }}</h3>
+                        <ul class="mt-2 space-y-2 text-sm">
+                            <li v-for="requirement in child.requirements" :key="`summary-${child.member_id}-${requirement.id}`" class="rounded border p-3">
+                                <div class="font-medium">{{ requirement.title }}</div>
+                                <a v-if="requirement.evidence?.file_url && requirement.evidence?.is_image" :href="requirement.evidence.file_url" target="_blank" rel="noopener" class="mt-2 block w-fit">
+                                    <img :src="requirement.evidence.file_url" :alt="requirement.title" class="h-20 w-20 rounded border object-cover shadow-sm" />
                                 </a>
-                            </div>
-                            <div v-if="requirement.evidence?.text_value" class="break-words text-gray-700">{{ requirement.evidence.text_value }}</div>
-                            <div v-if="requirement.evidence?.physical_completed" class="text-gray-700">{{ tr('Completado fisicamente', 'Completed physically') }}</div>
-                        </li>
-                    </ul>
+                                <a v-if="requirement.evidence?.file_url" :href="requirement.evidence.file_url" target="_blank" rel="noopener" class="text-blue-700 underline">{{ tr('Archivo', 'File') }}</a>
+                                <div v-if="requirement.evidence?.evidence_type === 'video_link' && requirement.evidence?.text_value" class="mt-2">
+                                    <div v-if="videoEmbedUrl(requirement.evidence.text_value)" class="aspect-video overflow-hidden rounded border bg-black">
+                                        <iframe
+                                            :src="videoEmbedUrl(requirement.evidence.text_value)"
+                                            class="h-full w-full"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                            allowfullscreen
+                                        />
+                                    </div>
+                                    <a
+                                        v-else
+                                        :href="requirement.evidence.text_value"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="inline-block break-all text-blue-700 underline"
+                                    >
+                                        {{ videoPlatformName(requirement.evidence.text_value) }}
+                                    </a>
+                                </div>
+                                <div v-if="requirement.evidence?.text_value" class="break-words text-gray-700">{{ requirement.evidence.text_value }}</div>
+                                <div v-if="requirement.evidence?.physical_completed" class="text-gray-700">{{ tr('Completado fisicamente', 'Completed physically') }}</div>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

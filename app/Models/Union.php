@@ -29,4 +29,9 @@ class Union extends Model
     {
         return $this->hasMany(UnionClubCatalog::class)->orderBy('sort_order')->orderBy('id');
     }
+
+    public function workplanPublications()
+    {
+        return $this->hasMany(UnionWorkplanPublication::class);
+    }
 }

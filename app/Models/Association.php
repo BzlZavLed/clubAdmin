@@ -39,4 +39,14 @@ class Association extends Model
     {
         return $this->hasMany(\App\Models\AssociationEvaluator::class)->orderBy('name');
     }
+
+    public function workplanEvents()
+    {
+        return $this->hasMany(AssociationWorkplanEvent::class);
+    }
+
+    public function workplanPublications()
+    {
+        return $this->hasMany(AssociationWorkplanPublication::class);
+    }
 }

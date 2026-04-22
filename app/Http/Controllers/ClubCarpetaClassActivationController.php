@@ -46,7 +46,7 @@ class ClubCarpetaClassActivationController extends Controller
         }
 
         $belongsToClubUnion = (int) $catalogClass->clubCatalog?->union_id === (int) $clubUnionId;
-        $matchesClubType = $this->normalizeClubType($catalogClass->clubCatalog?->name) === $this->normalizeClubType($club->club_type);
+        $matchesClubType = $this->normalizeClubType($catalogClass->clubCatalog?->club_type ?: $catalogClass->clubCatalog?->name) === $this->normalizeClubType($club->club_type);
 
         if (!$belongsToClubUnion || !$matchesClubType) {
             abort(422, 'La clase seleccionada no pertenece al catalogo de carpetas de este tipo de club. Revisa que la union tenga configuradas clases para este club.');
