@@ -50,6 +50,7 @@ use App\Http\Controllers\UnionWorkplanController;
 use App\Http\Controllers\AssociationController;
 use App\Http\Controllers\DistrictController;
 use App\Http\Controllers\DocumentValidationController;
+use App\Http\Controllers\InvestitureRequestController;
 use App\Models\Association;
 use App\Models\District;
 use App\Models\Union;
@@ -122,6 +123,10 @@ Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secreta
     Route::post('/district/workplan/events', [DistrictController::class, 'storeWorkplanEvent'])->name('district.workplan.events.store');
     Route::put('/district/workplan/events/{event}', [DistrictController::class, 'updateWorkplanEvent'])->name('district.workplan.events.update');
     Route::delete('/district/workplan/events/{event}', [DistrictController::class, 'destroyWorkplanEvent'])->name('district.workplan.events.destroy');
+    Route::get('/district/investiture-requests', [InvestitureRequestController::class, 'districtIndex'])->name('district.investiture-requests');
+    Route::get('/district/investiture-requests/{investitureRequest}', [InvestitureRequestController::class, 'districtShow'])->name('district.investiture-requests.show');
+    Route::patch('/district/investiture-requests/{investitureRequest}/reviews/{review}', [InvestitureRequestController::class, 'updateRequirementReview'])
+        ->name('district.investiture-requests.reviews.update');
 
     Route::get('/district/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [
@@ -166,6 +171,13 @@ Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->g
     Route::delete('/association/churches/{church}', [AssociationController::class, 'destroyChurch'])->name('association.churches.destroy');
     Route::post('/association/programs/honor-sessions', [AssociationController::class, 'storeHonorSession'])->name('association.programs.honor-sessions.store');
     Route::delete('/association/programs/honor-sessions/{session}', [AssociationController::class, 'destroyHonorSession'])->name('association.programs.honor-sessions.destroy');
+    Route::get('/association/investiture-requests', [InvestitureRequestController::class, 'associationIndex'])->name('association.investiture-requests');
+    Route::post('/association/investiture-requests/{investitureRequest}/assign-district-pastor', [InvestitureRequestController::class, 'assignDistrictPastor'])
+        ->name('association.investiture-requests.assign-district-pastor');
+    Route::post('/association/investiture-requests/{investitureRequest}/authorize', [InvestitureRequestController::class, 'authorizeInvestiture'])
+        ->name('association.investiture-requests.authorize');
+    Route::post('/association/investiture-requests/{investitureRequest}/request-new-date', [InvestitureRequestController::class, 'requestNewDate'])
+        ->name('association.investiture-requests.request-new-date');
 
     Route::get('/association/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [
@@ -626,8 +638,14 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     Route::get('/club-director/reports/investiture-requirements', [ReportController::class, 'investitureRequirementsReport'])
         ->name('club.reports.investiture-requirements');
+    Route::post('/club-director/reports/investiture-requirements/tentative-date', [InvestitureRequestController::class, 'updateCurrentTentativeDate'])
+        ->name('club.reports.investiture-requirements.tentative-date.update-current');
     Route::get('/club-director/reports/investiture-requirements/pdf', [ReportController::class, 'investitureRequirementsReportPdf'])
         ->name('club.reports.investiture-requirements.pdf');
+    Route::post('/club-director/reports/investiture-requirements/requests', [InvestitureRequestController::class, 'store'])
+        ->name('club.reports.investiture-requirements.requests.store');
+    Route::post('/club-director/reports/investiture-requirements/requests/{investitureRequest}/tentative-date', [InvestitureRequestController::class, 'updateTentativeDate'])
+        ->name('club.reports.investiture-requirements.requests.tentative-date.update');
     Route::get('/club-director/reports/investiture-requirements/members/{member}/pdf', [ReportController::class, 'carpetaMemberPdf'])
         ->name('club.reports.investiture-requirements.member.pdf');
     Route::post('/club-director/reports/investiture-requirements/members/{member}/access-code', [ReportController::class, 'createCarpetaMemberAccessCode'])

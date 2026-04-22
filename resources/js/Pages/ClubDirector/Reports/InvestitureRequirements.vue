@@ -2,6 +2,7 @@
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { computed, ref } from 'vue'
 import axios from 'axios'
+import { router } from '@inertiajs/vue3'
 
 const props = defineProps({
     club: {
@@ -16,6 +17,10 @@ const props = defineProps({
         type: String,
         default: 'honors',
     },
+    investitureRequests: {
+        type: Array,
+        default: () => [],
+    },
 })
 
 const itemLabelPlural = computed(() =>
@@ -29,6 +34,12 @@ const showPendingMembers = ref(false)
 const expandedMemberKey = ref(null)
 const accessLinks = ref({})
 const accessLinkLoading = ref({})
+const requestNotes = ref('')
+const tentativeInvestitureDate = ref('')
+const dateUpdateDrafts = ref({})
+const dateUpdateLoading = ref({})
+const requestSubmitting = ref(false)
+const requestError = ref('')
 
 const isCarpetas = computed(() => props.report_type === 'carpetas' || props.club?.evaluation_system === 'carpetas')
 const canGeneratePublicLinks = computed(() => props.club?.club_type === 'pathfinders')
@@ -49,6 +60,26 @@ const totalCompletions = computed(() =>
 const totalMembers = computed(() =>
     props.classes.reduce((sum, clubClass) => sum + (clubClass.members_count || 0), 0)
 )
+
+const flattenedCarpetaMembers = computed(() =>
+    props.classes.flatMap((clubClass) =>
+        (clubClass.members || []).map((member) => ({
+            member_id: member.member_id,
+            name: member.name,
+            class_name: clubClass.class_name,
+            requirements: member.requirements || [],
+        }))
+    )
+)
+
+const hasOpenInvestitureRequest = computed(() =>
+    (props.investitureRequests || []).some((request) =>
+        ['submitted', 'assigned', 'in_review', 'completed', 'date_change_requested', 'returned', 'authorized'].includes(request.status)
+    )
+)
+
+const canEditRequestDate = (request) =>
+    ['submitted', 'assigned', 'in_review', 'completed', 'date_change_requested', 'returned'].includes(request.status)
 
 const formatDate = (value) => {
     if (!value) return '—'
@@ -118,6 +149,55 @@ const copyAccessLink = async (member) => {
     if (!url || !navigator?.clipboard) return
     await navigator.clipboard.writeText(url)
 }
+
+const submitInvestitureRequest = async () => {
+    requestSubmitting.value = true
+    requestError.value = ''
+    try {
+        await axios.post(route('club.reports.investiture-requirements.requests.store'), {
+            club_id: props.club?.id,
+            director_notes: requestNotes.value,
+            tentative_investiture_date: tentativeInvestitureDate.value,
+            members: flattenedCarpetaMembers.value,
+        })
+        console.log('Solicitud de investidura enviada');
+        requestNotes.value = ''
+        tentativeInvestitureDate.value = ''
+        router.reload({ only: ['investitureRequests'] })
+    } catch (error) {
+        requestError.value = error?.response?.data?.message || 'No se pudo crear la solicitud de investidura.'
+    } finally {
+        requestSubmitting.value = false
+    }
+}
+
+const getDateDraft = (request) => {
+    if (dateUpdateDrafts.value[request.id] === undefined) {
+        dateUpdateDrafts.value[request.id] = request.tentative_investiture_date || ''
+    }
+
+    return dateUpdateDrafts.value[request.id]
+}
+
+const setDateDraft = (request, value) => {
+    dateUpdateDrafts.value[request.id] = value
+}
+
+const updateTentativeDate = async (request) => {
+    dateUpdateLoading.value = { ...dateUpdateLoading.value, [request.id]: true }
+    requestError.value = ''
+    try {
+        await axios.post(`/club-director/reports/investiture-requirements/requests/${request.id}/tentative-date`, {
+            club_id: props.club?.id,
+            tentative_investiture_date: getDateDraft(request),
+        })
+        router.reload({ only: ['investitureRequests'] })
+    } catch (error) {
+        requestError.value = error?.response?.data?.message || 'No se pudo actualizar la fecha tentativa.'
+    } finally {
+        dateUpdateLoading.value = { ...dateUpdateLoading.value, [request.id]: false }
+    }
+}
 </script>
 
 <template>
@@ -159,6 +239,102 @@ const copyAccessLink = async (member) => {
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
                     <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isCarpetas ? 'Evidencias completadas' : 'Cumplimientos registrados' }}</div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">{{ totalCompletions }}</div>
+                </div>
+            </section>
+
+            <section v-if="isCarpetas" class="rounded-lg border bg-white p-5 shadow-sm">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="max-w-2xl">
+                        <h2 class="text-base font-semibold text-gray-900">Solicitud de investidura</h2>
+                        <p class="mt-1 text-sm text-gray-600">
+                            Cuando el club esté listo, envía la solicitud para que la asociación asigne la revisión. Por ahora el evaluador sugerido será el pastor del distrito.
+                        </p>
+                        <div v-if="investitureRequests.length" class="mt-3 space-y-2">
+                            <div v-for="request in investitureRequests" :key="request.id" class="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                                <div class="font-medium text-gray-900">
+                                    Solicitud #{{ request.id }} · {{ request.status }} · {{ request.members_count }} miembro(s)
+                                </div>
+                                <div class="mt-0.5 text-xs text-gray-500">
+                                    Ciclo {{ request.carpeta_year || '—' }} · Enviada {{ request.submitted_at || '—' }}
+                                    · Fecha tentativa {{ request.tentative_investiture_date || '—' }}
+                                    <template v-if="request.approved_investiture_date">
+                                        · Fecha autorizada {{ request.approved_investiture_date }}
+                                    </template>
+                                    <template v-if="request.assigned_evaluator_name">
+                                        · Evaluador: {{ request.assigned_evaluator_name }}
+                                    </template>
+                                </div>
+                                <div v-if="request.ceremony_representative_name" class="mt-3 rounded border border-green-200 bg-green-50 p-3 text-xs text-green-900">
+                                    <p class="font-semibold">Representante de asociación para la ceremonia</p>
+                                    <p class="mt-1">{{ request.ceremony_representative_name }}</p>
+                                    <p v-if="request.ceremony_representative_email" class="mt-1">
+                                        Correo: <a :href="`mailto:${request.ceremony_representative_email}`" class="font-medium underline">{{ request.ceremony_representative_email }}</a>
+                                    </p>
+                                    <p v-if="request.ceremony_representative_phone" class="mt-1">
+                                        Teléfono: <a :href="`tel:${request.ceremony_representative_phone}`" class="font-medium underline">{{ request.ceremony_representative_phone }}</a>
+                                    </p>
+                                </div>
+                                <div
+                                    v-if="canEditRequestDate(request)"
+                                    class="mt-3 rounded border p-3"
+                                    :class="request.status === 'date_change_requested' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'"
+                                >
+                                    <p class="font-semibold" :class="request.status === 'date_change_requested' ? 'text-amber-900' : 'text-gray-900'">
+                                        {{ request.status === 'date_change_requested' ? 'La asociación solicitó una nueva fecha' : 'Editar fecha tentativa' }}
+                                    </p>
+                                    <p v-if="request.status === 'date_change_requested'" class="mt-1 text-xs text-amber-800">
+                                        {{ request.date_change_reason || 'La fecha propuesta no está disponible para la asociación.' }}
+                                    </p>
+                                    <p v-else-if="!request.tentative_investiture_date" class="mt-1 text-xs text-gray-600">
+                                        Esta solicitud no tiene fecha tentativa registrada.
+                                    </p>
+                                    <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                        <input
+                                            :value="getDateDraft(request)"
+                                            type="date"
+                                            class="rounded-md border-gray-300 text-sm"
+                                            @input="setDateDraft(request, $event.target.value)"
+                                        >
+                                        <button
+                                            type="button"
+                                            class="rounded bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-60"
+                                            :disabled="dateUpdateLoading[request.id]"
+                                            @click="updateTentativeDate(request)"
+                                        >
+                                            {{ dateUpdateLoading[request.id] ? 'Guardando...' : (request.status === 'date_change_requested' ? 'Enviar nueva fecha' : 'Guardar fecha') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="!hasOpenInvestitureRequest" class="w-full max-w-md space-y-3">
+                        <label class="block text-sm font-medium text-gray-700">
+                            Fecha tentativa de investidura <span class="font-normal text-gray-500">(opcional)</span>
+                            <input
+                                v-model="tentativeInvestitureDate"
+                                type="date"
+                                class="mt-1 w-full rounded-md border-gray-300 text-sm"
+                            >
+                        </label>
+                        <textarea
+                            v-model="requestNotes"
+                            rows="3"
+                            class="w-full rounded-md border-gray-300 text-sm"
+                            placeholder="Notas para la asociación o evaluador"
+                        />
+                        <p v-if="requestError" class="text-sm text-red-600">{{ requestError }}</p>
+                        <button
+                            type="button"
+                            class="w-full rounded bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+                            :disabled="requestSubmitting || hasOpenInvestitureRequest || !flattenedCarpetaMembers.length"
+                            @click="submitInvestitureRequest"
+                        >
+                            <template v-if="requestSubmitting">Enviando...</template>
+                            <template v-else>Solicitar investidura</template>
+                        </button>
+                    </div>
                 </div>
             </section>
 

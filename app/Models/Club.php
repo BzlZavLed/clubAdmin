@@ -69,6 +69,11 @@ class Club extends Model
         return $this->hasMany(ClubClass::class);
     }
 
+    public function investitureRequests()
+    {
+        return $this->hasMany(InvestitureRequest::class);
+    }
+
     public function carpetaClassActivations()
     {
         return $this->hasMany(ClubCarpetaClassActivation::class);

@@ -25,6 +25,7 @@ use App\Models\Payment;
 use App\Models\Expense;
 use App\Models\Account;
 use App\Models\ParentCarpetaRequirementEvidence;
+use App\Models\InvestitureRequest;
 use App\Models\PublicMemberEvidenceAccessCode;
 use App\Models\UnionCarpetaRequirement;
 use App\Models\UnionCarpetaYear;
@@ -60,6 +61,9 @@ class ReportController extends Controller
             'classes' => ($club->evaluation_system ?? 'honors') === 'carpetas'
                 ? $this->buildClubCarpetaRequirementReport($club)
                 : $this->buildClubInvestitureRequirementReport($club),
+            'investitureRequests' => ($club->evaluation_system ?? 'honors') === 'carpetas'
+                ? $this->clubInvestitureRequests($club)
+                : [],
         ]);
     }
 
@@ -479,6 +483,37 @@ class ReportController extends Controller
     protected function resolveClubForUser($user, $clubId = null): Club
     {
         return ClubHelper::clubForUser($user, $clubId);
+    }
+
+    protected function clubInvestitureRequests(Club $club): array
+    {
+        return InvestitureRequest::query()
+            ->where('club_id', $club->id)
+            ->withCount('members')
+            ->orderByDesc('submitted_at')
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (InvestitureRequest $request) => [
+                'id' => $request->id,
+                'status' => $request->status,
+                'carpeta_year' => $request->carpeta_year,
+                'tentative_investiture_date' => optional($request->tentative_investiture_date)->toDateString(),
+                'approved_investiture_date' => optional($request->approved_investiture_date)->toDateString(),
+                'date_change_reason' => $request->date_change_reason,
+                'date_change_requested_at' => optional($request->date_change_requested_at)->toDateTimeString(),
+                'submitted_at' => optional($request->submitted_at)->toDateTimeString(),
+                'assigned_evaluator_name' => $request->assigned_evaluator_name,
+                'assigned_evaluator_email' => $request->assigned_evaluator_email,
+                'authorization_person_name' => $request->authorization_person_name,
+                'ceremony_representative_name' => $request->ceremony_representative_name,
+                'ceremony_representative_email' => $request->ceremony_representative_email,
+                'ceremony_representative_phone' => $request->ceremony_representative_phone,
+                'authorized_at' => optional($request->authorized_at)->toDateTimeString(),
+                'members_count' => $request->members_count,
+                'completed_at' => optional($request->completed_at)->toDateTimeString(),
+            ])
+            ->all();
     }
 
     protected function buildClubInvestitureRequirementReport(Club $club): array

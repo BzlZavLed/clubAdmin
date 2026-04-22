@@ -12,6 +12,9 @@ class PaymentReceipt extends Model
     protected $fillable = [
         'payment_id',
         'club_id',
+        'club_code',
+        'receipt_year',
+        'club_sequence',
         'member_id',
         'staff_id',
         'parent_user_id',

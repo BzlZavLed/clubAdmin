@@ -42,6 +42,12 @@ const sections = computed(() => {
                             icon: MapIcon,
                         },
                         {
+                            name: 'Solicitudes de investidura',
+                            href: '/association/investiture-requests',
+                            route: 'association.investiture-requests',
+                            icon: ClipboardDocumentListIcon,
+                        },
+                        {
                             name: 'Iglesias',
                             href: '/association/churches',
                             route: 'association.churches',
@@ -72,6 +78,9 @@ const sections = computed(() => {
                 items: [
                     { name: 'Panel', href: '/district/dashboard', route: 'district.dashboard', icon: HomeIcon },
                     { name: 'Plan de trabajo', href: '/district/workplan', route: 'district.workplan', icon: ClipboardDocumentListIcon },
+                    ...(evaluationSystem.value === 'carpetas' ? [
+                        { name: 'Evaluaciones de investidura', href: '/district/investiture-requests', route: 'district.investiture-requests', icon: FolderOpenIcon },
+                    ] : []),
                 ],
             },
         ]
