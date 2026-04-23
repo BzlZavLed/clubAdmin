@@ -250,7 +250,7 @@ const toggleInsurance = (club, member) => {
                             {{ tr('Esta iglesia ya tiene todos los tipos de club del catálogo creados.', 'This church already has all catalog club types created.') }}
                         </p>
                         <p
-                            v-else-if="addForm.church_id && availableClubTypes.length < clubTypeOptions.value.length"
+                            v-else-if="addForm.church_id && availableClubTypes.length < clubTypeOptions.length"
                             class="mt-1 text-xs text-gray-500"
                         >
                             {{ tr('Solo se muestran los tipos del catálogo que aún no existen en esta iglesia.', 'Only catalog club types that do not already exist in this church are shown.') }}
