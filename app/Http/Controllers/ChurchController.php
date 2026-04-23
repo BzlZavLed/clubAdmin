@@ -11,15 +11,24 @@ use Inertia\Inertia;
 
 class ChurchController extends Controller
 {
-    public function manage()
+    public function manage(Request $request)
     {
-        return Inertia::render('Church/ChurchForm', [
-            'districts' => District::query()
-                ->with('association.union:id,name')
-                ->where('status', '!=', 'deleted')
-                ->orderBy('name')
-                ->get(['id', 'association_id', 'name', 'status']),
-        ]);
+        $user = $request->user();
+        $role = $user?->role_key ?: $user?->profile_type;
+
+        if ($role === 'superadmin') {
+            return Inertia::render('Church/ChurchForm', [
+                'districts' => District::query()
+                    ->with('association.union:id,name')
+                    ->where('status', '!=', 'deleted')
+                    ->orderBy('name')
+                    ->get(['id', 'association_id', 'name', 'status']),
+            ]);
+        }
+
+        return redirect()
+            ->to($this->managementRedirectPath($request))
+            ->with('info', 'La administracion de iglesias se realiza desde el nivel distrital.');
     }
 
     private function listWithInviteCodes()
@@ -159,5 +168,18 @@ class ChurchController extends Controller
         return response()->json([
             'message' => 'Church deleted successfully.',
         ]);
+    }
+
+    protected function managementRedirectPath(Request $request): string
+    {
+        $user = $request->user();
+        $role = $user?->role_key ?: $user?->profile_type;
+
+        return match ($role) {
+            'district_pastor', 'district_secretary' => route('district.churches'),
+            'association_youth_director' => route('association.districts'),
+            'superadmin' => route('superadmin.districts.manage'),
+            default => route('dashboard'),
+        };
     }
 }
