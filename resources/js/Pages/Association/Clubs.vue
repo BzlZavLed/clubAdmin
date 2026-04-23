@@ -109,6 +109,7 @@ const clubTypeLabel = (type) => ({
 })[type] ?? type
 
 const evalLabel = (v) => v === 'carpetas' ? 'Carpetas' : 'Honores'
+const formatMoney = (value) => Number(value || 0).toFixed(2)
 
 const today = new Date().toISOString().split('T')[0]
 
@@ -319,6 +320,15 @@ const toggleInsurance = (club, member) => {
                                         <span v-if="club.director_name"> · {{ tr('Director', 'Director') }}: {{ club.director_name }}</span>
                                         <span v-else class="italic text-amber-600"> · {{ tr('Sin director', 'No director') }}</span>
                                     </p>
+                                    <p v-if="club.insurance_summary && association.insurance_payment_amount" class="mt-1 text-xs text-gray-500">
+                                        {{ tr('Seguro esperado', 'Expected insurance') }}:
+                                        ${{ formatMoney(club.insurance_summary.expected_amount) }}
+                                        · {{ tr('Pagado', 'Paid') }}:
+                                        ${{ formatMoney(club.insurance_summary.paid_amount) }}
+                                        · {{ tr('Pendiente', 'Outstanding') }}:
+                                        ${{ formatMoney(club.insurance_summary.outstanding_amount) }}
+                                        · {{ club.insurance_summary.insured_count }}/{{ club.insurance_summary.member_count }} {{ tr('miembros', 'members') }}
+                                    </p>
                                 </div>
                                 <button
                                     v-if="!club.has_director"
@@ -461,6 +471,10 @@ const toggleInsurance = (club, member) => {
                                     <td class="px-6 py-4 text-sm text-gray-700">
                                         <span v-if="club.director_name">{{ club.director_name }}</span>
                                         <span v-else class="italic text-amber-600 text-xs">{{ tr('Sin director', 'No director') }}</span>
+                                        <p v-if="club.insurance_summary && association.insurance_payment_amount" class="mt-1 text-xs text-gray-400">
+                                            {{ club.insurance_summary.insured_count }}/{{ club.insurance_summary.member_count }} {{ tr('con seguro', 'insured') }}
+                                            · ${{ formatMoney(club.insurance_summary.outstanding_amount) }} {{ tr('pendiente', 'outstanding') }}
+                                        </p>
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <span

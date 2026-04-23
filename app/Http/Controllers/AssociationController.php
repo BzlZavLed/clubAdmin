@@ -568,6 +568,7 @@ class AssociationController extends Controller
             'insurance_paid' => (bool) $m->insurance_paid,
             'insurance_paid_at' => $m->insurance_paid_at?->toDateString(),
         ];
+        $insuranceAmount = (float) ($association->insurance_payment_amount ?? 0);
 
         return Inertia::render('Association/Clubs', [
             'association' => [
@@ -591,10 +592,12 @@ class AssociationController extends Controller
                 'church_name' => $c->church_name,
                 'pastor_name' => $c->pastor_name,
             ])->values(),
-            'clubs' => $clubs->map(function ($c) use ($adventurerMembers, $pathfinderMembers, $formatMember) {
+            'clubs' => $clubs->map(function ($c) use ($adventurerMembers, $pathfinderMembers, $formatMember, $insuranceAmount) {
                 $members = $c->club_type === 'adventurers'
                     ? ($adventurerMembers->get($c->id) ?? collect())
                     : ($pathfinderMembers->get($c->id) ?? collect());
+                $activeMemberCount = $members->count();
+                $insuredMemberCount = $members->filter(fn ($member) => (bool) $member->insurance_paid)->count();
 
                 return [
                     'id' => $c->id,
@@ -608,6 +611,13 @@ class AssociationController extends Controller
                     'has_director' => (bool) $c->user_id,
                     'evaluation_system' => $c->evaluation_system,
                     'creation_date' => $c->creation_date,
+                    'insurance_summary' => [
+                        'member_count' => $activeMemberCount,
+                        'insured_count' => $insuredMemberCount,
+                        'expected_amount' => round($activeMemberCount * $insuranceAmount, 2),
+                        'paid_amount' => round($insuredMemberCount * $insuranceAmount, 2),
+                        'outstanding_amount' => round(max(($activeMemberCount - $insuredMemberCount), 0) * $insuranceAmount, 2),
+                    ],
                     'members' => $members->map($formatMember)->values(),
                 ];
             })->values(),

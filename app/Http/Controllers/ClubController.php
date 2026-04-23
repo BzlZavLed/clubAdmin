@@ -672,7 +672,7 @@ class ClubController extends Controller
 
             $clubs = $query->get();
 
-            return response()->json($this->attachStaffAssignments($clubs));
+            return response()->json($this->withFinancialContext($this->attachStaffAssignments($clubs)));
         }
 
         $clubIds = ClubHelper::clubIdsForUser($user);
@@ -682,7 +682,15 @@ class ClubController extends Controller
             ->orderBy('club_name')
             ->get();
 
-        return response()->json($this->attachStaffAssignments($clubs));
+        return response()->json($this->withFinancialContext($this->attachStaffAssignments($clubs)));
+    }
+
+    protected function withFinancialContext($clubs)
+    {
+        return $clubs->map(function ($club) {
+            $club->setAttribute('insurance_payment_amount', $club->district?->association?->insurance_payment_amount);
+            return $club;
+        });
     }
 
     public function getByChurchNames(Request $request)
