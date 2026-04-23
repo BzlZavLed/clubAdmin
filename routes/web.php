@@ -649,6 +649,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.reports.investiture-requirements.requests.store');
     Route::post('/club-director/reports/investiture-requirements/requests/{investitureRequest}/tentative-date', [InvestitureRequestController::class, 'updateTentativeDate'])
         ->name('club.reports.investiture-requirements.requests.tentative-date.update');
+    Route::post('/club-director/reports/investiture-requirements/requests/{investitureRequest}/complete-ceremony', [InvestitureRequestController::class, 'completeCeremony'])
+        ->name('club.reports.investiture-requirements.requests.complete-ceremony');
     Route::get('/club-director/reports/investiture-requirements/members/{member}/pdf', [ReportController::class, 'carpetaMemberPdf'])
         ->name('club.reports.investiture-requirements.member.pdf');
     Route::post('/club-director/reports/investiture-requirements/members/{member}/access-code', [ReportController::class, 'createCarpetaMemberAccessCode'])

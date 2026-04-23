@@ -151,8 +151,9 @@ class InvestitureRequestController extends Controller
     {
         $association = $this->resolveScopedAssociation($request)->loadMissing('union');
 
-        $requests = InvestitureRequest::query()
+        $activeRequests = InvestitureRequest::query()
             ->where('association_id', $association->id)
+            ->whereNull('ceremony_completed_at')
             ->with([
                 'club:id,club_name,church_name,district_id',
                 'district:id,name,pastor_name,pastor_email,is_evaluator',
@@ -162,6 +163,20 @@ class InvestitureRequestController extends Controller
             ->latest('id')
             ->get()
             ->map(fn (InvestitureRequest $investitureRequest) => $this->serializeRequest($investitureRequest));
+
+        $historyPage = InvestitureRequest::query()
+            ->where('association_id', $association->id)
+            ->where('status', InvestitureRequest::STATUS_AUTHORIZED)
+            ->whereNotNull('ceremony_completed_at')
+            ->with([
+                'club:id,club_name,church_name,district_id',
+                'district:id,name,pastor_name,pastor_email,is_evaluator',
+                'members:id,investiture_request_id,status,requirements_count,completed_requirements_count',
+            ])
+            ->orderByDesc('ceremony_completed_at')
+            ->orderByDesc('id')
+            ->paginate(10, ['*'], 'history_page')
+            ->withQueryString();
 
         return Inertia::render('Association/InvestitureRequests', [
             'association' => [
@@ -173,7 +188,18 @@ class InvestitureRequestController extends Controller
                 'name' => $association->union?->name,
                 'evaluation_system' => $association->union?->evaluation_system ?? 'honors',
             ],
-            'requests' => $requests,
+            'activeRequests' => $activeRequests,
+            'historyRequests' => collect($historyPage->items())
+                ->map(fn (InvestitureRequest $investitureRequest) => $this->serializeRequest($investitureRequest))
+                ->values(),
+            'historyPagination' => [
+                'current_page' => $historyPage->currentPage(),
+                'last_page' => $historyPage->lastPage(),
+                'per_page' => $historyPage->perPage(),
+                'total' => $historyPage->total(),
+                'from' => $historyPage->firstItem(),
+                'to' => $historyPage->lastItem(),
+            ],
         ]);
     }
 
@@ -290,6 +316,26 @@ class InvestitureRequestController extends Controller
         return back()->with('success', 'Nueva fecha propuesta enviada a la asociación.');
     }
 
+    public function completeCeremony(Request $request, InvestitureRequest $investitureRequest)
+    {
+        $validated = $request->validate([
+            'club_id' => ['required', 'integer'],
+        ]);
+
+        $club = ClubHelper::clubForUser($request->user(), (int) $validated['club_id']);
+
+        abort_if((int) $investitureRequest->club_id !== (int) $club->id, 403);
+        abort_unless($investitureRequest->status === InvestitureRequest::STATUS_AUTHORIZED, 422, 'Solo las solicitudes autorizadas pueden marcarse como completadas despues de la ceremonia.');
+        abort_if($investitureRequest->ceremony_completed_at, 422, 'Esta solicitud ya fue marcada como completada.');
+
+        $investitureRequest->forceFill([
+            'ceremony_completed_by' => $request->user()?->id,
+            'ceremony_completed_at' => now(),
+        ])->save();
+
+        return back()->with('success', 'La investidura fue marcada como completada.');
+    }
+
     public function updateCurrentTentativeDate(Request $request)
     {
         $validated = $request->validate([
@@ -329,6 +375,7 @@ class InvestitureRequestController extends Controller
             ->where('district_id', $district->id)
             ->where('assigned_evaluator_type', 'district_pastor')
             ->where('assigned_evaluator_id', $district->id)
+            ->whereNull('ceremony_completed_at')
             ->whereIn('status', [
                 InvestitureRequest::STATUS_ASSIGNED,
                 InvestitureRequest::STATUS_IN_REVIEW,
@@ -472,6 +519,7 @@ class InvestitureRequestController extends Controller
             'assigned_at' => optional($investitureRequest->assigned_at)->toDateTimeString(),
             'completed_at' => optional($investitureRequest->completed_at)->toDateTimeString(),
             'authorized_at' => optional($investitureRequest->authorized_at)->toDateTimeString(),
+            'ceremony_completed_at' => optional($investitureRequest->ceremony_completed_at)->toDateTimeString(),
             'authorization_person_name' => $investitureRequest->authorization_person_name,
             'ceremony_representative_name' => $investitureRequest->ceremony_representative_name,
             'ceremony_representative_email' => $investitureRequest->ceremony_representative_email,

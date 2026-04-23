@@ -510,6 +510,7 @@ class ReportController extends Controller
                 'ceremony_representative_email' => $request->ceremony_representative_email,
                 'ceremony_representative_phone' => $request->ceremony_representative_phone,
                 'authorized_at' => optional($request->authorized_at)->toDateTimeString(),
+                'ceremony_completed_at' => optional($request->ceremony_completed_at)->toDateTimeString(),
                 'members_count' => $request->members_count,
                 'completed_at' => optional($request->completed_at)->toDateTimeString(),
             ])

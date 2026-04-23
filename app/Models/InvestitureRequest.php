@@ -46,6 +46,8 @@ class InvestitureRequest extends Model
         'date_change_reason',
         'date_change_requested_at',
         'date_change_requested_by',
+        'ceremony_completed_by',
+        'ceremony_completed_at',
     ];
 
     protected $casts = [
@@ -56,6 +58,7 @@ class InvestitureRequest extends Model
         'completed_at' => 'datetime',
         'authorized_at' => 'datetime',
         'date_change_requested_at' => 'datetime',
+        'ceremony_completed_at' => 'datetime',
     ];
 
     public function union()

@@ -38,6 +38,7 @@ const requestNotes = ref('')
 const tentativeInvestitureDate = ref('')
 const dateUpdateDrafts = ref({})
 const dateUpdateLoading = ref({})
+const ceremonyCompletionLoading = ref({})
 const requestSubmitting = ref(false)
 const requestError = ref('')
 
@@ -198,6 +199,21 @@ const updateTentativeDate = async (request) => {
         dateUpdateLoading.value = { ...dateUpdateLoading.value, [request.id]: false }
     }
 }
+
+const completeCeremony = async (request) => {
+    ceremonyCompletionLoading.value = { ...ceremonyCompletionLoading.value, [request.id]: true }
+    requestError.value = ''
+    try {
+        await axios.post(route('club.reports.investiture-requirements.requests.complete-ceremony', { investitureRequest: request.id }), {
+            club_id: props.club?.id,
+        })
+        router.reload({ only: ['investitureRequests'] })
+    } catch (error) {
+        requestError.value = error?.response?.data?.message || 'No se pudo marcar la investidura como completada.'
+    } finally {
+        ceremonyCompletionLoading.value = { ...ceremonyCompletionLoading.value, [request.id]: false }
+    }
+}
 </script>
 
 <template>
@@ -274,6 +290,10 @@ const updateTentativeDate = async (request) => {
                                         Teléfono: <a :href="`tel:${request.ceremony_representative_phone}`" class="font-medium underline">{{ request.ceremony_representative_phone }}</a>
                                     </p>
                                 </div>
+                                <div v-if="request.ceremony_completed_at" class="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                                    <p class="font-semibold">Investidura completada</p>
+                                    <p class="mt-1">Registrada: {{ request.ceremony_completed_at }}</p>
+                                </div>
                                 <div
                                     v-if="canEditRequestDate(request)"
                                     class="mt-3 rounded border p-3"
@@ -304,6 +324,23 @@ const updateTentativeDate = async (request) => {
                                             {{ dateUpdateLoading[request.id] ? 'Guardando...' : (request.status === 'date_change_requested' ? 'Enviar nueva fecha' : 'Guardar fecha') }}
                                         </button>
                                     </div>
+                                </div>
+                                <div
+                                    v-if="request.status === 'authorized' && !request.ceremony_completed_at"
+                                    class="mt-3 rounded border border-emerald-200 bg-white p-3"
+                                >
+                                    <p class="font-semibold text-emerald-900">Cerrar solicitud después de la ceremonia</p>
+                                    <p class="mt-1 text-xs text-gray-600">
+                                        Cuando la investidura ya se haya realizado con el representante asignado por la asociación, marca esta solicitud como completada.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        class="mt-3 rounded bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+                                        :disabled="ceremonyCompletionLoading[request.id]"
+                                        @click="completeCeremony(request)"
+                                    >
+                                        {{ ceremonyCompletionLoading[request.id] ? 'Guardando...' : 'Marcar investidura completada' }}
+                                    </button>
                                 </div>
                             </div>
                         </div>

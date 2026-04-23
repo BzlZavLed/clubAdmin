@@ -8,7 +8,9 @@ import { useGeneral } from '@/Composables/useGeneral'
 const props = defineProps({
     association: { type: Object, required: true },
     union: { type: Object, default: null },
-    requests: { type: Array, default: () => [] },
+    activeRequests: { type: Array, default: () => [] },
+    historyRequests: { type: Array, default: () => [] },
+    historyPagination: { type: Object, default: () => ({}) },
 })
 
 const { showToast } = useGeneral()
@@ -26,21 +28,14 @@ const authorizationForm = ref({
 })
 const dateChangeReason = ref('')
 
-const pendingRequests = computed(() => props.requests.filter((request) => request.status === 'submitted' || request.status === 'returned'))
-const activeRequests = computed(() => props.requests.filter((request) => [
+const pendingRequests = computed(() => props.activeRequests.filter((request) => request.status === 'submitted' || request.status === 'returned'))
+const activeWorkflowRequests = computed(() => props.activeRequests.filter((request) => [
     'assigned',
     'in_review',
     'completed',
     'date_change_requested',
+    'authorized',
 ].includes(request.status)))
-const historyRequests = computed(() => props.requests
-    .filter((request) => request.status === 'authorized')
-    .slice()
-    .sort((a, b) => {
-        const left = a.authorized_at || a.completed_at || a.submitted_at || ''
-        const right = b.authorized_at || b.completed_at || b.submitted_at || ''
-        return right.localeCompare(left)
-    }))
 
 const statusLabels = {
     submitted: 'Pendiente de asignación',
@@ -65,6 +60,18 @@ const statusClass = (status) => ({
 const progressText = (request) => {
     if (!request.requirements_count) return 'Sin requisitos registrados'
     return `${request.completed_requirements_count || 0}/${request.requirements_count} requisitos cargados`
+}
+
+const goToHistoryPage = (page) => {
+    if (!page || page === props.historyPagination?.current_page) return
+
+    router.get(route('association.investiture-requests'), {
+        history_page: page,
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        replace: true,
+    })
 }
 
 const openAssignModal = (request) => {
@@ -241,11 +248,11 @@ const requestNewDate = () => {
                         <h2 class="text-lg font-semibold text-gray-900">Solicitudes en proceso</h2>
                         <p class="text-sm text-gray-500">Solicitudes ya asignadas que siguen en revisión o pendientes de autorización.</p>
                     </div>
-                    <span class="text-sm font-semibold text-gray-700">{{ activeRequests.length }} activas</span>
+                    <span class="text-sm font-semibold text-gray-700">{{ activeWorkflowRequests.length }} activas</span>
                 </div>
                 <div class="mt-4 space-y-3">
                     <article
-                        v-for="request in activeRequests"
+                        v-for="request in activeWorkflowRequests"
                         :key="request.id"
                         class="rounded-xl border border-gray-200 bg-gray-50 p-4"
                     >
@@ -300,7 +307,7 @@ const requestNewDate = () => {
                         </div>
                     </article>
 
-                    <p v-if="!activeRequests.length" class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500">
+                    <p v-if="!activeWorkflowRequests.length" class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500">
                         No hay solicitudes activas en este momento.
                     </p>
                 </div>
@@ -309,56 +316,83 @@ const requestNewDate = () => {
             <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-emerald-950">Historial de investiduras autorizadas</h2>
-                        <p class="text-sm text-emerald-800">Aquí quedan registradas todas las solicitudes ya autorizadas por la asociación.</p>
+                        <h2 class="text-lg font-semibold text-emerald-950">Historial de investiduras completadas</h2>
+                        <p class="text-sm text-emerald-800">Solicitudes ya autorizadas cuya ceremonia fue marcada como completada por el director del club.</p>
                     </div>
-                    <span class="text-sm font-semibold text-emerald-900">{{ historyRequests.length }} en historial</span>
+                    <span class="text-sm font-semibold text-emerald-900">{{ historyPagination?.total || 0 }} en historial</span>
                 </div>
 
-                <div class="mt-4 space-y-3">
-                    <article
-                        v-for="request in historyRequests"
-                        :key="`history-${request.id}`"
-                        class="rounded-xl border border-emerald-200 bg-white p-4"
-                    >
-                        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <h3 class="font-semibold text-gray-900">#{{ request.id }} · {{ request.club?.club_name || 'Club' }}</h3>
-                                    <span class="rounded-full px-2.5 py-1 text-xs font-semibold ring-1" :class="statusClass(request.status)">
-                                        {{ statusLabels[request.status] || request.status }}
-                                    </span>
-                                </div>
-                                <p class="mt-1 text-sm text-gray-600">
-                                    Distrito: {{ request.district?.name || '—' }} · Iglesia: {{ request.club?.church_name || '—' }}
-                                </p>
-                                <p class="mt-1 text-sm text-gray-600">
-                                    Año {{ request.carpeta_year }} · {{ request.club_type }} · {{ request.members_count }} miembros
-                                </p>
-                                <p class="mt-1 text-sm text-gray-600">
-                                    Fecha autorizada: {{ request.approved_investiture_date || request.tentative_investiture_date || '—' }}
-                                </p>
-                                <p v-if="request.authorization_person_name" class="mt-2 text-sm text-gray-600">
-                                    Autorizó: {{ request.authorization_person_name }}
-                                </p>
-                                <p v-if="request.ceremony_representative_name" class="mt-1 text-sm text-gray-600">
-                                    Representante: {{ request.ceremony_representative_name }}
-                                    <template v-if="request.ceremony_representative_email"> · {{ request.ceremony_representative_email }}</template>
-                                    <template v-if="request.ceremony_representative_phone"> · {{ request.ceremony_representative_phone }}</template>
-                                </p>
-                            </div>
-                            <div class="flex flex-col gap-2 md:items-end">
-                                <p class="text-sm text-gray-500">Enviada: {{ request.submitted_at || '—' }}</p>
-                                <p class="text-sm text-gray-500">Evaluada: {{ request.completed_at || '—' }}</p>
-                                <p class="text-sm font-semibold text-emerald-700">Autorizada: {{ request.authorized_at || '—' }}</p>
-                                <p class="text-sm text-gray-600">{{ progressText(request) }}</p>
-                            </div>
-                        </div>
-                    </article>
+                <div class="mt-4 overflow-hidden rounded-xl border border-emerald-200 bg-white">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-emerald-100 text-sm">
+                            <thead class="bg-emerald-50 text-left text-xs uppercase tracking-wide text-emerald-900">
+                                <tr>
+                                    <th class="px-4 py-3 font-semibold">Solicitud</th>
+                                    <th class="px-4 py-3 font-semibold">Club</th>
+                                    <th class="px-4 py-3 font-semibold">Distrito</th>
+                                    <th class="px-4 py-3 font-semibold">Fecha de investidura</th>
+                                    <th class="px-4 py-3 font-semibold">Representante</th>
+                                    <th class="px-4 py-3 font-semibold">Completada</th>
+                                    <th class="px-4 py-3 font-semibold">Progreso</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <tr v-for="request in historyRequests" :key="`history-${request.id}`" class="text-gray-700">
+                                    <td class="px-4 py-3">
+                                        <div class="font-semibold text-gray-900">#{{ request.id }}</div>
+                                        <div class="mt-1 text-xs text-gray-500">Año {{ request.carpeta_year }} · {{ request.club_type }}</div>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="font-medium text-gray-900">{{ request.club?.club_name || '—' }}</div>
+                                        <div class="mt-1 text-xs text-gray-500">{{ request.club?.church_name || '—' }}</div>
+                                    </td>
+                                    <td class="px-4 py-3">{{ request.district?.name || '—' }}</td>
+                                    <td class="px-4 py-3">{{ request.approved_investiture_date || request.tentative_investiture_date || '—' }}</td>
+                                    <td class="px-4 py-3">
+                                        <div class="font-medium text-gray-900">{{ request.ceremony_representative_name || '—' }}</div>
+                                        <div v-if="request.ceremony_representative_email" class="mt-1 text-xs text-gray-500">{{ request.ceremony_representative_email }}</div>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="font-medium text-emerald-700">{{ request.ceremony_completed_at || '—' }}</div>
+                                        <div v-if="request.authorized_at" class="mt-1 text-xs text-gray-500">Autorizada: {{ request.authorized_at }}</div>
+                                    </td>
+                                    <td class="px-4 py-3">{{ progressText(request) }}</td>
+                                </tr>
+                                <tr v-if="!historyRequests.length">
+                                    <td colspan="7" class="px-4 py-6 text-sm text-emerald-900">
+                                        Todavía no hay solicitudes completadas en el historial.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
 
-                    <p v-if="!historyRequests.length" class="rounded-xl border border-dashed border-emerald-300 bg-white px-4 py-6 text-sm text-emerald-900">
-                        Todavía no hay solicitudes autorizadas en el historial.
-                    </p>
+                    <div v-if="historyPagination?.last_page > 1" class="flex flex-col gap-3 border-t border-emerald-100 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p class="text-sm text-emerald-900">
+                            Mostrando {{ historyPagination.from || 0 }}-{{ historyPagination.to || 0 }} de {{ historyPagination.total || 0 }}
+                        </p>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                :disabled="historyPagination.current_page <= 1"
+                                @click="goToHistoryPage(historyPagination.current_page - 1)"
+                            >
+                                Anterior
+                            </button>
+                            <span class="text-sm font-medium text-emerald-900">
+                                Página {{ historyPagination.current_page }} de {{ historyPagination.last_page }}
+                            </span>
+                            <button
+                                type="button"
+                                class="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                :disabled="historyPagination.current_page >= historyPagination.last_page"
+                                @click="goToHistoryPage(historyPagination.current_page + 1)"
+                            >
+                                Siguiente
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </section>
         </div>
