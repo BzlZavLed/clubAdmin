@@ -27,7 +27,20 @@ const authorizationForm = ref({
 const dateChangeReason = ref('')
 
 const pendingRequests = computed(() => props.requests.filter((request) => request.status === 'submitted' || request.status === 'returned'))
-const assignedRequests = computed(() => props.requests.filter((request) => request.status !== 'submitted' && request.status !== 'returned'))
+const activeRequests = computed(() => props.requests.filter((request) => [
+    'assigned',
+    'in_review',
+    'completed',
+    'date_change_requested',
+].includes(request.status)))
+const historyRequests = computed(() => props.requests
+    .filter((request) => request.status === 'authorized')
+    .slice()
+    .sort((a, b) => {
+        const left = a.authorized_at || a.completed_at || a.submitted_at || ''
+        const right = b.authorized_at || b.completed_at || b.submitted_at || ''
+        return right.localeCompare(left)
+    }))
 
 const statusLabels = {
     submitted: 'Pendiente de asignación',
@@ -223,10 +236,16 @@ const requestNewDate = () => {
             </section>
 
             <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Solicitudes asignadas o cerradas</h2>
+                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">Solicitudes en proceso</h2>
+                        <p class="text-sm text-gray-500">Solicitudes ya asignadas que siguen en revisión o pendientes de autorización.</p>
+                    </div>
+                    <span class="text-sm font-semibold text-gray-700">{{ activeRequests.length }} activas</span>
+                </div>
                 <div class="mt-4 space-y-3">
                     <article
-                        v-for="request in assignedRequests"
+                        v-for="request in activeRequests"
                         :key="request.id"
                         class="rounded-xl border border-gray-200 bg-gray-50 p-4"
                     >
@@ -281,8 +300,64 @@ const requestNewDate = () => {
                         </div>
                     </article>
 
-                    <p v-if="!assignedRequests.length" class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500">
-                        Todavía no hay solicitudes asignadas.
+                    <p v-if="!activeRequests.length" class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500">
+                        No hay solicitudes activas en este momento.
+                    </p>
+                </div>
+            </section>
+
+            <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-emerald-950">Historial de investiduras autorizadas</h2>
+                        <p class="text-sm text-emerald-800">Aquí quedan registradas todas las solicitudes ya autorizadas por la asociación.</p>
+                    </div>
+                    <span class="text-sm font-semibold text-emerald-900">{{ historyRequests.length }} en historial</span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                    <article
+                        v-for="request in historyRequests"
+                        :key="`history-${request.id}`"
+                        class="rounded-xl border border-emerald-200 bg-white p-4"
+                    >
+                        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h3 class="font-semibold text-gray-900">#{{ request.id }} · {{ request.club?.club_name || 'Club' }}</h3>
+                                    <span class="rounded-full px-2.5 py-1 text-xs font-semibold ring-1" :class="statusClass(request.status)">
+                                        {{ statusLabels[request.status] || request.status }}
+                                    </span>
+                                </div>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    Distrito: {{ request.district?.name || '—' }} · Iglesia: {{ request.club?.church_name || '—' }}
+                                </p>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    Año {{ request.carpeta_year }} · {{ request.club_type }} · {{ request.members_count }} miembros
+                                </p>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    Fecha autorizada: {{ request.approved_investiture_date || request.tentative_investiture_date || '—' }}
+                                </p>
+                                <p v-if="request.authorization_person_name" class="mt-2 text-sm text-gray-600">
+                                    Autorizó: {{ request.authorization_person_name }}
+                                </p>
+                                <p v-if="request.ceremony_representative_name" class="mt-1 text-sm text-gray-600">
+                                    Representante: {{ request.ceremony_representative_name }}
+                                    <template v-if="request.ceremony_representative_email"> · {{ request.ceremony_representative_email }}</template>
+                                    <template v-if="request.ceremony_representative_phone"> · {{ request.ceremony_representative_phone }}</template>
+                                </p>
+                            </div>
+                            <div class="flex flex-col gap-2 md:items-end">
+                                <p class="text-sm text-gray-500">Enviada: {{ request.submitted_at || '—' }}</p>
+                                <p class="text-sm text-gray-500">Evaluada: {{ request.completed_at || '—' }}</p>
+                                <p class="text-sm font-semibold text-emerald-700">Autorizada: {{ request.authorized_at || '—' }}</p>
+                                <p class="text-sm text-gray-600">{{ progressText(request) }}</p>
+                            </div>
+                        </div>
+                    </article>
+
+                    <p v-if="!historyRequests.length" class="rounded-xl border border-dashed border-emerald-300 bg-white px-4 py-6 text-sm text-emerald-900">
+                        Todavía no hay solicitudes autorizadas en el historial.
                     </p>
                 </div>
             </section>
