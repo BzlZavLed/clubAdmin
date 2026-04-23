@@ -13,6 +13,7 @@ use App\Models\DistrictWorkplanEvent;
 use App\Models\DistrictWorkplanPublication;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
+use App\Models\Union;
 use App\Models\User;
 use App\Services\WorkplanPropagationService;
 use App\Support\SuperadminContext;
