@@ -10,13 +10,16 @@ use App\Models\AssociationWorkplanPublication;
 use App\Models\Church;
 use App\Models\Club;
 use App\Models\District;
+use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
+use App\Models\UnionCarpetaRequirement;
 use App\Models\Union;
 use App\Models\User;
 use App\Support\SuperadminContext;
 use App\Services\WorkplanPropagationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -167,28 +170,10 @@ class AssociationController extends Controller
                 ])->values(),
             ] : null;
 
-            $payload['club_requirement_map'] = $clubs->map(function ($club) use ($currentYear) {
-                $requirements = collect($currentYear?->requirements ?? [])
-                    ->filter(fn ($requirement) => $this->normalizeClubType($requirement->club_type) === $this->normalizeClubType($club->club_type))
-                    ->groupBy('class_name')
-                    ->map(fn ($items, $className) => [
-                        'class_name' => $className,
-                        'requirements' => collect($items)->map(fn ($requirement) => [
-                            'id' => $requirement->id,
-                            'title' => $requirement->title,
-                            'description' => $requirement->description,
-                            'requirement_type' => $requirement->requirement_type,
-                            'validation_mode' => $requirement->validation_mode,
-                            'status' => $requirement->status,
-                        ])->values(),
-                    ])
-                    ->values();
-
-                return [
-                    'club_id' => $club->id,
-                    'class_groups' => $requirements,
-                ];
-            })->values();
+            $payload['requirement_catalog'] = $this->buildAssociationRequirementCatalog($currentYear);
+            $payload['club_progress_tracker'] = $currentYear
+                ? $this->computeAssociationCarpetaClubProgress($clubs, $currentYear->id)
+                : [];
         } else {
             $payload['honor_sessions'] = $association->honorClassSessions()
                 ->get()
@@ -407,6 +392,31 @@ class AssociationController extends Controller
         $result = $propagationService->unpublishAssociation($association, (int) $validated['year']);
 
         return back()->with('success', "Calendario despublicado. Se removieron {$result['club_events']} eventos de clubes.");
+    }
+
+    public function syncWorkplanMissing(Request $request, WorkplanPropagationService $propagationService)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $year = (int) $validated['year'];
+        $publication = AssociationWorkplanPublication::query()
+            ->where('association_id', $association->id)
+            ->where('year', $year)
+            ->first();
+
+        if (($publication?->status ?? null) !== 'published') {
+            abort(422, 'El calendario debe estar publicado antes de sincronizar eventos faltantes.');
+        }
+
+        $result = $propagationService->syncAssociationMissing($association, $year, $request->user());
+
+        return back()->with(
+            'success',
+            "Sincronizacion completada. {$result['club_events_created']} eventos agregados en {$result['clubs']} clubes."
+        );
     }
 
     public function storeDistrict(Request $request)
@@ -895,6 +905,223 @@ class AssociationController extends Controller
         }
 
         return Association::query()->findOrFail((int) $user->scope_id);
+    }
+
+    protected function buildAssociationRequirementCatalog($carpetaYear): array
+    {
+        $requirements = collect($carpetaYear?->requirements ?? [])
+            ->where('status', 'active');
+
+        return collect($this->carpetaClubTypeOptions())->map(function (array $option) use ($requirements) {
+            $items = $requirements
+                ->filter(fn ($requirement) => $this->normalizeCarpetaClubType($requirement->club_type) === $option['value'])
+                ->sortBy([
+                    fn ($requirement) => $this->normalizeCarpetaValue($requirement->class_name),
+                    fn ($requirement) => $requirement->sort_order ?? 9999,
+                    fn ($requirement) => $this->normalizeCarpetaValue($requirement->title),
+                ])
+                ->values();
+
+            return [
+                'club_type' => $option['value'],
+                'club_type_label' => $option['label'],
+                'requirements_count' => $items->count(),
+                'class_groups' => $items
+                    ->groupBy(fn ($requirement) => $requirement->class_name ?: 'Sin clase')
+                    ->map(function (Collection $group, string $className) {
+                        return [
+                            'class_name' => $className,
+                            'requirements_count' => $group->count(),
+                            'requirements' => $group->map(fn ($requirement) => [
+                                'id' => $requirement->id,
+                                'title' => $requirement->title,
+                                'description' => $requirement->description,
+                                'requirement_type' => $requirement->requirement_type,
+                                'validation_mode' => $requirement->validation_mode,
+                                'sort_order' => $requirement->sort_order,
+                                'status' => $requirement->status,
+                            ])->values(),
+                        ];
+                    })
+                    ->values()
+                    ->all(),
+            ];
+        })->values()->all();
+    }
+
+    protected function computeAssociationCarpetaClubProgress(Collection $clubs, int $yearId): array
+    {
+        $clubRows = $clubs
+            ->filter(fn ($club) => $club->status !== 'deleted')
+            ->values();
+
+        if ($clubRows->isEmpty()) {
+            return collect($this->carpetaClubTypeOptions())->map(fn ($option) => [
+                'club_type' => $option['value'],
+                'club_type_label' => $option['label'],
+                'clubs' => [],
+            ])->values()->all();
+        }
+
+        $clubIds = $clubRows->pluck('id')->all();
+        $pathfinderClubIds = $clubRows
+            ->filter(fn ($club) => in_array($this->normalizeCarpetaClubType($club->club_type), ['pathfinders', 'master_guide'], true))
+            ->pluck('id')
+            ->all();
+        $adventurerClubIds = $clubRows
+            ->filter(fn ($club) => $this->normalizeCarpetaClubType($club->club_type) === 'adventurers')
+            ->pluck('id')
+            ->all();
+
+        $pathAssignments = collect();
+        if (!empty($pathfinderClubIds)) {
+            $pathAssignments = DB::table('class_member_pathfinder as cmp')
+                ->join('members as m', 'm.id', '=', 'cmp.member_id')
+                ->join('club_classes as cc', 'cc.id', '=', 'cmp.club_class_id')
+                ->join('union_class_catalogs as ucc', 'ucc.id', '=', 'cc.union_class_catalog_id')
+                ->whereIn('m.club_id', $pathfinderClubIds)
+                ->where('cmp.active', true)
+                ->where('m.status', 'active')
+                ->select('m.id as member_id', 'm.club_id')
+                ->selectRaw("LOWER(TRIM(ucc.name)) as class_name")
+                ->get();
+        }
+
+        $advAssignments = collect();
+        if (!empty($adventurerClubIds)) {
+            $advAssignmentsRaw = DB::table('class_member_adventurer as cma')
+                ->join('club_classes as cc', 'cc.id', '=', 'cma.club_class_id')
+                ->join('union_class_catalogs as ucc', 'ucc.id', '=', 'cc.union_class_catalog_id')
+                ->whereIn('cc.club_id', $adventurerClubIds)
+                ->where('cma.active', true)
+                ->select('cma.members_adventurer_id', 'cc.club_id')
+                ->selectRaw("LOWER(TRIM(ucc.name)) as class_name")
+                ->get();
+
+            $advMemberMap = Member::query()
+                ->where('type', 'adventurers')
+                ->whereIn('id_data', $advAssignmentsRaw->pluck('members_adventurer_id')->unique()->toArray())
+                ->whereIn('club_id', $adventurerClubIds)
+                ->where('status', 'active')
+                ->get(['id', 'id_data', 'club_id'])
+                ->keyBy('id_data');
+
+            $advAssignments = $advAssignmentsRaw->map(function ($assignment) use ($advMemberMap) {
+                $member = $advMemberMap->get($assignment->members_adventurer_id);
+
+                return $member
+                    ? (object) [
+                        'member_id' => $member->id,
+                        'club_id' => $assignment->club_id,
+                        'class_name' => $assignment->class_name,
+                    ]
+                    : null;
+            })->filter()->values();
+        }
+
+        $requirements = UnionCarpetaRequirement::query()
+            ->where('union_carpeta_year_id', $yearId)
+            ->where('status', 'active')
+            ->get(['id', 'club_type', 'class_name']);
+
+        $reqMap = [];
+        foreach ($requirements as $requirement) {
+            $key = $this->normalizeCarpetaClubType($requirement->club_type) . '|' . $this->normalizeCarpetaValue($requirement->class_name);
+            $reqMap[$key][] = (int) $requirement->id;
+        }
+
+        $allAssignments = $pathAssignments->concat($advAssignments);
+        $allMemberIds = $allAssignments->pluck('member_id')->unique()->values()->toArray();
+        $allRequirementIds = $requirements->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        $evidencesByMember = collect();
+        if (!empty($allMemberIds) && !empty($allRequirementIds)) {
+            $evidencesByMember = DB::table('parent_carpeta_requirement_evidences')
+                ->whereIn('member_id', $allMemberIds)
+                ->whereIn('union_carpeta_requirement_id', $allRequirementIds)
+                ->where(function ($query) {
+                    $query->whereNotNull('file_path')
+                        ->orWhereNotNull('text_value')
+                        ->orWhere('physical_completed', true);
+                })
+                ->select('member_id', 'union_carpeta_requirement_id')
+                ->distinct()
+                ->get()
+                ->groupBy('member_id')
+                ->map(fn ($group) => $group->pluck('union_carpeta_requirement_id')->map(fn ($id) => (int) $id)->toArray());
+        }
+
+        $memberProgressByClub = [];
+        foreach ($allAssignments as $assignment) {
+            $club = $clubRows->firstWhere('id', $assignment->club_id);
+            if (!$club) {
+                continue;
+            }
+
+            $key = $this->normalizeCarpetaClubType($club->club_type) . '|' . $assignment->class_name;
+            $requirementIds = $reqMap[$key] ?? [];
+            $requirementCount = count($requirementIds);
+            $pct = $requirementCount === 0
+                ? null
+                : round(count(array_intersect($requirementIds, $evidencesByMember->get($assignment->member_id, []))) / $requirementCount * 100, 1);
+
+            $memberProgressByClub[(int) $assignment->club_id][] = $pct;
+        }
+
+        $clubProgress = $clubRows->map(function ($club) use ($memberProgressByClub) {
+            $progressValues = array_filter($memberProgressByClub[(int) $club->id] ?? [], fn ($value) => $value !== null);
+
+            return [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+                'club_type' => $this->normalizeCarpetaClubType($club->club_type),
+                'church_name' => $club->church_name,
+                'district_name' => $club->church?->district?->name,
+                'director_name' => $club->director_name,
+                'status' => $club->status,
+                'member_count' => count($memberProgressByClub[(int) $club->id] ?? []),
+                'progress_pct' => count($progressValues) > 0 ? round(array_sum($progressValues) / count($progressValues), 1) : null,
+            ];
+        });
+
+        return collect($this->carpetaClubTypeOptions())->map(function (array $option) use ($clubProgress) {
+            return [
+                'club_type' => $option['value'],
+                'club_type_label' => $option['label'],
+                'clubs' => $clubProgress
+                    ->where('club_type', $option['value'])
+                    ->sortBy('club_name')
+                    ->values()
+                    ->all(),
+            ];
+        })->values()->all();
+    }
+
+    protected function carpetaClubTypeOptions(): array
+    {
+        return [
+            ['value' => 'adventurers', 'label' => 'Aventureros'],
+            ['value' => 'pathfinders', 'label' => 'Conquistadores'],
+            ['value' => 'master_guide', 'label' => 'Guias Mayores'],
+        ];
+    }
+
+    protected function normalizeCarpetaValue(?string $value): string
+    {
+        return mb_strtolower(trim((string) $value));
+    }
+
+    protected function normalizeCarpetaClubType(?string $value): string
+    {
+        $normalized = str_replace(['-', '_'], ' ', $this->normalizeCarpetaValue($value));
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+
+        return match ($normalized) {
+            'adventurers', 'adventurer', 'aventureros', 'aventurero' => 'adventurers',
+            'pathfinders', 'pathfinder', 'conquistadores', 'conquistador' => 'pathfinders',
+            'master guide', 'master guides', 'guia mayor', 'guias mayores', 'guías mayores', 'guia mayores' => 'master_guide',
+            default => $normalized,
+        };
     }
 
     protected function validateWorkplanEvent(Request $request, bool $requireYear = false): array

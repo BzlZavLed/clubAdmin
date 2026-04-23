@@ -9,6 +9,7 @@ const props = defineProps({
     year:   { type: Number, required: true },
     events: { type: Array, default: () => [] },
     publication: { type: Object, default: null },
+    requiresRepublish: { type: Boolean, default: false },
 })
 
 // ── Year navigation ───────────────────────────────────────────
@@ -22,6 +23,7 @@ const pdfHref = computed(() => route('union.workplan.pdf', { year: props.year })
 const showModal   = ref(false)
 const editingEvent = ref(null)
 const publishing = ref(false)
+const syncing = ref(false)
 const confirmationModalOpen = ref(false)
 const confirmationTitle = ref('')
 const confirmationMessage = ref('')
@@ -139,15 +141,33 @@ const deleteEvent = (ev) => {
 
 const publishCalendar = () => {
     openConfirmationModal({
-        title: 'Publicar calendario',
+        title: needsRepublish.value ? 'Republicar calendario' : 'Publicar calendario',
         message: `¿Publicar el calendario ${props.year} a todas las asociaciones de la unión?`,
-        confirmLabel: 'Publicar calendario',
+        confirmLabel: needsRepublish.value ? 'Republicar cambios' : 'Publicar calendario',
         onConfirm: () => new Promise((resolve) => {
             publishing.value = true
             router.post(route('union.workplan.publish'), { year: props.year }, {
                 preserveScroll: true,
                 onFinish: () => {
                     publishing.value = false
+                    resolve()
+                },
+            })
+        }),
+    })
+}
+
+const syncMissingCalendar = () => {
+    openConfirmationModal({
+        title: 'Sincronizar eventos faltantes',
+        message: `¿Buscar eventos nuevos del calendario ${props.year} y agregarlos a las asociaciones y clubes donde todavia no existan?`,
+        confirmLabel: 'Sincronizar faltantes',
+        onConfirm: () => new Promise((resolve) => {
+            syncing.value = true
+            router.post(route('union.workplan.sync-missing'), { year: props.year }, {
+                preserveScroll: true,
+                onFinish: () => {
+                    syncing.value = false
                     resolve()
                 },
             })
@@ -222,6 +242,7 @@ const toggleClubType = (val) => {
 
 const activeMonths = computed(() => Object.entries(eventsByMonth.value).filter(([, evs]) => evs.length > 0))
 const isPublished = computed(() => props.publication?.status === 'published')
+const needsRepublish = computed(() => isPublished.value && props.requiresRepublish)
 </script>
 
 <template>
@@ -238,6 +259,9 @@ const isPublished = computed(() => props.publication?.status === 'published')
                         <p class="mt-0.5 text-sm text-gray-500">Calendario general de actividades para la unión</p>
                         <p class="mt-1 text-xs" :class="isPublished ? 'text-green-700' : 'text-gray-400'">
                             {{ isPublished ? `Publicado · ${publication?.published_at || ''}` : 'No publicado a asociaciones' }}
+                        </p>
+                        <p v-if="needsRepublish" class="mt-1 text-xs font-medium text-amber-700">
+                            Hay cambios posteriores a la ultima publicacion. Usa republicar para aplicar ediciones y eliminaciones; usa sincronizar faltantes si solo agregaste eventos nuevos.
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
@@ -264,16 +288,34 @@ const isPublished = computed(() => props.publication?.status === 'published')
                         <button
                             v-if="!isPublished"
                             type="button"
-                            :disabled="publishing || !events.length"
+                            :disabled="publishing || syncing || !events.length"
                             class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
                             @click="publishCalendar"
                         >
                             Publicar calendario
                         </button>
                         <button
-                            v-else
+                            v-else-if="needsRepublish"
                             type="button"
-                            :disabled="publishing"
+                            :disabled="publishing || syncing"
+                            class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+                            @click="publishCalendar"
+                        >
+                            Republicar cambios
+                        </button>
+                        <button
+                            v-if="isPublished"
+                            type="button"
+                            :disabled="publishing || syncing"
+                            class="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50"
+                            @click="syncMissingCalendar"
+                        >
+                            Sincronizar faltantes
+                        </button>
+                        <button
+                            v-if="isPublished"
+                            type="button"
+                            :disabled="publishing || syncing"
                             class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
                             @click="unpublishCalendar"
                         >
@@ -304,6 +346,10 @@ const isPublished = computed(() => props.publication?.status === 'published')
                         <span class="text-gray-500">Obligatorio</span>
                     </span>
                 </div>
+            </div>
+
+            <div v-if="needsRepublish" class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+                Las asociaciones consultan el calendario de union y los clubes reciben copias publicadas a traves de cada asociacion. Si editaste o eliminaste eventos existentes, usa <strong>Republicar cambios</strong>. Si solo agregaste eventos nuevos, usa <strong>Sincronizar faltantes</strong>.
             </div>
 
             <!-- Empty state -->

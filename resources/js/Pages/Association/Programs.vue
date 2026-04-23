@@ -12,16 +12,32 @@ const props = defineProps({
     union: { type: Object, required: true },
     clubs: { type: Array, default: () => [] },
     carpeta_year: { type: Object, default: null },
-    club_requirement_map: { type: Array, default: () => [] },
+    requirement_catalog: { type: Array, default: () => [] },
+    club_progress_tracker: { type: Array, default: () => [] },
     honor_sessions: { type: Array, default: () => [] },
 })
 
 const { tr } = useLocale()
 const isCarpetas = computed(() => (props.union?.evaluation_system || 'honors') === 'carpetas')
-
-const requirementMapByClub = computed(() =>
-    Object.fromEntries((props.club_requirement_map || []).map((entry) => [String(entry.club_id), entry.class_groups || []]))
+const requirementCatalog = computed(() => props.requirement_catalog || [])
+const progressTracker = computed(() => props.club_progress_tracker || [])
+const totalTrackedClubs = computed(() =>
+    progressTracker.value.reduce((total, typeGroup) => total + (typeGroup.clubs?.length || 0), 0)
 )
+const totalTrackedMembers = computed(() =>
+    progressTracker.value.reduce((total, typeGroup) => (
+        total + (typeGroup.clubs || []).reduce((clubTotal, club) => clubTotal + (club.member_count || 0), 0)
+    ), 0)
+)
+
+const formatProgress = (value) => value === null || value === undefined ? '—' : `${value}%`
+const progressBarWidth = (value) => value === null || value === undefined ? '0%' : `${Math.max(0, Math.min(100, value))}%`
+const progressBarClass = (value) => {
+    if (value === null || value === undefined) return 'bg-gray-300'
+    if (value >= 80) return 'bg-emerald-500'
+    if (value >= 50) return 'bg-amber-500'
+    return 'bg-red-500'
+}
 
 const sessionForm = useForm({
     club_type: 'pathfinders',
@@ -79,47 +95,162 @@ const removeSession = (session) => {
                     </p>
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-2">
-                    <article
-                        v-for="club in clubs"
-                        :key="club.id"
-                        class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-                    >
-                        <div class="mb-4">
-                            <h3 class="text-base font-semibold text-gray-900">{{ club.club_name }}</h3>
-                            <p class="mt-0.5 text-xs font-medium uppercase tracking-wide text-gray-400">{{ club.club_type }}</p>
+                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-900">
+                                {{ tr('Listado de requisitos por tipo de club', 'Requirement list by club type') }}
+                            </h3>
+                            <p class="mt-1 text-sm text-gray-600">
+                                {{ tr('La asociación puede consultar los requisitos oficiales sin depender de un club específico.', 'The association can review the official requirements without depending on a specific club.') }}
+                            </p>
                         </div>
+                        <p class="text-sm text-gray-500">
+                            {{ tr('Tipos cubiertos', 'Covered types') }}: {{ requirementCatalog.length }}
+                        </p>
+                    </div>
 
-                        <div class="space-y-3">
-                            <div
-                                v-for="group in requirementMapByClub[String(club.id)] || []"
-                                :key="`${club.id}-${group.class_name}`"
-                                class="rounded-xl border border-gray-100 bg-gray-50 p-4"
-                            >
-                                <h4 class="text-sm font-medium text-gray-800">{{ group.class_name }}</h4>
-                                <ul class="mt-2 space-y-2">
-                                    <li
-                                        v-for="requirement in group.requirements"
-                                        :key="requirement.id"
-                                        class="rounded-lg bg-white p-3"
-                                    >
-                                        <p class="font-medium text-gray-900">{{ requirement.title }}</p>
-                                        <p v-if="requirement.description" class="mt-0.5 text-sm text-gray-600">{{ requirement.description }}</p>
-                                        <p class="mt-1 text-xs uppercase tracking-wide text-gray-400">
-                                            {{ requirement.requirement_type }} · {{ requirement.validation_mode }}
-                                        </p>
-                                    </li>
-                                </ul>
+                    <div class="mt-6 grid gap-4 xl:grid-cols-3">
+                        <article
+                            v-for="typeGroup in requirementCatalog"
+                            :key="typeGroup.club_type"
+                            class="rounded-2xl border border-gray-200 bg-gray-50 p-5"
+                        >
+                            <div>
+                                <h4 class="text-base font-semibold text-gray-900">{{ typeGroup.club_type_label }}</h4>
+                                <p class="mt-1 text-xs uppercase tracking-wide text-gray-400">
+                                    {{ typeGroup.requirements_count }} {{ tr('requisitos', 'requirements') }}
+                                </p>
+                            </div>
+
+                            <div class="mt-4 space-y-3">
+                                <div
+                                    v-for="group in typeGroup.class_groups"
+                                    :key="`${typeGroup.club_type}-${group.class_name}`"
+                                    class="rounded-xl border border-gray-200 bg-white p-4"
+                                >
+                                    <div class="flex items-center justify-between gap-3">
+                                        <h5 class="text-sm font-semibold text-gray-900">{{ group.class_name }}</h5>
+                                        <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                                            {{ group.requirements_count }}
+                                        </span>
+                                    </div>
+
+                                    <ul class="mt-3 space-y-3">
+                                        <li
+                                            v-for="requirement in group.requirements"
+                                            :key="requirement.id"
+                                            class="rounded-lg border border-gray-100 bg-gray-50 p-3"
+                                        >
+                                            <p class="text-sm font-semibold text-gray-900">
+                                                <span v-if="requirement.sort_order" class="text-gray-500">{{ requirement.sort_order }}.</span>
+                                                {{ requirement.title }}
+                                            </p>
+                                            <p v-if="requirement.description" class="mt-1 text-sm leading-6 text-gray-600">
+                                                {{ requirement.description }}
+                                            </p>
+                                            <p class="mt-2 text-xs uppercase tracking-wide text-gray-400">
+                                                {{ requirement.requirement_type }} · {{ requirement.validation_mode }}
+                                            </p>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <p
+                                    v-if="!typeGroup.class_groups.length"
+                                    class="rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500"
+                                >
+                                    {{ tr('No hay requisitos activos para este tipo de club en el ciclo actual.', 'There are no active requirements for this club type in the current cycle.') }}
+                                </p>
+                            </div>
+                        </article>
+                    </div>
+                </div>
+
+                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-900">
+                                {{ tr('Seguimiento de progreso por club', 'Progress tracker by club') }}
+                            </h3>
+                            <p class="mt-1 text-sm text-gray-600">
+                                {{ tr('Resumen del avance promedio de evidencias cargadas por cada club en el ciclo activo.', 'Summary of the average uploaded evidence progress for each club in the active cycle.') }}
+                            </p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 text-sm text-gray-600">
+                            <div class="rounded-xl bg-gray-50 px-4 py-3">
+                                <p class="text-xs uppercase tracking-wide text-gray-400">{{ tr('Clubes', 'Clubs') }}</p>
+                                <p class="mt-1 text-lg font-semibold text-gray-900">{{ totalTrackedClubs }}</p>
+                            </div>
+                            <div class="rounded-xl bg-gray-50 px-4 py-3">
+                                <p class="text-xs uppercase tracking-wide text-gray-400">{{ tr('Miembros rastreados', 'Tracked members') }}</p>
+                                <p class="mt-1 text-lg font-semibold text-gray-900">{{ totalTrackedMembers }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 space-y-5">
+                        <section
+                            v-for="typeGroup in progressTracker"
+                            :key="`progress-${typeGroup.club_type}`"
+                            class="rounded-2xl border border-gray-200 bg-gray-50 p-5"
+                        >
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="text-base font-semibold text-gray-900">{{ typeGroup.club_type_label }}</h4>
+                                    <p class="mt-1 text-sm text-gray-500">
+                                        {{ typeGroup.clubs.length }} {{ tr('clubes en seguimiento', 'clubs tracked') }}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div v-if="typeGroup.clubs.length" class="mt-4 overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead>
+                                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400">
+                                            <th class="pb-3 pr-4 font-medium">{{ tr('Club', 'Club') }}</th>
+                                            <th class="pb-3 pr-4 font-medium">{{ tr('Distrito', 'District') }}</th>
+                                            <th class="pb-3 pr-4 font-medium">{{ tr('Iglesia', 'Church') }}</th>
+                                            <th class="pb-3 pr-4 font-medium">{{ tr('Miembros', 'Members') }}</th>
+                                            <th class="pb-3 pr-4 font-medium">{{ tr('Progreso', 'Progress') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200 text-gray-700">
+                                        <tr v-for="club in typeGroup.clubs" :key="club.id">
+                                            <td class="py-3 pr-4">
+                                                <p class="font-medium text-gray-900">{{ club.club_name }}</p>
+                                                <p v-if="club.director_name" class="mt-1 text-xs text-gray-500">{{ club.director_name }}</p>
+                                            </td>
+                                            <td class="py-3 pr-4">{{ club.district_name || '—' }}</td>
+                                            <td class="py-3 pr-4">{{ club.church_name || '—' }}</td>
+                                            <td class="py-3 pr-4">{{ club.member_count }}</td>
+                                            <td class="py-3 pr-4">
+                                                <div class="flex min-w-[180px] items-center gap-3">
+                                                    <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-200">
+                                                        <div
+                                                            class="h-full rounded-full transition-all"
+                                                            :class="progressBarClass(club.progress_pct)"
+                                                            :style="{ width: progressBarWidth(club.progress_pct) }"
+                                                        />
+                                                    </div>
+                                                    <span class="w-14 text-right text-sm font-medium text-gray-700">
+                                                        {{ formatProgress(club.progress_pct) }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
 
                             <p
-                                v-if="!(requirementMapByClub[String(club.id)] || []).length"
-                                class="rounded-xl border border-dashed border-gray-200 p-4 text-sm text-gray-400"
+                                v-else
+                                class="mt-4 rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500"
                             >
-                                {{ tr('Sin requisitos de carpeta para este tipo de club.', 'No carpeta requirements for this club type.') }}
+                                {{ tr('No hay clubes de este tipo con progreso rastreable en la asociación.', 'There are no clubs of this type with trackable progress in the association.') }}
                             </p>
-                        </div>
-                    </article>
+                        </section>
+                    </div>
                 </div>
             </div>
 

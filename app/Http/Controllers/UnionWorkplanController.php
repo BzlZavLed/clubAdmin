@@ -19,6 +19,18 @@ class UnionWorkplanController extends Controller
     {
         $union = $this->resolveScopedUnion($request);
         $year  = (int) $request->input('year', now()->year);
+        $publication = UnionWorkplanPublication::query()
+            ->where('union_id', $union->id)
+            ->where('year', $year)
+            ->first();
+        $lastChangedAt = UnionWorkplanEvent::query()
+            ->where('union_id', $union->id)
+            ->where('year', $year)
+            ->max('updated_at');
+        $requiresRepublish = $publication?->status === 'published'
+            && $publication?->published_at
+            && $lastChangedAt
+            && strtotime((string) $lastChangedAt) > strtotime((string) $publication->published_at);
 
         $events = UnionWorkplanEvent::where('union_id', $union->id)
             ->where('year', $year)
@@ -30,10 +42,8 @@ class UnionWorkplanController extends Controller
             'union'       => ['id' => $union->id, 'name' => $union->name],
             'year'        => $year,
             'events'      => $events,
-            'publication' => UnionWorkplanPublication::query()
-                ->where('union_id', $union->id)
-                ->where('year', $year)
-                ->first(),
+            'publication' => $publication,
+            'requiresRepublish' => $requiresRepublish,
         ]);
     }
 
@@ -183,6 +193,31 @@ class UnionWorkplanController extends Controller
         $result = $propagationService->unpublishUnion($union, (int) $validated['year']);
 
         return back()->with('success', "Calendario despublicado. Se removieron {$result['club_events']} eventos de clubes.");
+    }
+
+    public function syncMissing(Request $request, WorkplanPropagationService $propagationService)
+    {
+        $union = $this->resolveScopedUnion($request);
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $year = (int) $validated['year'];
+        $publication = UnionWorkplanPublication::query()
+            ->where('union_id', $union->id)
+            ->where('year', $year)
+            ->first();
+
+        if (($publication?->status ?? null) !== 'published') {
+            abort(422, 'El calendario debe estar publicado antes de sincronizar eventos faltantes.');
+        }
+
+        $result = $propagationService->syncUnionMissing($union, $year, $request->user());
+
+        return back()->with(
+            'success',
+            "Sincronizacion completada. {$result['association_events_created']} eventos agregados en {$result['associations_touched']} asociaciones y {$result['club_events_created']} eventos agregados en {$result['clubs_touched']} clubes."
+        );
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

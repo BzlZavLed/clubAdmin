@@ -120,6 +120,7 @@ Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secreta
     Route::get('/district/workplan', [DistrictController::class, 'workplan'])->name('district.workplan');
     Route::post('/district/workplan/publish', [DistrictController::class, 'publishWorkplan'])->name('district.workplan.publish');
     Route::post('/district/workplan/unpublish', [DistrictController::class, 'unpublishWorkplan'])->name('district.workplan.unpublish');
+    Route::post('/district/workplan/sync-missing', [DistrictController::class, 'syncWorkplanMissing'])->name('district.workplan.sync-missing');
     Route::post('/district/workplan/events', [DistrictController::class, 'storeWorkplanEvent'])->name('district.workplan.events.store');
     Route::put('/district/workplan/events/{event}', [DistrictController::class, 'updateWorkplanEvent'])->name('district.workplan.events.update');
     Route::delete('/district/workplan/events/{event}', [DistrictController::class, 'destroyWorkplanEvent'])->name('district.workplan.events.destroy');
@@ -150,6 +151,7 @@ Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->g
     Route::get('/association/workplan', [AssociationController::class, 'workplan'])->name('association.workplan');
     Route::post('/association/workplan/publish', [AssociationController::class, 'publishWorkplan'])->name('association.workplan.publish');
     Route::post('/association/workplan/unpublish', [AssociationController::class, 'unpublishWorkplan'])->name('association.workplan.unpublish');
+    Route::post('/association/workplan/sync-missing', [AssociationController::class, 'syncWorkplanMissing'])->name('association.workplan.sync-missing');
     Route::post('/association/workplan/events', [AssociationController::class, 'storeWorkplanEvent'])->name('association.workplan.events.store');
     Route::put('/association/workplan/events/{event}', [AssociationController::class, 'updateWorkplanEvent'])->name('association.workplan.events.update');
     Route::delete('/association/workplan/events/{event}', [AssociationController::class, 'destroyWorkplanEvent'])->name('association.workplan.events.destroy');
@@ -222,6 +224,7 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
     Route::get('/union/workplan/pdf', [UnionWorkplanController::class, 'pdf'])->name('union.workplan.pdf');
     Route::post('/union/workplan/publish', [UnionWorkplanController::class, 'publish'])->name('union.workplan.publish');
     Route::post('/union/workplan/unpublish', [UnionWorkplanController::class, 'unpublish'])->name('union.workplan.unpublish');
+    Route::post('/union/workplan/sync-missing', [UnionWorkplanController::class, 'syncMissing'])->name('union.workplan.sync-missing');
     Route::post('/union/workplan/events', [UnionWorkplanController::class, 'store'])->name('union.workplan.events.store');
     Route::put('/union/workplan/events/{event}', [UnionWorkplanController::class, 'update'])->name('union.workplan.events.update');
     Route::delete('/union/workplan/events/{event}', [UnionWorkplanController::class, 'destroy'])->name('union.workplan.events.destroy');

@@ -124,6 +124,82 @@ class WorkplanPropagationService
         });
     }
 
+    public function syncUnionMissing(Union $union, int $year, ?User $user = null): array
+    {
+        return DB::transaction(function () use ($union, $year, $user) {
+            $events = UnionWorkplanEvent::query()
+                ->where('union_id', $union->id)
+                ->where('year', $year)
+                ->where('status', 'active')
+                ->orderBy('date')
+                ->get();
+
+            $associations = $union->associations()->where('status', 'active')->get();
+            $associationEventsCreated = 0;
+            $associationIdsTouched = [];
+            $clubEventsCreated = 0;
+            $clubIdsTouched = [];
+
+            foreach ($associations as $association) {
+                $existingSourceIds = AssociationWorkplanEvent::query()
+                    ->where('association_id', $association->id)
+                    ->where('year', $year)
+                    ->whereNotNull('union_workplan_event_id')
+                    ->pluck('union_workplan_event_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->flip();
+
+                foreach ($events as $event) {
+                    if ($existingSourceIds->has((int) $event->id)) {
+                        continue;
+                    }
+
+                    AssociationWorkplanEvent::query()->create([
+                        'association_id' => $association->id,
+                        'union_workplan_event_id' => $event->id,
+                        'year' => $year,
+                        'date' => $event->date,
+                        'end_date' => $event->end_date,
+                        'start_time' => $event->start_time,
+                        'end_time' => $event->end_time,
+                        'event_type' => $event->event_type,
+                        'title' => $event->title,
+                        'description' => $event->description,
+                        'location' => $event->location,
+                        'target_club_types' => $event->target_club_types,
+                        'is_mandatory' => (bool) $event->is_mandatory,
+                        'status' => 'active',
+                        'created_by' => $user?->id,
+                    ]);
+
+                    $associationEventsCreated++;
+                    $associationIdsTouched[$association->id] = true;
+                }
+
+                $associationPublication = AssociationWorkplanPublication::query()
+                    ->where('association_id', $association->id)
+                    ->where('year', $year)
+                    ->first();
+
+                if (($associationPublication?->status ?? null) === 'published') {
+                    $sync = $this->syncAssociationMissingToClubs($association, $year, $user);
+                    $clubEventsCreated += $sync['club_events_created'];
+                    foreach ($sync['club_ids_touched'] as $clubId) {
+                        $clubIdsTouched[$clubId] = true;
+                    }
+                }
+            }
+
+            return [
+                'associations' => $associations->count(),
+                'association_events_created' => $associationEventsCreated,
+                'associations_touched' => count($associationIdsTouched),
+                'club_events_created' => $clubEventsCreated,
+                'clubs_touched' => count($clubIdsTouched),
+            ];
+        });
+    }
+
     public function publishAssociation(Association $association, int $year, ?User $user = null): array
     {
         return DB::transaction(function () use ($association, $year, $user) {
@@ -210,6 +286,18 @@ class WorkplanPropagationService
                 'clubs' => $clubs->count(),
                 'events' => $events->count(),
                 'club_events' => $createdOrUpdated,
+            ];
+        });
+    }
+
+    public function syncAssociationMissing(Association $association, int $year, ?User $user = null): array
+    {
+        return DB::transaction(function () use ($association, $year, $user) {
+            $sync = $this->syncAssociationMissingToClubs($association, $year, $user);
+
+            return [
+                'clubs' => count($sync['club_ids_touched']),
+                'club_events_created' => $sync['club_events_created'],
             ];
         });
     }
@@ -329,6 +417,18 @@ class WorkplanPropagationService
         });
     }
 
+    public function syncDistrictMissing(District $district, int $year, ?User $user = null): array
+    {
+        return DB::transaction(function () use ($district, $year, $user) {
+            $sync = $this->syncDistrictMissingToClubs($district, $year, $user);
+
+            return [
+                'clubs' => count($sync['club_ids_touched']),
+                'club_events_created' => $sync['club_events_created'],
+            ];
+        });
+    }
+
     public function unpublishDistrict(District $district, int $year): array
     {
         return DB::transaction(function () use ($district, $year) {
@@ -372,5 +472,147 @@ class WorkplanPropagationService
     protected function normalizeClubType(?string $value): string
     {
         return str_replace(['-', '_', ' '], '', mb_strtolower((string) $value));
+    }
+
+    protected function syncAssociationMissingToClubs(Association $association, int $year, ?User $user = null): array
+    {
+        $events = AssociationWorkplanEvent::query()
+            ->where('association_id', $association->id)
+            ->where('year', $year)
+            ->where('status', 'active')
+            ->orderBy('date')
+            ->get();
+
+        $clubs = Club::withoutGlobalScopes()
+            ->where('status', 'active')
+            ->whereHas('district', fn ($query) => $query->where('association_id', $association->id))
+            ->get(['id', 'club_name', 'club_type']);
+
+        $clubEventsCreated = 0;
+        $clubIdsTouched = [];
+
+        foreach ($clubs as $club) {
+            $workplan = Workplan::query()->firstOrCreate(
+                ['club_id' => $club->id],
+                [
+                    'start_date' => Carbon::create($year, 1, 1)->toDateString(),
+                    'end_date' => Carbon::create($year, 12, 31)->toDateString(),
+                ]
+            );
+
+            $existingSourceIds = WorkplanEvent::query()
+                ->where('workplan_id', $workplan->id)
+                ->where('source_type', AssociationWorkplanEvent::class)
+                ->pluck('source_id')
+                ->map(fn ($id) => (int) $id)
+                ->flip();
+
+            foreach ($events as $event) {
+                if (!$this->eventAppliesToClub($event, $club->club_type)) {
+                    continue;
+                }
+
+                if ($existingSourceIds->has((int) $event->id)) {
+                    continue;
+                }
+
+                WorkplanEvent::query()->create([
+                    'workplan_id' => $workplan->id,
+                    'source_type' => AssociationWorkplanEvent::class,
+                    'source_id' => $event->id,
+                    'date' => $event->date,
+                    'end_date' => $event->end_date,
+                    'start_time' => $event->start_time,
+                    'end_time' => $event->end_time,
+                    'meeting_type' => 'special',
+                    'title' => $event->title,
+                    'description' => $event->description,
+                    'location' => $event->location,
+                    'is_generated' => true,
+                    'is_edited' => false,
+                    'status' => 'active',
+                    'created_by' => $user?->id,
+                ]);
+
+                $clubEventsCreated++;
+                $clubIdsTouched[$club->id] = true;
+            }
+        }
+
+        return [
+            'club_events_created' => $clubEventsCreated,
+            'club_ids_touched' => array_keys($clubIdsTouched),
+        ];
+    }
+
+    protected function syncDistrictMissingToClubs(District $district, int $year, ?User $user = null): array
+    {
+        $events = DistrictWorkplanEvent::query()
+            ->where('district_id', $district->id)
+            ->where('year', $year)
+            ->where('status', 'active')
+            ->orderBy('date')
+            ->get();
+
+        $clubs = Club::withoutGlobalScopes()
+            ->where('status', 'active')
+            ->where('district_id', $district->id)
+            ->get(['id', 'club_name', 'club_type']);
+
+        $clubEventsCreated = 0;
+        $clubIdsTouched = [];
+
+        foreach ($clubs as $club) {
+            $workplan = Workplan::query()->firstOrCreate(
+                ['club_id' => $club->id],
+                [
+                    'start_date' => Carbon::create($year, 1, 1)->toDateString(),
+                    'end_date' => Carbon::create($year, 12, 31)->toDateString(),
+                ]
+            );
+
+            $existingSourceIds = WorkplanEvent::query()
+                ->where('workplan_id', $workplan->id)
+                ->where('source_type', DistrictWorkplanEvent::class)
+                ->pluck('source_id')
+                ->map(fn ($id) => (int) $id)
+                ->flip();
+
+            foreach ($events as $event) {
+                if (!$this->eventAppliesToClub($event, $club->club_type)) {
+                    continue;
+                }
+
+                if ($existingSourceIds->has((int) $event->id)) {
+                    continue;
+                }
+
+                WorkplanEvent::query()->create([
+                    'workplan_id' => $workplan->id,
+                    'source_type' => DistrictWorkplanEvent::class,
+                    'source_id' => $event->id,
+                    'date' => $event->date,
+                    'end_date' => $event->end_date,
+                    'start_time' => $event->start_time,
+                    'end_time' => $event->end_time,
+                    'meeting_type' => 'special',
+                    'title' => $event->title,
+                    'description' => $event->description,
+                    'location' => $event->location,
+                    'is_generated' => true,
+                    'is_edited' => false,
+                    'status' => 'active',
+                    'created_by' => $user?->id,
+                ]);
+
+                $clubEventsCreated++;
+                $clubIdsTouched[$club->id] = true;
+            }
+        }
+
+        return [
+            'club_events_created' => $clubEventsCreated,
+            'club_ids_touched' => array_keys($clubIdsTouched),
+        ];
     }
 }

@@ -26,6 +26,7 @@ const detailModalOpen = ref(false)
 const detailEvent = ref(null)
 const editingEvent = ref(null)
 const publishing = ref(false)
+const syncing = ref(false)
 const confirmationModalOpen = ref(false)
 const confirmationTitle = ref('')
 const confirmationMessage = ref('')
@@ -203,6 +204,24 @@ const unpublishCalendar = () => {
     })
 }
 
+const syncMissingCalendar = () => {
+    openConfirmationModal({
+        title: 'Sincronizar eventos faltantes',
+        message: `¿Agregar a los clubes del distrito los eventos distritales ${props.year} que todavia no existan en sus planes de trabajo?`,
+        confirmLabel: 'Sincronizar faltantes',
+        onConfirm: () => new Promise((resolve) => {
+            syncing.value = true
+            router.post(route('district.workplan.sync-missing'), { year: props.year }, {
+                preserveScroll: true,
+                onFinish: () => {
+                    syncing.value = false
+                    resolve()
+                },
+            })
+        }),
+    })
+}
+
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const clubTypeLabels = { pathfinders: 'Conquistadores', adventurers: 'Aventureros', master_guide: 'Guías Mayores' }
 const clubTypeOptions = [
@@ -310,7 +329,7 @@ const toggleClubType = (val) => {
                         <button
                             v-if="!isDistrictPublished"
                             type="button"
-                            :disabled="publishing || !districtEvents.length"
+                            :disabled="publishing || syncing || !districtEvents.length"
                             class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
                             @click="publishCalendar"
                         >
@@ -319,16 +338,25 @@ const toggleClubType = (val) => {
                         <button
                             v-else-if="needsRepublish"
                             type="button"
-                            :disabled="publishing"
+                            :disabled="publishing || syncing"
                             class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
                             @click="publishCalendar"
                         >
                             Republicar cambios
                         </button>
                         <button
-                            v-else
+                            v-if="isDistrictPublished"
                             type="button"
-                            :disabled="publishing"
+                            :disabled="publishing || syncing"
+                            class="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                            @click="syncMissingCalendar"
+                        >
+                            Sincronizar faltantes
+                        </button>
+                        <button
+                            v-if="isDistrictPublished"
+                            type="button"
+                            :disabled="publishing || syncing"
                             class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                             @click="unpublishCalendar"
                         >
@@ -346,7 +374,7 @@ const toggleClubType = (val) => {
             </div>
 
             <div v-if="needsRepublish" class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
-                Los clubes reciben copias publicadas de los eventos distritales. Para que los cambios editados aquí aparezcan en los clubes, usa <strong>Republicar cambios</strong>.
+                Los clubes reciben copias publicadas de los eventos distritales. Si editaste o eliminaste eventos existentes, usa <strong>Republicar cambios</strong>. Si solo agregaste eventos nuevos, usa <strong>Sincronizar faltantes</strong>.
             </div>
 
             <div v-if="!events.length" class="rounded-2xl border border-dashed border-gray-200 bg-white p-12 text-center">

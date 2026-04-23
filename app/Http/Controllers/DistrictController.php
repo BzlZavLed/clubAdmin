@@ -251,6 +251,31 @@ class DistrictController extends Controller
         return back()->with('success', "Calendario distrital despublicado. Se removieron {$result['club_events']} eventos de clubes.");
     }
 
+    public function syncWorkplanMissing(Request $request, WorkplanPropagationService $propagationService)
+    {
+        $district = $this->resolveScopedDistrict($request);
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $year = (int) $validated['year'];
+        $publication = DistrictWorkplanPublication::query()
+            ->where('district_id', $district->id)
+            ->where('year', $year)
+            ->first();
+
+        if (($publication?->status ?? null) !== 'published') {
+            abort(422, 'El calendario debe estar publicado antes de sincronizar eventos faltantes.');
+        }
+
+        $result = $propagationService->syncDistrictMissing($district, $year, $request->user());
+
+        return back()->with(
+            'success',
+            "Sincronizacion completada. {$result['club_events_created']} eventos agregados en {$result['clubs']} clubes."
+        );
+    }
+
     protected function resolveScopedDistrict(Request $request): District
     {
         $user = $request->user();
