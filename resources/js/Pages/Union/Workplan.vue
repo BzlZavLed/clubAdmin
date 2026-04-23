@@ -6,6 +6,7 @@ import { ref, computed } from 'vue'
 
 const props = defineProps({
     union:  { type: Object, required: true },
+    clubTypeOptions: { type: Array, default: () => [] },
     year:   { type: Number, required: true },
     events: { type: Array, default: () => [] },
     publication: { type: Object, default: null },
@@ -197,12 +198,10 @@ const unpublishCalendar = () => {
 // ── Display helpers ───────────────────────────────────────────
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const clubTypeLabels = { pathfinders: 'Conquistadores', adventurers: 'Aventureros', master_guide: 'Guías Mayores' }
-const clubTypeOptions = [
-    { value: 'pathfinders',  label: 'Conquistadores' },
-    { value: 'adventurers',  label: 'Aventureros' },
-    { value: 'master_guide', label: 'Guías Mayores' },
-]
+const clubTypeOptions = computed(() => props.clubTypeOptions ?? [])
+const clubTypeLabels = computed(() =>
+    Object.fromEntries(clubTypeOptions.value.map((option) => [option.value, option.label]))
+)
 const dateOnly = (value) => String(value || '').slice(0, 10)
 
 const eventsByMonth = computed(() => {

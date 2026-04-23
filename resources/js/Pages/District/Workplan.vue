@@ -9,6 +9,7 @@ const props = defineProps({
     district: { type: Object, required: true },
     association: { type: Object, default: null },
     union: { type: Object, default: null },
+    clubTypeOptions: { type: Array, default: () => [] },
     year: { type: Number, required: true },
     events: { type: Array, default: () => [] },
     associationPublication: { type: Object, default: null },
@@ -223,12 +224,10 @@ const syncMissingCalendar = () => {
 }
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-const clubTypeLabels = { pathfinders: 'Conquistadores', adventurers: 'Aventureros', master_guide: 'Guías Mayores' }
-const clubTypeOptions = [
-    { value: 'pathfinders', label: 'Conquistadores' },
-    { value: 'adventurers', label: 'Aventureros' },
-    { value: 'master_guide', label: 'Guías Mayores' },
-]
+const clubTypeOptions = computed(() => props.clubTypeOptions ?? [])
+const clubTypeLabels = computed(() =>
+    Object.fromEntries(clubTypeOptions.value.map((option) => [option.value, option.label]))
+)
 
 const districtEvents = computed(() => props.events.filter((ev) => ev.source_level === 'district'))
 const isDistrictPublished = computed(() => props.districtPublication?.status === 'published')

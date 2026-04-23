@@ -311,6 +311,7 @@ class AssociationController extends Controller
     public function workplan(Request $request)
     {
         $association = $this->resolveScopedAssociation($request);
+        $association->load('union.clubCatalogs');
         $year = (int) $request->input('year', now()->year);
         $publication = AssociationWorkplanPublication::query()
             ->where('association_id', $association->id)
@@ -331,6 +332,7 @@ class AssociationController extends Controller
                 'id' => $association->union?->id,
                 'name' => $association->union?->name,
             ],
+            'clubTypeOptions' => $this->workplanClubTypeOptions($association->union),
             'year' => $year,
             'events' => AssociationWorkplanEvent::query()
                 ->where('association_id', $association->id)
@@ -347,7 +349,8 @@ class AssociationController extends Controller
     public function storeWorkplanEvent(Request $request)
     {
         $association = $this->resolveScopedAssociation($request);
-        $validated = $this->validateWorkplanEvent($request, requireYear: true);
+        $association->load('union.clubCatalogs');
+        $validated = $this->validateWorkplanEvent($request, $association->union, requireYear: true);
 
         AssociationWorkplanEvent::query()->create([
             ...$validated,
@@ -362,9 +365,10 @@ class AssociationController extends Controller
     public function updateWorkplanEvent(Request $request, AssociationWorkplanEvent $event)
     {
         $association = $this->resolveScopedAssociation($request);
+        $association->load('union.clubCatalogs');
         $this->assertOwnsWorkplanEvent($association, $event);
 
-        $event->update($this->validateWorkplanEvent($request));
+        $event->update($this->validateWorkplanEvent($request, $association->union));
 
         return back()->with('success', 'Evento actualizado correctamente.');
     }
@@ -1124,7 +1128,7 @@ class AssociationController extends Controller
         };
     }
 
-    protected function validateWorkplanEvent(Request $request, bool $requireYear = false): array
+    protected function validateWorkplanEvent(Request $request, ?Union $union, bool $requireYear = false): array
     {
         return $request->validate([
             'year' => [$requireYear ? 'required' : 'sometimes', 'integer', 'min:2000', 'max:2100'],
@@ -1137,9 +1141,48 @@ class AssociationController extends Controller
             'description' => ['nullable', 'string'],
             'location' => ['nullable', 'string', 'max:255'],
             'target_club_types' => ['nullable', 'array'],
-            'target_club_types.*' => ['string', Rule::in(['pathfinders', 'adventurers', 'master_guide'])],
+            'target_club_types.*' => ['string', Rule::in($this->workplanAllowedClubTypes($union))],
             'is_mandatory' => ['boolean'],
         ]);
+    }
+
+    protected function workplanAllowedClubTypes(?Union $union): array
+    {
+        if (! $union?->relationLoaded('clubCatalogs')) {
+            $union?->load('clubCatalogs');
+        }
+
+        return $union?->clubCatalogs
+            ? $union->clubCatalogs
+                ->where('status', 'active')
+                ->pluck('club_type')
+                ->filter()
+                ->values()
+                ->all()
+            : [];
+    }
+
+    protected function workplanClubTypeOptions(?Union $union): array
+    {
+        if (! $union?->relationLoaded('clubCatalogs')) {
+            $union?->load('clubCatalogs');
+        }
+
+        return $union?->clubCatalogs
+            ? $union->clubCatalogs
+                ->where('status', 'active')
+                ->map(fn ($catalog) => [
+                    'value' => $catalog->club_type,
+                    'label' => $catalog->name ?: $catalog->club_type,
+                    'sort_order' => $catalog->sort_order,
+                ])
+                ->sortBy([
+                    ['sort_order', 'asc'],
+                    ['label', 'asc'],
+                ])
+                ->values()
+                ->all()
+            : [];
     }
 
     protected function assertOwnsWorkplanEvent(Association $association, AssociationWorkplanEvent $event): void

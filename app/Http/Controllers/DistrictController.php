@@ -224,7 +224,7 @@ class DistrictController extends Controller
 
     public function clubs(Request $request)
     {
-        $district = $this->resolveScopedDistrict($request)->load('association.union');
+        $district = $this->resolveScopedDistrict($request)->load('association.union.clubCatalogs');
 
         $churches = Church::query()
             ->where('district_id', $district->id)
@@ -280,6 +280,17 @@ class DistrictController extends Controller
                 'name' => $district->association?->union?->name,
                 'evaluation_system' => $district->association?->union?->evaluation_system ?: 'honors',
             ],
+            'clubCatalogs' => $district->association?->union?->clubCatalogs
+                ? $district->association->union->clubCatalogs
+                    ->where('status', 'active')
+                    ->map(fn ($catalog) => [
+                        'id' => $catalog->id,
+                        'name' => $catalog->name,
+                        'club_type' => $catalog->club_type,
+                        'sort_order' => $catalog->sort_order,
+                    ])
+                    ->values()
+                : [],
             'churches' => $churches->map(fn (Church $church) => [
                 'id' => $church->id,
                 'district_id' => $church->district_id,
@@ -311,17 +322,30 @@ class DistrictController extends Controller
 
     public function storeClub(Request $request)
     {
-        $district = $this->resolveScopedDistrict($request)->load('association.union:id,evaluation_system');
+        $district = $this->resolveScopedDistrict($request)->load('association.union.clubCatalogs');
 
         $churchIds = Church::query()
             ->where('district_id', $district->id)
             ->pluck('id')
             ->toArray();
 
+        $allowedClubTypes = $district->association?->union?->clubCatalogs
+            ? $district->association->union->clubCatalogs
+                ->where('status', 'active')
+                ->pluck('club_type')
+                ->filter()
+                ->values()
+                ->all()
+            : [];
+
+        if (empty($allowedClubTypes)) {
+            return back()->withErrors(['club_type' => 'No active club types are configured in the union catalog.']);
+        }
+
         $validated = $request->validate([
             'church_id' => ['required', 'integer', Rule::in($churchIds)],
             'club_name' => ['required', 'string', 'max:255'],
-            'club_type' => ['required', Rule::in(['adventurers', 'pathfinders', 'master_guide'])],
+            'club_type' => ['required', Rule::in($allowedClubTypes)],
             'creation_date' => ['nullable', 'date'],
         ]);
 
@@ -430,7 +454,7 @@ class DistrictController extends Controller
 
     public function workplan(Request $request)
     {
-        $district = $this->resolveScopedDistrict($request)->load('association.union');
+        $district = $this->resolveScopedDistrict($request)->load('association.union.clubCatalogs');
         $year = (int) $request->input('year', now()->year);
 
         $publication = AssociationWorkplanPublication::query()
@@ -508,6 +532,7 @@ class DistrictController extends Controller
                 'id' => $district->association?->union?->id,
                 'name' => $district->association?->union?->name,
             ],
+            'clubTypeOptions' => $this->workplanClubTypeOptions($district->association?->union),
             'year' => $year,
             'associationPublication' => $publication,
             'districtPublication' => $districtPublication,
@@ -525,8 +550,8 @@ class DistrictController extends Controller
 
     public function storeWorkplanEvent(Request $request)
     {
-        $district = $this->resolveScopedDistrict($request);
-        $validated = $this->validateWorkplanEvent($request, requireYear: true);
+        $district = $this->resolveScopedDistrict($request)->load('association.union.clubCatalogs');
+        $validated = $this->validateWorkplanEvent($request, $district->association?->union, requireYear: true);
 
         DistrictWorkplanEvent::query()->create([
             ...$validated,
@@ -540,10 +565,10 @@ class DistrictController extends Controller
 
     public function updateWorkplanEvent(Request $request, DistrictWorkplanEvent $event)
     {
-        $district = $this->resolveScopedDistrict($request);
+        $district = $this->resolveScopedDistrict($request)->load('association.union.clubCatalogs');
         $this->assertOwnsWorkplanEvent($district, $event);
 
-        $event->update($this->validateWorkplanEvent($request));
+        $event->update($this->validateWorkplanEvent($request, $district->association?->union));
 
         return back()->with('success', 'Evento distrital actualizado correctamente.');
     }
@@ -630,7 +655,7 @@ class DistrictController extends Controller
         return District::query()->findOrFail((int) $user->scope_id);
     }
 
-    protected function validateWorkplanEvent(Request $request, bool $requireYear = false): array
+    protected function validateWorkplanEvent(Request $request, ?Union $union, bool $requireYear = false): array
     {
         return $request->validate([
             'year' => [$requireYear ? 'required' : 'sometimes', 'integer', 'min:2000', 'max:2100'],
@@ -643,9 +668,48 @@ class DistrictController extends Controller
             'description' => ['nullable', 'string'],
             'location' => ['nullable', 'string', 'max:255'],
             'target_club_types' => ['nullable', 'array'],
-            'target_club_types.*' => ['string', Rule::in(['pathfinders', 'adventurers', 'master_guide'])],
+            'target_club_types.*' => ['string', Rule::in($this->workplanAllowedClubTypes($union))],
             'is_mandatory' => ['boolean'],
         ]);
+    }
+
+    protected function workplanAllowedClubTypes(?Union $union): array
+    {
+        if (! $union?->relationLoaded('clubCatalogs')) {
+            $union?->load('clubCatalogs');
+        }
+
+        return $union?->clubCatalogs
+            ? $union->clubCatalogs
+                ->where('status', 'active')
+                ->pluck('club_type')
+                ->filter()
+                ->values()
+                ->all()
+            : [];
+    }
+
+    protected function workplanClubTypeOptions(?Union $union): array
+    {
+        if (! $union?->relationLoaded('clubCatalogs')) {
+            $union?->load('clubCatalogs');
+        }
+
+        return $union?->clubCatalogs
+            ? $union->clubCatalogs
+                ->where('status', 'active')
+                ->map(fn ($catalog) => [
+                    'value' => $catalog->club_type,
+                    'label' => $catalog->name ?: $catalog->club_type,
+                    'sort_order' => $catalog->sort_order,
+                ])
+                ->sortBy([
+                    ['sort_order', 'asc'],
+                    ['label', 'asc'],
+                ])
+                ->values()
+                ->all()
+            : [];
     }
 
     protected function assertOwnsWorkplanEvent(District $district, DistrictWorkplanEvent $event): void

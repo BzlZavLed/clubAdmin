@@ -4,13 +4,14 @@ import InputError from '@/Components/InputError.vue'
 import InputLabel from '@/Components/InputLabel.vue'
 import PrimaryButton from '@/Components/PrimaryButton.vue'
 import { useForm, router } from '@inertiajs/vue3'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     district: { type: Object, required: true },
     association: { type: Object, default: null },
     union: { type: Object, default: null },
+    clubCatalogs: { type: Array, default: () => [] },
     churches: { type: Array, default: () => [] },
     clubs: { type: Array, default: () => [] },
 })
@@ -33,7 +34,50 @@ const addForm = useForm({
     _evaluation: '',
 })
 
+const clubTypeOptions = computed(() =>
+    [...(props.clubCatalogs || [])]
+        .filter((catalog) => catalog?.club_type)
+        .sort((a, b) => {
+            const left = Number(a?.sort_order ?? 0)
+            const right = Number(b?.sort_order ?? 0)
+            if (left !== right) return left - right
+
+            return String(a?.name ?? '').localeCompare(String(b?.name ?? ''))
+        })
+        .map((catalog) => ({
+            value: catalog.club_type,
+            label: catalog.name || catalog.club_type,
+        }))
+)
+
 const churchMap = computed(() => Object.fromEntries(props.churches.map((church) => [church.id, church])))
+const existingClubTypesByChurch = computed(() => {
+    const map = {}
+
+    for (const club of props.clubs) {
+        const churchId = Number(club.church_id)
+
+        if (!map[churchId]) {
+            map[churchId] = new Set()
+        }
+
+        map[churchId].add(club.club_type)
+    }
+
+    return map
+})
+
+const availableClubTypes = computed(() => {
+    const churchId = Number(addForm.church_id)
+
+    if (!churchId) {
+        return clubTypeOptions.value
+    }
+
+    const usedTypes = existingClubTypesByChurch.value[churchId] ?? new Set()
+
+    return clubTypeOptions.value.filter((option) => !usedTypes.has(option.value))
+})
 
 const filteredClubs = computed(() => {
     const query = search.value.trim().toLowerCase()
@@ -50,11 +94,11 @@ const filteredClubs = computed(() => {
     )
 })
 
-const clubTypeLabel = (type) => ({
-    adventurers: tr('Aventureros', 'Adventurers'),
-    pathfinders: tr('Conquistadores', 'Pathfinders'),
-    master_guide: tr('Guía Mayor', 'Master Guide'),
-})[type] ?? type
+const clubTypeLabelMap = computed(() =>
+    Object.fromEntries(clubTypeOptions.value.map((option) => [option.value, option.label]))
+)
+
+const clubTypeLabel = (type) => clubTypeLabelMap.value[type] ?? type
 
 const evalLabel = (value) => value === 'carpetas' ? 'Carpetas' : 'Honores'
 const today = new Date().toISOString().split('T')[0]
@@ -65,6 +109,17 @@ const updateSelectedChurch = (id) => {
     addForm._pastor_name = church?.pastor_name ?? ''
     addForm._evaluation = props.union?.evaluation_system ?? 'honors'
 }
+
+watch(
+    () => addForm.church_id,
+    (churchId) => {
+        updateSelectedChurch(churchId)
+
+        if (addForm.club_type && !availableClubTypes.value.some((option) => option.value === addForm.club_type)) {
+            addForm.club_type = ''
+        }
+    }
+)
 
 const submitAdd = () => {
     addForm.post(route('district.clubs.store'), {
@@ -173,11 +228,33 @@ const toggleInsurance = (club, member) => {
                         <InputLabel :value="tr('Tipo *', 'Type *')" />
                         <select v-model="addForm.club_type" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">{{ tr('Selecciona tipo', 'Select type') }}</option>
-                            <option value="adventurers">{{ tr('Aventureros', 'Adventurers') }}</option>
-                            <option value="pathfinders">{{ tr('Conquistadores', 'Pathfinders') }}</option>
-                            <option value="master_guide">{{ tr('Guía Mayor', 'Master Guide') }}</option>
+                            <option
+                                v-for="option in availableClubTypes"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </option>
                         </select>
                         <InputError class="mt-1" :message="addForm.errors.club_type" />
+                        <p
+                            v-if="!clubTypeOptions.length"
+                            class="mt-1 text-xs text-rose-700"
+                        >
+                            {{ tr('No hay tipos de club activos configurados en el catálogo de la unión.', 'There are no active club types configured in the union catalog.') }}
+                        </p>
+                        <p
+                            v-else-if="addForm.church_id && !availableClubTypes.length"
+                            class="mt-1 text-xs text-amber-700"
+                        >
+                            {{ tr('Esta iglesia ya tiene todos los tipos de club del catálogo creados.', 'This church already has all catalog club types created.') }}
+                        </p>
+                        <p
+                            v-else-if="addForm.church_id && availableClubTypes.length < clubTypeOptions.value.length"
+                            class="mt-1 text-xs text-gray-500"
+                        >
+                            {{ tr('Solo se muestran los tipos del catálogo que aún no existen en esta iglesia.', 'Only catalog club types that do not already exist in this church are shown.') }}
+                        </p>
                     </div>
 
                     <div>
@@ -201,7 +278,10 @@ const toggleInsurance = (club, member) => {
                     </div>
 
                     <div class="sm:col-span-2 lg:col-span-3">
-                        <PrimaryButton type="submit" :disabled="addForm.processing">
+                        <PrimaryButton
+                            type="submit"
+                            :disabled="addForm.processing || !clubTypeOptions.length || (addForm.church_id && !availableClubTypes.length)"
+                        >
                             {{ tr('Crear club (inactivo)', 'Create club (inactive)') }}
                         </PrimaryButton>
                     </div>

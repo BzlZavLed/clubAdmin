@@ -17,7 +17,7 @@ class UnionWorkplanController extends Controller
 {
     public function index(Request $request)
     {
-        $union = $this->resolveScopedUnion($request);
+        $union = $this->resolveScopedUnion($request)->load('clubCatalogs');
         $year  = (int) $request->input('year', now()->year);
         $publication = UnionWorkplanPublication::query()
             ->where('union_id', $union->id)
@@ -40,6 +40,7 @@ class UnionWorkplanController extends Controller
 
         return Inertia::render('Union/Workplan', [
             'union'       => ['id' => $union->id, 'name' => $union->name],
+            'clubTypeOptions' => $this->workplanClubTypeOptions($union),
             'year'        => $year,
             'events'      => $events,
             'publication' => $publication,
@@ -110,7 +111,7 @@ class UnionWorkplanController extends Controller
 
     public function store(Request $request)
     {
-        $union = $this->resolveScopedUnion($request);
+        $union = $this->resolveScopedUnion($request)->load('clubCatalogs');
 
         $validated = $request->validate([
             'year'               => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -123,7 +124,7 @@ class UnionWorkplanController extends Controller
             'description'        => ['nullable', 'string'],
             'location'           => ['nullable', 'string', 'max:255'],
             'target_club_types'  => ['nullable', 'array'],
-            'target_club_types.*'=> ['string', Rule::in(['pathfinders', 'adventurers', 'master_guide'])],
+            'target_club_types.*'=> ['string', Rule::in($this->workplanAllowedClubTypes($union))],
             'is_mandatory'       => ['boolean'],
         ]);
 
@@ -139,7 +140,7 @@ class UnionWorkplanController extends Controller
 
     public function update(Request $request, UnionWorkplanEvent $event)
     {
-        $union = $this->resolveScopedUnion($request);
+        $union = $this->resolveScopedUnion($request)->load('clubCatalogs');
         $this->assertOwns($union, $event);
 
         $validated = $request->validate([
@@ -152,7 +153,7 @@ class UnionWorkplanController extends Controller
             'description'        => ['nullable', 'string'],
             'location'           => ['nullable', 'string', 'max:255'],
             'target_club_types'  => ['nullable', 'array'],
-            'target_club_types.*'=> ['string', Rule::in(['pathfinders', 'adventurers', 'master_guide'])],
+            'target_club_types.*'=> ['string', Rule::in($this->workplanAllowedClubTypes($union))],
             'is_mandatory'       => ['boolean'],
         ]);
 
@@ -245,5 +246,32 @@ class UnionWorkplanController extends Controller
     protected function assertOwns(Union $union, UnionWorkplanEvent $event): void
     {
         if ((int) $event->union_id !== (int) $union->id) abort(403);
+    }
+
+    protected function workplanAllowedClubTypes(Union $union): array
+    {
+        return $union->clubCatalogs
+            ->where('status', 'active')
+            ->pluck('club_type')
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function workplanClubTypeOptions(Union $union): array
+    {
+        return $union->clubCatalogs
+            ->where('status', 'active')
+            ->map(fn ($catalog) => [
+                'value' => $catalog->club_type,
+                'label' => $catalog->name ?: $catalog->club_type,
+                'sort_order' => $catalog->sort_order,
+            ])
+            ->sortBy([
+                ['sort_order', 'asc'],
+                ['label', 'asc'],
+            ])
+            ->values()
+            ->all();
     }
 }
