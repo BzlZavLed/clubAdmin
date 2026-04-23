@@ -8,6 +8,7 @@ use App\Models\ClubClass;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
+use App\Models\ParentPaymentSubmission;
 use App\Models\Staff;
 use App\Support\ClubHelper;
 use App\Services\PaymentReceiptService;
@@ -190,7 +191,7 @@ class ClubPaymentController extends Controller
                     'payments' => $recent,
                     'completed_payment_targets' => $completedPaymentTargets,
                     'payment_totals' => $paymentTotals,
-                    'payment_types' => ['zelle', 'cash', 'check', 'initial'],
+                    'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
                 ]
             ]);
         }
@@ -210,7 +211,7 @@ class ClubPaymentController extends Controller
             'payments' => $recent,
             'completed_payment_targets' => $completedPaymentTargets,
             'payment_totals' => $paymentTotals,
-            'payment_types' => ['zelle', 'cash', 'check', 'initial'],
+            'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
             'prefill' => $request->only(['club_id', 'concept_id', 'member_id', 'staff_id', 'amount']),
         ]);
     }
@@ -336,6 +337,7 @@ class ClubPaymentController extends Controller
         $completedPaymentTargets = $this->completedPaymentTargets($concepts);
         $paymentTotals = $this->paymentTotalsByConceptTarget($concepts);
         $pendingReceipts = $this->pendingManualReceiptsForClub($club->id);
+        $pendingParentTransfers = $this->pendingParentTransfersForClub($club->id);
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -348,9 +350,10 @@ class ClubPaymentController extends Controller
                     'accounts' => $accounts,
                     'payments' => $recent,
                     'pending_receipts' => $pendingReceipts,
+                    'pending_parent_transfers' => $pendingParentTransfers,
                     'completed_payment_targets' => $completedPaymentTargets,
                     'payment_totals' => $paymentTotals,
-                    'payment_types' => ['zelle', 'cash', 'check', 'initial'],
+                    'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
                 ]
             ]);
         }
@@ -366,9 +369,10 @@ class ClubPaymentController extends Controller
             'accounts' => $accounts,
             'payments' => $recent,
             'pending_receipts' => $pendingReceipts,
+            'pending_parent_transfers' => $pendingParentTransfers,
             'completed_payment_targets' => $completedPaymentTargets,
             'payment_totals' => $paymentTotals,
-            'payment_types' => ['zelle', 'cash', 'check', 'initial'],
+            'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
             'prefill' => $request->only(['club_id', 'concept_id', 'member_id', 'staff_id', 'amount']),
         ]);
     }
@@ -391,7 +395,7 @@ class ClubPaymentController extends Controller
             'staff_id' => ['nullable', 'integer', 'exists:staff,id'],
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
-            'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'initial'])],
+            'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'transfer', 'initial'])],
             'zelle_phone' => ['nullable', 'string', 'max:32'],
             'check_image' => ['nullable', 'image', 'max:4096'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -662,7 +666,7 @@ class ClubPaymentController extends Controller
         $validated = $request->validate([
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
-            'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'initial'])],
+            'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'transfer', 'initial'])],
             'zelle_phone' => ['nullable', 'string', 'max:32'],
             'check_image' => ['nullable', 'image', 'max:4096'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -787,6 +791,141 @@ class ClubPaymentController extends Controller
         return response()->json([
             'message' => 'Los pagos ya no se eliminan. Usa el modulo de correcciones contables para generar el movimiento opuesto.',
         ], 422);
+    }
+
+    public function approveParentTransfer(Request $request, ParentPaymentSubmission $submission)
+    {
+        $user = $request->user();
+        if (!in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
+            abort(403);
+        }
+
+        $allowedClubIds = ClubHelper::clubIdsForUser($user);
+        abort_unless($allowedClubIds->contains((int) $submission->club_id), 403);
+        abort_unless($submission->status === 'pending', 422, 'La transferencia ya fue revisada.');
+
+        $validated = $request->validate([
+            'review_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $concept = $submission->payment_concept_id
+            ? PaymentConcept::withTrashed()->find($submission->payment_concept_id)
+            : null;
+
+        $payTo = $concept?->pay_to ?: ($submission->pay_to ?: 'club_budget');
+        $expected = $submission->expected_amount !== null
+            ? (float) $submission->expected_amount
+            : ($concept?->amount !== null ? (float) $concept->amount : null);
+        $isReusableConcept = (bool) ($concept?->reusable);
+        $amountPaid = (float) $submission->amount;
+
+        $priorPaid = 0.0;
+        if (!$isReusableConcept && $expected !== null && $expected > 0 && $submission->payment_concept_id) {
+            $priorPaid = (float) Payment::query()
+                ->where('club_id', $submission->club_id)
+                ->where('payment_concept_id', $submission->payment_concept_id)
+                ->where('member_id', $submission->member_id)
+                ->sum('amount_paid');
+
+            $remainingBefore = max($expected - $priorPaid, 0.0);
+            if ($remainingBefore <= 0.0001) {
+                return back()->withErrors([
+                    'parent_transfer' => 'Ese cargo ya fue cubierto antes de aprobar esta transferencia.',
+                ]);
+            }
+
+            if ($amountPaid > $remainingBefore) {
+                return back()->withErrors([
+                    'parent_transfer' => 'El comprobante excede el saldo pendiente actual del cargo.',
+                ]);
+            }
+        }
+
+        $account = Account::query()
+            ->where('club_id', $submission->club_id)
+            ->where('pay_to', $payTo)
+            ->first();
+
+        if (!$account) {
+            $account = Account::create([
+                'club_id' => $submission->club_id,
+                'pay_to' => $payTo,
+                'label' => Str::title(str_replace('_', ' ', $payTo)),
+                'balance' => 0,
+            ]);
+        }
+
+        $balanceAfter = ($isReusableConcept || $expected === null)
+            ? null
+            : max($expected - ($priorPaid + $amountPaid), 0.0);
+
+        $payment = null;
+        DB::transaction(function () use ($submission, $concept, $payTo, $account, $expected, $balanceAfter, $amountPaid, $validated, &$payment) {
+            $notes = trim(collect([
+                'Transferencia aprobada desde portal de padres.',
+                $submission->reference ? 'Referencia: ' . $submission->reference : null,
+                $submission->notes,
+                $validated['review_notes'] ?? null,
+            ])->filter()->implode("\n"));
+
+            $payment = Payment::create([
+                'club_id' => $submission->club_id,
+                'payment_concept_id' => $concept?->id,
+                'concept_text' => $concept ? null : $submission->concept_text,
+                'pay_to' => $payTo,
+                'account_id' => $account->id,
+                'member_id' => $submission->member_id,
+                'staff_id' => null,
+                'amount_paid' => $amountPaid,
+                'expected_amount' => $expected,
+                'balance_due_after' => $balanceAfter,
+                'payment_date' => $submission->payment_date,
+                'payment_type' => 'transfer',
+                'zelle_phone' => null,
+                'check_image_path' => null,
+                'received_by_user_id' => auth()->id(),
+                'notes' => $notes ?: null,
+            ]);
+
+            $account->increment('balance', $amountPaid);
+
+            $submission->update([
+                'status' => 'approved',
+                'reviewed_by_user_id' => auth()->id(),
+                'reviewed_at' => now(),
+                'review_notes' => $validated['review_notes'] ?? null,
+                'approved_payment_id' => $payment->id,
+            ]);
+        });
+
+        $this->paymentReceiptService->syncForPayment($payment);
+
+        return back()->with('success', 'Transferencia aprobada y recibo generado.');
+    }
+
+    public function rejectParentTransfer(Request $request, ParentPaymentSubmission $submission)
+    {
+        $user = $request->user();
+        if (!in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
+            abort(403);
+        }
+
+        $allowedClubIds = ClubHelper::clubIdsForUser($user);
+        abort_unless($allowedClubIds->contains((int) $submission->club_id), 403);
+        abort_unless($submission->status === 'pending', 422, 'La transferencia ya fue revisada.');
+
+        $validated = $request->validate([
+            'review_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $submission->update([
+            'status' => 'rejected',
+            'reviewed_by_user_id' => auth()->id(),
+            'reviewed_at' => now(),
+            'review_notes' => $validated['review_notes'] ?? null,
+        ]);
+
+        return back()->with('success', 'Transferencia rechazada.');
     }
 
 
@@ -947,6 +1086,41 @@ class ClubPaymentController extends Controller
                     'payment_date' => optional($payment?->payment_date)->toDateString(),
                     'reason' => $reason,
                     'download_url' => route('payment-receipts.download', $receipt),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    protected function pendingParentTransfersForClub(int $clubId): array
+    {
+        return ParentPaymentSubmission::query()
+            ->where('club_id', $clubId)
+            ->where('status', 'pending')
+            ->with([
+                'member:id,type,id_data',
+                'parentUser:id,name,email',
+                'event:id,title,start_at',
+            ])
+            ->latest()
+            ->get()
+            ->map(function (ParentPaymentSubmission $submission) {
+                $memberDetail = ClubHelper::memberDetail($submission->member);
+
+                return [
+                    'id' => $submission->id,
+                    'member_name' => $memberDetail['name'] ?? '—',
+                    'parent_name' => $submission->parentUser?->name ?? '—',
+                    'parent_email' => $submission->parentUser?->email,
+                    'concept_name' => $submission->concept_text,
+                    'event_title' => $submission->event?->title,
+                    'expected_amount' => $submission->expected_amount !== null ? (float) $submission->expected_amount : null,
+                    'amount' => (float) $submission->amount,
+                    'payment_date' => optional($submission->payment_date)->toDateString(),
+                    'reference' => $submission->reference,
+                    'notes' => $submission->notes,
+                    'receipt_image_url' => $submission->receipt_image_path ? asset('storage/' . $submission->receipt_image_path) : null,
+                    'created_at' => optional($submission->created_at)->toDateTimeString(),
                 ];
             })
             ->values()

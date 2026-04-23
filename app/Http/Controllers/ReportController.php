@@ -1288,7 +1288,7 @@ class ReportController extends Controller
                             'amount_paid_sum' => 0.0,
                             'expected_sum' => 0.0,
                             'balance_remaining' => 0.0,
-                            'by_payment_type' => ['cash' => 0.0, 'zelle' => 0.0, 'check' => 0.0],
+                            'by_payment_type' => ['cash' => 0.0, 'zelle' => 0.0, 'check' => 0.0, 'transfer' => 0.0],
                         ];
                         foreach ($conceptReports as $cr) {
                             $s = $cr['summary'];
@@ -1297,7 +1297,7 @@ class ReportController extends Controller
                             $acc['amount_paid_sum'] += (float) ($s['amount_paid_sum'] ?? 0);
                             $acc['expected_sum'] += (float) ($s['expected_sum'] ?? 0);
                             $acc['balance_remaining'] += (float) ($s['balance_remaining'] ?? 0);
-                            foreach (['cash', 'zelle', 'check'] as $t) {
+                            foreach (['cash', 'zelle', 'check', 'transfer'] as $t) {
                                 $acc['by_payment_type'][$t] += (float) ($s['by_payment_type'][$t] ?? 0);
                             }
                         }
@@ -1687,7 +1687,7 @@ class ReportController extends Controller
             ->mapWithKeys(fn($g, $t) => [$t => (float) $g->sum('amount_paid')])
             ->all();
 
-        foreach (['cash', 'zelle', 'check', 'initial'] as $t) {
+        foreach (['cash', 'zelle', 'check', 'transfer', 'initial'] as $t) {
             $byType[$t] = (float) ($byType[$t] ?? 0.0);
         }
 

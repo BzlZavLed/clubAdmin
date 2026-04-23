@@ -16,6 +16,7 @@ use App\Models\Church;
 use App\Models\User;
 use App\Http\Controllers\ChurchController;
 use App\Http\Controllers\ParentMemberController;
+use App\Http\Controllers\ParentPaymentController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\ClubClassController;
 use App\Http\Controllers\LLMQueryController as AIQueryController;
@@ -294,6 +295,8 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
     Route::get('/parent/carpeta-investidura', [ParentCarpetaController::class, 'index'])->name('parent.carpeta-investidura');
     Route::get('/parent/carpeta-investidura/{member}/pdf', [ParentCarpetaController::class, 'pdf'])->name('parent.carpeta-investidura.pdf');
     Route::post('/parent/carpeta-investidura/evidence', [ParentCarpetaController::class, 'storeEvidence'])->name('parent.carpeta-investidura.evidence.store');
+    Route::get('/parent/payments', [ParentPaymentController::class, 'index'])->name('parent.payments.index');
+    Route::post('/parent/payments/transfers', [ParentPaymentController::class, 'storeTransfer'])->name('parent.payments.transfers.store');
 
     Route::get('/parent/workplan/data', [WorkplanController::class, 'data'])->name('parent.workplan.data');
     Route::get('/parent/workplan/pdf', [WorkplanController::class, 'pdf'])->name('parent.workplan.pdf');
@@ -542,6 +545,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     Route::get('/club-director/payments', [ClubPaymentController::class, 'directorIndex'])
         ->name('club.director.payments');
+    Route::post('/club-director/payments/parent-transfers/{submission}/approve', [ClubPaymentController::class, 'approveParentTransfer'])
+        ->name('club.director.payments.parent-transfers.approve');
+    Route::post('/club-director/payments/parent-transfers/{submission}/reject', [ClubPaymentController::class, 'rejectParentTransfer'])
+        ->name('club.director.payments.parent-transfers.reject');
     Route::post('/club-director/staff/{staff}/approve', [\App\Http\Controllers\StaffApprovalController::class, 'approve'])->name('staff.approve');
     Route::post('/club-director/staff/{staff}/reject', [\App\Http\Controllers\StaffApprovalController::class, 'reject'])->name('staff.reject');
     Route::get('/club-director/expenses', [ExpenseController::class, 'index'])

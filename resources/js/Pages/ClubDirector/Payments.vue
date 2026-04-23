@@ -24,6 +24,7 @@ const props = defineProps({
     accounts: { type: Array, default: () => [] },
     payments: { type: Array, required: true },
     pending_receipts: { type: Array, default: () => [] },
+    pending_parent_transfers: { type: Array, default: () => [] },
     completed_payment_targets: { type: Array, default: () => [] },
     payment_totals: { type: Object, default: () => ({}) },
     payment_types: { type: Array, required: true },
@@ -541,13 +542,15 @@ const onEditCheckFileChange = (e) => {
 }
 
 const reloadPaymentData = () => router.reload({
-    only: ['payments', 'pending_receipts', 'completed_payment_targets', 'payment_totals', 'concepts'],
+    only: ['payments', 'pending_receipts', 'pending_parent_transfers', 'completed_payment_targets', 'payment_totals', 'concepts'],
     preserveScroll: true,
 })
 
 const submitting = ref(false)
 const bulkDownloadKey = ref(null)
 const showPendingReceipts = ref(false)
+const showPendingParentTransfers = ref(true)
+const activeParentTransferAction = ref(null)
 
 const slugifyLabel = (value) => String(value || 'payment-receipts')
     .normalize('NFD')
@@ -570,6 +573,29 @@ const downloadReceiptGroup = async (group) => {
     } finally {
         bulkDownloadKey.value = null
     }
+}
+
+const approveParentTransfer = (transfer) => {
+    activeParentTransferAction.value = `approve:${transfer.id}`
+    router.post(route('club.director.payments.parent-transfers.approve', { submission: transfer.id }), {}, {
+        preserveScroll: true,
+        onFinish: () => {
+            activeParentTransferAction.value = null
+        },
+    })
+}
+
+const rejectParentTransfer = (transfer) => {
+    const reviewNotes = window.prompt('Motivo del rechazo (opcional):', '') ?? ''
+    activeParentTransferAction.value = `reject:${transfer.id}`
+    router.post(route('club.director.payments.parent-transfers.reject', { submission: transfer.id }), {
+        review_notes: reviewNotes,
+    }, {
+        preserveScroll: true,
+        onFinish: () => {
+            activeParentTransferAction.value = null
+        },
+    })
 }
 
 const submit = async () => {
@@ -1034,6 +1060,99 @@ const setFormMode = (mode) => {
                                 </div>
                             </dl>
                         </div>
+                    </div>
+                </section>
+
+                <section class="mt-6 rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm">
+                    <button
+                        type="button"
+                        class="flex w-full items-center justify-between gap-3 text-left"
+                        @click="showPendingParentTransfers = !showPendingParentTransfers"
+                    >
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">Transferencias pendientes de padres</h3>
+                            <p class="mt-1 text-xs text-gray-600">Comprobantes enviados desde el portal de padres para validar fondos y generar el recibo.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="text-xs font-medium text-blue-800">
+                                {{ props.pending_parent_transfers.length }} pendientes
+                            </div>
+                            <span class="text-xs font-semibold text-blue-900">
+                                {{ showPendingParentTransfers ? 'Ocultar' : 'Mostrar' }}
+                            </span>
+                        </div>
+                    </button>
+
+                    <div v-if="!props.pending_parent_transfers.length" class="mt-3 text-sm text-gray-600">
+                        No hay transferencias pendientes de validar.
+                    </div>
+
+                    <div v-else-if="showPendingParentTransfers" class="mt-4 overflow-x-auto">
+                        <table class="min-w-full text-sm text-gray-700">
+                            <thead class="bg-blue-50/70">
+                                <tr>
+                                    <th class="px-3 py-2 text-left font-semibold">Menor / padre</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Concepto</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Monto</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Fecha</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Comprobante</th>
+                                    <th class="px-3 py-2 text-left font-semibold">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="transfer in props.pending_parent_transfers" :key="transfer.id" class="border-t border-blue-200/70">
+                                    <td class="px-3 py-2">
+                                        <div class="font-medium text-gray-900">{{ transfer.member_name }}</div>
+                                        <div class="text-xs text-gray-500">{{ transfer.parent_name }}<span v-if="transfer.parent_email"> • {{ transfer.parent_email }}</span></div>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div>{{ transfer.concept_name || '—' }}</div>
+                                        <div v-if="transfer.event_title" class="text-xs text-gray-500">{{ transfer.event_title }}</div>
+                                        <div v-if="transfer.reference" class="text-xs text-gray-500">Ref. {{ transfer.reference }}</div>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div class="font-medium text-gray-900">${{ Number(transfer.amount || 0).toFixed(2) }}</div>
+                                        <div v-if="transfer.expected_amount !== null && transfer.expected_amount !== undefined" class="text-xs text-gray-500">
+                                            Esperado: ${{ Number(transfer.expected_amount || 0).toFixed(2) }}
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div>{{ transfer.payment_date || '—' }}</div>
+                                        <div class="text-xs text-gray-500">{{ formatDateTimeLocal(transfer.created_at) }}</div>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <a v-if="transfer.receipt_image_url" :href="transfer.receipt_image_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
+                                            Ver imagen
+                                        </a>
+                                        <div v-if="transfer.notes" class="mt-1 text-xs text-gray-500">{{ transfer.notes }}</div>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div class="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                                :disabled="activeParentTransferAction === `approve:${transfer.id}` || activeParentTransferAction === `reject:${transfer.id}`"
+                                                @click="approveParentTransfer(transfer)"
+                                            >
+                                                {{ activeParentTransferAction === `approve:${transfer.id}` ? 'Aprobando...' : 'Aprobar' }}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                                :disabled="activeParentTransferAction === `approve:${transfer.id}` || activeParentTransferAction === `reject:${transfer.id}`"
+                                                @click="rejectParentTransfer(transfer)"
+                                            >
+                                                {{ activeParentTransferAction === `reject:${transfer.id}` ? 'Rechazando...' : 'Rechazar' }}
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div v-else class="mt-3 text-sm text-blue-900">
+                        La lista de transferencias pendientes esta colapsada.
                     </div>
                 </section>
 
