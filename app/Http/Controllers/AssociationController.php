@@ -249,27 +249,24 @@ class AssociationController extends Controller
             ->withCount('churches')
             ->with(['churches' => fn ($query) => $query
                 ->orderBy('church_name')
-                ->select('id', 'district_id', 'church_name', 'pastor_name', 'pastor_email')])
+                ->withCount('clubs')
+                ->select('id', 'district_id', 'church_name')])
             ->orderBy('name')
             ->get(['id', 'association_id', 'name', 'pastor_name', 'pastor_email', 'is_evaluator', 'status']);
-
-        $districtIds = $districts->pluck('id')->toArray();
-
-        // Scan clubs for pastor hints on districts that have no pastor set yet
-        $clubPastorHints = Club::query()
-            ->withoutGlobalScopes()
-            ->whereIn('district_id', $districtIds)
-            ->whereNotNull('pastor_name')
-            ->where('pastor_name', '!=', '')
-            ->orderBy('id')
-            ->get(['district_id', 'pastor_name'])
-            ->groupBy('district_id')
-            ->map(fn($rows) => $rows->first()->pastor_name);
 
         $evaluators = AssociationEvaluator::query()
             ->where('association_id', $association->id)
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'notes']);
+
+        $churchOptions = Church::query()
+            ->whereHas('district', fn ($query) => $query
+                ->where('association_id', $association->id)
+                ->where('status', '!=', 'deleted'))
+            ->with(['district:id,name'])
+            ->withCount('clubs')
+            ->orderBy('church_name')
+            ->get(['id', 'district_id', 'church_name']);
 
         return Inertia::render('Association/DistrictEvaluation', [
             'association' => [
@@ -292,10 +289,15 @@ class AssociationController extends Controller
                 'churches' => $d->churches->map(fn ($church) => [
                     'id' => $church->id,
                     'church_name' => $church->church_name,
-                    'pastor_name' => $church->pastor_name,
-                    'pastor_email' => $church->pastor_email,
+                    'clubs_count' => (int) ($church->clubs_count ?? 0),
                 ])->values(),
-                'club_pastor_hint' => !$d->pastor_name ? ($clubPastorHints->get($d->id) ?? null) : null,
+            ])->values(),
+            'church_options' => $churchOptions->map(fn ($church) => [
+                'id' => $church->id,
+                'district_id' => $church->district_id,
+                'district_name' => $church->district?->name,
+                'church_name' => $church->church_name,
+                'clubs_count' => (int) ($church->clubs_count ?? 0),
             ])->values(),
             'evaluators' => $evaluators->map(fn($e) => [
                 'id' => $e->id,
@@ -438,6 +440,8 @@ class AssociationController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'pastor_name' => ['nullable', 'string', 'max:255'],
             'pastor_email' => ['nullable', 'email', 'max:255'],
+            'incoming_church_ids' => ['nullable', 'array'],
+            'incoming_church_ids.*' => ['integer', 'distinct'],
         ]);
 
         $exists = District::query()
@@ -450,13 +454,21 @@ class AssociationController extends Controller
             return back()->withErrors(['name' => 'A district with this name already exists.']);
         }
 
-        District::create([
+        $district = District::create([
             'association_id' => $association->id,
             'name' => $validated['name'],
             'pastor_name' => $validated['pastor_name'] ?? null,
             'pastor_email' => $validated['pastor_email'] ?? null,
             'status' => 'active',
         ]);
+
+        $this->moveAssociationChurchesToDistrict(
+            $association,
+            $district,
+            $validated['incoming_church_ids'] ?? []
+        );
+
+        $this->syncDistrictClubPastors($district);
 
         return back()->with('success', 'District created.');
     }
@@ -470,12 +482,31 @@ class AssociationController extends Controller
         }
 
         $validated = $request->validate([
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
             'pastor_name' => ['nullable', 'string', 'max:255'],
             'pastor_email' => ['nullable', 'email', 'max:255'],
             'is_evaluator' => ['sometimes', 'boolean'],
+            'incoming_church_ids' => ['nullable', 'array'],
+            'incoming_church_ids.*' => ['integer', 'distinct'],
         ]);
 
-        $district->update($validated);
+        $district->update(collect($validated)->except('incoming_church_ids')->all());
+
+        if (array_key_exists('incoming_church_ids', $validated)) {
+            $this->moveAssociationChurchesToDistrict(
+                $association,
+                $district,
+                $validated['incoming_church_ids'] ?? []
+            );
+        }
+
+        if (
+            array_key_exists('pastor_name', $validated)
+            || array_key_exists('pastor_email', $validated)
+            || array_key_exists('incoming_church_ids', $validated)
+        ) {
+            $this->syncDistrictClubPastors($district->fresh());
+        }
 
         return back()->with('success', 'District updated.');
     }
@@ -577,6 +608,64 @@ class AssociationController extends Controller
                 ];
             })->values(),
         ]);
+    }
+
+    protected function moveAssociationChurchesToDistrict(Association $association, District $district, array $churchIds): void
+    {
+        $churchIds = collect($churchIds)
+            ->filter(fn ($id) => is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($churchIds->isEmpty()) {
+            return;
+        }
+
+        $churches = Church::query()
+            ->whereIn('id', $churchIds)
+            ->whereHas('district', fn ($query) => $query
+                ->where('association_id', $association->id)
+                ->where('status', '!=', 'deleted'))
+            ->get(['id', 'district_id', 'church_name']);
+
+        if ($churches->count() !== $churchIds->count()) {
+            abort(422, 'One or more selected churches do not belong to this association.');
+        }
+
+        foreach ($churches as $church) {
+            if ((int) $church->district_id === (int) $district->id) {
+                continue;
+            }
+
+            $church->update([
+                'district_id' => $district->id,
+                'conference' => $association->name,
+                'pastor_name' => null,
+                'pastor_email' => null,
+            ]);
+
+            Club::query()
+                ->withoutGlobalScopes()
+                ->where('church_id', $church->id)
+                ->update([
+                    'district_id' => $district->id,
+                    'church_name' => $church->church_name,
+                    'pastor_name' => $district->pastor_name,
+                    'conference_name' => $association->name,
+                ]);
+        }
+    }
+
+    protected function syncDistrictClubPastors(District $district): void
+    {
+        Club::query()
+            ->withoutGlobalScopes()
+            ->where('district_id', $district->id)
+            ->update([
+                'pastor_name' => $district->pastor_name,
+                'conference_name' => $district->association?->name,
+            ]);
     }
 
     public function storeAssociationClub(Request $request)

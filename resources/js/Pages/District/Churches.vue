@@ -24,8 +24,6 @@ const addForm = useForm({
     ethnicity: '',
     phone_number: '',
     email: '',
-    pastor_name: '',
-    pastor_email: '',
 })
 
 const editForms = Object.fromEntries(
@@ -37,8 +35,6 @@ const editForms = Object.fromEntries(
             ethnicity: church.ethnicity ?? '',
             phone_number: church.phone_number ?? '',
             email: church.email ?? '',
-            pastor_name: church.pastor_name ?? '',
-            pastor_email: church.pastor_email ?? '',
         }),
     ])
 )
@@ -50,8 +46,6 @@ const filteredChurches = computed(() => {
     return props.churches.filter((church) =>
         [
             church.church_name,
-            church.pastor_name,
-            church.pastor_email,
             church.email,
             church.phone_number,
             church.address,
@@ -82,8 +76,6 @@ const cancelEdit = (church) => {
     form.ethnicity = church.ethnicity ?? ''
     form.phone_number = church.phone_number ?? ''
     form.email = church.email ?? ''
-    form.pastor_name = church.pastor_name ?? ''
-    form.pastor_email = church.pastor_email ?? ''
     form.clearErrors()
     editingId.value = null
 }
@@ -121,6 +113,9 @@ const deleteChurch = (church) => {
                         <p class="mt-2 text-sm text-gray-600">
                             {{ tr('El distrito administra las iglesias. Cada iglesia creada aquí se refleja automáticamente en la vista de distritos de la asociación.', 'The district manages churches. Every church created here is reflected automatically in the association district view.') }}
                         </p>
+                        <p class="mt-1 text-xs text-gray-500">
+                            {{ tr('Las iglesias heredan el pastor del distrito. Si la asociación reacomoda iglesias entre distritos, el pastor visible cambiará automáticamente con el distrito asignado.', 'Churches inherit the district pastor. If the association reshuffles churches between districts, the visible pastor changes automatically with the assigned district.') }}
+                        </p>
                     </div>
                     <button
                         type="button"
@@ -139,16 +134,6 @@ const deleteChurch = (church) => {
                         <InputLabel :value="tr('Nombre de la iglesia *', 'Church name *')" />
                         <input v-model="addForm.church_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                         <InputError class="mt-1" :message="addForm.errors.church_name" />
-                    </div>
-                    <div>
-                        <InputLabel :value="tr('Pastor', 'Pastor')" />
-                        <input v-model="addForm.pastor_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
-                        <InputError class="mt-1" :message="addForm.errors.pastor_name" />
-                    </div>
-                    <div>
-                        <InputLabel :value="tr('Correo del pastor', 'Pastor email')" />
-                        <input v-model="addForm.pastor_email" type="email" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
-                        <InputError class="mt-1" :message="addForm.errors.pastor_email" />
                     </div>
                     <div>
                         <InputLabel :value="tr('Correo', 'Email')" />
@@ -182,7 +167,7 @@ const deleteChurch = (church) => {
                 <input
                     v-model="search"
                     type="search"
-                    :placeholder="tr('Buscar por nombre, pastor o contacto…', 'Search by name, pastor or contact…')"
+                    :placeholder="tr('Buscar por nombre o contacto…', 'Search by name or contact…')"
                     class="block w-full rounded-xl border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 />
 
@@ -201,8 +186,8 @@ const deleteChurch = (church) => {
                                 <div>
                                     <h3 class="text-base font-semibold text-gray-900">{{ church.church_name }}</h3>
                                     <p class="mt-1 text-sm text-gray-600">
-                                        {{ church.pastor_name || tr('Sin pastor registrado', 'No pastor recorded') }}
-                                        <span v-if="church.pastor_email"> · {{ church.pastor_email }}</span>
+                                        {{ district.pastor_name || tr('Sin pastor distrital asignado', 'No district pastor assigned') }}
+                                        <span v-if="district.pastor_email"> · {{ district.pastor_email }}</span>
                                     </p>
                                 </div>
                                 <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
@@ -233,16 +218,6 @@ const deleteChurch = (church) => {
                                     <InputLabel :value="tr('Nombre de la iglesia *', 'Church name *')" />
                                     <input v-model="editForms[church.id].church_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                     <InputError class="mt-1" :message="editForms[church.id].errors.church_name" />
-                                </div>
-                                <div>
-                                    <InputLabel :value="tr('Pastor', 'Pastor')" />
-                                    <input v-model="editForms[church.id].pastor_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
-                                    <InputError class="mt-1" :message="editForms[church.id].errors.pastor_name" />
-                                </div>
-                                <div>
-                                    <InputLabel :value="tr('Correo del pastor', 'Pastor email')" />
-                                    <input v-model="editForms[church.id].pastor_email" type="email" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
-                                    <InputError class="mt-1" :message="editForms[church.id].errors.pastor_email" />
                                 </div>
                                 <div>
                                     <InputLabel :value="tr('Correo', 'Email')" />

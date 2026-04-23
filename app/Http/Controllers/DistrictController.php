@@ -114,7 +114,7 @@ class DistrictController extends Controller
             ->where('district_id', $district->id)
             ->withCount('clubs')
             ->orderBy('church_name')
-            ->get(['id', 'district_id', 'church_name', 'address', 'ethnicity', 'phone_number', 'email', 'pastor_name', 'pastor_email']);
+            ->get(['id', 'district_id', 'church_name', 'address', 'ethnicity', 'phone_number', 'email']);
 
         return Inertia::render('District/Churches', [
             'district' => [
@@ -134,8 +134,6 @@ class DistrictController extends Controller
                 'ethnicity' => $church->ethnicity,
                 'phone_number' => $church->phone_number,
                 'email' => $church->email,
-                'pastor_name' => $church->pastor_name,
-                'pastor_email' => $church->pastor_email,
                 'clubs_count' => (int) ($church->clubs_count ?? 0),
             ])->values(),
         ]);
@@ -158,14 +156,14 @@ class DistrictController extends Controller
             'ethnicity' => ['nullable', 'string', 'max:255'],
             'phone_number' => ['nullable', 'string', 'max:20'],
             'email' => ['nullable', 'email', 'max:255'],
-            'pastor_name' => ['nullable', 'string', 'max:255'],
-            'pastor_email' => ['nullable', 'email', 'max:255'],
         ]);
 
         $church = Church::query()->create([
             ...$validated,
             'district_id' => $district->id,
             'conference' => $district->association?->name,
+            'pastor_name' => null,
+            'pastor_email' => null,
         ]);
 
         ChurchInviteCode::firstOrCreate(
@@ -198,13 +196,13 @@ class DistrictController extends Controller
             'ethnicity' => ['nullable', 'string', 'max:255'],
             'phone_number' => ['nullable', 'string', 'max:20'],
             'email' => ['nullable', 'email', 'max:255'],
-            'pastor_name' => ['nullable', 'string', 'max:255'],
-            'pastor_email' => ['nullable', 'email', 'max:255'],
         ]);
 
         $church->update([
             ...$validated,
             'conference' => $district->association?->name,
+            'pastor_name' => null,
+            'pastor_email' => null,
         ]);
 
         return back()->with('success', 'Iglesia actualizada correctamente.');
@@ -286,7 +284,7 @@ class DistrictController extends Controller
                 'id' => $church->id,
                 'district_id' => $church->district_id,
                 'church_name' => $church->church_name,
-                'pastor_name' => $church->pastor_name,
+                'pastor_name' => $church->pastor_name ?: $district->pastor_name,
             ])->values(),
             'clubs' => $clubs->map(function ($club) use ($adventurerMembers, $pathfinderMembers, $formatMember) {
                 $members = $club->club_type === 'adventurers'
@@ -347,7 +345,7 @@ class DistrictController extends Controller
             'church_id' => $church->id,
             'church_name' => $church->church_name,
             'district_id' => $district->id,
-            'pastor_name' => $church->pastor_name,
+            'pastor_name' => $church->pastor_name ?: $district->pastor_name,
             'conference_name' => $district->association?->name,
             'evaluation_system' => $church->district?->association?->union?->evaluation_system ?: 'honors',
             'status' => 'inactive',
@@ -663,4 +661,5 @@ class DistrictController extends Controller
             abort(403);
         }
     }
+
 }
