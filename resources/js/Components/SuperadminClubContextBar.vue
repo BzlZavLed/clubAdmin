@@ -26,7 +26,6 @@ const context = computed(() => isSuperadmin.value ? superadminContext.value : us
 const selectedUnionId = ref(superadminContext.value?.union_id ? String(superadminContext.value.union_id) : '')
 const selectedAssociationId = ref(superadminContext.value?.association_id ? String(superadminContext.value.association_id) : '')
 const selectedDistrictId = ref(superadminContext.value?.district_id ? String(superadminContext.value.district_id) : '')
-const selectedChurchId = ref(superadminContext.value?.church_id ? String(superadminContext.value.church_id) : '')
 const selectedClubId = ref(
     isSuperadmin.value
         ? (superadminContext.value?.club_id ? String(superadminContext.value.club_id) : '')
@@ -38,7 +37,6 @@ const error = ref('')
 const unions = computed(() => superadminContext.value?.available_unions ?? [])
 const associations = computed(() => superadminContext.value?.available_associations ?? [])
 const districts = computed(() => superadminContext.value?.available_districts ?? [])
-const churches = computed(() => superadminContext.value?.available_churches ?? [])
 const clubs = computed(() => {
     if (isSuperadmin.value) {
         return superadminContext.value?.available_clubs ?? []
@@ -57,15 +55,10 @@ const filteredDistricts = computed(() => {
     return districts.value.filter((district) => String(district.association_id) === String(selectedAssociationId.value))
 })
 
-const filteredChurches = computed(() => {
-    if (!selectedDistrictId.value) return []
-    return churches.value.filter((church) => String(church.district_id) === String(selectedDistrictId.value))
-})
-
 const filteredClubs = computed(() => {
     if (isSuperadmin.value) {
-        if (!selectedChurchId.value) return []
-        return clubs.value.filter((club) => String(club.church_id) === String(selectedChurchId.value))
+        if (!selectedDistrictId.value) return []
+        return clubs.value.filter((club) => String(club.district_id) === String(selectedDistrictId.value))
     }
 
     return clubs.value
@@ -78,7 +71,6 @@ watch(
         selectedUnionId.value = value.union_id ? String(value.union_id) : ''
         selectedAssociationId.value = value.association_id ? String(value.association_id) : ''
         selectedDistrictId.value = value.district_id ? String(value.district_id) : ''
-        selectedChurchId.value = value.church_id ? String(value.church_id) : ''
         selectedClubId.value = value.club_id ? String(value.club_id) : ''
     },
     { deep: true }
@@ -90,7 +82,6 @@ watch(selectedUnionId, () => {
     if (!exists) {
         selectedAssociationId.value = ''
         selectedDistrictId.value = ''
-        selectedChurchId.value = ''
         selectedClubId.value = ''
     }
 })
@@ -100,21 +91,11 @@ watch(selectedAssociationId, () => {
     const exists = filteredDistricts.value.some((district) => String(district.id) === String(selectedDistrictId.value))
     if (!exists) {
         selectedDistrictId.value = ''
-        selectedChurchId.value = ''
         selectedClubId.value = ''
     }
 })
 
 watch(selectedDistrictId, () => {
-    if (!isSuperadmin.value) return
-    const exists = filteredChurches.value.some((church) => String(church.id) === String(selectedChurchId.value))
-    if (!exists) {
-        selectedChurchId.value = ''
-        selectedClubId.value = ''
-    }
-})
-
-watch(selectedChurchId, () => {
     if (!isSuperadmin.value) return
     const exists = filteredClubs.value.some((club) => String(club.id) === String(selectedClubId.value))
     if (!exists) {
@@ -133,7 +114,6 @@ const selectedLabel = computed(() => {
 
     return (
         selectedClub.value?.club_name
-        || filteredChurches.value.find((church) => String(church.id) === String(selectedChurchId.value))?.church_name
         || filteredDistricts.value.find((district) => String(district.id) === String(selectedDistrictId.value))?.name
         || filteredAssociations.value.find((association) => String(association.id) === String(selectedAssociationId.value))?.name
         || unions.value.find((union) => String(union.id) === String(selectedUnionId.value))?.name
@@ -161,7 +141,6 @@ const saveContext = async () => {
                 union_id: selectedUnionId.value ? Number(selectedUnionId.value) : null,
                 association_id: selectedAssociationId.value ? Number(selectedAssociationId.value) : null,
                 district_id: selectedDistrictId.value ? Number(selectedDistrictId.value) : null,
-                church_id: selectedChurchId.value ? Number(selectedChurchId.value) : null,
                 club_id: selectedClubId.value ? Number(selectedClubId.value) : null,
             })
 
@@ -230,14 +209,7 @@ const saveContext = async () => {
                         </option>
                     </select>
 
-                    <select v-model="selectedChurchId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
-                        <option value="">Iglesia</option>
-                        <option v-for="church in filteredChurches" :key="church.id" :value="String(church.id)">
-                            {{ church.church_name }}
-                        </option>
-                    </select>
-
-                    <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedChurchId">
+                    <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
                         <option value="">Club</option>
                         <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                             {{ club.club_name }}
@@ -282,7 +254,7 @@ const saveContext = async () => {
                     </p>
                 </div>
 
-                <div v-if="isSuperadmin" class="grid grid-cols-1 md:grid-cols-5 gap-2">
+                <div v-if="isSuperadmin" class="grid grid-cols-1 md:grid-cols-4 gap-2">
                     <select v-model="selectedUnionId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800">
                         <option value="">Union</option>
                         <option v-for="union in unions" :key="union.id" :value="String(union.id)">
@@ -304,14 +276,7 @@ const saveContext = async () => {
                         </option>
                     </select>
 
-                    <select v-model="selectedChurchId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
-                        <option value="">Iglesia</option>
-                        <option v-for="church in filteredChurches" :key="church.id" :value="String(church.id)">
-                            {{ church.church_name }}
-                        </option>
-                    </select>
-
-                    <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedChurchId">
+                    <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
                         <option value="">Club</option>
                         <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                             {{ club.club_name }}
