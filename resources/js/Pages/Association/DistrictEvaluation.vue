@@ -99,7 +99,7 @@ const removeEvaluator = (evaluator) => {
                         <h2 class="text-lg font-semibold text-gray-900">{{ association.name }}</h2>
                         <p class="mt-1 text-sm text-gray-500">{{ tr('Unión', 'Union') }}: {{ union.name || '—' }}</p>
                         <p class="mt-2 text-sm text-gray-600">
-                            {{ tr('Administra los distritos, asigna el pastor y marca cuáles actuarán como evaluadores al cierre del ciclo.', 'Manage districts, assign the pastor, and mark which ones will act as evaluators at year close.') }}
+                            {{ tr('Administra los distritos, asigna el pastor y marca cuáles actuarán como evaluadores al cierre del ciclo. Las iglesias se crean desde el portal distrital y aquí se reflejan por distrito.', 'Manage districts, assign the pastor, and mark which ones will act as evaluators at year close. Churches are created from the district portal and reflected here under each district.') }}
                         </p>
                     </div>
                     <button
@@ -168,6 +168,9 @@ const removeEvaluator = (evaluator) => {
                                 <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                                     {{ tr('Correo', 'Email') }}
                                 </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    {{ tr('Iglesias', 'Churches') }}
+                                </th>
                                 <th class="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
                                     {{ tr('Evaluador', 'Evaluator') }}
                                 </th>
@@ -193,6 +196,25 @@ const removeEvaluator = (evaluator) => {
                                         <span v-else class="text-sm italic text-gray-400">{{ tr('Sin asignar', 'Unassigned') }}</span>
                                     </td>
                                     <td class="px-6 py-4 text-sm text-gray-500">{{ district.pastor_email || '—' }}</td>
+                                    <td class="px-6 py-4">
+                                        <div class="flex flex-col gap-2">
+                                            <span class="text-sm font-medium text-gray-900">
+                                                {{ district.churches_count || 0 }} {{ tr('iglesia(s)', 'church(es)') }}
+                                            </span>
+                                            <div v-if="district.churches?.length" class="flex flex-wrap gap-2">
+                                                <span
+                                                    v-for="church in district.churches"
+                                                    :key="church.id"
+                                                    class="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700"
+                                                >
+                                                    {{ church.church_name }}
+                                                </span>
+                                            </div>
+                                            <span v-else class="text-sm italic text-gray-400">
+                                                {{ tr('Sin iglesias registradas', 'No churches registered') }}
+                                            </span>
+                                        </div>
+                                    </td>
                                     <td class="px-6 py-4 text-center">
                                         <button
                                             type="button"
@@ -238,6 +260,9 @@ const removeEvaluator = (evaluator) => {
                                             class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                         />
                                         <InputError class="mt-1" :message="editForms[district.id].errors.pastor_email" />
+                                    </td>
+                                    <td class="px-6 py-4 text-sm text-gray-500">
+                                        {{ district.churches_count || 0 }} {{ tr('iglesia(s)', 'church(es)') }}
                                     </td>
                                     <td class="px-6 py-4 text-center text-sm text-gray-400 italic">—</td>
                                     <td class="px-6 py-4 text-right">

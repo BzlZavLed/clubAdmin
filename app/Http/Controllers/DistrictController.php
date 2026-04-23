@@ -3,14 +3,23 @@
 namespace App\Http\Controllers;
 
 use App\Models\Association;
+use App\Models\Church;
+use App\Models\ChurchInviteCode;
 use App\Models\AssociationWorkplanEvent;
 use App\Models\AssociationWorkplanPublication;
+use App\Models\Club;
 use App\Models\District;
 use App\Models\DistrictWorkplanEvent;
 use App\Models\DistrictWorkplanPublication;
+use App\Models\MemberAdventurer;
+use App\Models\MemberPathfinder;
+use App\Models\User;
 use App\Services\WorkplanPropagationService;
 use App\Support\SuperadminContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -95,6 +104,330 @@ class DistrictController extends Controller
         $district->update(['status' => 'deleted']);
 
         return back()->with('success', 'Distrito eliminado correctamente.');
+    }
+
+    public function churches(Request $request)
+    {
+        $district = $this->resolveScopedDistrict($request)->load('association:id,name');
+
+        $churches = Church::query()
+            ->where('district_id', $district->id)
+            ->withCount('clubs')
+            ->orderBy('church_name')
+            ->get(['id', 'district_id', 'church_name', 'address', 'ethnicity', 'phone_number', 'email', 'pastor_name', 'pastor_email']);
+
+        return Inertia::render('District/Churches', [
+            'district' => [
+                'id' => $district->id,
+                'name' => $district->name,
+                'pastor_name' => $district->pastor_name,
+                'pastor_email' => $district->pastor_email,
+            ],
+            'association' => [
+                'id' => $district->association?->id,
+                'name' => $district->association?->name,
+            ],
+            'churches' => $churches->map(fn (Church $church) => [
+                'id' => $church->id,
+                'church_name' => $church->church_name,
+                'address' => $church->address,
+                'ethnicity' => $church->ethnicity,
+                'phone_number' => $church->phone_number,
+                'email' => $church->email,
+                'pastor_name' => $church->pastor_name,
+                'pastor_email' => $church->pastor_email,
+                'clubs_count' => (int) ($church->clubs_count ?? 0),
+            ])->values(),
+        ]);
+    }
+
+    public function storeChurch(Request $request)
+    {
+        $district = $this->resolveScopedDistrict($request)->load('association:id,name');
+
+        $validated = $request->validate([
+            'church_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('churches', 'church_name')->where(
+                    fn ($query) => $query->where('district_id', $district->id)
+                ),
+            ],
+            'address' => ['nullable', 'string'],
+            'ethnicity' => ['nullable', 'string', 'max:255'],
+            'phone_number' => ['nullable', 'string', 'max:20'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'pastor_name' => ['nullable', 'string', 'max:255'],
+            'pastor_email' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        $church = Church::query()->create([
+            ...$validated,
+            'district_id' => $district->id,
+            'conference' => $district->association?->name,
+        ]);
+
+        ChurchInviteCode::firstOrCreate(
+            ['church_id' => $church->id],
+            [
+                'code' => Str::upper(Str::random(10)),
+                'uses_left' => null,
+                'status' => 'active',
+            ]
+        );
+
+        return back()->with('success', 'Iglesia creada correctamente.');
+    }
+
+    public function updateChurch(Request $request, Church $church)
+    {
+        $district = $this->resolveScopedDistrict($request)->load('association:id,name');
+        $this->assertOwnsChurch($district, $church);
+
+        $validated = $request->validate([
+            'church_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('churches', 'church_name')
+                    ->ignore($church->id)
+                    ->where(fn ($query) => $query->where('district_id', $district->id)),
+            ],
+            'address' => ['nullable', 'string'],
+            'ethnicity' => ['nullable', 'string', 'max:255'],
+            'phone_number' => ['nullable', 'string', 'max:20'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'pastor_name' => ['nullable', 'string', 'max:255'],
+            'pastor_email' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        $church->update([
+            ...$validated,
+            'conference' => $district->association?->name,
+        ]);
+
+        return back()->with('success', 'Iglesia actualizada correctamente.');
+    }
+
+    public function destroyChurch(Request $request, Church $church)
+    {
+        $district = $this->resolveScopedDistrict($request);
+        $this->assertOwnsChurch($district, $church);
+
+        if ($church->clubs()->exists()) {
+            abort(422, 'No se puede eliminar una iglesia que ya tiene clubes asociados.');
+        }
+
+        $church->delete();
+
+        return back()->with('success', 'Iglesia eliminada correctamente.');
+    }
+
+    public function clubs(Request $request)
+    {
+        $district = $this->resolveScopedDistrict($request)->load('association.union');
+
+        $churches = Church::query()
+            ->where('district_id', $district->id)
+            ->orderBy('church_name')
+            ->get(['id', 'district_id', 'church_name', 'pastor_name']);
+
+        $clubs = Club::query()
+            ->withoutGlobalScopes()
+            ->where('district_id', $district->id)
+            ->orderBy('club_name')
+            ->get(['id', 'club_name', 'club_type', 'status', 'church_id', 'church_name', 'district_id', 'director_name', 'user_id', 'evaluation_system', 'creation_date']);
+
+        $adventurerClubIds = $clubs->where('club_type', 'adventurers')->pluck('id')->toArray();
+        $pathfinderClubIds = $clubs->whereIn('club_type', ['pathfinders', 'master_guide'])->pluck('id')->toArray();
+
+        $adventurerMembers = MemberAdventurer::query()
+            ->whereIn('club_id', $adventurerClubIds)
+            ->where('status', 'active')
+            ->get(['id', 'club_id', 'applicant_name', 'birthdate', 'age', 'email_address', 'cell_number', 'insurance_paid', 'insurance_paid_at'])
+            ->groupBy('club_id');
+
+        $pathfinderMembers = MemberPathfinder::query()
+            ->whereIn('club_id', $pathfinderClubIds)
+            ->where('status', 'active')
+            ->get(['id', 'club_id', 'applicant_name', 'birthdate', 'email_address', 'cell_number', 'insurance_paid', 'insurance_paid_at'])
+            ->groupBy('club_id');
+
+        $formatMember = fn ($member) => [
+            'id' => $member->id,
+            'name' => $member->applicant_name,
+            'birthdate' => $member->birthdate?->toDateString(),
+            'age' => $member->age ?? ($member->birthdate ? (int) $member->birthdate->diffInYears(now()) : null),
+            'email' => $member->email_address,
+            'phone' => $member->cell_number,
+            'insurance_paid' => (bool) $member->insurance_paid,
+            'insurance_paid_at' => $member->insurance_paid_at?->toDateString(),
+        ];
+
+        return Inertia::render('District/Clubs', [
+            'district' => [
+                'id' => $district->id,
+                'name' => $district->name,
+                'pastor_name' => $district->pastor_name,
+                'pastor_email' => $district->pastor_email,
+            ],
+            'association' => [
+                'id' => $district->association?->id,
+                'name' => $district->association?->name,
+                'insurance_payment_amount' => $district->association?->insurance_payment_amount,
+            ],
+            'union' => [
+                'id' => $district->association?->union?->id,
+                'name' => $district->association?->union?->name,
+                'evaluation_system' => $district->association?->union?->evaluation_system ?: 'honors',
+            ],
+            'churches' => $churches->map(fn (Church $church) => [
+                'id' => $church->id,
+                'district_id' => $church->district_id,
+                'church_name' => $church->church_name,
+                'pastor_name' => $church->pastor_name,
+            ])->values(),
+            'clubs' => $clubs->map(function ($club) use ($adventurerMembers, $pathfinderMembers, $formatMember) {
+                $members = $club->club_type === 'adventurers'
+                    ? ($adventurerMembers->get($club->id) ?? collect())
+                    : ($pathfinderMembers->get($club->id) ?? collect());
+
+                return [
+                    'id' => $club->id,
+                    'club_name' => $club->club_name,
+                    'club_type' => $club->club_type,
+                    'status' => $club->status,
+                    'church_id' => $club->church_id,
+                    'church_name' => $club->church_name,
+                    'district_id' => $club->district_id,
+                    'director_name' => $club->director_name,
+                    'has_director' => (bool) $club->user_id,
+                    'evaluation_system' => $club->evaluation_system,
+                    'creation_date' => $club->creation_date,
+                    'members' => $members->map($formatMember)->values(),
+                ];
+            })->values(),
+        ]);
+    }
+
+    public function storeClub(Request $request)
+    {
+        $district = $this->resolveScopedDistrict($request)->load('association.union:id,evaluation_system');
+
+        $churchIds = Church::query()
+            ->where('district_id', $district->id)
+            ->pluck('id')
+            ->toArray();
+
+        $validated = $request->validate([
+            'church_id' => ['required', 'integer', Rule::in($churchIds)],
+            'club_name' => ['required', 'string', 'max:255'],
+            'club_type' => ['required', Rule::in(['adventurers', 'pathfinders', 'master_guide'])],
+            'creation_date' => ['nullable', 'date'],
+        ]);
+
+        $church = Church::query()->findOrFail($validated['church_id']);
+        $church->loadMissing('district.association.union:id,evaluation_system');
+
+        $duplicate = Club::query()
+            ->withoutGlobalScopes()
+            ->where('church_id', $church->id)
+            ->where('club_type', $validated['club_type'])
+            ->exists();
+
+        if ($duplicate) {
+            return back()->withErrors(['club_type' => 'This church already has a club of this type.']);
+        }
+
+        Club::query()->create([
+            'club_name' => $validated['club_name'],
+            'club_type' => $validated['club_type'],
+            'creation_date' => $validated['creation_date'] ?? null,
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'district_id' => $district->id,
+            'pastor_name' => $church->pastor_name,
+            'conference_name' => $district->association?->name,
+            'evaluation_system' => $church->district?->association?->union?->evaluation_system ?: 'honors',
+            'status' => 'inactive',
+            'user_id' => null,
+            'director_name' => null,
+        ]);
+
+        return back()->with('success', 'Club created. Assign a director to activate it.');
+    }
+
+    public function storeClubDirector(Request $request, int $club)
+    {
+        $district = $this->resolveScopedDistrict($request);
+        $club = Club::withoutGlobalScopes()->findOrFail($club);
+
+        if ((int) $club->district_id !== (int) $district->id) {
+            abort(403);
+        }
+
+        if ($club->user_id) {
+            return back()->withErrors(['email' => 'This club already has a director assigned.']);
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8'],
+        ]);
+
+        $church = Church::find($club->church_id);
+
+        $director = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'profile_type' => 'club_director',
+            'scope_type' => 'club',
+            'scope_id' => $club->id,
+            'club_id' => $club->id,
+            'church_id' => $church?->id,
+            'church_name' => $church?->church_name,
+            'status' => 'active',
+        ]);
+
+        DB::table('club_user')->updateOrInsert(
+            ['user_id' => $director->id, 'club_id' => $club->id],
+            ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+        );
+
+        $club->update([
+            'user_id' => $director->id,
+            'director_name' => $director->name,
+            'status' => 'active',
+        ]);
+
+        return back()->with('success', 'Director created and club activated.');
+    }
+
+    public function toggleMemberInsurance(Request $request, int $clubId, int $memberId)
+    {
+        $district = $this->resolveScopedDistrict($request);
+        $club = Club::withoutGlobalScopes()->findOrFail($clubId);
+
+        if ((int) $club->district_id !== (int) $district->id) {
+            abort(403);
+        }
+
+        if ($club->club_type === 'adventurers') {
+            $member = MemberAdventurer::where('club_id', $club->id)->findOrFail($memberId);
+        } else {
+            $member = MemberPathfinder::where('club_id', $club->id)->findOrFail($memberId);
+        }
+
+        $nowPaid = ! $member->insurance_paid;
+        $member->update([
+            'insurance_paid' => $nowPaid,
+            'insurance_paid_at' => $nowPaid ? now() : null,
+        ]);
+
+        return back()->with('success', 'Insurance status updated.');
     }
 
     public function workplan(Request $request)
@@ -320,6 +653,13 @@ class DistrictController extends Controller
     protected function assertOwnsWorkplanEvent(District $district, DistrictWorkplanEvent $event): void
     {
         if ((int) $event->district_id !== (int) $district->id) {
+            abort(403);
+        }
+    }
+
+    protected function assertOwnsChurch(District $district, Church $church): void
+    {
+        if ((int) $church->district_id !== (int) $district->id) {
             abort(403);
         }
     }

@@ -117,6 +117,14 @@ Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secreta
     Route::get('/district/dashboard', fn() => Inertia::render('District/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('district.dashboard');
+    Route::get('/district/churches', [DistrictController::class, 'churches'])->name('district.churches');
+    Route::post('/district/churches', [DistrictController::class, 'storeChurch'])->name('district.churches.store');
+    Route::patch('/district/churches/{church}', [DistrictController::class, 'updateChurch'])->name('district.churches.update');
+    Route::delete('/district/churches/{church}', [DistrictController::class, 'destroyChurch'])->name('district.churches.destroy');
+    Route::get('/district/clubs', [DistrictController::class, 'clubs'])->name('district.clubs');
+    Route::post('/district/clubs', [DistrictController::class, 'storeClub'])->name('district.clubs.store');
+    Route::post('/district/clubs/{club}/director', [DistrictController::class, 'storeClubDirector'])->name('district.clubs.director.store');
+    Route::patch('/district/clubs/{club}/members/{member}/insurance', [DistrictController::class, 'toggleMemberInsurance'])->name('district.clubs.members.insurance');
     Route::get('/district/workplan', [DistrictController::class, 'workplan'])->name('district.workplan');
     Route::post('/district/workplan/publish', [DistrictController::class, 'publishWorkplan'])->name('district.workplan.publish');
     Route::post('/district/workplan/unpublish', [DistrictController::class, 'unpublishWorkplan'])->name('district.workplan.unpublish');
@@ -200,6 +208,9 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
     Route::get('/union/dashboard', fn() => Inertia::render('Union/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('union.dashboard');
+    Route::get('/union/associations', [UnionController::class, 'associations'])->name('union.associations');
+    Route::post('/union/associations', [UnionController::class, 'storeAssociation'])->name('union.associations.store');
+    Route::patch('/union/associations/{association}', [UnionController::class, 'updateAssociation'])->name('union.associations.update');
     Route::get('/union/catalog/clubs-classes', [UnionController::class, 'catalog'])->name('union.catalog');
     Route::post('/union/catalog/clubs-classes/club-types', [UnionController::class, 'storeClubCatalog'])->name('union.catalog.club-types.store');
     Route::post('/union/catalog/clubs-classes/club-types/{clubCatalog}/classes', [UnionController::class, 'storeClassCatalog'])->name('union.catalog.classes.store');

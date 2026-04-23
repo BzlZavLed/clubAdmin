@@ -343,6 +343,100 @@ class UnionController extends Controller
         return back()->with('success', 'Union eliminada correctamente.');
     }
 
+    public function associations(Request $request)
+    {
+        $union = $this->resolveScopedUnion($request);
+
+        $associations = Association::query()
+            ->where('union_id', $union->id)
+            ->where('status', '!=', 'deleted')
+            ->withCount('districts')
+            ->with(['districts' => fn ($query) => $query
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->select('id', 'association_id', 'name', 'pastor_name', 'pastor_email')])
+            ->orderBy('name')
+            ->get(['id', 'union_id', 'name', 'status', 'insurance_payment_amount']);
+
+        return Inertia::render('Union/Associations', [
+            'union' => [
+                'id' => $union->id,
+                'name' => $union->name,
+                'evaluation_system' => $union->evaluation_system,
+                'status' => $union->status,
+            ],
+            'associations' => $associations->map(fn (Association $association) => [
+                'id' => $association->id,
+                'name' => $association->name,
+                'status' => $association->status,
+                'insurance_payment_amount' => $association->insurance_payment_amount,
+                'districts_count' => (int) ($association->districts_count ?? 0),
+                'districts' => $association->districts->map(fn (District $district) => [
+                    'id' => $district->id,
+                    'name' => $district->name,
+                    'pastor_name' => $district->pastor_name,
+                    'pastor_email' => $district->pastor_email,
+                ])->values(),
+            ])->values(),
+        ]);
+    }
+
+    public function storeAssociation(Request $request)
+    {
+        $union = $this->resolveScopedUnion($request);
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('associations', 'name')->where(function ($query) use ($union) {
+                    return $query
+                        ->where('union_id', $union->id)
+                        ->where('status', '!=', 'deleted');
+                }),
+            ],
+        ]);
+
+        Association::query()->create([
+            'union_id' => $union->id,
+            'name' => $validated['name'],
+            'status' => 'active',
+        ]);
+
+        return back()->with('success', 'Asociacion creada correctamente.');
+    }
+
+    public function updateAssociation(Request $request, Association $association)
+    {
+        $union = $this->resolveScopedUnion($request);
+
+        if ((int) $association->union_id !== (int) $union->id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('associations', 'name')
+                    ->ignore($association->id)
+                    ->where(function ($query) use ($union) {
+                        return $query
+                            ->where('union_id', $union->id)
+                            ->where('status', '!=', 'deleted');
+                    }),
+            ],
+        ]);
+
+        $association->update([
+            'name' => $validated['name'],
+        ]);
+
+        return back()->with('success', 'Asociacion actualizada correctamente.');
+    }
+
     protected function resolveScopedUnion(Request $request): Union
     {
         $user = $request->user();

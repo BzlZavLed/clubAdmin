@@ -34,6 +34,9 @@ const { tr } = useLocale()
                 </div>
 
                 <div class="mt-6 flex flex-wrap gap-3">
+                    <a :href="route('district.churches')" class="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                        {{ tr('Iglesias del distrito', 'District churches') }}
+                    </a>
                     <a :href="route('district.reports.assistance')" class="inline-flex items-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900">
                         {{ tr('Reporte de asistencia', 'Attendance report') }}
                     </a>

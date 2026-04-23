@@ -246,6 +246,10 @@ class AssociationController extends Controller
         $districts = District::query()
             ->where('association_id', $association->id)
             ->where('status', '!=', 'deleted')
+            ->withCount('churches')
+            ->with(['churches' => fn ($query) => $query
+                ->orderBy('church_name')
+                ->select('id', 'district_id', 'church_name', 'pastor_name', 'pastor_email')])
             ->orderBy('name')
             ->get(['id', 'association_id', 'name', 'pastor_name', 'pastor_email', 'is_evaluator', 'status']);
 
@@ -284,6 +288,13 @@ class AssociationController extends Controller
                 'pastor_email' => $d->pastor_email,
                 'is_evaluator' => (bool) $d->is_evaluator,
                 'status' => $d->status,
+                'churches_count' => (int) ($d->churches_count ?? 0),
+                'churches' => $d->churches->map(fn ($church) => [
+                    'id' => $church->id,
+                    'church_name' => $church->church_name,
+                    'pastor_name' => $church->pastor_name,
+                    'pastor_email' => $church->pastor_email,
+                ])->values(),
                 'club_pastor_hint' => !$d->pastor_name ? ($clubPastorHints->get($d->id) ?? null) : null,
             ])->values(),
             'evaluators' => $evaluators->map(fn($e) => [
@@ -732,122 +743,22 @@ class AssociationController extends Controller
 
     public function churches(Request $request)
     {
-        $association = $this->resolveScopedAssociation($request);
-
-        $districts = District::query()
-            ->where('association_id', $association->id)
-            ->where('status', '!=', 'deleted')
-            ->orderBy('name')
-            ->with(['churches' => fn($q) => $q->orderBy('church_name')])
-            ->get(['id', 'name', 'pastor_name', 'pastor_email', 'is_evaluator', 'status']);
-
-        $districtIds = $districts->pluck('id')->toArray();
-
-        $churches = Church::query()
-            ->whereIn('district_id', $districtIds)
-            ->orderBy('church_name')
-            ->get(['id', 'district_id', 'church_name', 'address', 'ethnicity', 'phone_number', 'email', 'pastor_name', 'pastor_email']);
-
-        return Inertia::render('Association/Churches', [
-            'association' => ['id' => $association->id, 'name' => $association->name],
-            'districts' => $districts->map(fn($d) => [
-                'id' => $d->id,
-                'name' => $d->name,
-                'pastor_name' => $d->pastor_name,
-                'pastor_email' => $d->pastor_email,
-                'is_evaluator' => (bool) $d->is_evaluator,
-                'churches' => $d->churches->map(fn($c) => [
-                    'id' => $c->id,
-                    'church_name' => $c->church_name,
-                    'email' => $c->email,
-                    'phone_number' => $c->phone_number,
-                    'pastor_name' => $c->pastor_name,
-                    'pastor_email' => $c->pastor_email,
-                ])->values(),
-            ])->values(),
-            'churches' => $churches->map(fn($c) => [
-                'id' => $c->id,
-                'district_id' => $c->district_id,
-                'church_name' => $c->church_name,
-                'address' => $c->address,
-                'ethnicity' => $c->ethnicity,
-                'phone_number' => $c->phone_number,
-                'email' => $c->email,
-                'pastor_name' => $c->pastor_name,
-                'pastor_email' => $c->pastor_email,
-            ])->values(),
-        ]);
+        return redirect()->route('association.districts');
     }
 
     public function storeChurch(Request $request)
     {
-        $association = $this->resolveScopedAssociation($request);
-
-        $districtIds = District::query()
-            ->where('association_id', $association->id)
-            ->where('status', '!=', 'deleted')
-            ->pluck('id')->toArray();
-
-        $validated = $request->validate([
-            'district_id' => ['required', 'integer', Rule::in($districtIds)],
-            'church_name' => ['required', 'string', 'max:255'],
-            'address' => ['nullable', 'string'],
-            'ethnicity' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:20'],
-            'email' => ['nullable', 'email', 'max:255'],
-            'pastor_name' => ['nullable', 'string', 'max:255'],
-            'pastor_email' => ['nullable', 'email', 'max:255'],
-        ]);
-
-        Church::create(array_merge($validated, ['conference' => $association->name]));
-
-        return back()->with('success', 'Church created.');
+        abort(422, 'Las iglesias ahora se administran desde el portal distrital.');
     }
 
     public function updateChurch(Request $request, Church $church)
     {
-        $association = $this->resolveScopedAssociation($request);
-
-        $districtIds = District::query()
-            ->where('association_id', $association->id)
-            ->where('status', '!=', 'deleted')
-            ->pluck('id')->toArray();
-
-        if (!in_array((int) $church->district_id, $districtIds)) {
-            abort(403);
-        }
-
-        $validated = $request->validate([
-            'district_id' => ['required', 'integer', Rule::in($districtIds)],
-            'church_name' => ['required', 'string', 'max:255'],
-            'address' => ['nullable', 'string'],
-            'ethnicity' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:20'],
-            'email' => ['nullable', 'email', 'max:255'],
-            'pastor_name' => ['nullable', 'string', 'max:255'],
-            'pastor_email' => ['nullable', 'email', 'max:255'],
-        ]);
-
-        $church->update(array_merge($validated, ['conference' => $association->name]));
-
-        return back()->with('success', 'Church updated.');
+        abort(422, 'Las iglesias ahora se administran desde el portal distrital.');
     }
 
     public function destroyChurch(Request $request, Church $church)
     {
-        $association = $this->resolveScopedAssociation($request);
-
-        $districtIds = District::query()
-            ->where('association_id', $association->id)
-            ->pluck('id')->toArray();
-
-        if (!in_array((int) $church->district_id, $districtIds)) {
-            abort(403);
-        }
-
-        $church->delete();
-
-        return back()->with('success', 'Church deleted.');
+        abort(422, 'Las iglesias ahora se administran desde el portal distrital.');
     }
 
     public function storeEvaluator(Request $request)

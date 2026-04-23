@@ -36,7 +36,7 @@ const sections = computed(() => {
                     },
                     ...(evaluationSystem.value === 'carpetas' ? [
                         {
-                            name: 'Distritos y evaluadores',
+                            name: 'Distritos',
                             href: '/association/districts',
                             route: 'association.districts',
                             icon: MapIcon,
@@ -46,18 +46,6 @@ const sections = computed(() => {
                             href: '/association/investiture-requests',
                             route: 'association.investiture-requests',
                             icon: ClipboardDocumentListIcon,
-                        },
-                        {
-                            name: 'Iglesias',
-                            href: '/association/churches',
-                            route: 'association.churches',
-                            icon: BuildingLibraryIcon,
-                        },
-                        {
-                            name: 'Clubes',
-                            href: '/association/clubs',
-                            route: 'association.clubs',
-                            icon: UserGroupIcon,
                         },
                     ] : []),
                 ],
@@ -77,6 +65,8 @@ const sections = computed(() => {
                 title: 'Distrito',
                 items: [
                     { name: 'Panel', href: '/district/dashboard', route: 'district.dashboard', icon: HomeIcon },
+                    { name: 'Iglesias', href: '/district/churches', route: 'district.churches', icon: BuildingLibraryIcon },
+                    { name: 'Clubes', href: '/district/clubs', route: 'district.clubs', icon: UserGroupIcon },
                     { name: 'Plan de trabajo', href: '/district/workplan', route: 'district.workplan', icon: ClipboardDocumentListIcon },
                     ...(evaluationSystem.value === 'carpetas' ? [
                         { name: 'Evaluaciones de investidura', href: '/district/investiture-requests', route: 'district.investiture-requests', icon: FolderOpenIcon },
@@ -91,6 +81,7 @@ const sections = computed(() => {
             title: 'Catálogos',
             items: [
                 { name: 'Panel', href: '/union/dashboard', route: 'union.dashboard', icon: HomeIcon },
+                { name: 'Asociaciones', href: '/union/associations', route: 'union.associations', icon: MapIcon },
                 { name: 'Clubes y clases', href: '/union/catalog/clubs-classes', route: 'union.catalog', icon: Squares2X2Icon },
                 { name: 'Carpeta de investidura', href: '/union/carpeta-builder', route: 'union.carpeta-builder', icon: FolderOpenIcon },
                 { name: 'Plan de trabajo', href: '/union/workplan', route: 'union.workplan', icon: ClipboardDocumentListIcon },
