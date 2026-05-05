@@ -15,9 +15,15 @@ use Illuminate\Support\Facades\Storage;
 
 class EventBudgetItemController extends Controller
 {
+    protected function ensureClubScoped(Event $event): void
+    {
+        abort_unless(($event->scope_type ?: 'club') === 'club', 422, 'Budget items are only available for club-scoped events.');
+    }
+
     public function index(Event $event)
     {
         $this->authorize('view', $event);
+        $this->ensureClubScoped($event);
 
         return response()->json([
             'budget_items' => $event->budgetItems()->with(['expense', 'reimbursementExpense'])->latest()->get(),
@@ -27,6 +33,7 @@ class EventBudgetItemController extends Controller
     public function store(Request $request, Event $event)
     {
         $this->authorize('update', $event);
+        $this->ensureClubScoped($event);
 
         $validated = $request->validate([
             'category' => ['required', 'string', 'max:255'],
@@ -68,6 +75,7 @@ class EventBudgetItemController extends Controller
     {
         $event = $eventBudgetItem->event;
         $this->authorize('update', $event);
+        $this->ensureClubScoped($event);
 
         $validated = $request->validate([
             'category' => ['required', 'string', 'max:255'],
@@ -110,6 +118,7 @@ class EventBudgetItemController extends Controller
     {
         $event = $eventBudgetItem->event;
         $this->authorize('update', $event);
+        $this->ensureClubScoped($event);
 
         $validated = $request->validate([
             'receipt_image' => ['required', 'image', 'max:5120'],
@@ -141,6 +150,7 @@ class EventBudgetItemController extends Controller
     {
         $event = $eventBudgetItem->event;
         $this->authorize('update', $event);
+        $this->ensureClubScoped($event);
 
         DB::transaction(function () use ($event, $eventBudgetItem) {
             $this->reverseLedgerExpenses($event, $eventBudgetItem);

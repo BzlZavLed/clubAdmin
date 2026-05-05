@@ -13,6 +13,7 @@ use App\Models\District;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
+use App\Models\PaymentConcept;
 use App\Models\UnionCarpetaRequirement;
 use App\Models\Union;
 use App\Models\User;
@@ -27,6 +28,63 @@ use Inertia\Inertia;
 
 class AssociationController extends Controller
 {
+    protected function syncInsurancePaymentConcepts(Association $association, ?int $actorId = null): void
+    {
+        $amount = (float) ($association->insurance_payment_amount ?? 0);
+        $districtIds = $association->districts()->pluck('id');
+
+        if ($districtIds->isEmpty()) {
+            return;
+        }
+
+        $clubs = Club::query()
+            ->withoutGlobalScopes()
+            ->whereIn('district_id', $districtIds)
+            ->get(['id']);
+
+        foreach ($clubs as $club) {
+            $concept = PaymentConcept::withTrashed()
+                ->where('club_id', $club->id)
+                ->where('concept', 'Seguro de membresía')
+                ->where('pay_to', 'church_budget')
+                ->first();
+
+            if ($amount <= 0) {
+                if ($concept) {
+                    $concept->update([
+                        'amount' => 0,
+                        'status' => 'inactive',
+                        'reusable' => true,
+                    ]);
+                }
+
+                continue;
+            }
+
+            if ($concept && method_exists($concept, 'trashed') && $concept->trashed()) {
+                $concept->restore();
+            }
+
+            $concept ??= PaymentConcept::create([
+                'club_id' => $club->id,
+                'concept' => 'Seguro de membresía',
+                'pay_to' => 'church_budget',
+                'type' => 'mandatory',
+                'status' => 'active',
+                'created_by' => $actorId,
+                'amount' => $amount,
+                'reusable' => true,
+            ]);
+
+            $concept->update([
+                'amount' => $amount,
+                'type' => 'mandatory',
+                'status' => 'active',
+                'reusable' => true,
+            ]);
+        }
+    }
+
     protected function normalizeClubType(?string $value): string
     {
         return str_replace(['-', '_', ' '], '', mb_strtolower((string) $value));
@@ -733,6 +791,7 @@ class AssociationController extends Controller
             'user_id'         => null,
             'director_name'   => null,
         ]);
+        $this->syncInsurancePaymentConcepts($association, $request->user()?->id);
 
         return back()->with('success', 'Club created. Assign a director to activate it.');
     }
@@ -840,8 +899,18 @@ class AssociationController extends Controller
         ]);
 
         $association->update($validated);
+        $this->syncInsurancePaymentConcepts($association->fresh(), $request->user()?->id);
 
         return back()->with('success', 'Settings saved.');
+    }
+
+    public function syncInsuranceConcepts(Request $request)
+    {
+        $association = $this->resolveScopedAssociation($request);
+
+        $this->syncInsurancePaymentConcepts($association, $request->user()?->id);
+
+        return back()->with('success', 'Concepto de seguro sincronizado en todos los clubes.');
     }
 
     public function churches(Request $request)

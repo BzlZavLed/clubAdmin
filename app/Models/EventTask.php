@@ -18,6 +18,7 @@ class EventTask extends Model
         'assigned_to_user_id',
         'due_at',
         'status',
+        'responsibility_level',
         'checklist_json',
     ];
 
@@ -39,5 +40,10 @@ class EventTask extends Model
     public function formResponse()
     {
         return $this->hasOne(TaskFormResponse::class, 'event_task_id');
+    }
+
+    public function assignments()
+    {
+        return $this->hasMany(EventTaskAssignment::class);
     }
 }

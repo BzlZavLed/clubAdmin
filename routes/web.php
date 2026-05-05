@@ -32,6 +32,7 @@ use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Controllers\WorkplanController;
 use App\Http\Controllers\ClubSettingsController;
 use App\Http\Controllers\EventController;
+use App\Http\Controllers\EventClubSettlementController;
 use App\Http\Controllers\EventPlanController;
 use App\Http\Controllers\EventTaskController;
 use App\Http\Controllers\EventBudgetItemController;
@@ -176,6 +177,7 @@ Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->g
     Route::patch('/association/clubs/{club}/members/{member}/insurance', [AssociationController::class, 'toggleMemberInsurance'])->name('association.clubs.members.insurance');
     Route::get('/association/settings', [AssociationController::class, 'associationSettings'])->name('association.settings');
     Route::patch('/association/settings', [AssociationController::class, 'updateAssociationSettings'])->name('association.settings.update');
+    Route::post('/association/settings/sync-concept', [AssociationController::class, 'syncInsuranceConcepts'])->name('association.settings.sync-concept');
     Route::get('/association/churches', [AssociationController::class, 'churches'])->name('association.churches');
     Route::post('/association/churches', [AssociationController::class, 'storeChurch'])->name('association.churches.store');
     Route::patch('/association/churches/{church}', [AssociationController::class, 'updateChurch'])->name('association.churches.update');
@@ -758,6 +760,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 // ---------------------------------
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('events', EventController::class);
+    Route::post('/events/{event}/club-signup', [EventController::class, 'updateClubSignup'])->name('events.club-signup');
+    Route::post('/events/{event}/club-settlements', [EventClubSettlementController::class, 'store'])->name('event-club-settlements.store');
+    Route::get('/event-club-settlements/{settlement}/receipt', [EventClubSettlementController::class, 'download'])->name('event-club-settlements.download');
     Route::get('/events/{event}/pdf', [EventController::class, 'pdf'])->name('events.pdf');
     Route::patch('/event-plans/{event}', [EventPlanController::class, 'update'])->name('event-plans.update');
 

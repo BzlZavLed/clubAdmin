@@ -18,6 +18,9 @@ class Event extends Model
 
     protected $fillable = [
         'club_id',
+        'scope_type',
+        'scope_id',
+        'target_club_types',
         'created_by_user_id',
         'title',
         'description',
@@ -31,6 +34,7 @@ class Event extends Model
         'budget_estimated_total',
         'budget_actual_total',
         'requires_approval',
+        'is_mandatory',
         'is_payable',
         'payment_amount',
         'payment_concept_id',
@@ -40,7 +44,9 @@ class Event extends Model
     protected $casts = [
         'start_at' => 'datetime',
         'end_at' => 'datetime',
+        'target_club_types' => 'array',
         'requires_approval' => 'boolean',
+        'is_mandatory' => 'boolean',
         'is_payable' => 'boolean',
         'budget_estimated_total' => 'decimal:2',
         'budget_actual_total' => 'decimal:2',
@@ -54,6 +60,19 @@ class Event extends Model
     public function club()
     {
         return $this->belongsTo(Club::class);
+    }
+
+    public function targetClubs()
+    {
+        return $this->belongsToMany(Club::class, 'event_target_club')
+            ->withPivot(['signup_status', 'signed_up_at', 'signup_notes'])
+            ->withTimestamps()
+            ->orderBy('club_name');
+    }
+
+    public function feeComponents()
+    {
+        return $this->hasMany(EventFeeComponent::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function creator()
@@ -104,6 +123,16 @@ class Event extends Model
     public function paymentConcept()
     {
         return $this->belongsTo(PaymentConcept::class);
+    }
+
+    public function paymentConcepts()
+    {
+        return $this->hasMany(PaymentConcept::class);
+    }
+
+    public function settlements()
+    {
+        return $this->hasMany(EventClubSettlement::class);
     }
 
     public static function editableStatuses(): array

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
+import { XMarkIcon } from '@heroicons/vue/24/outline'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
 import { fetchMyChurchAdminCatalog, removeClubLogo, saveMyChurchAdminConfig, uploadClubLogo } from '@/Services/api'
@@ -174,15 +175,17 @@ async function saveConfig() {
                         </p>
                     </div>
                     <div class="w-full sm:w-auto">
-                        <div v-if="logoUrl" class="flex items-center gap-3">
+                        <div v-if="logoUrl" class="flex items-start gap-3">
                             <img :src="logoUrl" alt="Logo del club" class="h-20 w-20 rounded border object-contain bg-white p-2" />
                             <button
                                 type="button"
-                                class="px-3 py-2 border border-red-200 text-red-700 rounded text-sm disabled:opacity-60"
+                                class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 text-red-700 transition hover:bg-red-50 disabled:opacity-60"
                                 :disabled="logoUploading || !hasClubSelected"
+                                aria-label="Remover logo"
+                                title="Remover logo"
                                 @click="deleteLogo"
                             >
-                                Remover
+                                <XMarkIcon class="h-5 w-5" />
                             </button>
                         </div>
                         <div v-else class="h-20 w-20 rounded border border-dashed bg-gray-50 text-xs text-gray-500 flex items-center justify-center text-center p-2">

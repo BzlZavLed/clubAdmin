@@ -3,6 +3,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import InputLabel from '@/Components/InputLabel.vue'
 import InputError from '@/Components/InputError.vue'
 import PrimaryButton from '@/Components/PrimaryButton.vue'
+import SecondaryButton from '@/Components/SecondaryButton.vue'
 import { useForm, usePage } from '@inertiajs/vue3'
 import { useLocale } from '@/Composables/useLocale'
 
@@ -17,8 +18,14 @@ const form = useForm({
     insurance_payment_amount: props.association.insurance_payment_amount ?? '',
 })
 
+const syncForm = useForm({})
+
 const submit = () => {
     form.patch(route('association.settings.update'), { preserveScroll: true })
+}
+
+const syncConcept = () => {
+    syncForm.post(route('association.settings.sync-concept'), { preserveScroll: true })
 }
 </script>
 
@@ -65,10 +72,17 @@ const submit = () => {
                         </p>
                     </div>
 
-                    <div>
+                    <div class="flex flex-wrap items-center gap-3">
                         <PrimaryButton type="submit" :disabled="form.processing">
                             {{ tr('Guardar cambios', 'Save changes') }}
                         </PrimaryButton>
+                        <SecondaryButton
+                            type="button"
+                            :disabled="syncForm.processing"
+                            @click="syncConcept"
+                        >
+                            {{ tr('Sincronizar concepto', 'Sync concept') }}
+                        </SecondaryButton>
                     </div>
                 </form>
             </div>

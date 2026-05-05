@@ -115,24 +115,26 @@ class ParentPaymentController extends Controller
                     $query->whereNull('deleted_at')
                         ->with(['class:id,class_name']);
                 },
+                'event:id,title,start_at',
+                'eventFeeComponent:id,label',
             ])
             ->orderBy('payment_expected_by')
             ->orderBy('concept')
-            ->get(['id', 'club_id', 'concept', 'amount', 'payment_expected_by', 'type', 'pay_to', 'reusable']);
+            ->get(['id', 'club_id', 'concept', 'amount', 'payment_expected_by', 'type', 'pay_to', 'reusable', 'event_id', 'event_fee_component_id']);
 
         if ($concepts->isEmpty()) {
             return collect();
         }
 
-        $eventsByConceptId = Event::query()
-            ->whereIn('payment_concept_id', $concepts->pluck('id'))
+        $eventsById = Event::query()
+            ->whereIn('id', $concepts->pluck('event_id')->filter()->unique())
             ->with([
                 'participants' => fn ($query) => $query
                     ->whereIn('member_id', $memberIds)
                     ->select('id', 'event_id', 'member_id', 'status'),
             ])
-            ->get(['id', 'club_id', 'title', 'start_at', 'payment_concept_id'])
-            ->keyBy('payment_concept_id');
+            ->get(['id', 'club_id', 'title', 'start_at'])
+            ->keyBy('id');
 
         $paymentTotals = Payment::query()
             ->whereIn('member_id', $memberIds)
@@ -155,7 +157,7 @@ class ParentPaymentController extends Controller
         $rows = collect();
 
         foreach ($concepts as $concept) {
-            $event = $eventsByConceptId->get($concept->id);
+            $event = $concept->event_id ? $eventsById->get((int) $concept->event_id) : null;
             $matchedMembers = collect();
             $scopeLabels = [];
 
@@ -240,6 +242,7 @@ class ParentPaymentController extends Controller
                     'status' => $status,
                     'event_id' => $event?->id,
                     'event_title' => $event?->title,
+                    'event_component_label' => $concept->eventFeeComponent?->label,
                     'event_start_at' => $event?->start_at?->toDateTimeString(),
                     'can_submit_transfer' => $concept->reusable || $remainingAmount > 0.0001,
                 ]);

@@ -13,6 +13,7 @@ use App\Models\DistrictWorkplanEvent;
 use App\Models\DistrictWorkplanPublication;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
+use App\Models\PaymentConcept;
 use App\Models\Union;
 use App\Models\User;
 use App\Services\WorkplanPropagationService;
@@ -26,6 +27,52 @@ use Inertia\Inertia;
 
 class DistrictController extends Controller
 {
+    protected function syncClubInsurancePaymentConcept(Club $club, ?int $actorId = null): void
+    {
+        $club->loadMissing('district.association');
+
+        $amount = (float) ($club->district?->association?->insurance_payment_amount ?? 0);
+        $concept = PaymentConcept::withTrashed()
+            ->where('club_id', $club->id)
+            ->where('concept', 'Seguro de membresía')
+            ->where('pay_to', 'church_budget')
+            ->first();
+
+        if ($amount <= 0) {
+            if ($concept) {
+                $concept->update([
+                    'amount' => 0,
+                    'status' => 'inactive',
+                    'reusable' => true,
+                ]);
+            }
+
+            return;
+        }
+
+        if ($concept && method_exists($concept, 'trashed') && $concept->trashed()) {
+            $concept->restore();
+        }
+
+        $concept ??= PaymentConcept::create([
+            'club_id' => $club->id,
+            'concept' => 'Seguro de membresía',
+            'pay_to' => 'church_budget',
+            'type' => 'mandatory',
+            'status' => 'active',
+            'created_by' => $actorId,
+            'amount' => $amount,
+            'reusable' => true,
+        ]);
+
+        $concept->update([
+            'amount' => $amount,
+            'type' => 'mandatory',
+            'status' => 'active',
+            'reusable' => true,
+        ]);
+    }
+
     public function index()
     {
         return Inertia::render('SuperAdmin/Districts', [
@@ -363,7 +410,7 @@ class DistrictController extends Controller
             return back()->withErrors(['club_type' => 'This church already has a club of this type.']);
         }
 
-        Club::query()->create([
+        $club = Club::query()->create([
             'club_name' => $validated['club_name'],
             'club_type' => $validated['club_type'],
             'creation_date' => $validated['creation_date'] ?? null,
@@ -377,6 +424,7 @@ class DistrictController extends Controller
             'user_id' => null,
             'director_name' => null,
         ]);
+        $this->syncClubInsurancePaymentConcept($club, $request->user()?->id);
 
         return back()->with('success', 'Club created. Assign a director to activate it.');
     }

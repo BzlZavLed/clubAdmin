@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios'
-import { router } from '@inertiajs/vue3'
+import { router, usePage } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import PlanSectionsAccordion from '@/Components/EventPlanner/PlanSectionsAccordion.vue'
 import RecommendationsCards from '@/Components/EventPlanner/RecommendationsCards.vue'
@@ -19,6 +19,26 @@ const props = defineProps({
     participants: Array,
     documents: Array,
     placeOptions: Array,
+    feeComponents: {
+        type: Array,
+        default: () => [],
+    },
+    supportsClubOperations: {
+        type: Boolean,
+        default: true,
+    },
+    scopeLabel: {
+        type: String,
+        default: '',
+    },
+    targetClubs: {
+        type: Array,
+        default: () => [],
+    },
+    clubSignupSummary: {
+        type: Array,
+        default: () => [],
+    },
     members: Array,
     classes: Array,
     staff: Array,
@@ -26,12 +46,25 @@ const props = defineProps({
     parents: Array,
     paymentSummary: Object,
     paymentConfig: Object,
+    canEditEvent: {
+        type: Boolean,
+        default: false,
+    },
+    taskResponsibilityOptions: {
+        type: Array,
+        default: () => [],
+    },
+    manageableSettlementClubIds: {
+        type: Array,
+        default: () => [],
+    },
     paymentRecords: Array,
     serpApiUsage: Object,
 })
 
 const activeTab = ref('tasks')
 const { tr } = useLocale()
+const page = usePage()
 
 const eventState = ref(props.event)
 const planState = ref(props.eventPlan)
@@ -40,6 +73,7 @@ const budgetState = ref(props.budgetItems || [])
 const participantsState = ref(props.participants || [])
 const documentsState = ref(props.documents || [])
 const placeOptionsState = ref(props.placeOptions || [])
+const feeComponentsState = ref(props.feeComponents || [])
 const membersState = ref(props.members || [])
 const classesState = ref(props.classes || [])
 const staffState = ref(props.staff || [])
@@ -49,6 +83,39 @@ const paymentSummaryState = ref(props.paymentSummary || { total_received: 0, by_
 const paymentConfigState = ref(props.paymentConfig || { concept_id: null, concept_label: null, amount: null, is_payable: false })
 const paymentRecordsState = ref(props.paymentRecords || [])
 const serpApiUsageState = ref(props.serpApiUsage || { month: null, limit: 250, used: 0, remaining: 250 })
+const supportsClubOperations = computed(() => !!props.supportsClubOperations)
+const canManageTasks = computed(() => !!props.canEditEvent)
+const effectiveProfileType = computed(() => {
+    const authUser = page.props.auth?.user || null
+    if (authUser?.profile_type !== 'superadmin') {
+        return authUser?.profile_type || null
+    }
+
+    return page.props.auth?.superadmin_context?.role || 'superadmin'
+})
+const isDownstreamClubViewer = computed(() => {
+    return !props.canEditEvent && ['club_director', 'club_personal'].includes(effectiveProfileType.value || '')
+})
+const taskResponsibilityOptions = computed(() => props.taskResponsibilityOptions || [])
+const targetClubSummaryByDistrict = computed(() => {
+    const groups = new Map()
+
+    ;(props.clubSignupSummary || []).forEach((club) => {
+        const districtKey = `${club.district_id || 0}`
+        if (!groups.has(districtKey)) {
+            groups.set(districtKey, {
+                district_id: club.district_id || 0,
+                district_name: club.district_name || 'Sin distrito',
+                clubs: [],
+            })
+        }
+        groups.get(districtKey).clubs.push(club)
+    })
+
+    return Array.from(groups.values())
+})
+const feeComponentsTotal = computed(() => feeComponentsState.value.reduce((total, component) => total + Number(component?.amount || 0), 0))
+const manageableSettlementClubIds = computed(() => new Set((props.manageableSettlementClubIds || []).map((id) => Number(id))))
 const transportMode = ref(planState.value?.plan_json?.transportation_mode || null)
 const autoCreateBudgetItem = ref(planState.value?.plan_json?.preferences?.auto_create_budget_item || false)
 const isPrivateTransport = computed(() => transportMode.value === 'private')
@@ -58,6 +125,39 @@ const formatMoney = (value) => {
     const num = Number(value || 0)
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(num)
 }
+
+const taskInstanceKey = (task) => task?.instance_key || (task?.active_assignment_id ? `task:${task.id}:assignment:${task.active_assignment_id}` : `task:${task?.id}`)
+const openChecklistTasks = ref({})
+const eventTasksExpanded = ref(false)
+const taskDomId = (task) => `event-task-${taskInstanceKey(task).replace(/[^a-zA-Z0-9_-]/g, '-')}`
+const taskOwnerLabel = (task) => task?.responsibility_label || task?.assignment_scope_label || tr('Organizador', 'Organizer')
+const isTaskOpen = (task) => !!openChecklistTasks.value[taskInstanceKey(task)]
+const setTaskOpen = (task, open) => {
+    openChecklistTasks.value = {
+        ...openChecklistTasks.value,
+        [taskInstanceKey(task)]: !!open,
+    }
+}
+const openTaskFromIndex = async (task) => {
+    eventTasksExpanded.value = true
+    setTaskOpen(task, true)
+    await nextTick()
+    const target = document.getElementById(taskDomId(task))
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const taskRequestPayload = (task, overrides = {}) => ({
+    title: task.title,
+    description: task.description,
+    assigned_to_user_id: task.assigned_to_user_id,
+    due_at: task.due_at,
+    status: task.status,
+    responsibility_level: task.responsibility_level || 'organizer',
+    checklist_json: task.checklist_json,
+    ...(task.active_assignment_id ? { assignment_id: task.active_assignment_id } : {}),
+    ...overrides,
+})
 
 const toLocalInput = (value) => {
     if (!value) return ''
@@ -80,12 +180,24 @@ const eventForm = ref({
     end_at: toLocalInput(eventState.value?.end_at),
     timezone: eventState.value?.timezone || 'America/New_York',
     status: eventState.value?.status || 'draft',
-    is_payable: !!eventState.value?.is_payable,
-    payment_amount: eventState.value?.payment_amount ?? '',
+    is_mandatory: !!eventState.value?.is_mandatory,
+    fee_components: (props.feeComponents || []).map((component) => ({
+        label: component.label || '',
+        amount: component.amount ?? '',
+    })),
 })
 const eventFormSaving = ref(false)
 const eventFormError = ref('')
 const showEventModal = ref(false)
+const showSettlementModal = ref(false)
+const settlementModalClub = ref(null)
+const settlementForm = ref({
+    deposited_at: new Date().toISOString().slice(0, 16),
+    reference: '',
+    notes: '',
+})
+const settlementError = ref('')
+const settlementSaving = ref(false)
 
 const saveEventBasics = async () => {
     eventFormSaving.value = true
@@ -102,8 +214,13 @@ const saveEventBasics = async () => {
         budget_actual_total: eventState.value.budget_actual_total,
         requires_approval: eventState.value.requires_approval,
         risk_level: eventState.value.risk_level,
-        is_payable: eventForm.value.is_payable,
-        payment_amount: eventForm.value.is_payable ? eventForm.value.payment_amount : null,
+        is_mandatory: eventForm.value.is_mandatory,
+        fee_components: (eventForm.value.fee_components || [])
+            .filter((component) => String(component.label || '').trim() !== '' && Number(component.amount || 0) > 0)
+            .map((component) => ({
+                label: String(component.label || '').trim(),
+                amount: Number(component.amount || 0),
+            })),
     }
 
     router.put(route('events.update', eventState.value.id), payload, {
@@ -133,8 +250,22 @@ watch(() => props.event, (nextEvent) => {
         end_at: toLocalInput(nextEvent.end_at),
         timezone: nextEvent.timezone || 'America/New_York',
         status: nextEvent.status || 'draft',
-        is_payable: !!nextEvent.is_payable,
-        payment_amount: nextEvent.payment_amount ?? '',
+        is_mandatory: !!nextEvent.is_mandatory,
+        fee_components: (props.feeComponents || []).map((component) => ({
+            label: component.label || '',
+            amount: component.amount ?? '',
+        })),
+    }
+})
+
+watch(() => props.feeComponents, (nextComponents) => {
+    feeComponentsState.value = nextComponents || []
+    eventForm.value = {
+        ...eventForm.value,
+        fee_components: (nextComponents || []).map((component) => ({
+            label: component.label || '',
+            amount: component.amount ?? '',
+        })),
     }
 })
 
@@ -181,6 +312,73 @@ const selectedPlaceOption = computed(() => {
 
 const showRecommendations = ref(!selectedPlaceOption.value)
 
+watch(supportsClubOperations, (value) => {
+    if (!value && ['budget'].includes(activeTab.value)) {
+        activeTab.value = 'tasks'
+    }
+}, { immediate: true })
+
+const updateClubSignupStatus = (club, signupStatus) => {
+    router.post(route('events.club-signup', { event: eventState.value.id }), {
+        club_id: club.club_id,
+        signup_status: signupStatus,
+    }, {
+        preserveScroll: true,
+    })
+}
+
+const addEventFeeComponent = () => {
+    eventForm.value.fee_components.push({
+        label: '',
+        amount: '',
+    })
+}
+
+const removeEventFeeComponent = (index) => {
+    eventForm.value.fee_components.splice(index, 1)
+}
+
+const canRecordSettlementForClub = (club) => manageableSettlementClubIds.value.has(Number(club.club_id))
+
+const openSettlementModal = (club) => {
+    settlementModalClub.value = club
+    settlementError.value = ''
+    settlementSaving.value = false
+    settlementForm.value = {
+        deposited_at: new Date().toISOString().slice(0, 16),
+        reference: '',
+        notes: '',
+    }
+    showSettlementModal.value = true
+}
+
+const saveSettlementReceipt = () => {
+    if (!settlementModalClub.value) return
+    settlementSaving.value = true
+    settlementError.value = ''
+
+    router.post(route('event-club-settlements.store', { event: eventState.value.id }), {
+        club_id: settlementModalClub.value.club_id,
+        deposited_at: settlementForm.value.deposited_at,
+        reference: settlementForm.value.reference || null,
+        notes: settlementForm.value.notes || null,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            showSettlementModal.value = false
+            settlementSaving.value = false
+        },
+        onError: (errors) => {
+            const firstError = Object.values(errors || {})[0]
+            settlementError.value = Array.isArray(firstError) ? firstError[0] : (firstError || tr('No se pudo generar el recibo.', 'Unable to generate the receipt.'))
+            settlementSaving.value = false
+        },
+        onFinish: () => {
+            settlementSaving.value = false
+        },
+    })
+}
+
 watch(selectedPlaceOption, (value) => {
     if (!value) {
         showRecommendations.value = true
@@ -209,6 +407,13 @@ const selectedPlaceDetails = computed(() => {
 })
 
 const normalizedTaskTitle = (task) => String(task?.title || '').trim().toLowerCase()
+const taskDedupKey = (task) => {
+    const scopeKey = task?.active_assignment_id
+        ? `${task.assignment_scope_type || 'scope'}:${task.assignment_scope_id || task.active_assignment_id}`
+        : 'organizer'
+
+    return `${normalizedTaskTitle(task)}|${scopeKey}`
+}
 
 const checklistTasks = computed(() => {
     const candidates = (tasksState.value || []).filter((task) => {
@@ -218,7 +423,7 @@ const checklistTasks = computed(() => {
 
     const byTitle = new Map()
     for (const task of candidates) {
-        const key = normalizedTaskTitle(task)
+        const key = taskDedupKey(task)
         if (!key) continue
         const current = byTitle.get(key)
         if (!current) {
@@ -248,6 +453,153 @@ const checklistTasks = computed(() => {
 
     return Array.from(byTitle.values())
 })
+
+const summarizeAssignmentRows = (rows) => {
+    const total = rows.length
+    const done = rows.filter((row) => row.status === 'done').length
+    return {
+        total,
+        done,
+        pending: Math.max(total - done, 0),
+    }
+}
+
+const taskTrackingTree = (task) => {
+    const details = Array.isArray(task?.assignment_details) ? task.assignment_details : []
+    const scopeType = eventState.value?.scope_type || 'club'
+    const responsibilityLevel = task?.responsibility_level || 'organizer'
+
+    if (!details.length || scopeType === 'club' || responsibilityLevel === 'organizer') {
+        return []
+    }
+
+    if (scopeType === 'district') {
+        return details.map((row) => ({
+            key: `club-${row.id}`,
+            label: row.club_name || row.scope_label,
+            summary: summarizeAssignmentRows([row]),
+            rows: [row],
+            children: [],
+        }))
+    }
+
+    if (scopeType === 'association') {
+        if (responsibilityLevel === 'district') {
+            return details.map((row) => ({
+                key: `district-${row.id}`,
+                label: row.district_name || row.scope_label,
+                summary: summarizeAssignmentRows([row]),
+                rows: [row],
+                children: [],
+            }))
+        }
+
+        const byDistrict = new Map()
+        details.forEach((row) => {
+            const key = `${row.district_id || row.scope_id}`
+            if (!byDistrict.has(key)) {
+                byDistrict.set(key, {
+                    key: `district-${key}`,
+                    label: row.district_name || 'Sin distrito',
+                    rows: [],
+                })
+            }
+            byDistrict.get(key).rows.push(row)
+        })
+
+        return Array.from(byDistrict.values()).map((group) => ({
+            key: group.key,
+            label: group.label,
+            summary: summarizeAssignmentRows(group.rows),
+            rows: [],
+            children: group.rows.map((row) => ({
+                key: `club-${row.id}`,
+                label: row.club_name || row.scope_label,
+                summary: summarizeAssignmentRows([row]),
+                rows: [row],
+                children: [],
+            })),
+        }))
+    }
+
+    if (scopeType === 'union') {
+        if (responsibilityLevel === 'association') {
+            return details.map((row) => ({
+                key: `association-${row.id}`,
+                label: row.association_name || row.scope_label,
+                summary: summarizeAssignmentRows([row]),
+                rows: [row],
+                children: [],
+            }))
+        }
+
+        const byAssociation = new Map()
+        details.forEach((row) => {
+            const associationKey = `${row.association_id || 0}`
+            if (!byAssociation.has(associationKey)) {
+                byAssociation.set(associationKey, {
+                    key: `association-${associationKey}`,
+                    label: row.association_name || 'Sin asociacion',
+                    rows: [],
+                })
+            }
+            byAssociation.get(associationKey).rows.push(row)
+        })
+
+        return Array.from(byAssociation.values()).map((associationGroup) => {
+            if (responsibilityLevel === 'district') {
+                return {
+                    key: associationGroup.key,
+                    label: associationGroup.label,
+                    summary: summarizeAssignmentRows(associationGroup.rows),
+                    rows: [],
+                    children: associationGroup.rows.map((row) => ({
+                        key: `district-${row.id}`,
+                        label: row.district_name || row.scope_label,
+                        summary: summarizeAssignmentRows([row]),
+                        rows: [row],
+                        children: [],
+                    })),
+                }
+            }
+
+            const byDistrict = new Map()
+            associationGroup.rows.forEach((row) => {
+                const districtKey = `${row.district_id || 0}`
+                if (!byDistrict.has(districtKey)) {
+                    byDistrict.set(districtKey, {
+                        key: `district-${districtKey}`,
+                        label: row.district_name || 'Sin distrito',
+                        rows: [],
+                    })
+                }
+                byDistrict.get(districtKey).rows.push(row)
+            })
+
+            return {
+                key: associationGroup.key,
+                label: associationGroup.label,
+                summary: summarizeAssignmentRows(associationGroup.rows),
+                rows: [],
+                children: Array.from(byDistrict.values()).map((districtGroup) => ({
+                    key: districtGroup.key,
+                    label: districtGroup.label,
+                    summary: summarizeAssignmentRows(districtGroup.rows),
+                    rows: [],
+                    children: districtGroup.rows.map((row) => ({
+                        key: `club-${row.id}`,
+                        label: row.club_name || row.scope_label,
+                        summary: summarizeAssignmentRows([row]),
+                        rows: [row],
+                        children: [],
+                    })),
+                })),
+            }
+        })
+    }
+
+    return []
+}
 
 const permissionSlipStats = computed(() => {
     const kids = (participantsState.value || []).filter((participant) => participant.role === 'kid')
@@ -513,6 +865,8 @@ const closeTaskInfoModal = () => {
 }
 
 const syncMissingItems = async (tasks = checklistTasks.value) => {
+    if (!canManageTasks.value) return
+
     const remaining = tasks
         .filter((task) => task.status !== 'done')
         .map((task) => task.title)
@@ -529,7 +883,9 @@ const ensureTaskResponseForCompletion = async (task) => {
     if (!task?.id || task?.form_response?.data_json) return null
 
     try {
-        const { data } = await axios.get(route('event-tasks.form.show', { eventTask: task.id }))
+        const { data } = await axios.get(route('event-tasks.form.show', { eventTask: task.id }), {
+            params: task.active_assignment_id ? { assignment_id: task.active_assignment_id } : {},
+        })
         const schema = data?.schema?.schema_json || null
         const existingResponse = data?.response || null
         const prefill = data?.prefill || null
@@ -547,6 +903,7 @@ const ensureTaskResponseForCompletion = async (task) => {
 
         const { data: responseData } = await axios.put(route('event-tasks.form.update', { eventTask: task.id }), {
             data_json: prefill,
+            ...(task.active_assignment_id ? { assignment_id: task.active_assignment_id } : {}),
         })
 
         mergeTaskIntoState({
@@ -561,18 +918,15 @@ const ensureTaskResponseForCompletion = async (task) => {
 }
 
 const toggleChecklistTask = async (task) => {
+    if (!task?.can_complete_task) return
+
     const nextStatus = task.status === 'done' ? 'todo' : 'done'
     if (nextStatus === 'done') {
         await ensureTaskResponseForCompletion(task)
     }
-    const { data } = await axios.put(route('event-tasks.update', { eventTask: task.id }), {
-        title: task.title,
-        description: task.description,
-        assigned_to_user_id: task.assigned_to_user_id,
-        due_at: task.due_at,
+    const { data } = await axios.put(route('event-tasks.update', { eventTask: task.id }), taskRequestPayload(task, {
         status: nextStatus,
-        checklist_json: task.checklist_json,
-    })
+    }))
     mergeTaskIntoState(data.task)
     await syncMissingItems()
 }
@@ -628,8 +982,10 @@ const showAttendeeToast = (message, type = 'success') => {
 }
 
 const mergeTaskIntoState = (nextTask) => {
+    const nextKey = taskInstanceKey(nextTask)
+
     tasksState.value = tasksState.value.map((item) => {
-        if (item.id !== nextTask.id) return item
+        if (taskInstanceKey(item) !== nextKey) return item
         return {
             ...item,
             ...nextTask,
@@ -649,23 +1005,35 @@ const cancelTaskTitleEdit = () => {
 }
 
 const saveTaskTitleEdit = async (task) => {
+    if (!task?.can_manage_definition) {
+        cancelTaskTitleEdit()
+        return
+    }
+
     const nextTitle = String(editingTaskTitle.value || '').trim()
     if (!nextTitle || nextTitle === task.title) {
         cancelTaskTitleEdit()
         return
     }
 
-    const { data } = await axios.put(route('event-tasks.update', { eventTask: task.id }), {
+    const { data } = await axios.put(route('event-tasks.update', { eventTask: task.id }), taskRequestPayload(task, {
         title: nextTitle,
-        description: task.description,
-        assigned_to_user_id: task.assigned_to_user_id,
-        due_at: task.due_at,
-        status: task.status,
-        checklist_json: task.checklist_json,
-    })
+    }))
 
     mergeTaskIntoState(data.task)
     cancelTaskTitleEdit()
+    await syncMissingItems()
+}
+
+const updateTaskResponsibility = async (task, responsibilityLevel) => {
+    if (!task?.can_manage_definition) return
+
+    const { data } = await axios.put(route('event-tasks.update', { eventTask: task.id }), taskRequestPayload(task, {
+        responsibility_level: responsibilityLevel,
+    }))
+
+    mergeTaskIntoState(data.task)
+    await refreshTasks()
     await syncMissingItems()
 }
 
@@ -967,6 +1335,8 @@ const formatFieldValue = (field, value) => {
 }
 
 const openCustomFormBuilderModal = (task) => {
+    if (!task?.can_edit_form_definition) return
+
     customFormTask.value = task
     const existing = task?.checklist_json?.custom_form_schema
     customFormMode.value = existing?.mode === 'registry' ? 'registry' : 'single'
@@ -1013,7 +1383,7 @@ const removeCustomFormField = (index) => {
 }
 
 const saveCustomFormDefinition = async () => {
-    if (!customFormTask.value) return
+    if (!customFormTask.value?.can_edit_form_definition) return
     customFormError.value = ''
 
     const normalizedFields = customFormFields.value
@@ -1088,14 +1458,9 @@ const saveCustomFormDefinition = async () => {
         checklist.task_key = taskKeyFromTitle(customFormTask.value.title)
     }
 
-    const { data } = await axios.put(route('event-tasks.update', { eventTask: customFormTask.value.id }), {
-        title: customFormTask.value.title,
-        description: customFormTask.value.description,
-        assigned_to_user_id: customFormTask.value.assigned_to_user_id,
-        due_at: customFormTask.value.due_at,
-        status: customFormTask.value.status,
+    const { data } = await axios.put(route('event-tasks.update', { eventTask: customFormTask.value.id }), taskRequestPayload(customFormTask.value, {
         checklist_json: checklist,
-    })
+    }))
     mergeTaskIntoState(data.task)
     showCustomFormBuilder.value = false
     customFormTask.value = null
@@ -1104,7 +1469,7 @@ const saveCustomFormDefinition = async () => {
 }
 
 const suggestCustomFormDefinition = async () => {
-    if (!customFormTask.value) return
+    if (!customFormTask.value?.can_edit_form_definition) return
     if (customFormFields.value.length) {
         const shouldReplace = window.confirm(tr('Esto reemplazará temporalmente los campos actuales del constructor. Podrás editarlos antes de guardar. ¿Continuar?', 'This will temporarily replace the current builder fields. You can still edit them before saving. Continue?'))
         if (!shouldReplace) return
@@ -1156,6 +1521,7 @@ const uploadTaskFormImage = async (field, file) => {
             route('event-tasks.form.media', { eventTask: activeFormTask.value.id }),
             payload,
             {
+                params: activeFormTask.value.active_assignment_id ? { assignment_id: activeFormTask.value.active_assignment_id } : {},
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },
@@ -1204,6 +1570,7 @@ const addChecklistItem = async () => {
     const { data } = await axios.post(route('event-tasks.store', { event: eventState.value.id }), {
         title: label,
         status: 'todo',
+        responsibility_level: 'organizer',
         checklist_json: { source: 'event_checklist', task_key: taskKey },
     })
     tasksState.value = [...tasksState.value, data.task]
@@ -1212,8 +1579,10 @@ const addChecklistItem = async () => {
 }
 
 const removeChecklistTask = async (task) => {
+    if (!task?.can_manage_definition) return
+
     await axios.delete(route('event-tasks.destroy', { eventTask: task.id }))
-    tasksState.value = tasksState.value.filter((item) => item.id !== task.id)
+    tasksState.value = tasksState.value.filter((item) => taskInstanceKey(item) !== taskInstanceKey(task))
     await syncMissingItems()
 }
 
@@ -1245,7 +1614,9 @@ const openTaskForm = async (task) => {
     formLoading.value = true
     formError.value = ''
     try {
-        const { data } = await axios.get(route('event-tasks.form.show', { eventTask: task.id }))
+        const { data } = await axios.get(route('event-tasks.form.show', { eventTask: task.id }), {
+            params: task.active_assignment_id ? { assignment_id: task.active_assignment_id } : {},
+        })
         formSchema.value = data.schema?.schema_json || null
         const existingData = data.response?.data_json || data.prefill || {}
         if (data.schema?.schema_json?.mode === 'registry') {
@@ -1296,12 +1667,13 @@ const persistRegistryRows = async (rows) => {
     if (!activeFormTask.value) return
     const { data } = await axios.put(route('event-tasks.form.update', { eventTask: activeFormTask.value.id }), {
         data_json: { rows },
+        ...(activeFormTask.value.active_assignment_id ? { assignment_id: activeFormTask.value.active_assignment_id } : {}),
     })
     activeFormTask.value = {
         ...activeFormTask.value,
         form_response: data.response,
     }
-    tasksState.value = tasksState.value.map((item) => item.id === activeFormTask.value.id
+    tasksState.value = tasksState.value.map((item) => taskInstanceKey(item) === taskInstanceKey(activeFormTask.value)
         ? { ...item, form_response: data.response }
         : item)
 }
@@ -1764,14 +2136,9 @@ const refreshTransportationCompletion = async () => {
 
     const nextStatus = allComplete ? 'done' : 'todo'
     if (transportTaskRef && transportTaskRef.status !== nextStatus) {
-        const { data } = await axios.put(route('event-tasks.update', { eventTask: transportTaskRef.id }), {
-            title: transportTaskRef.title,
-            description: transportTaskRef.description,
-            assigned_to_user_id: transportTaskRef.assigned_to_user_id,
-            due_at: transportTaskRef.due_at,
+        const { data } = await axios.put(route('event-tasks.update', { eventTask: transportTaskRef.id }), taskRequestPayload(transportTaskRef, {
             status: nextStatus,
-            checklist_json: transportTaskRef.checklist_json,
-        })
+        }))
         transportTask.value = data.task
         mergeTaskIntoState(data.task)
         await syncMissingItems()
@@ -1819,14 +2186,9 @@ const finishAttendeeList = async () => {
             return key === 'finalize_attendee_list' || title.includes('finalize attendee list')
         })
         if (finalizeTask && finalizeTask.status !== 'done') {
-            const { data: taskData } = await axios.put(route('event-tasks.update', { eventTask: finalizeTask.id }), {
-                title: finalizeTask.title,
-                description: finalizeTask.description,
-                assigned_to_user_id: finalizeTask.assigned_to_user_id,
-                due_at: finalizeTask.due_at,
+            const { data: taskData } = await axios.put(route('event-tasks.update', { eventTask: finalizeTask.id }), taskRequestPayload(finalizeTask, {
                 status: 'done',
-                checklist_json: finalizeTask.checklist_json,
-            })
+            }))
             mergeTaskIntoState(taskData.task)
             await syncMissingItems()
         }
@@ -1968,12 +2330,13 @@ const saveTaskForm = async () => {
     try {
         const { data: responseData } = await axios.put(route('event-tasks.form.update', { eventTask: activeFormTask.value.id }), {
             data_json: formData.value || {},
+            ...(activeFormTask.value.active_assignment_id ? { assignment_id: activeFormTask.value.active_assignment_id } : {}),
         })
         activeFormTask.value = {
             ...activeFormTask.value,
             form_response: responseData.response,
         }
-        tasksState.value = tasksState.value.map((item) => item.id === activeFormTask.value.id
+        tasksState.value = tasksState.value.map((item) => taskInstanceKey(item) === taskInstanceKey(activeFormTask.value)
             ? { ...item, form_response: responseData.response }
             : item)
         const taskKey = activeFormTaskKey.value || activeFormTask.value?.checklist_json?.task_key
@@ -1985,14 +2348,9 @@ const saveTaskForm = async () => {
             await confirmEmergencyContacts()
         }
         if (['camp_reservation', 'emergency_contacts'].includes(taskKey)) {
-            const { data } = await axios.put(route('event-tasks.update', { eventTask: activeFormTask.value.id }), {
-                title: activeFormTask.value.title,
-                description: activeFormTask.value.description,
-                assigned_to_user_id: activeFormTask.value.assigned_to_user_id,
-                due_at: activeFormTask.value.due_at,
+            const { data } = await axios.put(route('event-tasks.update', { eventTask: activeFormTask.value.id }), taskRequestPayload(activeFormTask.value, {
                 status: 'done',
-                checklist_json: activeFormTask.value.checklist_json,
-            })
+            }))
             mergeTaskIntoState(data.task)
             await syncMissingItems()
         }
@@ -2026,6 +2384,8 @@ const expectedPaymentsTotal = computed(() => {
 const seededChecklist = ref(false)
 
 const cleanupLegacyChecklistDuplicates = async () => {
+    if (!canManageTasks.value) return
+
     const tasks = tasksState.value || []
     const seededTitles = new Set(
         tasks
@@ -2045,13 +2405,14 @@ const cleanupLegacyChecklistDuplicates = async () => {
         await axios.delete(route('event-tasks.destroy', { eventTask: task.id }))
     }
 
-    const duplicateIds = new Set(duplicates.map((task) => task.id))
-    tasksState.value = tasks.filter((task) => !duplicateIds.has(task.id))
+    const duplicateKeys = new Set(duplicates.map((task) => taskInstanceKey(task)))
+    tasksState.value = tasks.filter((task) => !duplicateKeys.has(taskInstanceKey(task)))
 }
 
 onMounted(async () => {
     await cleanupLegacyChecklistDuplicates()
     if (seededChecklist.value) return
+    if (!canManageTasks.value) return
     const missing = planState.value?.missing_items_json || []
     if (!missing.length || checklistTasks.value.length) return
 
@@ -2063,6 +2424,7 @@ onMounted(async () => {
         const { data } = await axios.post(route('event-tasks.store', { event: eventState.value.id }), {
             title: label,
             status: 'todo',
+            responsibility_level: 'organizer',
             checklist_json: { source: 'event_checklist', task_key: taskKey },
         })
         tasksState.value = [...tasksState.value, data.task]
@@ -2229,6 +2591,7 @@ const saveBudgetPreference = async (value) => {
         <div class="space-y-6">
             <div class="bg-white rounded-lg border p-4 relative">
                 <button
+                    v-if="canEditEvent"
                     type="button"
                     class="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
                      :title="tr('Editar detalles del evento', 'Edit event details')"
@@ -2239,6 +2602,10 @@ const saveBudgetPreference = async (value) => {
                     </svg>
                 </button>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <div class="text-xs text-gray-500">{{ tr('Scope', 'Scope') }}</div>
+                        <div class="font-semibold text-gray-800">{{ scopeLabel || '—' }}</div>
+                    </div>
                     <div>
                         <div class="text-xs text-gray-500">{{ tr('Tipo de evento', 'Event Type') }}</div>
                         <div class="font-semibold text-gray-800">{{ eventState.event_type }}</div>
@@ -2253,11 +2620,23 @@ const saveBudgetPreference = async (value) => {
                             {{ eventStatusLabel(eventState.effective_status || eventState.status) }}
                         </span>
                     </div>
-                    <div>
+                    <div v-if="supportsClubOperations">
                         <div class="text-xs text-gray-500">{{ tr('Pagos recibidos', 'Payments Received') }}</div>
                         <div class="font-semibold text-gray-800">
                             {{ formatMoney(paymentSummaryState.total_received || 0) }}
                         </div>
+                    </div>
+                </div>
+                <div v-if="targetClubs.length && !isDownstreamClubViewer" class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Clubes involucrados', 'Involved clubs') }}</div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <span
+                            v-for="club in targetClubs"
+                            :key="club.id"
+                            class="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-700 border"
+                        >
+                            {{ club.club_name }}<span v-if="club.church_name" class="ml-1 text-gray-400">· {{ club.church_name }}</span>
+                        </span>
                     </div>
                 </div>
                 <div class="mt-4">
@@ -2324,21 +2703,39 @@ const saveBudgetPreference = async (value) => {
                                     {{ tr('En curso y Pasado se calculan automáticamente por fecha.', 'Ongoing and Past are calculated automatically from the event dates.') }}
                                 </div>
                             </div>
-                            <div class="flex items-center gap-4">
+                            <div v-if="!supportsClubOperations" class="flex items-center gap-4">
                                 <label class="text-xs text-gray-600 flex items-center gap-2">
-                                    <input type="checkbox" v-model="eventForm.is_payable" />
-                                    {{ tr('Evento con pago', 'Payable event') }}
+                                    <input type="checkbox" v-model="eventForm.is_mandatory" />
+                                    {{ tr('Evento obligatorio', 'Mandatory event') }}
                                 </label>
-                                <input
-                                    v-model="eventForm.payment_amount"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    :disabled="!eventForm.is_payable"
-                                    class="w-28 border rounded px-3 py-2 text-sm disabled:bg-gray-100"
-                                    placeholder="0.00"
-                                />
                             </div>
+                        </div>
+                        <div class="rounded border border-gray-200 p-4 space-y-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <div class="text-xs font-semibold text-gray-700 uppercase tracking-wide">{{ tr('Desglose de inscripción', 'Signup fee breakdown') }}</div>
+                                    <div class="text-xs text-gray-500">{{ tr('Edita los componentes que se cobran por participante.', 'Edit the components charged per participant.') }}</div>
+                                </div>
+                                <div class="text-sm font-semibold text-gray-900">
+                                    ${{ eventForm.fee_components.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) }}
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <div
+                                    v-for="(component, index) in eventForm.fee_components"
+                                    :key="`edit-fee-component-${index}`"
+                                    class="grid grid-cols-1 gap-2 rounded border border-gray-200 p-3 md:grid-cols-[minmax(0,1fr)_140px_auto]"
+                                >
+                                    <input v-model="component.label" class="w-full border rounded px-3 py-2 text-sm" :placeholder="tr('Concepto', 'Component')" />
+                                    <input v-model="component.amount" type="number" step="0.01" min="0" class="w-full border rounded px-3 py-2 text-sm" placeholder="0.00" />
+                                    <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm text-red-700" @click="removeEventFeeComponent(index)">
+                                        {{ tr('Quitar', 'Remove') }}
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="button" class="rounded border px-3 py-2 text-sm text-gray-700" @click="addEventFeeComponent">
+                                {{ tr('Agregar componente', 'Add component') }}
+                            </button>
                         </div>
                         <div v-if="eventFormError" class="text-sm text-red-600">
                             {{ eventFormError }}
@@ -2355,6 +2752,68 @@ const saveBudgetPreference = async (value) => {
                             @click="saveEventBasics"
                         >
                             {{ eventFormSaving ? tr('Guardando...', 'Saving...') : tr('Guardar cambios', 'Save Changes') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                v-if="showSettlementModal && settlementModalClub"
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                @keydown.esc="showSettlementModal = false"
+            >
+                <div class="w-full max-w-lg rounded-lg bg-white border shadow-xl">
+                    <div class="flex items-center justify-between px-5 py-4 border-b">
+                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Recibo de deposito del club', 'Club deposit receipt') }}</h2>
+                        <button type="button" class="text-gray-500 hover:text-gray-700" @click="showSettlementModal = false">×</button>
+                    </div>
+                    <div class="p-5 space-y-4">
+                        <div>
+                            <div class="text-sm font-semibold text-gray-900">{{ settlementModalClub.club_name }}</div>
+                            <div class="text-xs text-gray-500">{{ settlementModalClub.district_name }}</div>
+                        </div>
+                        <div class="rounded border border-gray-200 p-3">
+                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{{ tr('Desglose a depositar', 'Breakdown to deposit') }}</div>
+                            <div class="space-y-2 text-sm">
+                                <div v-for="row in settlementModalClub.pending_settlement_breakdown || settlementModalClub.settlement_breakdown || []" :key="`${settlementModalClub.club_id}-${row.component_id || row.label}`" class="flex items-center justify-between">
+                                    <span>{{ row.label }}</span>
+                                    <span class="font-medium">${{ Number(row.amount || 0).toFixed(2) }}</span>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex items-center justify-between border-t pt-3 text-sm font-semibold">
+                                <span>{{ tr('Total', 'Total') }}</span>
+                                <span>${{ Number(settlementModalClub.pending_settlement_amount || 0).toFixed(2) }}</span>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-600">{{ tr('Fecha de deposito', 'Deposit date') }}</label>
+                                <input v-model="settlementForm.deposited_at" type="datetime-local" class="w-full border rounded px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-600">{{ tr('Referencia', 'Reference') }}</label>
+                                <input v-model="settlementForm.reference" class="w-full border rounded px-3 py-2 text-sm" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-600">{{ tr('Notas', 'Notes') }}</label>
+                            <textarea v-model="settlementForm.notes" rows="3" class="w-full border rounded px-3 py-2 text-sm"></textarea>
+                        </div>
+                        <div v-if="settlementError" class="text-sm text-red-600">
+                            {{ settlementError }}
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-end gap-2 px-5 py-4 border-t">
+                        <button type="button" class="px-3 py-1 rounded text-sm bg-gray-200 text-gray-700" @click="showSettlementModal = false">
+                            {{ tr('Cancelar', 'Cancel') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-60"
+                            :disabled="settlementSaving"
+                            @click="saveSettlementReceipt"
+                        >
+                            {{ settlementSaving ? tr('Guardando...', 'Saving...') : tr('Generar recibo', 'Generate receipt') }}
                         </button>
                     </div>
                 </div>
@@ -2427,136 +2886,518 @@ const saveBudgetPreference = async (value) => {
                             />
                         </div>
                     </div>
+                    <div v-if="feeComponentsState.length || targetClubSummaryByDistrict.length" class="bg-white rounded-lg border p-4 space-y-4">
+                        <div v-if="feeComponentsState.length">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-lg font-semibold text-gray-800">{{ tr('Desglose de inscripción', 'Signup fee breakdown') }}</h2>
+                                    <p class="text-sm text-gray-500">{{ tr('Cada componente se cobra por miembro participante.', 'Each component is charged per participating member.') }}</p>
+                                </div>
+                                <div class="text-sm font-semibold text-gray-900">
+                                    {{ tr('Total por miembro', 'Total per member') }}: ${{ feeComponentsTotal.toFixed(2) }}
+                                </div>
+                            </div>
+                            <div class="mt-3 overflow-x-auto">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-gray-50 text-gray-600">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left">{{ tr('Componente', 'Component') }}</th>
+                                            <th class="px-4 py-2 text-right">{{ tr('Monto', 'Amount') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="component in feeComponentsState" :key="component.id" class="border-t">
+                                            <td class="px-4 py-2 text-gray-800">{{ component.label }}</td>
+                                            <td class="px-4 py-2 text-right font-medium text-gray-900">${{ Number(component.amount || 0).toFixed(2) }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div v-if="targetClubSummaryByDistrict.length && !supportsClubOperations && !isDownstreamClubViewer">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-lg font-semibold text-gray-800">{{ tr('Clubes involucrados', 'Targeted clubs') }}</h2>
+                                    <p class="text-sm text-gray-500">{{ tr('Seguimiento por distrito de clubes inscritos, participantes esperados y pagos recibidos.', 'District-segmented tracking of signed-up clubs, expected participants, and received payments.') }}</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-3 space-y-4">
+                                <div v-for="district in targetClubSummaryByDistrict" :key="district.district_id" class="rounded-lg border border-gray-200">
+                                    <div class="border-b bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-800">
+                                        {{ district.district_name }}
+                                    </div>
+                                    <div class="space-y-3 p-3">
+                                        <details
+                                            v-for="club in district.clubs"
+                                            :key="club.club_id"
+                                            class="group rounded-lg border border-gray-200 bg-white"
+                                        >
+                                            <summary class="flex cursor-pointer list-none flex-col gap-3 px-4 py-3 marker:hidden sm:flex-row sm:items-center sm:justify-between">
+                                                <div class="min-w-0">
+                                                    <div class="flex flex-wrap items-center gap-2">
+                                                        <div class="font-medium text-gray-900 break-words">{{ club.club_name }}</div>
+                                                        <span
+                                                            class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
+                                                            :class="club.signup_status === 'signed_up' ? 'bg-emerald-100 text-emerald-700' : (club.signup_status === 'declined' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')"
+                                                        >
+                                                            {{ club.signup_status }}
+                                                        </span>
+                                                    </div>
+                                                    <div class="mt-1 text-xs text-gray-500 break-words">{{ club.church_name || '—' }}</div>
+                                                </div>
+                                                <div class="flex items-center gap-3 text-sm text-gray-600 sm:shrink-0">
+                                                    <div class="text-right">
+                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Participantes', 'Participants') }}</div>
+                                                        <div class="font-semibold text-gray-900">{{ club.participant_count }}</div>
+                                                    </div>
+                                                    <div class="text-right">
+                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Esperado', 'Expected') }}</div>
+                                                        <div class="font-semibold text-gray-900">${{ Number(club.expected_amount || 0).toFixed(2) }}</div>
+                                                    </div>
+                                                    <svg class="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                                                    </svg>
+                                                </div>
+                                            </summary>
+
+                                            <div class="border-t border-gray-200 px-4 py-4">
+                                                <div class="flex flex-wrap gap-2">
+                                                    <button type="button" class="rounded border px-2 py-1 text-xs text-emerald-700 border-emerald-200" @click="updateClubSignupStatus(club, 'signed_up')">
+                                                        {{ tr('Inscrito', 'Signed up') }}
+                                                    </button>
+                                                    <button type="button" class="rounded border px-2 py-1 text-xs text-red-700 border-red-200" @click="updateClubSignupStatus(club, 'declined')">
+                                                        {{ tr('No asistirá', 'Decline') }}
+                                                    </button>
+                                                    <button
+                                                        v-if="canRecordSettlementForClub(club) && Number(club.pending_settlement_amount || 0) > 0"
+                                                        type="button"
+                                                        class="rounded border px-2 py-1 text-xs text-blue-700 border-blue-200"
+                                                        @click="openSettlementModal(club)"
+                                                    >
+                                                        {{ tr('Generar recibo de deposito', 'Generate deposit receipt') }}
+                                                    </button>
+                                                    <template v-for="receipt in club.settlement_receipts || []" :key="receipt.id">
+                                                        <a
+                                                            :href="receipt.receipt_url"
+                                                            class="rounded border px-2 py-1 text-xs text-slate-700 border-slate-200"
+                                                        >
+                                                            {{ receipt.receipt_number }}
+                                                        </a>
+                                                    </template>
+                                                </div>
+
+                                                <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2">
+                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Esperado', 'Expected') }}</div>
+                                                        <div class="mt-2 space-y-1 text-xs text-gray-500">
+                                                            <div
+                                                                v-for="component in club.expected_breakdown || []"
+                                                                :key="`${club.club_id}-expected-${component.component_id}`"
+                                                                class="flex items-start justify-between gap-3"
+                                                            >
+                                                                <span class="break-words">{{ component.label }}</span>
+                                                                <span class="whitespace-nowrap font-medium text-gray-700">
+                                                                    ${{ Number(component.amount || 0).toFixed(2) }}
+                                                                </span>
+                                                            </div>
+                                                            <div
+                                                                v-if="!(club.expected_breakdown || []).length"
+                                                                class="text-gray-400"
+                                                            >
+                                                                {{ tr('Sin desglose disponible.', 'No breakdown available.') }}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2">
+                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cobrado por club', 'Collected by club') }}</div>
+                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.paid_amount || 0).toFixed(2) }}</div>
+                                                    </div>
+                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2">
+                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Pendiente de cobro', 'Still due from members') }}</div>
+                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.remaining_amount || 0).toFixed(2) }}</div>
+                                                    </div>
+                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2 xl:col-start-2">
+                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Depositado', 'Deposited') }}</div>
+                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.deposited_amount || 0).toFixed(2) }}</div>
+                                                    </div>
+                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2 xl:col-start-4">
+                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Listo para depositar', 'Ready to deposit') }}</div>
+                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.pending_settlement_amount || 0).toFixed(2) }}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </details>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="bg-white rounded-lg border p-4">
                         <div class="flex gap-3 mb-4">
                             <button @click="activeTab = 'tasks'" :class="activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Tareas', 'Tasks') }}</button>
-                            <button @click="activeTab = 'budget'" :class="activeTab === 'budget' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Presupuesto', 'Budget') }}</button>
+                            <button v-if="supportsClubOperations" @click="activeTab = 'budget'" :class="activeTab === 'budget' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Presupuesto', 'Budget') }}</button>
                             <button @click="activeTab = 'participants'" :class="activeTab === 'participants' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Participantes', 'Participants') }}</button>
                             <button @click="activeTab = 'documents'" :class="activeTab === 'documents' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Documentos', 'Documents') }}</button>
                         </div>
 
                         <div v-if="activeTab === 'tasks'">
-                            <div class="mb-4 rounded-lg border bg-gray-50 p-4">
-                                <div class="flex items-center justify-between mb-2">
-                                    <h3 class="text-sm font-semibold text-gray-800">{{ tr('Checklist del evento', 'Event Checklist') }}</h3>
-                                    <span class="text-xs text-gray-500">{{ missingCount }} {{ tr('pendientes', 'remaining') }}</span>
-                                </div>
-                                <div class="space-y-2">
+                            <div
+                                v-if="checklistTasks.length"
+                                class="mb-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3"
+                            >
+                                <button
+                                    v-for="task in checklistTasks"
+                                    :key="`index-${task.instance_key || task.id}`"
+                                    type="button"
+                                    class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+                                    @click="openTaskFromIndex(task)"
+                                >
+                                    <div class="text-sm font-medium text-gray-900 break-words">{{ task.title }}</div>
+                                    <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                                        <span class="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-medium text-violet-700">
+                                            {{ taskOwnerLabel(task) }}
+                                        </span>
+                                        <span
+                                            v-if="task.assignment_summary?.total"
+                                            class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700"
+                                        >
+                                            {{ task.assignment_summary.done }} / {{ task.assignment_summary.total }} {{ tr('completadas', 'completed') }}
+                                        </span>
+                                    </div>
+                                </button>
+                            </div>
+                            <details
+                                class="group mb-4 rounded-xl border bg-gray-50"
+                                :open="eventTasksExpanded"
+                                @toggle="eventTasksExpanded = $event.target.open"
+                            >
+                                <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 xl:px-6">
+                                    <div>
+                                        <h3 class="text-base font-semibold text-gray-800">{{ tr('Tareas del evento', 'Event tasks') }}</h3>
+                                        <div class="mt-1 text-xs text-gray-500">{{ missingCount }} {{ tr('pendientes', 'remaining') }}</div>
+                                    </div>
+                                    <svg class="h-4 w-4 text-gray-400 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                                    </svg>
+                                </summary>
+                                <div class="border-t border-gray-200 px-5 py-5 xl:px-6">
+                                <div class="space-y-3">
                                     <div v-if="!checklistTasks.length" class="text-xs text-gray-500">
                                         {{ tr('Aún no hay elementos del checklist.', 'No checklist items yet.') }}
                                     </div>
-                                    <label v-for="task in checklistTasks" :key="task.id" class="flex items-center justify-between gap-2 text-sm text-gray-700">
-                                        <span class="flex items-center gap-2">
-                                            <input type="checkbox" class="rounded border-gray-300 text-blue-600" :checked="task.status === 'done'" @change="toggleChecklistTask(task)" />
-                                            <template v-if="editingTaskId === task.id">
-                                                <input
-                                                    v-model="editingTaskTitle"
-                                                    type="text"
-                                                    class="w-72 rounded border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                                                    @click.stop
-                                                    @keydown.enter.prevent="saveTaskTitleEdit(task)"
-                                                    @keydown.esc.prevent="cancelTaskTitleEdit"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    class="text-xs text-blue-600 hover:text-blue-700"
-                                                    @click.prevent.stop="saveTaskTitleEdit(task)"
-                                                >
-                                                    {{ tr('Guardar', 'Save') }}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    class="text-xs text-gray-500 hover:text-gray-700"
-                                                    @click.prevent.stop="cancelTaskTitleEdit"
-                                                >
-                                                    {{ tr('Cancelar', 'Cancel') }}
-                                                </button>
-                                            </template>
-                                            <span v-else :class="task.status === 'done' ? 'line-through text-gray-400' : ''">{{ task.title }}</span>
-                                            <span
-                                                v-if="editingTaskId !== task.id && task.description"
-                                                class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 cursor-pointer"
-                                                :title="task.description"
-                                                @click.prevent.stop="openTaskInfoModal(task)"
-                                            >
-                                                Info
-                                            </span>
-                                            <span
-                                                v-if="isPermissionSlipTask(task)"
-                                                class="text-[11px] px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700"
-                                                :title="tr('Permisos recibidos', 'Permission slips received')"
-                                            >
-                                                {{ permissionSlipStats.received }} / {{ permissionSlipStats.required }} {{ tr('permisos', 'slips') }}
-                                            </span>
-                                            <span
-                                                v-if="hasFormForTask(task)"
-                                                class="text-green-600 text-xs font-semibold"
-                                                :title="tr('Formulario disponible', 'Form available')"
-                                            >
-                                                ✓
-                                            </span>
-                                            <span
-                                                v-else
-                                                class="text-red-600 text-xs font-semibold"
-                                                :title="tr('Sin formulario disponible', 'No form available')"
-                                            >
-                                                ✕
-                                            </span>
-                                        </span>
-                                        <span class="flex items-center gap-2">
-                                            <button
-                                                v-if="editingTaskId !== task.id"
-                                                type="button"
-                                                class="text-xs text-gray-500 hover:text-gray-700"
-                                                @click.prevent.stop="startTaskTitleEdit(task)"
-                                            >
-                                                {{ tr('Renombrar', 'Rename') }}
-                                            </button>
-                                            <button
-                                                v-if="isFinalizeAttendeeTask(task)"
-                                                type="button"
-                                                class="text-xs text-blue-600 hover:text-blue-700"
-                                                @click="activeTab = 'participants'"
-                                            >
-                                                Go to Participants
-                                            </button>
-                                            <button
-                                                v-else-if="hasFormForTask(task)"
-                                                type="button"
-                                                class="text-xs text-blue-600 hover:text-blue-700"
-                                                @click="openTaskForm(task)"
-                                            >
-                                                Open Form
-                                            </button>
-                                            <button
-                                                v-if="hasAiSuggestedForm(task)"
-                                                type="button"
-                                                class="text-xs text-amber-600 hover:text-amber-700"
-                                                @click="openCustomFormBuilderModal(task)"
-                                            >
-                                                Edit Form
-                                            </button>
-                                            <button
-                                                v-else
-                                                type="button"
-                                                class="text-xs text-amber-600 hover:text-amber-700"
-                                                @click="openCustomFormBuilderModal(task)"
-                                            >
-                                                Create Form
-                                            </button>
-                                            <button type="button" class="text-xs text-gray-400 hover:text-red-500" @click="removeChecklistTask(task)">
-                                                Remove
-                                            </button>
-                                        </span>
-                                    </label>
+                                    <div
+                                        v-for="task in checklistTasks"
+                                        :key="task.instance_key || task.id"
+                                        :id="taskDomId(task)"
+                                        class="rounded-xl border border-gray-200 bg-white shadow-sm"
+                                    >
+                                        <details
+                                            class="group"
+                                            :open="isTaskOpen(task)"
+                                            @toggle="setTaskOpen(task, $event.target.open)"
+                                        >
+                                            <summary class="flex cursor-pointer list-none items-start justify-between gap-3 px-5 py-4">
+                                                <div class="min-w-0">
+                                                    <div
+                                                        :class="[task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-900', 'text-sm font-semibold break-words']"
+                                                    >
+                                                        {{ task.title }}
+                                                    </div>
+                                                    <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                                                        <span class="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-medium text-violet-700">
+                                                            {{ taskOwnerLabel(task) }}
+                                                        </span>
+                                                        <span
+                                                            v-if="task.assignment_scope_label"
+                                                            class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-700"
+                                                        >
+                                                            {{ task.assignment_scope_label }}
+                                                        </span>
+                                                        <span
+                                                            v-if="task.assignment_summary?.total"
+                                                            class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700"
+                                                        >
+                                                            {{ task.assignment_summary.done }} / {{ task.assignment_summary.total }} {{ tr('completadas', 'completed') }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center gap-2">
+                                                    <span
+                                                        class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                                        :class="task.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
+                                                    >
+                                                        {{ task.status === 'done' ? tr('Completada', 'Done') : tr('Pendiente', 'Pending') }}
+                                                    </span>
+                                                    <svg class="mt-0.5 h-4 w-4 text-gray-400 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                                                    </svg>
+                                                </div>
+                                            </summary>
+
+                                            <div class="border-t border-gray-200 px-5 py-5">
+                                                <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,340px)] 2xl:grid-cols-[minmax(0,1fr)_360px]">
+                                                    <div class="min-w-0">
+                                                        <div class="flex items-start gap-3">
+                                                            <input
+                                                                v-if="task.can_complete_task"
+                                                                type="checkbox"
+                                                                class="mt-1 rounded border-gray-300 text-blue-600"
+                                                                :checked="task.status === 'done'"
+                                                                @change="toggleChecklistTask(task)"
+                                                            />
+                                                            <div class="min-w-0 flex-1">
+                                                                <template v-if="editingTaskId === task.id">
+                                                                    <div class="flex flex-wrap items-center gap-2">
+                                                                        <input
+                                                                            v-model="editingTaskTitle"
+                                                                            type="text"
+                                                                            class="min-w-[260px] flex-1 rounded border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                                                                            @click.stop
+                                                                            @keydown.enter.prevent="saveTaskTitleEdit(task)"
+                                                                            @keydown.esc.prevent="cancelTaskTitleEdit"
+                                                                        />
+                                                                        <button
+                                                                            type="button"
+                                                                            class="text-xs text-blue-600 hover:text-blue-700"
+                                                                            @click.prevent.stop="saveTaskTitleEdit(task)"
+                                                                        >
+                                                                            {{ tr('Guardar', 'Save') }}
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            class="text-xs text-gray-500 hover:text-gray-700"
+                                                                            @click.prevent.stop="cancelTaskTitleEdit"
+                                                                        >
+                                                                            {{ tr('Cancelar', 'Cancel') }}
+                                                                        </button>
+                                                                    </div>
+                                                                </template>
+
+                                                                    <div class="space-y-3">
+                                                                        <div
+                                                                            v-if="isFinalizeAttendeeTask(task) || (hasFormForTask(task) && task.can_complete_task) || (!hasFormForTask(task) && task.can_edit_form_definition)"
+                                                                            class="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2"
+                                                                        >
+                                                                            <button
+                                                                                v-if="isFinalizeAttendeeTask(task)"
+                                                                                type="button"
+                                                                                class="rounded border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                                                                @click="activeTab = 'participants'"
+                                                                            >
+                                                                                {{ tr('Ir a participantes', 'Go to participants') }}
+                                                                            </button>
+                                                                            <button
+                                                                                v-else-if="hasFormForTask(task) && task.can_complete_task"
+                                                                                type="button"
+                                                                                class="rounded border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                                                                @click="openTaskForm(task)"
+                                                                            >
+                                                                                {{ tr('Abrir formulario', 'Open form') }}
+                                                                            </button>
+                                                                            <button
+                                                                                v-else-if="!hasFormForTask(task) && task.can_edit_form_definition"
+                                                                                type="button"
+                                                                                class="rounded border border-amber-200 bg-white px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                                                                                @click="openCustomFormBuilderModal(task)"
+                                                                            >
+                                                                                {{ tr('Crear formulario', 'Create form') }}
+                                                                            </button>
+                                                                            <span class="text-xs text-blue-700">
+                                                                                {{
+                                                                                    !hasFormForTask(task) && task.can_edit_form_definition
+                                                                                        ? tr('Esta tarea necesita un formulario antes de poder completarse.', 'This task needs a form before it can be completed.')
+                                                                                        : tr('Completa esta tarea desde el formulario asignado.', 'Complete this task from the assigned form.')
+                                                                                }}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        <div class="flex flex-wrap items-center gap-2">
+                                                                            <span
+                                                                                v-if="editingTaskId !== task.id && task.description"
+                                                                                class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 cursor-pointer"
+                                                                                :title="task.description"
+                                                                            @click.prevent.stop="openTaskInfoModal(task)"
+                                                                        >
+                                                                            Info
+                                                                        </span>
+                                                                        <span
+                                                                            v-if="isPermissionSlipTask(task)"
+                                                                            class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                                                                            :title="tr('Permisos recibidos', 'Permission slips received')"
+                                                                        >
+                                                                            {{ permissionSlipStats.received }} / {{ permissionSlipStats.required }} {{ tr('permisos', 'slips') }}
+                                                                        </span>
+                                                                        <span
+                                                                            v-if="hasFormForTask(task)"
+                                                                            class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+                                                                            :title="tr('Formulario disponible', 'Form available')"
+                                                                        >
+                                                                            {{ tr('Formulario', 'Form') }}
+                                                                        </span>
+                                                                        <button
+                                                                            v-else-if="task.can_edit_form_definition"
+                                                                            type="button"
+                                                                            class="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 hover:bg-rose-100"
+                                                                            :title="tr('Crear formulario para esta tarea', 'Create form for this task')"
+                                                                            @click="openCustomFormBuilderModal(task)"
+                                                                        >
+                                                                            {{ tr('Sin formulario', 'No form') }}
+                                                                        </button>
+                                                                        <span
+                                                                            v-else
+                                                                            class="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700"
+                                                                            :title="tr('Sin formulario disponible', 'No form available')"
+                                                                        >
+                                                                            {{ tr('Sin formulario', 'No form') }}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    <div
+                                                                        v-if="task.can_manage_definition && taskTrackingTree(task).length"
+                                                                        class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600"
+                                                                    >
+                                                                        <div class="font-semibold text-gray-700">
+                                                                            {{ tr('Seguimiento por nivel asignado', 'Assigned-level tracking') }}
+                                                                        </div>
+                                                                        <div class="space-y-2">
+                                                                            <details
+                                                                                v-for="group in taskTrackingTree(task)"
+                                                                                :key="group.key"
+                                                                                class="rounded border border-gray-200 bg-white"
+                                                                            >
+                                                                                <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
+                                                                                    <span class="font-medium text-gray-700">{{ group.label }}</span>
+                                                                                    <span class="text-[11px] font-semibold text-gray-500">
+                                                                                        {{ group.summary.done }} / {{ group.summary.total }} {{ tr('completadas', 'completed') }}
+                                                                                    </span>
+                                                                                </summary>
+                                                                                <div class="border-t border-gray-200 px-3 py-2">
+                                                                                    <div v-if="group.rows.length" class="space-y-1">
+                                                                                        <div v-for="row in group.rows" :key="row.id" class="flex items-center justify-between gap-2">
+                                                                                            <span class="text-gray-700">{{ row.scope_label }}</span>
+                                                                                            <span :class="row.status === 'done' ? 'text-emerald-700' : 'text-amber-700'" class="font-medium">
+                                                                                                {{ row.status }}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <div v-if="group.children.length" class="space-y-2">
+                                                                                        <details
+                                                                                            v-for="child in group.children"
+                                                                                            :key="child.key"
+                                                                                            class="rounded border border-gray-200 bg-gray-50"
+                                                                                        >
+                                                                                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
+                                                                                                <span class="text-gray-700">{{ child.label }}</span>
+                                                                                                <span class="text-[11px] font-semibold text-gray-500">
+                                                                                                    {{ child.summary.done }} / {{ child.summary.total }} {{ tr('completadas', 'completed') }}
+                                                                                                </span>
+                                                                                            </summary>
+                                                                                            <div class="border-t border-gray-200 px-3 py-2">
+                                                                                                <div v-if="child.rows.length" class="space-y-1">
+                                                                                                    <div v-for="row in child.rows" :key="row.id" class="flex items-center justify-between gap-2">
+                                                                                                        <span class="text-gray-700">{{ row.scope_label }}</span>
+                                                                                                        <span :class="row.status === 'done' ? 'text-emerald-700' : 'text-amber-700'" class="font-medium">
+                                                                                                            {{ row.status }}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                <div v-if="child.children.length" class="space-y-1">
+                                                                                                    <div v-for="rowChild in child.children" :key="rowChild.key" class="flex items-center justify-between gap-2 rounded border border-gray-200 bg-white px-3 py-2">
+                                                                                                        <span class="text-gray-700">{{ rowChild.label }}</span>
+                                                                                                        <span :class="rowChild.rows[0]?.status === 'done' ? 'text-emerald-700' : 'text-amber-700'" class="font-medium">
+                                                                                                            {{ rowChild.rows[0]?.status || 'todo' }}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </details>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </details>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                                        <div class="space-y-3">
+                                                            <div v-if="task.can_manage_definition && taskResponsibilityOptions.length > 1" class="space-y-1.5">
+                                                                <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                                                    {{ tr('Responsable', 'Owner') }}
+                                                                </div>
+                                                                <select
+                                                                    class="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                                                                    :value="task.responsibility_level || 'organizer'"
+                                                                    @change="updateTaskResponsibility(task, $event.target.value)"
+                                                                >
+                                                                    <option v-for="option in taskResponsibilityOptions" :key="option.value" :value="option.value">
+                                                                        {{ option.label }}
+                                                                    </option>
+                                                                </select>
+                                                            </div>
+
+                                                            <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                                                                <button
+                                                                    v-if="editingTaskId !== task.id && task.can_manage_definition"
+                                                                    type="button"
+                                                                    class="w-full rounded border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-white"
+                                                                    @click.prevent.stop="startTaskTitleEdit(task)"
+                                                                >
+                                                                    {{ tr('Renombrar', 'Rename') }}
+                                                                </button>
+                                                                <button
+                                                                    v-if="isFinalizeAttendeeTask(task)"
+                                                                    type="button"
+                                                                    class="w-full rounded border border-blue-200 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                                                                    @click="activeTab = 'participants'"
+                                                                >
+                                                                    Go to Participants
+                                                                </button>
+                                                                <button
+                                                                    v-if="task.can_edit_form_definition && hasAiSuggestedForm(task)"
+                                                                    type="button"
+                                                                    class="w-full rounded border border-amber-200 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                                                    @click="openCustomFormBuilderModal(task)"
+                                                                >
+                                                                    Edit Form
+                                                                </button>
+                                                                <button
+                                                                    v-else-if="task.can_edit_form_definition"
+                                                                    type="button"
+                                                                    class="w-full rounded border border-amber-200 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                                                    @click="openCustomFormBuilderModal(task)"
+                                                                >
+                                                                    Create Form
+                                                                </button>
+                                                                <button
+                                                                    v-if="task.can_manage_definition"
+                                                                    type="button"
+                                                                    class="w-full rounded border border-rose-200 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50"
+                                                                    @click="removeChecklistTask(task)"
+                                                                >
+                                                                    Remove
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </details>
+                                    </div>
                                 </div>
-                                <div class="mt-3 flex items-center gap-2">
+                                <div v-if="canManageTasks" class="mt-3 flex items-center gap-2">
                                     <input v-model="newChecklistItem" type="text" class="flex-1 rounded border border-gray-300 px-2 py-1 text-sm" :placeholder="tr('Agregar elemento al checklist', 'Add checklist item')" />
                                     <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addChecklistItem">{{ tr('Agregar', 'Add') }}</button>
                                 </div>
-                            </div>
+                                </div>
+                            </details>
                         </div>
-                        <div v-else-if="activeTab === 'budget'">
+                        <div v-else-if="supportsClubOperations && activeTab === 'budget'">
                             <div class="mb-3 flex items-center justify-between rounded-lg border bg-gray-50 px-3 py-2">
                                 <div>
                                     <div class="text-sm font-semibold text-gray-800">{{ tr('Auto-crear presupuesto de renta', 'Auto-create rental budget') }}</div>
@@ -2594,7 +3435,6 @@ const saveBudgetPreference = async (value) => {
                                 :parents="parentsState"
                                 :payment-summary="paymentSummaryState"
                                 :payment-config="paymentConfigState"
-                                :club-id="eventState.club_id"
                                 @updated="updateParticipants"
                                 @finish-list="finishAttendeeList"
                             />

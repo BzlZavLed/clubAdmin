@@ -10,6 +10,7 @@ use App\Models\TaskFormResponse;
 use App\Models\TaskFormSchema;
 use App\Models\MemberPathfinder;
 use App\Services\AiClient;
+use App\Services\EventTaskAssignmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
@@ -19,6 +20,7 @@ class TaskFormController extends Controller
 {
     public function __construct(
         private readonly AiClient $aiClient,
+        private readonly EventTaskAssignmentService $assignmentService,
     ) {
     }
 
@@ -26,6 +28,7 @@ class TaskFormController extends Controller
     {
         $event = $eventTask->event;
         $this->authorize('view', $event);
+        $assignment = $this->assignmentService->resolveAssignmentForUser($eventTask, request()->user(), request()->integer('assignment_id') ?: null);
 
         $checklist = is_array($eventTask->checklist_json) ? $eventTask->checklist_json : [];
         $customSchema = is_array($checklist['custom_form_schema'] ?? null)
@@ -59,7 +62,10 @@ class TaskFormController extends Controller
             }
         }
 
-        $response = TaskFormResponse::where('event_task_id', $eventTask->id)->first();
+        $response = TaskFormResponse::where('event_task_id', $eventTask->id)
+            ->when($assignment, fn ($query) => $query->where('event_task_assignment_id', $assignment->id))
+            ->when(!$assignment, fn ($query) => $query->whereNull('event_task_assignment_id'))
+            ->first();
         $prefill = null;
         if ($schemaKey === 'emergency_contacts' && (!$response || empty($response->data_json))) {
             $prefill = $this->buildEmergencyContactPrefill($event);
@@ -75,7 +81,13 @@ class TaskFormController extends Controller
     public function update(Request $request, EventTask $eventTask)
     {
         $event = $eventTask->event;
-        $this->authorize('update', $event);
+        $assignment = $this->assignmentService->resolveAssignmentForUser($eventTask, $request->user(), $request->integer('assignment_id') ?: null);
+
+        if (!$this->assignmentService->canManageDefinition($request->user(), $eventTask)) {
+            $this->authorize('view', $event);
+            abort_unless($assignment, 404);
+            abort_unless($this->assignmentService->canCompleteAssignment($event, $request->user(), $assignment), 403);
+        }
 
         $validated = $request->validate([
             'data_json' => ['required', 'array'],
@@ -100,7 +112,10 @@ class TaskFormController extends Controller
         }
 
         $response = TaskFormResponse::updateOrCreate(
-            ['event_task_id' => $eventTask->id],
+            [
+                'event_task_id' => $eventTask->id,
+                'event_task_assignment_id' => $assignment?->id,
+            ],
             ['schema_key' => $schemaKey, 'data_json' => $validated['data_json']]
         );
 
@@ -110,7 +125,12 @@ class TaskFormController extends Controller
     public function uploadMedia(Request $request, EventTask $eventTask)
     {
         $event = $eventTask->event;
-        $this->authorize('update', $event);
+        $assignment = $this->assignmentService->resolveAssignmentForUser($eventTask, $request->user(), $request->integer('assignment_id') ?: null);
+        if (!$this->assignmentService->canManageDefinition($request->user(), $eventTask)) {
+            $this->authorize('view', $event);
+            abort_unless($assignment, 404);
+            abort_unless($this->assignmentService->canCompleteAssignment($event, $request->user(), $assignment), 403);
+        }
 
         $validated = $request->validate([
             'file' => ['required', 'image', 'max:5120'],
@@ -130,7 +150,7 @@ class TaskFormController extends Controller
     public function suggest(Request $request, EventTask $eventTask)
     {
         $event = $eventTask->event;
-        $this->authorize('update', $event);
+        abort_unless($this->assignmentService->canManageDefinition($request->user(), $eventTask), 403);
 
         $payload = [
             'model' => config('ai.model'),

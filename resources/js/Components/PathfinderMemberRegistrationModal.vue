@@ -436,13 +436,31 @@ const onSubmit = () => {
                 <section v-if="canMarkInsurancePaid || canMarkEnrollmentPaid" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                     <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-900">Pagos al registrar</h3>
                     <div class="space-y-3">
-                        <label v-if="canMarkInsurancePaid" class="flex items-start gap-3">
-                            <input v-model="form.mark_insurance_paid" type="checkbox" class="mt-1" :disabled="editingMember && form.mark_insurance_paid" />
-                            <span class="text-sm text-emerald-900">{{ editingMember ? 'Seguro pagado' : 'Marcar seguro como pagado' }} (${{ insuranceAmount.toFixed(2) }})</span>
+                        <label
+                            v-if="canMarkInsurancePaid"
+                            class="flex items-start gap-3 rounded border px-3 py-2 transition"
+                            :class="form.mark_insurance_paid ? 'border-emerald-400 bg-emerald-100 text-emerald-950' : 'border-transparent'"
+                        >
+                            <input
+                                v-model="form.mark_insurance_paid"
+                                type="checkbox"
+                                class="mt-1 h-4 w-4 accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-100"
+                                :disabled="form.mark_insurance_paid"
+                            />
+                            <span class="text-sm font-medium">{{ editingMember ? 'Seguro pagado' : 'Marcar seguro como pagado' }} (${{ insuranceAmount.toFixed(2) }})</span>
                         </label>
-                        <label v-if="canMarkEnrollmentPaid" class="flex items-start gap-3">
-                            <input v-model="form.mark_enrollment_paid" type="checkbox" class="mt-1" :disabled="editingMember && form.mark_enrollment_paid" />
-                            <span class="text-sm text-emerald-900">{{ editingMember ? 'Inscripción pagada' : 'Marcar inscripción como pagada' }} (${{ enrollmentAmount.toFixed(2) }})</span>
+                        <label
+                            v-if="canMarkEnrollmentPaid"
+                            class="flex items-start gap-3 rounded border px-3 py-2 transition"
+                            :class="form.mark_enrollment_paid ? 'border-emerald-400 bg-emerald-100 text-emerald-950' : 'border-transparent'"
+                        >
+                            <input
+                                v-model="form.mark_enrollment_paid"
+                                type="checkbox"
+                                class="mt-1 h-4 w-4 accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-100"
+                                :disabled="form.mark_enrollment_paid"
+                            />
+                            <span class="text-sm font-medium">{{ editingMember ? 'Inscripción pagada' : 'Marcar inscripción como pagada' }} (${{ enrollmentAmount.toFixed(2) }})</span>
                         </label>
                     </div>
                 </section>

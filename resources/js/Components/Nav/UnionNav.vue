@@ -28,6 +28,7 @@ const sections = computed(() => {
                 items: [
                     { name: 'Panel', href: '/association/dashboard', route: 'association.dashboard', icon: HomeIcon },
                     { name: 'Plan de trabajo', href: '/association/workplan', route: 'association.workplan', icon: ClipboardDocumentListIcon },
+                    { name: 'Eventos', href: '/events', route: 'events.index', icon: CalendarDaysIcon },
                     {
                         name: evaluationSystem.value === 'carpetas' ? 'Requisitos de carpeta' : 'Planificación de clases',
                         href: '/association/programs',
@@ -40,6 +41,12 @@ const sections = computed(() => {
                             href: '/association/districts',
                             route: 'association.districts',
                             icon: MapIcon,
+                        },
+                        {
+                            name: 'Clubes',
+                            href: '/association/clubs',
+                            route: 'association.clubs',
+                            icon: UserGroupIcon,
                         },
                         {
                             name: 'Solicitudes de investidura',
@@ -68,6 +75,7 @@ const sections = computed(() => {
                     { name: 'Iglesias', href: '/district/churches', route: 'district.churches', icon: BuildingLibraryIcon },
                     { name: 'Clubes', href: '/district/clubs', route: 'district.clubs', icon: UserGroupIcon },
                     { name: 'Plan de trabajo', href: '/district/workplan', route: 'district.workplan', icon: ClipboardDocumentListIcon },
+                    { name: 'Eventos', href: '/events', route: 'events.index', icon: CalendarDaysIcon },
                     ...(evaluationSystem.value === 'carpetas' ? [
                         { name: 'Evaluaciones de investidura', href: '/district/investiture-requests', route: 'district.investiture-requests', icon: FolderOpenIcon },
                     ] : []),
@@ -85,6 +93,7 @@ const sections = computed(() => {
                 { name: 'Clubes y clases', href: '/union/catalog/clubs-classes', route: 'union.catalog', icon: Squares2X2Icon },
                 { name: 'Carpeta de investidura', href: '/union/carpeta-builder', route: 'union.carpeta-builder', icon: FolderOpenIcon },
                 { name: 'Plan de trabajo', href: '/union/workplan', route: 'union.workplan', icon: ClipboardDocumentListIcon },
+                { name: 'Eventos', href: '/events', route: 'events.index', icon: CalendarDaysIcon },
             ],
         },
         {

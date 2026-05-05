@@ -65,7 +65,6 @@ const menuItems = [
                 href: '/events',
                 route: 'events.index',
                 icon: CalendarDaysIcon,
-                badge: 'WIP',
             }
         ]
     },

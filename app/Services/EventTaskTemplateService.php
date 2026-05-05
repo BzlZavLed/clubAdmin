@@ -121,6 +121,7 @@ class EventTaskTemplateService
                 'title' => $templateTitle,
                 'description' => $templateDescription,
                 'status' => 'todo',
+                'responsibility_level' => 'organizer',
                 'checklist_json' => $checklist,
             ]);
         }

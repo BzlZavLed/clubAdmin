@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Club;
 use App\Models\Payment;
 use App\Models\PaymentReceipt;
 use App\Models\User;
@@ -43,6 +44,11 @@ class PaymentReceiptService
         }
 
         return DB::transaction(function () use ($payment, $parentUserId, $staffUserId, $issuedToType, $issuedToEmail) {
+            Club::query()
+                ->whereKey($payment->club_id)
+                ->lockForUpdate()
+                ->first(['id']);
+
             $receipt = PaymentReceipt::withTrashed()
                 ->where('payment_id', $payment->id)
                 ->lockForUpdate()
@@ -108,8 +114,7 @@ class PaymentReceiptService
     {
         $max = PaymentReceipt::withTrashed()
             ->where('club_id', $clubId)
-            ->whereYear('issued_at', $year)
-            ->lockForUpdate()
+            ->where('receipt_year', $year)
             ->max('club_sequence');
 
         return ((int) $max) + 1;

@@ -35,11 +35,7 @@ const props = defineProps({
     },
     paymentConfig: {
         type: Object,
-        default: () => ({ concept_id: null, amount: null, is_payable: false })
-    },
-    clubId: {
-        type: Number,
-        required: true
+        default: () => ({ concept_id: null, amount: null, total_amount: null, is_payable: false, concepts: [] })
     }
 })
 
@@ -138,7 +134,8 @@ const staffByName = computed(() => {
 })
 
 const paymentStatusFor = (participant) => {
-    if (!props.paymentConfig?.concept_id) {
+    const totalExpected = Number(props.paymentConfig?.total_amount ?? props.paymentConfig?.amount ?? 0)
+    if (!props.paymentConfig?.is_payable || totalExpected <= 0) {
         return { status: 'na', amount: 0, payerType: null, payerId: null }
     }
 
@@ -149,7 +146,7 @@ const paymentStatusFor = (participant) => {
     if (participant.member_id) {
         const amount = paymentByMember.value.get(Number(participant.member_id)) || 0
         return {
-            status: amount > 0 ? 'paid' : 'unpaid',
+            status: amount >= totalExpected ? 'paid' : 'unpaid',
             amount,
             payerType: 'member',
             payerId: participant.member_id
@@ -162,13 +159,22 @@ const paymentStatusFor = (participant) => {
 const paymentLinkFor = (participant) => {
     const status = paymentStatusFor(participant)
     if (!props.paymentConfig?.concept_id || !status.payerType || !status.payerId || status.payerType === 'readonly') {
-        return null
+        if (!props.paymentConfig?.is_payable || !status.payerType || !status.payerId) {
+            return null
+        }
     }
     if (status.status === 'paid') return null
+    const participantClubId = participant.member_id
+        ? Number(memberById.value.get(participant.member_id)?.club_id || 0)
+        : 0
+    const conceptId = Array.isArray(props.paymentConfig?.concepts) && props.paymentConfig.concepts.length === 1
+        ? props.paymentConfig.concepts[0].id
+        : props.paymentConfig?.concept_id
+
     return route('club.director.payments', {
-        club_id: props.clubId,
-        concept_id: props.paymentConfig.concept_id,
-        amount: props.paymentConfig.amount ?? null,
+        club_id: participantClubId || null,
+        concept_id: conceptId || null,
+        amount: props.paymentConfig.total_amount ?? props.paymentConfig.amount ?? null,
         member_id: status.payerType === 'member' ? status.payerId : null,
         staff_id: status.payerType === 'staff' ? status.payerId : null,
     })

@@ -19,9 +19,11 @@ class ClubSettingsController extends Controller
         $user = $request->user();
         $clubIds = ClubHelper::clubIdsForUser($user);
         $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'logo_path']);
-        $selectedClubId = $request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null);
-        if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
-            abort(403, 'Not allowed to view this club settings.');
+        $selectedClubId = $this->resolveSelectedClubId($request, $clubs);
+
+        if ($selectedClubId) {
+            $selectedClub = $clubs->firstWhere('id', (int) $selectedClubId);
+            $request->session()->put('club_context.club_id', $selectedClub->id);
         }
 
         $config = $selectedClubId
@@ -90,7 +92,7 @@ class ClubSettingsController extends Controller
         ]);
 
         $user = $request->user();
-        $clubId = $payload['club_id'] ?: $user->club_id;
+        $clubId = $payload['club_id'] ?: $request->session()->get('club_context.club_id') ?: $user->club_id;
         $allowedClubIds = ClubHelper::clubIdsForUser($user)->all();
         if ($clubId && !in_array($clubId, $allowedClubIds)) {
             abort(403, 'Not allowed to fetch catalog for this club.');
@@ -156,7 +158,7 @@ class ClubSettingsController extends Controller
         ]);
 
         $user = $request->user();
-        $clubId = $payload['club_id'] ?: $user->club_id;
+        $clubId = $payload['club_id'] ?: $request->session()->get('club_context.club_id') ?: $user->club_id;
         $allowedClubIds = ClubHelper::clubIdsForUser($user)->all();
         if ($clubId && !in_array($clubId, $allowedClubIds)) {
             abort(403, 'Not allowed to save settings for this club.');
@@ -182,5 +184,27 @@ class ClubSettingsController extends Controller
             'status' => 'ok',
             'config' => $config,
         ]);
+    }
+
+    private function resolveSelectedClubId(Request $request, $clubs): ?int
+    {
+        $candidates = collect([
+            $request->input('club_id'),
+            $request->session()->get('club_context.club_id'),
+            $request->user()?->club_id,
+            $clubs->first()->id ?? null,
+        ])
+            ->filter(fn ($value) => filled($value))
+            ->map(fn ($value) => (int) $value)
+            ->unique()
+            ->values();
+
+        foreach ($candidates as $candidate) {
+            if ($clubs->contains('id', $candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }

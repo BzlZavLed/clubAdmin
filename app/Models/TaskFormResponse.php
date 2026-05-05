@@ -8,6 +8,7 @@ class TaskFormResponse extends Model
 {
     protected $fillable = [
         'event_task_id',
+        'event_task_assignment_id',
         'schema_key',
         'data_json',
     ];
@@ -19,5 +20,10 @@ class TaskFormResponse extends Model
     public function task()
     {
         return $this->belongsTo(EventTask::class, 'event_task_id');
+    }
+
+    public function assignment()
+    {
+        return $this->belongsTo(EventTaskAssignment::class, 'event_task_assignment_id');
     }
 }

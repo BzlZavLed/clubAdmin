@@ -68,11 +68,11 @@ const deleteEvent = (event) => {
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <div>
                     <div class="flex flex-wrap items-center gap-3">
-                        <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
-                            WIP beta version
+                        <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">
+                            {{ tr('Eventos por jerarquía', 'Hierarchy events') }}
                         </span>
                     </div>
-                    <div class="mt-1 text-gray-600">{{ tr('Administra los eventos de tu club y planes asistidos por IA.', 'Manage your club events and AI-assisted plans.') }}</div>
+                    <div class="mt-1 text-gray-600">{{ tr('Administra eventos de club, iglesia, distrito, asociación y unión con planes asistidos por IA.', 'Manage club, church, district, association, and union events with AI-assisted plans.') }}</div>
                 </div>
                 <Link :href="route('events.create')" class="px-4 py-2 bg-blue-600 text-white rounded text-sm">{{ tr('Crear evento', 'Create Event') }}</Link>
             </div>
@@ -100,8 +100,10 @@ const deleteEvent = (event) => {
                     <thead class="bg-gray-50 text-gray-600">
                         <tr>
                             <th class="text-left px-4 py-2">{{ tr('Título', 'Title') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Scope', 'Scope') }}</th>
                             <th class="text-left px-4 py-2">{{ tr('Tipo', 'Type') }}</th>
                             <th class="text-left px-4 py-2">{{ tr('Inicio', 'Start') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Clubes', 'Clubs') }}</th>
                             <th class="text-left px-4 py-2">{{ tr('Estado', 'Status') }}</th>
                             <th class="text-left px-4 py-2">{{ tr('Pendientes', 'Missing Items') }}</th>
                             <th class="text-right px-4 py-2">{{ tr('Acciones', 'Actions') }}</th>
@@ -110,8 +112,15 @@ const deleteEvent = (event) => {
                     <tbody>
                         <tr v-for="event in events.data" :key="event.id" class="border-t">
                             <td class="px-4 py-2 font-medium text-gray-800">{{ event.title }}</td>
+                            <td class="px-4 py-2">{{ event.scope_label || '—' }}</td>
                             <td class="px-4 py-2">{{ event.event_type }}</td>
                             <td class="px-4 py-2">{{ new Date(event.start_at).toLocaleDateString() }}</td>
+                            <td class="px-4 py-2">
+                                <div class="text-gray-700">{{ event.target_clubs?.length || 0 }}</div>
+                                <div v-if="event.target_clubs?.length" class="text-xs text-gray-500">
+                                    {{ event.target_clubs.slice(0, 2).map((club) => club.club_name).join(', ') }}<span v-if="event.target_clubs.length > 2">…</span>
+                                </div>
+                            </td>
                             <td class="px-4 py-2">
                                 <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold" :class="eventStatusClass(event.effective_status || event.status)">
                                     {{ eventStatusLabel(event.effective_status || event.status) }}
@@ -134,7 +143,7 @@ const deleteEvent = (event) => {
                             </td>
                         </tr>
                         <tr v-if="!events.data.length">
-                            <td colspan="6" class="px-4 py-6 text-center text-gray-500">{{ tr('Aún no hay eventos.', 'No events yet.') }}</td>
+                            <td colspan="8" class="px-4 py-6 text-center text-gray-500">{{ tr('Aún no hay eventos.', 'No events yet.') }}</td>
                         </tr>
                     </tbody>
                 </table>
