@@ -8,6 +8,18 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $indexName = 'pay_alloc_concept_component_idx';
+
+        if (Schema::hasTable('payment_allocations')) {
+            if (!Schema::hasIndex('payment_allocations', $indexName)) {
+                Schema::table('payment_allocations', function (Blueprint $table) use ($indexName) {
+                    $table->index(['payment_concept_id', 'event_fee_component_id'], $indexName);
+                });
+            }
+
+            return;
+        }
+
         Schema::create('payment_allocations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('payment_id')->constrained('payments')->cascadeOnDelete();
@@ -16,7 +28,7 @@ return new class extends Migration
             $table->decimal('amount', 10, 2);
             $table->timestamps();
 
-            $table->index(['payment_concept_id', 'event_fee_component_id']);
+            $table->index(['payment_concept_id', 'event_fee_component_id'], 'pay_alloc_concept_component_idx');
         });
     }
 
