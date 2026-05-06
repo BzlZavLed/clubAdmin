@@ -20,6 +20,7 @@ use App\Models\Payment;
 use App\Models\Union;
 use App\Models\TaskFormSchema;
 use App\Services\ClubLogoService;
+use App\Services\DocumentValidationService;
 use App\Services\EventFinanceService;
 use App\Services\EventTaskAssignmentService;
 use App\Services\EventTaskTemplateService;
@@ -583,7 +584,7 @@ class EventController extends Controller
         return $pdf->download('event-plan-' . $event->id . '.pdf');
     }
 
-    public function participantRosterPdf(Event $event)
+    public function participantRosterPdf(Event $event, DocumentValidationService $documentValidationService)
     {
         $this->authorize('view', $event);
 
@@ -615,14 +616,60 @@ class EventController extends Controller
             'total_paid' => 0.0,
             'optional_paid' => 0.0,
         ]);
+        $generatedAt = now();
+        $scopeLabel = $this->scopeLabel((string) ($event->scope_type ?: 'club'), (int) ($event->scope_id ?: $event->club_id));
+        $validation = $documentValidationService->create(
+            documentType: 'event_participant_roster',
+            title: 'Lista general de participantes',
+            snapshot: [
+                'event_id' => $event->id,
+                'event_title' => $event->title,
+                'event_type' => $event->event_type,
+                'scope_type' => $event->scope_type ?: 'club',
+                'scope_id' => $event->scope_id ?: $event->club_id,
+                'scope_label' => $scopeLabel,
+                'visible_club_ids' => $visibleClubIds,
+                'totals' => $totals,
+                'roster' => collect($roster)->map(fn (array $row) => [
+                    'participant_key' => $row['participant_key'] ?? null,
+                    'participant_type' => $row['participant_type'] ?? null,
+                    'name' => $row['name'] ?? null,
+                    'club_id' => $row['club_id'] ?? null,
+                    'club_name' => $row['club_name'] ?? null,
+                    'district_id' => $row['district_id'] ?? null,
+                    'district_name' => $row['district_name'] ?? null,
+                    'association_id' => $row['association_id'] ?? null,
+                    'association_name' => $row['association_name'] ?? null,
+                    'is_confirmed' => (bool) ($row['is_confirmed'] ?? false),
+                    'is_enrolled' => (bool) ($row['is_enrolled'] ?? false),
+                    'total_paid' => (float) ($row['total_paid'] ?? 0),
+                    'required_paid' => (float) ($row['required_paid'] ?? 0),
+                    'required_expected' => (float) ($row['required_expected'] ?? 0),
+                    'optional_paid' => (float) ($row['optional_paid'] ?? 0),
+                    'optional_expected' => (float) ($row['optional_expected'] ?? 0),
+                    'optional_components' => $row['optional_components'] ?? [],
+                ])->values()->all(),
+            ],
+            metadata: [
+                'Evento' => $event->title,
+                'Alcance' => $scopeLabel,
+                'Participantes' => $totals['participants'],
+                'Inscritos' => $totals['enrolled'],
+                'Confirmados' => $totals['confirmed'],
+                'Pagado total' => '$' . number_format((float) $totals['total_paid'], 2),
+            ],
+            generatedBy: auth()->user(),
+            generatedAt: $generatedAt,
+        );
 
         $pdf = Pdf::loadView('pdf.event_participant_roster', [
             'event' => $event,
-            'scopeLabel' => $this->scopeLabel((string) ($event->scope_type ?: 'club'), (int) ($event->scope_id ?: $event->club_id)),
+            'scopeLabel' => $scopeLabel,
             'roster' => $roster,
             'totals' => $totals,
             'showAssociation' => ($event->scope_type ?: 'club') === 'union',
-            'generatedAt' => now()->format('Y-m-d H:i'),
+            'generatedAt' => $generatedAt->format('Y-m-d H:i'),
+            'qrCodeDataUri' => $validation['qr_code_data_uri'],
         ])->setPaper('letter', 'landscape');
 
         return $pdf->download('event-participant-roster-' . $event->id . '.pdf');

@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <style>
+        @page { margin: 18px 18px 82px; }
         * { box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; color: #111827; margin: 18px; font-size: 10px; }
+        body { font-family: Arial, sans-serif; color: #111827; margin: 0; font-size: 10px; }
         h1 { font-size: 20px; margin: 0 0 4px; }
         .meta { color: #4b5563; line-height: 1.35; margin-bottom: 12px; }
         .label { font-weight: bold; color: #111827; }
@@ -24,6 +25,10 @@
         .optional-list { margin: 3px 0 0; padding-left: 12px; }
         .optional-list li { margin-bottom: 2px; }
         .empty { padding: 18px; text-align: center; color: #6b7280; }
+        .validation-footer { position: fixed; left: 0; right: 0; bottom: -64px; height: 58px; border-top: 1px solid #d1d5db; padding-top: 6px; color: #4b5563; font-size: 8px; }
+        .validation-footer table { width: 100%; border-collapse: collapse; }
+        .validation-footer td { vertical-align: top; }
+        .qr { width: 52px; height: 52px; }
     </style>
 </head>
 <body>
@@ -117,5 +122,20 @@
             @endforelse
         </tbody>
     </table>
+
+    @if(!empty($qrCodeDataUri))
+        <div class="validation-footer">
+            <table>
+                <tr>
+                    <td style="width:58px;">
+                        <img class="qr" src="{{ $qrCodeDataUri }}" alt="QR de validación">
+                    </td>
+                    <td>
+                        <div><strong>Validación digital:</strong> escanee el QR para confirmar esta lista contra el sistema.</div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    @endif
 </body>
 </html>
