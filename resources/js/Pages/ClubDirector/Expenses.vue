@@ -20,6 +20,7 @@ const uploadingId = ref(null)
 const rowErrors = ref({})
 const reimbursingId = ref(null)
 const reimbursePayToByExpense = ref({})
+const reimburseFundsLocationByExpense = ref({})
 const expensePage = ref(1)
 const expensePageSize = ref(10)
 const { showToast } = useGeneral()
@@ -38,6 +39,7 @@ const RECEIPT_ACCEPT = 'image/*'
 const form = useForm({
     club_id: null,
     pay_to: null,
+    funds_location: 'cash',
     amount: '',
     expense_date: new Date().toISOString().slice(0, 10),
     description: '',
@@ -63,6 +65,7 @@ const defaultReimbursePayTo = computed(() => {
 })
 
 const fmtMoney = (n) => `$${Number(n ?? 0).toFixed(2)}`
+const locationLabel = (value) => value === 'bank' ? 'Banco' : value === 'cash' ? 'Efectivo' : '—'
 const selectedBalance = computed(() => {
     const acc = accounts.value.find(a => a.pay_to === form.pay_to)
     return acc?.balance ?? null
@@ -141,6 +144,9 @@ const loadData = async (clubId = null) => {
         expenses.value.forEach((e) => {
             if (isPendingReimbursement(e) && !reimbursePayToByExpense.value[e.id]) {
                 reimbursePayToByExpense.value[e.id] = defaultReimbursePayTo.value
+            }
+            if (isPendingReimbursement(e) && !reimburseFundsLocationByExpense.value[e.id]) {
+                reimburseFundsLocationByExpense.value[e.id] = 'cash'
             }
         })
         if (!form.club_id) {
@@ -393,6 +399,7 @@ const uploadReimbursementReceiptNow = async (expense, file) => {
 const markReimbursed = async (expense) => {
     if (!expense || !isPendingReimbursement(expense)) return
     const payTo = reimbursePayToByExpense.value[expense.id] || defaultReimbursePayTo.value
+    const fundsLocation = reimburseFundsLocationByExpense.value[expense.id] || 'cash'
     if (!payTo) {
         rowErrors.value = { ...rowErrors.value, [expense.id]: 'Selecciona una cuenta para reembolsar.' }
         return
@@ -405,7 +412,7 @@ const markReimbursed = async (expense) => {
     reimbursingId.value = expense.id
     rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
     try {
-        await markExpenseReimbursed(expense.id, payTo, receiptFile)
+        await markExpenseReimbursed(expense.id, payTo, receiptFile, fundsLocation)
         showToast('Reembolso registrado.', 'success')
         await loadData(form.club_id)
     } catch (e) {
@@ -469,6 +476,15 @@ const markReimbursed = async (expense) => {
                         </select>
                         <p v-if="selectedBalance !== null" class="text-xs text-gray-500 mt-1">Saldo actual: {{ fmtMoney(selectedBalance) }}</p>
                         <div v-if="form.errors.pay_to" class="mt-1 text-sm text-red-600">{{ form.errors.pay_to }}</div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Origen del pago</label>
+                        <select v-model="form.funds_location" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="cash">Efectivo</option>
+                            <option value="bank">Banco</option>
+                        </select>
+                        <div v-if="form.errors.funds_location" class="mt-1 text-sm text-red-600">{{ form.errors.funds_location }}</div>
                     </div>
 
                     <div>
@@ -541,6 +557,7 @@ const markReimbursed = async (expense) => {
                             </div>
                             <div class="mt-2 text-xs text-gray-600">
                                 <div><span class="font-medium text-gray-700">Cuenta:</span> {{ payToLabel(e.pay_to) }}</div>
+                                <div><span class="font-medium text-gray-700">Origen:</span> {{ locationLabel(e.funds_location) }}</div>
                                 <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
                                 <div><span class="font-medium text-gray-700">Reembolsado a:</span> {{ e.reimbursed_to || '—' }}</div>
                                 <div v-if="e.pay_to === 'reimbursement_to' && settlementAccountLabel(e)">
@@ -604,6 +621,12 @@ const markReimbursed = async (expense) => {
                                         {{ a.label }}
                                     </option>
                                 </select>
+                                <select
+                                    v-model="reimburseFundsLocationByExpense[e.id]"
+                                    class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="cash">Efectivo</option>
+                                    <option value="bank">Banco</option>
+                                </select>
                                 <button
                                     @click="triggerReimbursementReceiptUpload(e.id)"
                                     :disabled="reimbursingId === e.id"
@@ -627,6 +650,7 @@ const markReimbursed = async (expense) => {
                             <tr>
                                 <th class="px-4 py-2 text-left font-semibold">Fecha</th>
                                 <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
+                                <th class="px-4 py-2 text-left font-semibold">Origen</th>
                                 <th class="px-4 py-2 text-left font-semibold">Monto</th>
                                 <th class="px-4 py-2 text-left font-semibold">Estado</th>
                                 <th class="px-4 py-2 text-left font-semibold">Recibo</th>
@@ -638,6 +662,7 @@ const markReimbursed = async (expense) => {
                             <tr v-for="e in pagedExpenses" :key="e.id" class="border-t">
                                 <td class="px-4 py-2">{{ new Date(e.expense_date).toLocaleDateString() }}</td>
                                 <td class="px-4 py-2">{{ payToLabel(e.pay_to) }}</td>
+                                <td class="px-4 py-2">{{ locationLabel(e.funds_location) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(e.amount) }}</td>
                                 <td class="px-4 py-2">
                                     <span
@@ -655,6 +680,12 @@ const markReimbursed = async (expense) => {
                                             <option v-for="a in reimbursePayToOptions" :key="a.pay_to" :value="a.pay_to">
                                                 {{ a.label }}
                                             </option>
+                                        </select>
+                                        <select
+                                            v-model="reimburseFundsLocationByExpense[e.id]"
+                                            class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
+                                            <option value="cash">Efectivo</option>
+                                            <option value="bank">Banco</option>
                                         </select>
                                         <button
                                             @click="triggerReimbursementReceiptUpload(e.id)"

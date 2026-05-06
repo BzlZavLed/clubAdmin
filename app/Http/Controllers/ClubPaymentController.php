@@ -5,18 +5,22 @@ namespace App\Http\Controllers;
 use App\Models\Club;
 use App\Models\Account;
 use App\Models\ClubClass;
+use App\Models\Member;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
 use App\Models\ParentPaymentSubmission;
 use App\Models\Staff;
 use App\Support\ClubHelper;
+use App\Services\ClubTreasuryService;
 use App\Services\PaymentReceiptService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
@@ -25,7 +29,10 @@ use Illuminate\Support\Collection;
 
 class ClubPaymentController extends Controller
 {
-    public function __construct(protected PaymentReceiptService $paymentReceiptService)
+    public function __construct(
+        protected PaymentReceiptService $paymentReceiptService,
+        protected ClubTreasuryService $treasuryService,
+    )
     {
     }
 
@@ -91,6 +98,8 @@ class ClubPaymentController extends Controller
                     });
             })
             ->with([
+                'event:id,title,start_at',
+                'eventFeeComponent:id,label,amount,is_required,sort_order',
                 'scopes' => function ($q) use ($assignedClassId) {
                     $q->whereNull('deleted_at')
                         ->where(function ($q) use ($assignedClassId) {
@@ -108,7 +117,7 @@ class ClubPaymentController extends Controller
                 },
             ])
             ->orderByDesc('created_at')
-            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id', 'reusable']);
+            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'pay_to', 'club_id', 'reusable', 'event_id', 'event_fee_component_id']);
 
         $recentPayments = Payment::query()
             ->where('club_id', $club->id)
@@ -125,6 +134,12 @@ class ClubPaymentController extends Controller
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
                 'concept:id,concept,amount,reusable',
+                'concept.event:id,title,start_at',
+                'concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+                'allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+                'allocations.concept:id,concept,event_id,event_fee_component_id',
+                'allocations.concept.event:id,title,start_at',
+                'allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
                 'receipt:id,payment_id,receipt_number,last_downloaded_at',
@@ -164,7 +179,12 @@ class ClubPaymentController extends Controller
                         'concept' => $p->concept->concept,
                         'amount' => $p->concept->amount,
                         'reusable' => (bool) $p->concept->reusable,
+                        'event_id' => $p->concept->event_id,
+                        'event_title' => $p->concept->event?->title,
+                        'event_component_label' => $p->concept->eventFeeComponent?->label,
                     ] : null,
+                    'allocations' => $this->paymentAllocationRows($p),
+                    'event_title' => $p->concept?->event?->title ?: collect($this->paymentAllocationRows($p))->pluck('event_title')->filter()->first(),
                     'received_by' => $p->receivedBy ? [
                         'id' => $p->receivedBy->id,
                         'name' => $p->receivedBy->name,
@@ -260,13 +280,15 @@ class ClubPaymentController extends Controller
             ->whereIn('club_id', $clubIds)
             ->where('status', 'active')
             ->with([
+                'event:id,title,start_at',
+                'eventFeeComponent:id,label,amount,is_required,sort_order',
                 'scopes' => function ($q) {
                     $q->whereNull('deleted_at')
                         ->with(['club:id,club_name', 'class:id,class_name', 'member:id,applicant_name', 'staff:id,name']);
                 },
             ])
             ->orderByDesc('created_at')
-            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'club_id', 'reusable']);
+            ->get(['id', 'concept', 'amount', 'payment_expected_by', 'type', 'pay_to', 'club_id', 'reusable', 'event_id', 'event_fee_component_id']);
 
         $accounts = Account::query()
             ->whereIn('club_id', $clubIds)
@@ -282,6 +304,12 @@ class ClubPaymentController extends Controller
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
                 'concept:id,concept,amount,reusable',
+                'concept.event:id,title,start_at',
+                'concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+                'allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+                'allocations.concept:id,concept,event_id,event_fee_component_id',
+                'allocations.concept.event:id,title,start_at',
+                'allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
                 'receipt:id,payment_id,receipt_number,last_downloaded_at,issued_to_type,parent_user_id',
@@ -321,7 +349,12 @@ class ClubPaymentController extends Controller
                         'concept' => $p->concept->concept,
                         'amount' => $p->concept->amount,
                         'reusable' => (bool) $p->concept->reusable,
+                        'event_id' => $p->concept->event_id,
+                        'event_title' => $p->concept->event?->title,
+                        'event_component_label' => $p->concept->eventFeeComponent?->label,
                     ] : null,
+                    'allocations' => $this->paymentAllocationRows($p),
+                    'event_title' => $p->concept?->event?->title ?: collect($this->paymentAllocationRows($p))->pluck('event_title')->filter()->first(),
                     'received_by' => $p->receivedBy ? [
                         'id' => $p->receivedBy->id,
                         'name' => $p->receivedBy->name,
@@ -388,7 +421,9 @@ class ClubPaymentController extends Controller
 
         $validated = $request->validate([
             'payment_concept_id' => ['nullable', 'integer', 'exists:payment_concepts,id'],
-            'concept_text' => ['nullable', 'string', 'max:255', 'required_without:payment_concept_id'],
+            'event_concept_ids' => ['nullable', 'array'],
+            'event_concept_ids.*' => ['integer', 'exists:payment_concepts,id'],
+            'concept_text' => ['nullable', 'string', 'max:255', 'required_without_all:payment_concept_id,event_concept_ids'],
             'pay_to' => ['nullable', 'string', 'max:255'],
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
             'member_id' => ['nullable', 'integer', 'exists:members,id'],
@@ -420,11 +455,69 @@ class ClubPaymentController extends Controller
         $expected = null;
         $payTo = null;
         $conceptText = $validated['concept_text'] ?? null;
+        $eventBundleConcepts = collect();
+        $eventAllocationRows = [];
+        $isEventBundle = !empty($validated['event_concept_ids']);
 
-        if (!empty($validated['payment_concept_id'])) {
+        if ($isEventBundle) {
+            $eventBundleConcepts = PaymentConcept::query()
+                ->whereIn('id', collect($validated['event_concept_ids'])->map(fn ($id) => (int) $id)->unique()->values()->all())
+                ->where('status', 'active')
+                ->with(['event:id,title', 'eventFeeComponent:id,label,amount,is_required,sort_order', 'scopes'])
+                ->get()
+                ->sortBy([
+                    fn (PaymentConcept $concept) => (int) ($concept->eventFeeComponent?->sort_order ?? 0),
+                    fn (PaymentConcept $concept) => (int) $concept->id,
+                ])
+                ->values();
+
+            if ($eventBundleConcepts->count() !== collect($validated['event_concept_ids'])->unique()->count()) {
+                return response()->json([
+                    'errors' => [
+                        'event_concept_ids' => ['Uno de los componentes del evento ya no está disponible.'],
+                    ],
+                ], 422);
+            }
+
+            $eventIds = $eventBundleConcepts->pluck('event_id')->filter()->unique()->values();
+            $clubIds = $eventBundleConcepts->pluck('club_id')->map(fn ($id) => (int) $id)->unique()->values();
+            $payToValues = $eventBundleConcepts->pluck('pay_to')->filter()->unique()->values();
+
+            if ($eventIds->count() !== 1 || $clubIds->count() !== 1 || $eventBundleConcepts->contains(fn (PaymentConcept $item) => empty($item->event_fee_component_id))) {
+                return response()->json([
+                    'errors' => [
+                        'event_concept_ids' => ['Selecciona componentes de un mismo evento y club.'],
+                    ],
+                ], 422);
+            }
+
+            $clubId = (int) $clubIds->first();
+            if (!$allowedClubIds->contains($clubId)) {
+                abort(403, 'You cannot record payments for this club.');
+            }
+
+            $payTo = $payToValues->first() ?: 'club_budget';
+            $conceptText = $eventBundleConcepts->first()?->event?->title ?: 'Pago de evento';
+            $this->assertRequiredEventComponentsSelected(
+                $eventBundleConcepts,
+                $isMember ? (int) $validated['member_id'] : null,
+                $isStaff ? (int) $validated['staff_id'] : null
+            );
+            $bundlePlan = $this->eventBundlePaymentPlan(
+                $eventBundleConcepts,
+                $isMember ? (int) $validated['member_id'] : null,
+                $isStaff ? (int) $validated['staff_id'] : null,
+                (float) $validated['amount_paid']
+            );
+            $expected = $bundlePlan['expected'];
+            $amountPaid = $bundlePlan['amount_paid'];
+            $balanceAfter = $bundlePlan['balance_after'];
+            $eventAllocationRows = $bundlePlan['allocations'];
+        } elseif (!empty($validated['payment_concept_id'])) {
             $concept = PaymentConcept::query()
                 ->where('id', $validated['payment_concept_id'])
                 ->where('status', 'active')
+                ->with(['eventFeeComponent:id,label,amount,is_required,sort_order', 'scopes'])
                 ->firstOrFail();
 
             if (!$allowedClubIds->contains((int) $concept->club_id)) {
@@ -435,6 +528,13 @@ class ClubPaymentController extends Controller
             $expected = $concept->amount !== null ? (float) $concept->amount : 0.0;
             $payTo = $concept->pay_to ?? 'club_budget';
             $conceptText = null;
+            if ($concept->event_id && $concept->event_fee_component_id) {
+                $this->assertRequiredEventComponentsSelected(
+                    collect([$concept]),
+                    $isMember ? (int) $validated['member_id'] : null,
+                    $isStaff ? (int) $validated['staff_id'] : null
+                );
+            }
         } else {
             $clubId = (int) ($validated['club_id'] ?? 0);
             if (!$clubId || !$allowedClubIds->contains($clubId)) {
@@ -449,6 +549,48 @@ class ClubPaymentController extends Controller
         }
 
         $isReusableConcept = (bool) ($concept?->reusable);
+        if (!$isEventBundle) {
+            // Sum prior paid for this (concept, payer) pair (exclude soft-deleted)
+            $priorPaidQuery = Payment::query()
+                ->where('club_id', $clubId)
+                ->when($concept, fn($q) => $q->where('payment_concept_id', $concept->id));
+
+            if ($isMember) {
+                $priorPaidQuery->where('member_id', $validated['member_id'] ?? null);
+            } else {
+                $priorPaidQuery->where('staff_id', $validated['staff_id'] ?? null);
+            }
+
+            if ($isInitial) {
+                $priorPaid = 0.0;
+            } else {
+                $priorPaid = (float) ($priorPaidQuery->sum('amount_paid'));
+            }
+
+            $remainingBefore = $expected !== null ? max($expected - $priorPaid, 0.0) : null;
+
+            if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $remainingBefore <= 0) {
+                return response()->json([
+                    'errors' => [
+                        'payment_concept_id' => ['Este concepto ya fue pagado completamente para este pagador.'],
+                    ],
+                ], 422);
+            }
+
+            $amountPaid = (float) $validated['amount_paid'];
+            if ($isReusableConcept && $expected !== null && $expected > 0 && abs($amountPaid - $expected) > 0.0001) {
+                return response()->json([
+                    'errors' => [
+                        'amount_paid' => ['Los conceptos reutilizables deben cobrarse por el importe completo del concepto.'],
+                    ],
+                ], 422);
+            }
+            if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
+                $amountPaid = $remainingBefore;
+            }
+
+            $balanceAfter = ($isReusableConcept || $expected === null) ? null : max($expected - ($priorPaid + $amountPaid), 0.0);
+        }
 
         $account = Account::query()
             ->where('club_id', $clubId)
@@ -463,49 +605,19 @@ class ClubPaymentController extends Controller
             ]);
         }
 
-        // Sum prior paid for this (concept, payer) pair (exclude soft-deleted)
-        $priorPaidQuery = Payment::query()
-            ->where('club_id', $clubId)
-            ->when($concept, fn($q) => $q->where('payment_concept_id', $concept->id));
-
-        if ($isMember) {
-            $priorPaidQuery->where('member_id', $validated['member_id'] ?? null);
-        } else {
-            $priorPaidQuery->where('staff_id', $validated['staff_id'] ?? null);
-        }
-
-        if ($isInitial) {
-            $priorPaid = 0.0;
-        } else {
-            $priorPaid = (float) ($priorPaidQuery->sum('amount_paid'));
-        }
-
-        $remainingBefore = $expected !== null ? max($expected - $priorPaid, 0.0) : null;
-
-        if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $remainingBefore <= 0) {
+        $club = Club::withoutGlobalScopes()->findOrFail($clubId);
+        $clubBankInfo = $this->treasuryService->clubBankInfo($club);
+        if (in_array($validated['payment_type'], $this->treasuryService->electronicPaymentTypes(), true) && !$clubBankInfo) {
             return response()->json([
-                'errors' => [
-                    'payment_concept_id' => ['Este concepto ya fue pagado completamente para este pagador.'],
-                ],
+                'message' => 'Registra la cuenta bancaria del club antes de recibir pagos electrónicos.',
             ], 422);
         }
 
-        $amountPaid = (float) $validated['amount_paid'];
-        if ($isReusableConcept && $expected !== null && $expected > 0 && abs($amountPaid - $expected) > 0.0001) {
-            return response()->json([
-                'errors' => [
-                    'amount_paid' => ['Los conceptos reutilizables deben cobrarse por el importe completo del concepto.'],
-                ],
-            ], 422);
+        if ($validated['payment_type'] === 'zelle' && empty($clubBankInfo?->zelle_phone)) {
+            return response()->json(['message' => 'La cuenta bancaria del club necesita un teléfono Zelle registrado.'], 422);
         }
-        if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
-            $amountPaid = $remainingBefore;
-        }
-
-        $balanceAfter = ($isReusableConcept || $expected === null) ? null : max($expected - ($priorPaid + $amountPaid), 0.0);
-
         if ($validated['payment_type'] === 'zelle' && empty($validated['zelle_phone'])) {
-            return response()->json(['message' => 'Zelle payments require a phone number.'], 422);
+            return response()->json(['message' => 'Ingresa el teléfono Zelle desde donde se envió el dinero.'], 422);
         }
         $zellePhone = $validated['payment_type'] === 'zelle' ? $validated['zelle_phone'] : null;
 
@@ -514,7 +626,7 @@ class ClubPaymentController extends Controller
                 return response()->json(['message' => 'El personal no puede registrar saldo inicial.'], 403);
             }
 
-            if (empty($validated['payment_concept_id'])) {
+            if (empty($validated['payment_concept_id']) && !$isEventBundle) {
                 return response()->json([
                     'errors' => [
                         'payment_concept_id' => ['El personal solo puede registrar pagos sobre conceptos existentes.'],
@@ -602,10 +714,10 @@ class ClubPaymentController extends Controller
         }
 
         $payment = null;
-        DB::transaction(function () use ($clubId, $concept, $validated, $expected, $amountPaid, $balanceAfter, $zellePhone, $checkImagePath, $payTo, $conceptText, $account, &$payment) {
+        DB::transaction(function () use ($clubId, $concept, $validated, $expected, $amountPaid, $balanceAfter, $zellePhone, $checkImagePath, $payTo, $conceptText, $account, $eventAllocationRows, $isEventBundle, &$payment) {
             $payment = Payment::create([
                 'club_id' => $clubId,
-                'payment_concept_id' => $concept?->id,
+                'payment_concept_id' => $isEventBundle ? null : $concept?->id,
                 'concept_text' => $conceptText,
                 'pay_to' => $payTo,
                 'account_id' => $account?->id,
@@ -622,6 +734,10 @@ class ClubPaymentController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
+            foreach ($eventAllocationRows as $allocationRow) {
+                $payment->allocations()->create($allocationRow);
+            }
+
             // Update account balance
             $account = Account::firstOrCreate(
                 ['club_id' => $clubId, 'pay_to' => $payTo],
@@ -634,7 +750,13 @@ class ClubPaymentController extends Controller
             'member:id,type,id_data',
             'staff:id,type,id_data,user_id',
             'staff.user:id,name',
-            'concept:id,concept,amount,reusable',
+            'concept:id,concept,amount,reusable,event_id,event_fee_component_id',
+            'concept.event:id,title,start_at',
+            'concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+            'allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+            'allocations.concept:id,concept,event_id,event_fee_component_id',
+            'allocations.concept.event:id,title,start_at',
+            'allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
             'receivedBy:id,name',
         ]);
 
@@ -672,8 +794,125 @@ class ClubPaymentController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        $club = Club::withoutGlobalScopes()->findOrFail((int) $payment->club_id);
+        $clubBankInfo = $this->treasuryService->clubBankInfo($club);
+        if (in_array($validated['payment_type'], $this->treasuryService->electronicPaymentTypes(), true) && !$clubBankInfo) {
+            return response()->json([
+                'message' => 'Registra la cuenta bancaria del club antes de usar pagos electrónicos.',
+            ], 422);
+        }
+
+        if ($validated['payment_type'] === 'zelle' && empty($clubBankInfo?->zelle_phone)) {
+            return response()->json(['message' => 'La cuenta bancaria del club necesita un teléfono Zelle registrado.'], 422);
+        }
         if ($validated['payment_type'] === 'zelle' && empty($validated['zelle_phone'])) {
-            return response()->json(['message' => 'Zelle payments require a phone number.'], 422);
+            return response()->json(['message' => 'Ingresa el teléfono Zelle desde donde se envió el dinero.'], 422);
+        }
+
+        $payment->loadMissing([
+            'allocations.concept.scopes',
+            'allocations.concept.event:id,title',
+            'allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+        ]);
+
+        if ($payment->allocations->isNotEmpty()) {
+            $concepts = $payment->allocations
+                ->pluck('concept')
+                ->filter()
+                ->sortBy([
+                    fn (PaymentConcept $concept) => (int) ($concept->eventFeeComponent?->sort_order ?? 0),
+                    fn (PaymentConcept $concept) => (int) $concept->id,
+                ])
+                ->values();
+
+            $bundlePlan = $this->eventBundlePaymentPlan(
+                $concepts,
+                $payment->member_id ? (int) $payment->member_id : null,
+                $payment->staff_id ? (int) $payment->staff_id : null,
+                (float) $validated['amount_paid'],
+                $payment
+            );
+
+            $oldAmount = (float) $payment->amount_paid;
+            $oldCheckImagePath = $payment->check_image_path;
+            $zellePhone = $validated['payment_type'] === 'zelle' ? $validated['zelle_phone'] : null;
+            $nextCheckImagePath = $payment->check_image_path;
+            $deleteOldCheckImage = false;
+
+            if ($validated['payment_type'] !== 'check') {
+                $nextCheckImagePath = null;
+                $deleteOldCheckImage = !empty($payment->check_image_path);
+            } elseif ($request->hasFile('check_image')) {
+                $nextCheckImagePath = $request->file('check_image')->store('payments/checks', 'public');
+                $deleteOldCheckImage = !empty($payment->check_image_path) && $payment->check_image_path !== $nextCheckImagePath;
+            }
+
+            $account = $payment->account ?: Account::firstOrCreate(
+                ['club_id' => $payment->club_id, 'pay_to' => $payment->pay_to ?: 'club_budget'],
+                ['label' => Str::title(str_replace('_', ' ', $payment->pay_to ?: 'club_budget')), 'balance' => 0]
+            );
+
+            DB::transaction(function () use ($payment, $validated, $bundlePlan, $zellePhone, $nextCheckImagePath, $oldAmount, $account) {
+                $payment->fill([
+                    'amount_paid' => $bundlePlan['amount_paid'],
+                    'payment_date' => $validated['payment_date'],
+                    'payment_type' => $validated['payment_type'],
+                    'zelle_phone' => $zellePhone,
+                    'check_image_path' => $nextCheckImagePath,
+                    'notes' => $validated['notes'] ?? null,
+                    'expected_amount' => $bundlePlan['expected'],
+                    'balance_due_after' => $bundlePlan['balance_after'],
+                ]);
+                $payment->save();
+
+                $payment->allocations()->delete();
+                foreach ($bundlePlan['allocations'] as $allocationRow) {
+                    $payment->allocations()->create($allocationRow);
+                }
+
+                $delta = round((float) $bundlePlan['amount_paid'] - $oldAmount, 2);
+                if ($delta > 0) {
+                    $account->increment('balance', $delta);
+                } elseif ($delta < 0) {
+                    $account->decrement('balance', abs($delta));
+                }
+            });
+
+            if ($deleteOldCheckImage && $oldCheckImagePath) {
+                try {
+                    Storage::disk('public')->delete($oldCheckImagePath);
+                } catch (\Throwable $e) {
+                }
+            }
+
+            $payment = $payment->fresh();
+            $payment->load([
+                'member:id,type,id_data',
+                'staff:id,type,id_data,user_id',
+                'staff.user:id,name',
+                'concept:id,concept,amount,reusable,event_id,event_fee_component_id',
+                'concept.event:id,title,start_at',
+                'concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+                'allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+                'allocations.concept:id,concept,event_id,event_fee_component_id',
+                'allocations.concept.event:id,title,start_at',
+                'allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+                'account:id,club_id,pay_to,label',
+                'receivedBy:id,name',
+            ]);
+
+            $detailMember = ClubHelper::memberDetail($payment->member);
+            $detailStaff = ClubHelper::staffDetail($payment->staff);
+            $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
+            $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
+            $receipt = $this->paymentReceiptService->syncForPayment($payment);
+            $payment->setAttribute('receipt', [
+                'id' => $receipt->id,
+                'receipt_number' => $receipt->receipt_number,
+            ]);
+            $payment->setAttribute('allocations', $this->paymentAllocationRows($payment));
+
+            return response()->json(['message' => 'Payment updated', 'data' => $payment]);
         }
 
         $concept = $payment->payment_concept_id
@@ -813,11 +1052,29 @@ class ClubPaymentController extends Controller
             : null;
 
         $payTo = $concept?->pay_to ?: ($submission->pay_to ?: 'club_budget');
+        $club = Club::withoutGlobalScopes()->findOrFail((int) $submission->club_id);
+        if (!$this->treasuryService->hasClubBankInfo($club)) {
+            return back()->withErrors([
+                'parent_transfer' => 'Registra la cuenta bancaria del club antes de aprobar transferencias de padres.',
+            ]);
+        }
+
         $expected = $submission->expected_amount !== null
             ? (float) $submission->expected_amount
             : ($concept?->amount !== null ? (float) $concept->amount : null);
         $isReusableConcept = (bool) ($concept?->reusable);
         $amountPaid = (float) $submission->amount;
+
+        if ($concept?->event_id && $submission->member_id) {
+            try {
+                $this->assertRequiredEventComponentsSelected(collect([$concept]), (int) $submission->member_id, null);
+            } catch (ValidationException $exception) {
+                return back()->withErrors([
+                    'parent_transfer' => collect($exception->errors())->flatten()->first()
+                        ?: 'Primero debe pagarse el concepto obligatorio del evento.',
+                ]);
+            }
+        }
 
         $priorPaid = 0.0;
         if (!$isReusableConcept && $expected !== null && $expected > 0 && $submission->payment_concept_id) {
@@ -943,6 +1200,246 @@ class ClubPaymentController extends Controller
         return Club::where('id', auth()->user()->club_id)->firstOrFail();
     }
 
+    protected function assertRequiredEventComponentsSelected(Collection $selectedConcepts, ?int $memberId, ?int $staffId, ?Payment $excludingPayment = null): void
+    {
+        $first = $selectedConcepts->first();
+        if (!$first?->event_id || !$first?->club_id) {
+            return;
+        }
+
+        $selectedIds = $selectedConcepts
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $requiredConcepts = PaymentConcept::query()
+            ->where('event_id', (int) $first->event_id)
+            ->where('club_id', (int) $first->club_id)
+            ->where('status', 'active')
+            ->whereHas('eventFeeComponent', fn ($query) => $query->where('is_required', true))
+            ->with(['eventFeeComponent:id,label,amount,is_required,sort_order', 'scopes'])
+            ->get()
+            ->filter(fn (PaymentConcept $concept) => $this->conceptAppliesToPayer($concept, $memberId, $staffId))
+            ->values();
+
+        if ($requiredConcepts->isEmpty()) {
+            return;
+        }
+
+        $paidTotals = $this->paidTotalsForConceptsAndPayer(
+            $requiredConcepts->pluck('id')->map(fn ($id) => (int) $id)->all(),
+            $memberId,
+            $staffId,
+            $excludingPayment?->id
+        );
+
+        $missingRequired = $requiredConcepts->contains(function (PaymentConcept $concept) use ($selectedIds, $paidTotals) {
+            $remaining = max(round((float) $concept->amount - (float) ($paidTotals[(int) $concept->id] ?? 0), 2), 0);
+
+            return $remaining > 0.0001 && !in_array((int) $concept->id, $selectedIds, true);
+        });
+
+        if ($missingRequired) {
+            throw ValidationException::withMessages([
+                'event_concept_ids' => ['Incluye los componentes obligatorios del evento antes de cobrar opcionales.'],
+            ]);
+        }
+    }
+
+    protected function eventBundlePaymentPlan(Collection $concepts, ?int $memberId, ?int $staffId, float $requestedAmount, ?Payment $excludingPayment = null): array
+    {
+        if ($concepts->isEmpty()) {
+            throw ValidationException::withMessages([
+                'event_concept_ids' => ['Selecciona al menos un componente del evento.'],
+            ]);
+        }
+
+        foreach ($concepts as $concept) {
+            if (!$this->conceptAppliesToPayer($concept, $memberId, $staffId)) {
+                throw ValidationException::withMessages([
+                    'event_concept_ids' => ['Uno de los componentes seleccionados no aplica al pagador.'],
+                ]);
+            }
+        }
+
+        $paidTotals = $this->paidTotalsForConceptsAndPayer(
+            $concepts->pluck('id')->map(fn ($id) => (int) $id)->all(),
+            $memberId,
+            $staffId,
+            $excludingPayment?->id
+        );
+
+        $remainingRows = $concepts
+            ->map(function (PaymentConcept $concept) use ($paidTotals) {
+                $expected = round((float) ($concept->amount ?? 0), 2);
+                $priorPaid = round((float) ($paidTotals[(int) $concept->id] ?? 0), 2);
+
+                return [
+                    'concept' => $concept,
+                    'expected' => $expected,
+                    'is_required' => (bool) ($concept->eventFeeComponent?->is_required ?? true),
+                    'sort_order' => (int) ($concept->eventFeeComponent?->sort_order ?? 0),
+                    'prior_paid' => $priorPaid,
+                    'remaining' => max($expected - $priorPaid, 0),
+                ];
+            })
+            ->filter(fn (array $row) => $row['expected'] > 0)
+            ->sortBy([
+                fn (array $row) => $row['is_required'] ? 0 : 1,
+                fn (array $row) => $row['sort_order'],
+                fn (array $row) => (int) $row['concept']->id,
+            ])
+            ->values();
+
+        $remainingBefore = round($remainingRows->sum(fn (array $row) => (float) $row['remaining']), 2);
+        if ($remainingBefore <= 0.0001) {
+            throw ValidationException::withMessages([
+                'event_concept_ids' => ['Los componentes seleccionados ya están pagados para este pagador.'],
+            ]);
+        }
+
+        $amountPaid = round(min($requestedAmount, $remainingBefore), 2);
+        if ($amountPaid <= 0.0001) {
+            throw ValidationException::withMessages([
+                'amount_paid' => ['El monto debe ser mayor que 0.'],
+            ]);
+        }
+
+        $toAllocate = $amountPaid;
+        $allocationRows = [];
+
+        foreach ($remainingRows as $row) {
+            if ($toAllocate <= 0.0001) {
+                break;
+            }
+
+            $allocated = round(min((float) $row['remaining'], $toAllocate), 2);
+            if ($allocated <= 0.0001) {
+                continue;
+            }
+
+            /** @var PaymentConcept $concept */
+            $concept = $row['concept'];
+            $allocationRows[] = [
+                'payment_concept_id' => (int) $concept->id,
+                'event_fee_component_id' => $concept->event_fee_component_id ? (int) $concept->event_fee_component_id : null,
+                'amount' => $allocated,
+            ];
+            $toAllocate = round($toAllocate - $allocated, 2);
+        }
+
+        $expected = round($remainingRows->sum(fn (array $row) => (float) $row['expected']), 2);
+
+        return [
+            'expected' => $expected,
+            'amount_paid' => $amountPaid,
+            'balance_after' => max(round($remainingBefore - $amountPaid, 2), 0),
+            'allocations' => $allocationRows,
+        ];
+    }
+
+    protected function conceptAppliesToPayer(PaymentConcept $concept, ?int $memberId, ?int $staffId): bool
+    {
+        if (!$memberId && !$staffId) {
+            return false;
+        }
+
+        $concept->loadMissing('scopes');
+
+        if ($memberId) {
+            $member = Member::query()->find($memberId);
+            if (!$member) {
+                return false;
+            }
+
+            return $concept->scopes->contains(function ($scope) use ($concept, $member, $memberId) {
+                return match ($scope->scope_type) {
+                    'member' => (int) $scope->member_id === (int) $memberId,
+                    'class' => (int) $scope->class_id === (int) $member->class_id,
+                    'club_wide' => (int) ($scope->club_id ?: $concept->club_id) === (int) $member->club_id,
+                    default => false,
+                };
+            });
+        }
+
+        $staff = Staff::query()->find($staffId);
+        if (!$staff) {
+            return false;
+        }
+
+        return $concept->scopes->contains(function ($scope) use ($concept, $staff, $staffId) {
+            return match ($scope->scope_type) {
+                'staff' => (int) $scope->staff_id === (int) $staffId,
+                'staff_wide' => (int) ($scope->club_id ?: $concept->club_id) === (int) $staff->club_id,
+                default => false,
+            };
+        });
+    }
+
+    protected function paidTotalsForConceptsAndPayer(array $conceptIds, ?int $memberId, ?int $staffId, ?int $excludingPaymentId = null): array
+    {
+        $conceptIds = collect($conceptIds)->map(fn ($id) => (int) $id)->filter()->unique()->values();
+        if ($conceptIds->isEmpty()) {
+            return [];
+        }
+
+        $directRows = Payment::query()
+            ->whereIn('payment_concept_id', $conceptIds->all())
+            ->whereDoesntHave('allocations')
+            ->when($excludingPaymentId, fn ($query) => $query->where('id', '!=', $excludingPaymentId))
+            ->when($memberId, fn ($query) => $query->where('member_id', $memberId))
+            ->when($staffId, fn ($query) => $query->where('staff_id', $staffId))
+            ->selectRaw('payment_concept_id, COALESCE(SUM(amount_paid), 0) as total_paid')
+            ->groupBy('payment_concept_id')
+            ->pluck('total_paid', 'payment_concept_id')
+            ->map(fn ($amount) => (float) $amount);
+
+        $allocationRows = PaymentAllocation::query()
+            ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+            ->whereNull('payments.deleted_at')
+            ->whereIn('payment_allocations.payment_concept_id', $conceptIds->all())
+            ->when($excludingPaymentId, fn ($query) => $query->where('payments.id', '!=', $excludingPaymentId))
+            ->when($memberId, fn ($query) => $query->where('payments.member_id', $memberId))
+            ->when($staffId, fn ($query) => $query->where('payments.staff_id', $staffId))
+            ->selectRaw('payment_allocations.payment_concept_id, COALESCE(SUM(payment_allocations.amount), 0) as total_paid')
+            ->groupBy('payment_allocations.payment_concept_id')
+            ->pluck('total_paid', 'payment_concept_id')
+            ->map(fn ($amount) => (float) $amount);
+
+        $totals = [];
+        foreach ($directRows as $conceptId => $amount) {
+            $totals[(int) $conceptId] = round(($totals[(int) $conceptId] ?? 0) + (float) $amount, 2);
+        }
+        foreach ($allocationRows as $conceptId => $amount) {
+            $totals[(int) $conceptId] = round(($totals[(int) $conceptId] ?? 0) + (float) $amount, 2);
+        }
+
+        return $totals;
+    }
+
+    protected function paymentAllocationRows(Payment $payment): array
+    {
+        return $payment->allocations
+            ->map(function (PaymentAllocation $allocation) {
+                $concept = $allocation->concept;
+
+                return [
+                    'id' => (int) $allocation->id,
+                    'payment_concept_id' => (int) $allocation->payment_concept_id,
+                    'event_fee_component_id' => $allocation->event_fee_component_id ? (int) $allocation->event_fee_component_id : null,
+                    'amount' => (float) $allocation->amount,
+                    'concept_name' => $concept?->concept,
+                    'event_id' => $concept?->event_id ? (int) $concept->event_id : null,
+                    'event_title' => $concept?->event?->title,
+                    'component_label' => $concept?->eventFeeComponent?->label,
+                    'is_required' => (bool) ($concept?->eventFeeComponent?->is_required ?? true),
+                    'sort_order' => (int) ($concept?->eventFeeComponent?->sort_order ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
     protected function recalculatePaymentBalances(Payment $payment): void
     {
         if (!$payment->payment_concept_id || $payment->expected_amount === null) {
@@ -995,25 +1492,13 @@ class ClubPaymentController extends Controller
             return [];
         }
 
-        return Payment::query()
-            ->whereIn('payment_concept_id', $expectedByConcept->keys())
-            ->selectRaw('payment_concept_id, member_id, staff_id, COALESCE(SUM(amount_paid), 0) as total_paid')
-            ->groupBy('payment_concept_id', 'member_id', 'staff_id')
-            ->get()
-            ->filter(function ($row) use ($expectedByConcept) {
-                $expected = (float) ($expectedByConcept[(int) $row->payment_concept_id] ?? 0);
-                return $expected > 0 && (float) $row->total_paid >= $expected;
+        return collect($this->paymentTotalsByConceptTarget($concepts))
+            ->filter(function ($totalPaid, $key) use ($expectedByConcept) {
+                $conceptId = (int) explode('|', (string) $key)[0];
+                $expected = (float) ($expectedByConcept[$conceptId] ?? 0);
+                return $expected > 0 && (float) $totalPaid >= $expected;
             })
-            ->map(function ($row) {
-                if ($row->member_id) {
-                    return sprintf('%d|member|%d', $row->payment_concept_id, $row->member_id);
-                }
-                if ($row->staff_id) {
-                    return sprintf('%d|staff|%d', $row->payment_concept_id, $row->staff_id);
-                }
-                return null;
-            })
-            ->filter()
+            ->keys()
             ->values()
             ->all();
     }
@@ -1025,8 +1510,9 @@ class ClubPaymentController extends Controller
             return [];
         }
 
-        return Payment::query()
-            ->whereIn('payment_concept_id', $conceptIds)
+        $direct = Payment::query()
+            ->whereIn('payment_concept_id', $conceptIds->all())
+            ->whereDoesntHave('allocations')
             ->selectRaw('payment_concept_id, member_id, staff_id, COALESCE(SUM(amount_paid), 0) as total_paid')
             ->groupBy('payment_concept_id', 'member_id', 'staff_id')
             ->get()
@@ -1040,6 +1526,34 @@ class ClubPaymentController extends Controller
                 return [];
             })
             ->all();
+
+        $allocated = PaymentAllocation::query()
+            ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+            ->whereNull('payments.deleted_at')
+            ->whereIn('payment_allocations.payment_concept_id', $conceptIds->all())
+            ->selectRaw('payment_allocations.payment_concept_id, payments.member_id, payments.staff_id, COALESCE(SUM(payment_allocations.amount), 0) as total_paid')
+            ->groupBy('payment_allocations.payment_concept_id', 'payments.member_id', 'payments.staff_id')
+            ->get()
+            ->mapWithKeys(function ($row) {
+                if ($row->member_id) {
+                    return [sprintf('%d|member|%d', $row->payment_concept_id, $row->member_id) => (float) $row->total_paid];
+                }
+                if ($row->staff_id) {
+                    return [sprintf('%d|staff|%d', $row->payment_concept_id, $row->staff_id) => (float) $row->total_paid];
+                }
+                return [];
+            })
+            ->all();
+
+        $totals = [];
+        foreach ($direct as $key => $amount) {
+            $totals[$key] = round(($totals[$key] ?? 0) + (float) $amount, 2);
+        }
+        foreach ($allocated as $key => $amount) {
+            $totals[$key] = round(($totals[$key] ?? 0) + (float) $amount, 2);
+        }
+
+        return $totals;
     }
 
     protected function pendingManualReceiptsForClub(int $clubId): array
@@ -1055,7 +1569,12 @@ class ClubPaymentController extends Controller
                 'payment:id,club_id,member_id,staff_id,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',
                 'payment.member:id,type,id_data,parent_id',
                 'payment.staff:id,type,id_data,user_id',
-                'payment.concept:id,concept,amount,reusable',
+                'payment.concept:id,concept,amount,reusable,event_id,event_fee_component_id',
+                'payment.concept.event:id,title,start_at',
+                'payment.allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+                'payment.allocations.concept:id,concept,event_id,event_fee_component_id',
+                'payment.allocations.concept.event:id,title,start_at',
+                'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
             ])
             ->latest('issued_at')
             ->get()
@@ -1081,7 +1600,7 @@ class ClubPaymentController extends Controller
                     'last_downloaded_at' => optional($receipt->last_downloaded_at)->toDateTimeString(),
                     'member_name' => $memberDetail['name'] ?? null,
                     'staff_name' => $staffDetail['name'] ?? null,
-                    'concept_name' => $payment?->concept?->concept ?? $payment?->concept_text,
+                    'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text,
                     'amount_paid' => (float) ($payment?->amount_paid ?? 0),
                     'payment_date' => optional($payment?->payment_date)->toDateString(),
                     'reason' => $reason,

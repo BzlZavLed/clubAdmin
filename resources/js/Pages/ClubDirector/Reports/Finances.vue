@@ -17,6 +17,7 @@ const selectedScopeId = ref(null)    // e.g. class_id when scope_type === 'class
 const selectedMemberId = ref(null)
 const selectedStaffId = ref(null)
 const selectedPayTo = ref(null)
+const selectedLocation = ref('all')
 
 const dateFrom = ref('')
 const dateTo = ref('')
@@ -57,6 +58,24 @@ const payToLabel = (val) => {
     const m = payTo.value.find(p => p.value === val)
     return m?.label || (val ?? '—')
 }
+const locationLabel = (value) => ({
+    cash: 'Efectivo',
+    bank: 'Banco',
+    external: 'Externo',
+    internal: 'Interno',
+})[value] || '—'
+const entryTypeLabel = (entry) => ({
+    payment: 'Ingreso',
+    expense: 'Gasto',
+    treasury_movement: 'Movimiento',
+})[entry?.entry_type] || '—'
+const entryLocationLabel = (entry) => {
+    if (entry?.from_location || entry?.to_location) {
+        return `${locationLabel(entry.from_location)} → ${locationLabel(entry.to_location)}`
+    }
+
+    return locationLabel(entry?.location)
+}
 const settlementSummary = (entry) => {
     if (!entry?.settlement_account_label) return null
     const base = `Liquidado con ${entry.settlement_account_label}`
@@ -91,6 +110,7 @@ const pdfUrl = computed(() => {
     if (dateFrom.value) params.date_from = dateFrom.value
     if (dateTo.value) params.date_to = dateTo.value
     if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
+    if (selectedLocation.value && selectedLocation.value !== 'all') params.location = selectedLocation.value
     return route('financial.report.pdf', params)
 })
 
@@ -228,6 +248,7 @@ const fetchReport = async () => {
         if (dateTo.value) params.date_to = dateTo.value
         if (selectedClubId.value) params.club_id = selectedClubId.value
         if (selectedPayTo.value && selectedPayTo.value !== 'all') params.pay_to = selectedPayTo.value
+        if (selectedLocation.value && selectedLocation.value !== 'all') params.location = selectedLocation.value
 
         const { data } = await axios.get(route('financial.report'), { params })
 
@@ -351,16 +372,25 @@ watch(selectedClubId, async (id, old) => {
                 <div v-if="loadError" class="mt-2 text-sm text-red-600">{{ loadError }}</div>
 
                 <!-- Account filter -->
-                <div class="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Cuenta (pay_to)</label>
-                        <select v-model="selectedPayTo"
-                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="all">Todas las cuentas</option>
-                            <option v-for="p in payTo" :key="p.value" :value="p.value">{{ p.label }}</option>
-                        </select>
-                    </div>
-                </div>
+	                <div class="mt-4 grid gap-3 sm:grid-cols-2">
+	                    <div>
+	                        <label class="block text-sm font-medium text-gray-700">Cuenta (pay_to)</label>
+	                        <select v-model="selectedPayTo"
+	                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+	                            <option value="all">Todas las cuentas</option>
+	                            <option v-for="p in payTo" :key="p.value" :value="p.value">{{ p.label }}</option>
+	                        </select>
+	                    </div>
+	                    <div>
+	                        <label class="block text-sm font-medium text-gray-700">Ubicación del dinero</label>
+	                        <select v-model="selectedLocation"
+	                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+	                            <option value="all">Todas las ubicaciones</option>
+	                            <option value="cash">Efectivo</option>
+	                            <option value="bank">Banco</option>
+	                        </select>
+	                    </div>
+	                </div>
 
                 <!-- Concept filters -->
                 <div class="mt-4 grid gap-3 sm:grid-cols-2">
@@ -406,20 +436,28 @@ watch(selectedClubId, async (id, old) => {
                                 <h3 class="text-base font-semibold text-gray-900">{{ acc.label }}</h3>
                                 <p class="text-xs text-gray-600">{{ acc.pay_to }}</p>
                             </div>
-                            <div class="grid grid-cols-3 gap-4 text-right">
-                                <div>
-                                    <div class="text-xs text-gray-500">Ingresos</div>
-                                    <div class="font-semibold text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</div>
+	                            <div class="grid grid-cols-2 gap-4 text-right sm:grid-cols-5">
+	                                <div>
+	                                    <div class="text-xs text-gray-500">Ingresos</div>
+	                                    <div class="font-semibold text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</div>
                                 </div>
                                 <div>
                                     <div class="text-xs text-gray-500">Gastos</div>
                                     <div class="font-semibold text-amber-700">{{ fmtMoney(acc.totals.spent) }}</div>
                                 </div>
                                 <div>
-                                    <div class="text-xs text-gray-500">Neto</div>
-                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.net) }}</div>
-                                </div>
-                            </div>
+	                                    <div class="text-xs text-gray-500">Neto</div>
+	                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.net) }}</div>
+	                                </div>
+	                                <div>
+	                                    <div class="text-xs text-gray-500">Efectivo</div>
+	                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.cash_balance) }}</div>
+	                                </div>
+	                                <div>
+	                                    <div class="text-xs text-gray-500">Banco</div>
+	                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.bank_balance) }}</div>
+	                                </div>
+	                            </div>
                         </div>
                     </div>
 
@@ -435,14 +473,21 @@ watch(selectedClubId, async (id, old) => {
                                     <div class="text-xs text-gray-500">{{ formatDateMDY(e.date) }}</div>
                                     <div class="text-sm font-semibold text-gray-900">{{ e.concept }}</div>
                                 </div>
-                                <span :class="[
-                                    'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
-                                    e.entry_type === 'payment' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                                ]">
-                                    {{ e.entry_type === 'payment' ? 'Ingreso' : 'Gasto' }}
-                                </span>
-                            </div>
-                            <div v-if="acc.pay_to === 'reimbursement_to'" class="mt-1 text-xs text-gray-600">
+	                                <span :class="[
+	                                    'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
+	                                    e.entry_type === 'payment'
+	                                        ? 'bg-emerald-50 text-emerald-700'
+	                                        : e.entry_type === 'expense'
+	                                            ? 'bg-amber-50 text-amber-700'
+	                                            : 'bg-blue-50 text-blue-700'
+	                                ]">
+	                                    {{ entryTypeLabel(e) }}
+	                                </span>
+	                            </div>
+	                            <div class="mt-1 text-xs text-gray-600">
+	                                <span class="font-medium text-gray-700">Ubicación:</span> {{ entryLocationLabel(e) }}
+	                            </div>
+	                            <div v-if="acc.pay_to === 'reimbursement_to'" class="mt-1 text-xs text-gray-600">
                                 <span class="font-medium text-gray-700">Miembro/Personal:</span> {{ e.member ?? e.staff ?? '—' }}
                             </div>
                             <div v-if="acc.pay_to === 'reimbursement_to' && settlementSummary(e)" class="mt-1 text-xs text-gray-600">
@@ -451,18 +496,20 @@ watch(selectedClubId, async (id, old) => {
                             <div v-if="e.receipt_ref" class="mt-1 text-xs text-gray-600">
                                 <span class="font-medium text-gray-700">Ref:</span> {{ e.receipt_ref }}
                             </div>
-                            <div class="mt-2 text-sm">
-                                <span v-if="e.entry_type === 'expense'" class="font-semibold text-amber-700">-{{ fmtMoney(e.amount) }}</span>
-                                <span v-else class="font-semibold text-emerald-700">{{ fmtMoney(e.amount) }}</span>
-                            </div>
+	                            <div class="mt-2 text-sm">
+	                                <span v-if="e.entry_type === 'expense'" class="font-semibold text-amber-700">-{{ fmtMoney(e.amount) }}</span>
+	                                <span v-else-if="e.entry_type === 'treasury_movement'" class="font-semibold text-blue-700">{{ fmtMoney(e.amount) }}</span>
+	                                <span v-else class="font-semibold text-emerald-700">{{ fmtMoney(e.amount) }}</span>
+	                            </div>
                         </div>
                         <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm">
                             <div class="flex items-center justify-between">
                                 <span class="text-gray-600">Totales</span>
-                                <div class="text-right">
-                                    <div class="text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</div>
-                                    <div class="text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</div>
-                                </div>
+	                                    <div class="text-right">
+	                                        <div class="text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</div>
+	                                        <div class="text-blue-700">{{ fmtMoney(acc.totals.movements) }}</div>
+	                                        <div class="text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</div>
+	                                    </div>
                             </div>
                             <div class="mt-2 flex items-center justify-between font-semibold">
                                 <span class="text-gray-700">Saldo de la cuenta</span>
@@ -486,33 +533,44 @@ watch(selectedClubId, async (id, old) => {
                         <table class="min-w-full text-sm text-gray-700">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-4 py-2 text-left font-semibold">Fecha</th>
-                                    <th class="px-4 py-2 text-left font-semibold">Tipo</th>
-                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
-                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Liquidacion</th>
-                                    <th class="px-4 py-2 text-left font-semibold">Concepto</th>
-                                    <th class="px-4 py-2 text-left font-semibold">Ref.</th>
-                                    <th class="px-4 py-2 text-right font-semibold">Cargos</th>
-                                    <th class="px-4 py-2 text-right font-semibold">Abonos</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">Fecha</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">Tipo</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">Ubicación</th>
+	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
+	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Liquidacion</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">Concepto</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">Ref.</th>
+	                                    <th class="px-4 py-2 text-right font-semibold">Movimientos</th>
+	                                    <th class="px-4 py-2 text-right font-semibold">Cargos</th>
+	                                    <th class="px-4 py-2 text-right font-semibold">Abonos</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-for="e in pagedEntriesForAccount(acc)" :key="`${e.entry_type}-${e.id}`" class="border-t">
                                     <td class="px-4 py-2">{{ formatDateMDY(e.date) }}</td>
                                     <td class="px-4 py-2">
-                                        <span :class="[
-                                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold',
-                                            e.entry_type === 'payment' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                                        ]">
-                                            {{ e.entry_type === 'payment' ? 'Ingreso' : 'Gasto' }}
-                                        </span>
-                                    </td>
-                                    <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ e.member ?? e.staff ?? '—' }}</td>
+	                                        <span :class="[
+	                                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold',
+	                                            e.entry_type === 'payment'
+	                                                ? 'bg-emerald-50 text-emerald-700'
+	                                                : e.entry_type === 'expense'
+	                                                    ? 'bg-amber-50 text-amber-700'
+	                                                    : 'bg-blue-50 text-blue-700'
+	                                        ]">
+	                                            {{ entryTypeLabel(e) }}
+	                                        </span>
+	                                    </td>
+	                                    <td class="px-4 py-2">{{ entryLocationLabel(e) }}</td>
+	                                    <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ e.member ?? e.staff ?? '—' }}</td>
                                     <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ settlementSummary(e) ?? '—' }}</td>
-                                    <td class="px-4 py-2">{{ e.concept }}</td>
-                                    <td class="px-4 py-2">{{ e.receipt_ref ?? '—' }}</td>
-                                    <td class="px-4 py-2 text-right">
-                                        <span v-if="e.entry_type === 'expense'" class="text-amber-700">-{{ fmtMoney(e.amount) }}</span>
+	                                    <td class="px-4 py-2">{{ e.concept }}</td>
+	                                    <td class="px-4 py-2">{{ e.receipt_ref ?? '—' }}</td>
+	                                    <td class="px-4 py-2 text-right">
+	                                        <span v-if="e.entry_type === 'treasury_movement'" class="text-blue-700">{{ fmtMoney(e.amount) }}</span>
+	                                        <span v-else class="text-gray-400">—</span>
+	                                    </td>
+	                                    <td class="px-4 py-2 text-right">
+	                                        <span v-if="e.entry_type === 'expense'" class="text-amber-700">-{{ fmtMoney(e.amount) }}</span>
                                         <span v-else class="text-gray-400">—</span>
                                     </td>
                                     <td class="px-4 py-2 text-right">
@@ -521,16 +579,17 @@ watch(selectedClubId, async (id, old) => {
                                     </td>
                                 </tr>
                             </tbody>
-                            <tfoot>
-                                <tr class="border-t bg-gray-50 font-semibold">
-                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 6 : 4">Totales</td>
-                                    <td class="px-4 py-2 text-right text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</td>
-                                    <td class="px-4 py-2 text-right text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</td>
-                                </tr>
-                                <tr class="border-t bg-white font-semibold">
-                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 6 : 4">Saldo de la cuenta</td>
-                                    <td class="px-4 py-2 text-right" :colspan="2">{{ fmtMoney(acc.totals.net) }}</td>
-                                </tr>
+	                            <tfoot>
+	                                <tr class="border-t bg-gray-50 font-semibold">
+	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">Totales</td>
+	                                    <td class="px-4 py-2 text-right text-blue-700">{{ fmtMoney(acc.totals.movements) }}</td>
+	                                    <td class="px-4 py-2 text-right text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</td>
+	                                    <td class="px-4 py-2 text-right text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</td>
+	                                </tr>
+	                                <tr class="border-t bg-white font-semibold">
+	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">Saldo de la cuenta</td>
+	                                    <td class="px-4 py-2 text-right" :colspan="3">{{ fmtMoney(acc.totals.net) }}</td>
+	                                </tr>
                             </tfoot>
                         </table>
                     </div>
@@ -548,9 +607,9 @@ watch(selectedClubId, async (id, old) => {
                 </div>
             </section>
 
-            <div v-else-if="!loading" class="mt-6 text-sm text-gray-500 text-center">
-                No se encontraron pagos para los filtros seleccionados.
-            </div>
+	            <div v-else-if="!loading" class="mt-6 text-sm text-gray-500 text-center">
+	                No se encontraron movimientos para los filtros seleccionados.
+	            </div>
 
             <div v-if="reportError" class="mt-3 text-sm text-red-600 text-center">{{ reportError }}</div>
         </div>

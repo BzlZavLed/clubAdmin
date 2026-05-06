@@ -155,12 +155,20 @@
             background: #fffbeb;
         }
 
+        .entry-row-movement td {
+            background: #eff6ff;
+        }
+
         .entry-row-income td:first-child {
             border-left: 4px solid #10b981;
         }
 
         .entry-row-expense td:first-child {
             border-left: 4px solid #f59e0b;
+        }
+
+        .entry-row-movement td:first-child {
+            border-left: 4px solid #3b82f6;
         }
 
         .text-right {
@@ -334,6 +342,29 @@
     </style>
 </head>
 <body>
+    @php
+        $locationLabels = [
+            'cash' => 'Efectivo',
+            'bank' => 'Banco',
+            'external' => 'Externo',
+            'internal' => 'Interno',
+        ];
+        $entryTypeLabels = [
+            'payment' => 'Ingreso',
+            'expense' => 'Gasto',
+            'treasury_movement' => 'Movimiento',
+        ];
+        $entryLocationLabel = function ($entry) use ($locationLabels) {
+            if (!empty($entry['from_location']) || !empty($entry['to_location'])) {
+                return ($locationLabels[$entry['from_location'] ?? ''] ?? '—')
+                    . ' -> '
+                    . ($locationLabels[$entry['to_location'] ?? ''] ?? '—');
+            }
+
+            return $locationLabels[$entry['location'] ?? ''] ?? '—';
+        };
+    @endphp
+
     @if(!empty($qrCodeDataUri) && !empty($validationUrl))
         <div class="validation-footer">
             <table>
@@ -367,6 +398,9 @@
                                 @if(!empty($filters['pay_to']))
                                     | Cuenta: {{ $accounts->first()['label'] ?? $filters['pay_to'] }}
                                 @endif
+                                @if(!empty($filters['location']))
+                                    | Ubicación: {{ $locationLabels[$filters['location']] ?? $filters['location'] }}
+                                @endif
                                 @if(!empty($filters['concept']))
                                     | Concepto: {{ $filters['concept']->concept }}
                                 @endif
@@ -396,38 +430,50 @@
                         <p class="account-title">{{ $acc['label'] }}</p>
                         <p class="account-key">{{ $acc['pay_to'] }}</p>
                     </div>
-                    <div class="account-meta-right">
-                        <div>Ingresos: ${{ number_format($acc['totals']['paid'] ?? 0, 2) }}</div>
-                        <div>Gastos: ${{ number_format($acc['totals']['spent'] ?? 0, 2) }}</div>
-                    </div>
+	                    <div class="account-meta-right">
+	                        <div>Ingresos: ${{ number_format($acc['totals']['paid'] ?? 0, 2) }}</div>
+	                        <div>Gastos: ${{ number_format($acc['totals']['spent'] ?? 0, 2) }}</div>
+	                        <div>Efectivo: ${{ number_format($acc['totals']['cash_balance'] ?? 0, 2) }}</div>
+	                        <div>Banco: ${{ number_format($acc['totals']['bank_balance'] ?? 0, 2) }}</div>
+	                    </div>
                 </div>
 
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 9%" class="nowrap">Fecha</th>
-                            <th style="width: 8%" class="nowrap">Tipo</th>
-                            <th style="width: 55%">Concepto</th>
-                            <th style="width: 8%" class="text-center nowrap">Ref.</th>
-                            <th style="width: 10%" class="text-right nowrap">Gastos</th>
-                            <th style="width: 10%" class="text-right nowrap">Ingresos</th>
+	                            <th style="width: 8%" class="nowrap">Fecha</th>
+	                            <th style="width: 8%" class="nowrap">Tipo</th>
+	                            <th style="width: 11%" class="nowrap">Ubicación</th>
+	                            <th style="width: 39%">Concepto</th>
+	                            <th style="width: 8%" class="text-center nowrap">Ref.</th>
+	                            <th style="width: 8%" class="text-right nowrap">Mov.</th>
+	                            <th style="width: 9%" class="text-right nowrap">Gastos</th>
+	                            <th style="width: 9%" class="text-right nowrap">Ingresos</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach(($acc['entries'] ?? []) as $entry)
-                            <tr class="{{ $entry['entry_type'] === 'payment' ? 'entry-row-income' : 'entry-row-expense' }}">
-                                <td class="nowrap">{{ \Illuminate\Support\Carbon::parse($entry['date'])->format('m-d-Y') }}</td>
-                                <td class="nowrap">{{ $entry['entry_type'] === 'payment' ? 'Ingreso' : 'Gasto' }}</td>
-                                <td class="wrap">
+	                            <tr class="{{ $entry['entry_type'] === 'payment' ? 'entry-row-income' : (($entry['entry_type'] ?? null) === 'treasury_movement' ? 'entry-row-movement' : 'entry-row-expense') }}">
+	                                <td class="nowrap">{{ \Illuminate\Support\Carbon::parse($entry['date'])->format('m-d-Y') }}</td>
+	                                <td class="nowrap">{{ $entryTypeLabels[$entry['entry_type'] ?? ''] ?? '—' }}</td>
+	                                <td class="nowrap">{{ $entryLocationLabel($entry) }}</td>
+	                                <td class="wrap">
                                     {{ $entry['concept'] ?? '—' }}
                                     @if(!empty($entry['member']) || !empty($entry['staff']))
                                         <div style="margin-top: 3px; color: #4b5563;">
                                             {{ $entry['member'] ?? $entry['staff'] }}
                                         </div>
                                     @endif
-                                </td>
-                                <td class="text-center nowrap">{{ $entry['receipt_ref'] ?? '—' }}</td>
-                                <td class="text-right nowrap">
+	                                </td>
+	                                <td class="text-center nowrap">{{ $entry['receipt_ref'] ?? '—' }}</td>
+	                                <td class="text-right nowrap">
+	                                    @if(($entry['entry_type'] ?? null) === 'treasury_movement')
+	                                        <span>${{ number_format($entry['amount'] ?? 0, 2) }}</span>
+	                                    @else
+	                                        —
+	                                    @endif
+	                                </td>
+	                                <td class="text-right nowrap">
                                     @if($entry['entry_type'] === 'expense')
                                         <span class="expense">-${{ number_format($entry['amount'] ?? 0, 2) }}</span>
                                     @else
@@ -444,16 +490,17 @@
                             </tr>
                         @endforeach
                     </tbody>
-                    <tfoot>
-                        <tr class="totals-row">
-                            <td colspan="4">Totales</td>
-                            <td class="text-right expense">-${{ number_format($acc['totals']['spent'] ?? 0, 2) }}</td>
-                            <td class="text-right income">${{ number_format($acc['totals']['paid'] ?? 0, 2) }}</td>
-                        </tr>
-                        <tr class="balance-row">
-                            <td colspan="4">Saldo final</td>
-                            <td colspan="2" class="text-right">${{ number_format($acc['totals']['net'] ?? 0, 2) }}</td>
-                        </tr>
+	                    <tfoot>
+	                        <tr class="totals-row">
+	                            <td colspan="5">Totales</td>
+	                            <td class="text-right">${{ number_format($acc['totals']['movements'] ?? 0, 2) }}</td>
+	                            <td class="text-right expense">-${{ number_format($acc['totals']['spent'] ?? 0, 2) }}</td>
+	                            <td class="text-right income">${{ number_format($acc['totals']['paid'] ?? 0, 2) }}</td>
+	                        </tr>
+	                        <tr class="balance-row">
+	                            <td colspan="5">Saldo final</td>
+	                            <td colspan="3" class="text-right">${{ number_format($acc['totals']['net'] ?? 0, 2) }}</td>
+	                        </tr>
                     </tfoot>
                 </table>
             </section>

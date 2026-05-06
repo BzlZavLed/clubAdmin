@@ -24,6 +24,7 @@ use App\Models\ScopeType;
 use App\Models\Payment;
 use App\Models\Expense;
 use App\Models\Account;
+use App\Models\TreasuryMovement;
 use App\Models\ParentCarpetaRequirementEvidence;
 use App\Models\InvestitureRequest;
 use App\Models\PublicMemberEvidenceAccessCode;
@@ -38,6 +39,7 @@ use Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Collection;
 use App\Support\ClubHelper;
+use App\Services\ClubTreasuryService;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
 use Illuminate\Support\Str;
@@ -1040,6 +1042,7 @@ class ReportController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'pay_to' => ['nullable', 'string', 'max:255'],
+            'location' => ['nullable', Rule::in(['cash', 'bank'])],
             'paginate' => ['sometimes', 'boolean'],   // optional: to enable pagination
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
@@ -1351,6 +1354,9 @@ class ReportController extends Controller
                     'entries' => collect($account['entries'] ?? [])->map(fn ($entry) => [
                         'date' => $entry['date'] ?? null,
                         'entry_type' => $entry['entry_type'] ?? null,
+                        'location' => $entry['location'] ?? null,
+                        'from_location' => $entry['from_location'] ?? null,
+                        'to_location' => $entry['to_location'] ?? null,
                         'receipt_ref' => $entry['receipt_ref'] ?? null,
                         'concept' => $entry['concept'] ?? null,
                         'amount' => $entry['amount'] ?? null,
@@ -1398,6 +1404,7 @@ class ReportController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'pay_to' => ['nullable', 'string', 'max:255'],
+            'location' => ['nullable', Rule::in(['cash', 'bank'])],
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
         ]);
 
@@ -1421,13 +1428,14 @@ class ReportController extends Controller
                 ->first(['id', 'concept']);
         }
 
-        return [
-            'club' => $club,
-            'accounts' => $report['accounts'],
-            'receipts' => $report['receipts'],
-            'filters' => [
-                'pay_to' => $payTo,
-                'concept' => $concept,
+	        return [
+	            'club' => $club,
+	            'accounts' => $report['accounts'],
+	            'receipts' => $report['receipts'],
+	            'filters' => [
+	                'pay_to' => $payTo,
+	                'location' => $validated['location'] ?? null,
+	                'concept' => $concept,
                 'date_from' => $validated['date_from'] ?? null,
                 'date_to' => $validated['date_to'] ?? null,
                 'date' => $validated['date'] ?? null,
@@ -1438,9 +1446,11 @@ class ReportController extends Controller
 
     protected function buildFinancialAccountLedgerData(Club $club, array $filters = [], bool $includeReceipts = false): array
     {
-        $payTo = $filters['pay_to'] ?? null;
-        $conceptId = $filters['concept_id'] ?? null;
-        $receiptAnnexes = collect();
+	        $payTo = $filters['pay_to'] ?? null;
+	        $conceptId = $filters['concept_id'] ?? null;
+	        $location = $filters['location'] ?? null;
+	        $receiptAnnexes = collect();
+	        $treasuryService = app(ClubTreasuryService::class);
 
         $paymentsQ = Payment::query()
             ->where('club_id', $club->id)
@@ -1456,9 +1466,17 @@ class ReportController extends Controller
         if ($payTo) {
             $paymentsQ->where('pay_to', $payTo);
         }
-        if ($conceptId) {
-            $paymentsQ->where('payment_concept_id', $conceptId);
-        }
+	        if ($conceptId) {
+	            $paymentsQ->where('payment_concept_id', $conceptId);
+	        }
+	        if ($location === TreasuryMovement::LOCATION_BANK) {
+	            $paymentsQ->whereIn('payment_type', $treasuryService->electronicPaymentTypes());
+	        } elseif ($location === TreasuryMovement::LOCATION_CASH) {
+	            $paymentsQ->where(function ($query) {
+	                $query->whereIn('payment_type', ['cash', 'initial'])
+	                    ->orWhereNull('payment_type');
+	            });
+	        }
 
         if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
             $from = $filters['date_from'] ?? '1900-01-01';
@@ -1473,9 +1491,20 @@ class ReportController extends Controller
         $expensesQ = Expense::query()
             ->where('club_id', $club->id);
 
-        if ($payTo) {
-            $expensesQ->where('pay_to', $payTo);
-        }
+	        if ($payTo) {
+	            $expensesQ->where('pay_to', $payTo);
+	        }
+	        if ($location === TreasuryMovement::LOCATION_BANK) {
+	            $expensesQ->where('funds_location', TreasuryMovement::LOCATION_BANK);
+	        } elseif ($location === TreasuryMovement::LOCATION_CASH) {
+	            $expensesQ->where(function ($query) {
+	                $query->where('funds_location', TreasuryMovement::LOCATION_CASH)
+	                    ->orWhere(function ($nested) {
+	                        $nested->whereNull('funds_location')
+	                            ->where('pay_to', '!=', 'reimbursement_to');
+	                    });
+	            });
+	        }
         if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
             $from = $filters['date_from'] ?? '1900-01-01';
             $to = $filters['date_to'] ?? '2999-12-31';
@@ -1484,32 +1513,36 @@ class ReportController extends Controller
             $expensesQ->whereDate('expense_date', $filters['date']);
         }
 
-        $expenses = $expensesQ
-            ->with(['settlementExpense:id,pay_to,expense_date'])
-            ->get([
-            'id',
-            'pay_to',
-            'amount',
-            'expense_date',
-            'description',
-            'status',
-            'reimbursed_to',
-            'receipt_path',
-            'reimbursement_receipt_path',
-            'settles_expense_id',
-            'created_at',
-        ]);
+	        $expenses = $expensesQ
+	            ->with(['settlementExpense:id,pay_to,expense_date'])
+	            ->get([
+	                'id',
+	                'pay_to',
+	                'funds_location',
+	                'amount',
+	                'expense_date',
+	                'description',
+	                'status',
+	                'reimbursed_to',
+	                'receipt_path',
+	                'reimbursement_receipt_path',
+	                'settles_expense_id',
+	                'created_at',
+	            ]);
 
-        $accountLabels = Account::query()
-            ->where('club_id', $club->id)
-            ->get(['pay_to', 'label'])
-            ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
-            ->all();
+	        $accountLabels = Account::query()
+	            ->where('club_id', $club->id)
+	            ->get(['pay_to', 'label'])
+	            ->mapWithKeys(fn($a) => [$a->pay_to => $a->label])
+	            ->all();
+	        $locationBalances = $treasuryService
+	            ->locationBalancesByAccount($club)
+	            ->keyBy('account');
 
         $entriesByAccount = [];
 
-        foreach ($payments as $p) {
-            $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
+	        foreach ($payments as $p) {
+	            $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
             $receiptRef = !empty($p->check_image_path)
                 ? $this->receiptReference('payment', $p->id)
                 : null;
@@ -1521,19 +1554,73 @@ class ReportController extends Controller
                 'id' => $p->id,
                 'date' => $p->payment_date,
                 'created_at' => $p->created_at?->format('Y-m-d H:i:s.u'),
-                'amount' => (float) $p->amount_paid,
-                'payment_type' => $p->payment_type,
-                'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
+	                'amount' => (float) $p->amount_paid,
+	                'payment_type' => $p->payment_type,
+	                'location' => $treasuryService->paymentLocation($p->payment_type),
+	                'from_location' => null,
+	                'to_location' => null,
+	                'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
                 'member' => $p->member?->applicant_name ?? null,
                 'staff' => $p->staff?->name ?? null,
                 'receipt_ref' => $receiptRef,
-                'receipt_refs' => $receiptRef ? [$receiptRef] : [],
-            ];
-        }
+	                'receipt_refs' => $receiptRef ? [$receiptRef] : [],
+	            ];
+	        }
 
-        foreach ($expenses as $e) {
-            $key = $e->pay_to ?? 'unassigned';
-            $receiptRefs = [];
+	        if (!$conceptId) {
+	            $movementsQ = TreasuryMovement::query()
+	                ->where('club_id', $club->id)
+	                ->with(['event:id,title', 'eventClubSettlement:id,receipt_number']);
+
+	            if ($payTo) {
+	                $movementsQ->where('pay_to', $payTo);
+	            }
+	            if ($location) {
+	                $movementsQ->where(function ($query) use ($location) {
+	                    $query->where('from_location', $location)
+	                        ->orWhere('to_location', $location);
+	                });
+	            }
+	            if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
+	                $from = $filters['date_from'] ?? '1900-01-01';
+	                $to = $filters['date_to'] ?? '2999-12-31';
+	                $movementsQ->whereBetween('movement_date', [$from, $to]);
+	            } elseif (!empty($filters['date'])) {
+	                $movementsQ->whereDate('movement_date', $filters['date']);
+	            }
+
+	            foreach ($movementsQ->get() as $movement) {
+	                $key = $movement->pay_to ?? 'club_budget';
+	                $receiptRef = $movement->eventClubSettlement?->receipt_number;
+
+	                $entriesByAccount[$key][] = [
+	                    'entry_type' => 'treasury_movement',
+	                    'id' => $movement->id,
+	                    'date' => $movement->movement_date,
+	                    'created_at' => $movement->created_at?->format('Y-m-d H:i:s.u'),
+	                    'amount' => (float) $movement->amount,
+	                    'payment_type' => null,
+	                    'location' => null,
+	                    'from_location' => $movement->from_location,
+	                    'to_location' => $movement->to_location,
+	                    'concept' => $this->treasuryMovementLabel($movement) . ($movement->event?->title ? ': ' . $movement->event->title : ''),
+	                    'member' => null,
+	                    'staff' => null,
+	                    'status' => null,
+	                    'settlement_account' => null,
+	                    'settlement_account_label' => null,
+	                    'settlement_date' => null,
+	                    'receipt_ref' => $receiptRef ?: $movement->reference,
+	                    'receipt_refs' => $receiptRef ? [$receiptRef] : [],
+	                ];
+	            }
+	        }
+
+	        foreach ($expenses as $e) {
+	            $key = $e->pay_to ?? 'unassigned';
+	            $expenseLocation = $e->funds_location
+	                ?: ($e->pay_to === 'reimbursement_to' ? 'internal' : TreasuryMovement::LOCATION_CASH);
+	            $receiptRefs = [];
             if (!empty($e->receipt_path)) {
                 $receiptRef = $this->receiptReference('expense', $e->id);
                 $receiptRefs[] = $receiptRef;
@@ -1553,9 +1640,12 @@ class ReportController extends Controller
                 'id' => $e->id,
                 'date' => $e->expense_date,
                 'created_at' => $e->created_at?->format('Y-m-d H:i:s.u'),
-                'amount' => (float) $e->amount,
-                'payment_type' => null,
-                'concept' => $e->description ?? '—',
+	                'amount' => (float) $e->amount,
+	                'payment_type' => null,
+	                'location' => $expenseLocation,
+	                'from_location' => null,
+	                'to_location' => null,
+	                'concept' => $e->description ?? '—',
                 'member' => null,
                 'staff' => $e->reimbursed_to,
                 'status' => $e->status,
@@ -1569,8 +1659,8 @@ class ReportController extends Controller
             ];
         }
 
-        $accounts = collect($entriesByAccount)
-            ->map(function ($entries, $payToKey) use ($accountLabels) {
+	        $accounts = collect($entriesByAccount)
+	            ->map(function ($entries, $payToKey) use ($accountLabels, $locationBalances) {
                 usort($entries, function ($a, $b) {
                     return [
                         $a['date'],
@@ -1585,30 +1675,45 @@ class ReportController extends Controller
                     ];
                 });
 
-                $paid = array_sum(array_map(fn($e) => $e['entry_type'] === 'payment' ? $e['amount'] : 0, $entries));
-                $spent = array_sum(array_map(fn($e) => $e['entry_type'] === 'expense' ? $e['amount'] : 0, $entries));
+	                $paid = array_sum(array_map(fn($e) => $e['entry_type'] === 'payment' ? $e['amount'] : 0, $entries));
+	                $spent = array_sum(array_map(fn($e) => $e['entry_type'] === 'expense' ? $e['amount'] : 0, $entries));
+	                $movements = array_sum(array_map(fn($e) => $e['entry_type'] === 'treasury_movement' ? $e['amount'] : 0, $entries));
+	                $currentLocation = $locationBalances->get($payToKey, []);
 
-                return [
+	                return [
                     'pay_to' => $payToKey,
                     'label' => $accountLabels[$payToKey] ?? ($payToKey === 'unassigned' ? 'Cuenta sin asignar' : $payToKey),
                     'totals' => [
-                        'paid' => $paid,
-                        'spent' => $spent,
-                        'net' => $paid - $spent,
-                    ],
+	                        'paid' => $paid,
+	                        'spent' => $spent,
+	                        'movements' => $movements,
+	                        'net' => $paid - $spent,
+	                        'cash_balance' => (float) ($currentLocation['cash_balance'] ?? 0),
+	                        'bank_balance' => (float) ($currentLocation['bank_balance'] ?? 0),
+	                    ],
                     'entries' => array_values($entries),
                 ];
             })
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
 
-        return [
-            'accounts' => $accounts,
-            'receipts' => $receiptAnnexes->values(),
-        ];
-    }
+	        return [
+	            'accounts' => $accounts,
+	            'receipts' => $receiptAnnexes->values(),
+	        ];
+	    }
 
-    protected function buildReceiptAnnex(string $ref, string $path, int $id, string $labelPrefix): array
+	    protected function treasuryMovementLabel(TreasuryMovement $movement): string
+	    {
+	        return match ($movement->movement_type) {
+	            TreasuryMovement::TYPE_CASH_DEPOSIT => 'Depósito de efectivo a banco',
+	            TreasuryMovement::TYPE_CASH_WITHDRAWAL => 'Retiro de banco a efectivo',
+	            TreasuryMovement::TYPE_EVENT_SETTLEMENT => 'Transferencia externa de evento',
+	            default => $movement->movement_type,
+	        };
+	    }
+
+	    protected function buildReceiptAnnex(string $ref, string $path, int $id, string $labelPrefix): array
     {
         $fullPath = storage_path('app/public/' . ltrim($path, '/'));
         $dataUri = null;
@@ -1719,6 +1824,8 @@ class ReportController extends Controller
                     'amount_paid' => $payment['amount_paid'] ?? null,
                     'receipt_ref' => $payment['receipt_ref'] ?? null,
                     'account' => $payment['account'] ?? null,
+                    'location' => $payment['location'] ?? null,
+                    'zelle_phone' => $payment['zelle_phone'] ?? null,
                 ])->all(),
                 'expenses' => collect($data['expenses'])->map(fn ($expense) => [
                     'id' => $expense['id'] ?? null,
@@ -1726,6 +1833,7 @@ class ReportController extends Controller
                     'amount' => $expense['amount'] ?? null,
                     'receipt_ref' => $expense['receipt_ref'] ?? null,
                     'pay_to' => $expense['pay_to'] ?? null,
+                    'location' => $expense['location'] ?? null,
                 ])->all(),
             ],
             metadata: [
@@ -1803,18 +1911,33 @@ class ReportController extends Controller
         // Build summary from union of all account keys so expense-only accounts
         // (like reimbursement_to which never receives payments) are always shown.
         $allAccountKeys = $incomeByAccount->keys()->merge($expensesByAccount->keys())->unique();
+        $treasuryService = app(ClubTreasuryService::class);
+        $locationBalances = $treasuryService
+            ->locationBalancesByAccount($club)
+            ->keyBy('account');
 
-        $entries = $allAccountKeys->map(function ($account) use ($incomeByAccount, $expensesByAccount, $payToLabelMap) {
-            $income   = (float) ($incomeByAccount[$account] ?? 0.0);
-            $expenses = (float) ($expensesByAccount[$account] ?? 0.0);
-            return [
-                'account'  => $account,
-                'label'    => $payToLabelMap[$account] ?? ($account === 'unassigned' ? 'Cuenta sin asignar' : $account),
-                'entries'  => $income,
-                'expenses' => $expenses,
-                'balance'  => $income - $expenses,
-            ];
-        })->values();
+        $entries = $allAccountKeys
+            ->merge($locationBalances->keys())
+            ->unique()
+            ->map(function ($account) use ($incomeByAccount, $expensesByAccount, $payToLabelMap, $locationBalances) {
+                $income = (float) ($incomeByAccount[$account] ?? 0.0);
+                $expenses = (float) ($expensesByAccount[$account] ?? 0.0);
+                $location = $locationBalances->get($account, []);
+
+                return [
+                    'account' => $account,
+                    'label' => $payToLabelMap[$account] ?? ($account === 'unassigned' ? 'Cuenta sin asignar' : $account),
+                    'entries' => $income,
+                    'expenses' => $expenses,
+                    'balance' => $income - $expenses,
+                    'cash_balance' => (float) ($location['cash_balance'] ?? 0),
+                    'bank_balance' => (float) ($location['bank_balance'] ?? 0),
+                    'cash_income' => (float) ($location['cash_income'] ?? 0),
+                    'bank_income' => (float) ($location['bank_income'] ?? 0),
+                    'cash_expenses' => (float) ($location['cash_expenses'] ?? 0),
+                    'bank_expenses' => (float) ($location['bank_expenses'] ?? 0),
+                ];
+            })->values();
 
         // Detailed payment rows for income table
         $payments = Payment::query()
@@ -1833,6 +1956,7 @@ class ReportController extends Controller
                 'payments.payment_date',
                 'payments.amount_paid',
                 'payments.payment_type',
+                'payments.zelle_phone',
                 'payments.member_id',
                 'payments.staff_id',
                 'payments.payment_concept_id',
@@ -1842,7 +1966,7 @@ class ReportController extends Controller
                 'acc.label as account_label',
                 'payment_concepts.concept as concept_name',
             ])
-            ->map(function ($p) use ($payToLabelMap) {
+            ->map(function ($p) use ($payToLabelMap, $treasuryService) {
                 $ref = null;
                 $url = null;
                 if ($p->check_image_path) {
@@ -1854,6 +1978,8 @@ class ReportController extends Controller
                     'payment_date' => $p->payment_date,
                     'amount_paid' => (float) $p->amount_paid,
                     'payment_type' => $p->payment_type,
+                    'zelle_phone' => $p->zelle_phone,
+                    'location' => $treasuryService->paymentLocation($p->payment_type),
                     'account' => $p->account ?? 'unassigned',
                     'account_label' => $p->account_label ?? $payToLabelMap[$p->account] ?? (($p->account ?? null) === 'unassigned' ? 'Cuenta sin asignar' : ($p->account ?? 'Cuenta sin asignar')),
                     'concept' => $p->concept_name ?? $p->concept_text ?? '—',
@@ -1871,7 +1997,7 @@ class ReportController extends Controller
             ->with('event:id,title')
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
-            ->get(['id', 'event_id', 'pay_to', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path', 'reimbursement_receipt_path'])
+            ->get(['id', 'event_id', 'pay_to', 'funds_location', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path', 'reimbursement_receipt_path'])
             ->values();
 
         // Assign receipt references and map to DTOs
@@ -1888,6 +2014,7 @@ class ReportController extends Controller
                 'id' => $e->id,
                 'pay_to' => $e->pay_to,
                 'pay_to_label' => $payToLabelMap[$e->pay_to] ?? $e->pay_to,
+                'location' => $e->funds_location,
                 'amount' => (float) $e->amount,
                 'expense_date' => $e->expense_date,
                 'description' => $e->description,

@@ -1,10 +1,17 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { XMarkIcon } from '@heroicons/vue/24/outline'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
-import { fetchMyChurchAdminCatalog, removeClubLogo, saveMyChurchAdminConfig, uploadClubLogo } from '@/Services/api'
+import {
+    fetchClubBankInfo,
+    fetchMyChurchAdminCatalog,
+    removeClubLogo,
+    saveMyChurchAdminConfig,
+    updateClubBankInfo,
+    uploadClubLogo
+} from '@/Services/api'
 
 const props = defineProps({
     auth_user: Object,
@@ -50,8 +57,28 @@ const saving = ref(false)
 const logoUrl = ref(props.club_logo_url || null)
 const logoUploading = ref(false)
 const logoInput = ref(null)
+const bankInfoRows = ref([])
+const bankInfoForms = ref({})
+const bankInfoLoading = ref(false)
+const bankInfoSavingPayTo = ref(null)
 
 const hasClubSelected = computed(() => Boolean(selectedClubId.value))
+
+const bankInfoDefaults = {
+    label: '',
+    bank_name: '',
+    account_holder: '',
+    account_type: '',
+    account_number: '',
+    routing_number: '',
+    zelle_email: '',
+    zelle_phone: '',
+    deposit_instructions: '',
+    is_active: true,
+    accepts_parent_deposits: true,
+    accepts_event_deposits: false,
+    requires_receipt_upload: true,
+}
 
 watch(selectedClubId, (val) => {
     if (!val) return
@@ -61,6 +88,53 @@ watch(selectedClubId, (val) => {
 watch(() => props.club_logo_url, (value) => {
     logoUrl.value = value || null
 })
+
+async function loadBankInfo() {
+    if (!hasClubSelected.value) {
+        bankInfoRows.value = []
+        bankInfoForms.value = {}
+        return
+    }
+
+    bankInfoLoading.value = true
+    try {
+        const response = await fetchClubBankInfo(selectedClubId.value)
+        const rows = Array.isArray(response?.data) ? response.data : []
+        bankInfoRows.value = rows
+        bankInfoForms.value = rows.reduce((forms, row) => {
+            forms[row.pay_to] = {
+                ...bankInfoDefaults,
+                label: row.label || '',
+                ...(row.bank_info || {}),
+            }
+            return forms
+        }, {})
+    } catch (error) {
+        console.error(error)
+        showToast(error?.response?.data?.message || 'No se pudieron cargar los datos de depósito', 'error')
+    } finally {
+        bankInfoLoading.value = false
+    }
+}
+
+async function saveBankInfo(row) {
+    if (!hasClubSelected.value || !row?.pay_to) return
+    bankInfoSavingPayTo.value = row.pay_to
+    try {
+        await updateClubBankInfo(selectedClubId.value, row.pay_to, {
+            ...(bankInfoForms.value[row.pay_to] || {}),
+            accepts_parent_deposits: true,
+            accepts_event_deposits: false,
+        })
+        await loadBankInfo()
+        showToast('Datos de depósito guardados')
+    } catch (error) {
+        console.error(error)
+        showToast(error?.response?.data?.message || 'No se pudieron guardar los datos de depósito', 'error')
+    } finally {
+        bankInfoSavingPayTo.value = null
+    }
+}
 
 async function handleLogoSelected(event) {
     const file = event.target.files?.[0]
@@ -158,6 +232,10 @@ async function saveConfig() {
         saving.value = false
     }
 }
+
+onMounted(() => {
+    loadBankInfo()
+})
 </script>
 
 <template>
@@ -204,6 +282,96 @@ async function saveConfig() {
                         @change="handleLogoSelected"
                     />
                     <span class="text-xs text-gray-500">PNG, JPG o WEBP. Máximo 4MB.</span>
+                </div>
+            </div>
+
+            <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-800">Datos de depósito</h2>
+                        <p class="text-sm text-gray-600">Información bancaria publicada para pagos y transferencias del club.</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        :disabled="bankInfoLoading || !hasClubSelected"
+                        @click="loadBankInfo"
+                    >
+                        {{ bankInfoLoading ? 'Cargando...' : 'Actualizar' }}
+                    </button>
+                </div>
+
+                <div v-if="!bankInfoRows.length" class="rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                    No hay cuentas disponibles para configurar.
+                </div>
+
+                <div v-else class="space-y-4">
+                    <div v-for="row in bankInfoRows" :key="row.pay_to" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <div class="font-semibold text-gray-900">{{ row.label }}</div>
+                                <div class="text-xs text-gray-500">{{ row.pay_to }}</div>
+                            </div>
+                            <button
+                                type="button"
+                                class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                                :disabled="bankInfoSavingPayTo === row.pay_to"
+                                @click="saveBankInfo(row)"
+                            >
+                                {{ bankInfoSavingPayTo === row.pay_to ? 'Guardando...' : 'Guardar' }}
+                            </button>
+                        </div>
+
+                        <div class="mt-4 grid gap-3 md:grid-cols-2">
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Etiqueta pública</label>
+                                <input v-model="bankInfoForms[row.pay_to].label" type="text" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Banco</label>
+                                <input v-model="bankInfoForms[row.pay_to].bank_name" type="text" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Titular</label>
+                                <input v-model="bankInfoForms[row.pay_to].account_holder" type="text" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Tipo de cuenta</label>
+                                <input v-model="bankInfoForms[row.pay_to].account_type" type="text" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Número de cuenta</label>
+                                <input v-model="bankInfoForms[row.pay_to].account_number" type="text" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Routing / ABA</label>
+                                <input v-model="bankInfoForms[row.pay_to].routing_number" type="text" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Zelle email</label>
+                                <input v-model="bankInfoForms[row.pay_to].zelle_email" type="email" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-700 mb-1">Zelle teléfono</label>
+                                <input v-model="bankInfoForms[row.pay_to].zelle_phone" type="text" class="w-full rounded border px-3 py-2 text-sm" />
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm text-gray-700 mb-1">Instrucciones</label>
+                                <textarea v-model="bankInfoForms[row.pay_to].deposit_instructions" rows="3" class="w-full rounded border px-3 py-2 text-sm"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="mt-3 grid gap-2 text-sm md:grid-cols-2">
+                            <label class="inline-flex items-center gap-2 rounded border border-gray-200 px-3 py-2">
+                                <input v-model="bankInfoForms[row.pay_to].is_active" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                <span>Activo</span>
+                            </label>
+                            <label class="inline-flex items-center gap-2 rounded border border-gray-200 px-3 py-2">
+                                <input v-model="bankInfoForms[row.pay_to].requires_receipt_upload" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                <span>Comprobante</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
 

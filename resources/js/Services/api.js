@@ -252,6 +252,56 @@ export const deleteAccount = async (clubId, accountId) => {
     return data;
 };
 
+export const fetchClubBankInfo = async (clubId) => {
+    const { data } = await axios.get(route('clubs.bank-info.index', { club: clubId }));
+    return data;
+};
+
+export const updateClubBankInfo = async (clubId, payTo, payload) => {
+    const { data } = await axios.put(route('clubs.bank-info.update', { club: clubId, payTo }), payload);
+    return data;
+};
+
+export const fetchClubEventSettlements = async (clubId = null) => {
+    const { data } = await axios.get(route('club.director.event-settlements.index'), {
+        params: clubId ? { club_id: clubId } : {},
+    });
+    return data;
+};
+
+export const createEventClubSettlement = async (eventId, payload) => {
+    const fd = new FormData();
+    Object.entries(payload).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        fd.append(key, value);
+    });
+
+    const { data } = await axios.post(route('event-club-settlements.store', { event: eventId }), fd, {
+        headers: { 'Content-Type': 'multipart/form-data', Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const fetchClubTreasury = async (clubId = null) => {
+    const { data } = await axios.get(route('club.director.treasury.data'), {
+        params: clubId ? { club_id: clubId } : {},
+    });
+    return data;
+};
+
+export const createTreasuryMovement = async (payload) => {
+    const fd = new FormData();
+    Object.entries(payload).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        fd.append(key, value);
+    });
+
+    const { data } = await axios.post(route('club.director.treasury.movements.store'), fd, {
+        headers: { 'Content-Type': 'multipart/form-data', Accept: 'application/json' },
+    });
+    return data;
+};
+
 export const deleteClubById = async (clubId) => {
     return await axios.delete(route("club.destroy"), { data: { id: clubId } });
 };
@@ -469,6 +519,10 @@ export const createClubPayment = async (payload) => {
     const fd = new FormData();
     Object.entries(payload).forEach(([k, v]) => {
         if (v === undefined || v === null) return;
+        if (Array.isArray(v)) {
+            v.forEach((item) => fd.append(`${k}[]`, item));
+            return;
+        }
         fd.append(k, v);
     });
 
@@ -581,9 +635,10 @@ export const removeReimbursementReceipt = async (expenseId) => {
     return await axios.delete(route('club.director.expenses.removeReimbursementReceipt', expenseId))
 }
 
-export const markExpenseReimbursed = async (expenseId, payTo, receiptFile) => {
+export const markExpenseReimbursed = async (expenseId, payTo, receiptFile, fundsLocation = 'cash') => {
     const fd = new FormData()
     fd.append('pay_to', payTo)
+    fd.append('funds_location', fundsLocation)
     if (receiptFile) {
         fd.append('receipt_image', receiptFile)
     }

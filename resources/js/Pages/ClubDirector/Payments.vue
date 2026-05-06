@@ -1,7 +1,7 @@
 <script setup>
 import PathfinderLayout from "@/Layouts/PathfinderLayout.vue";
 import { ref, computed, watch, nextTick } from 'vue'
-import { useForm, router } from '@inertiajs/vue3'
+import { useForm, router, usePage } from '@inertiajs/vue3'
 import {
     CreditCardIcon,
     UserIcon,
@@ -12,6 +12,7 @@ import {
     UserGroupIcon
 } from '@heroicons/vue/24/outline'
 import { createClubPayment, updateClubPayment, downloadBulkReceipts } from '@/Services/api'
+import { useGeneral } from '@/Composables/useGeneral'
 
 const props = defineProps({
     auth_user: { type: Object, required: true },
@@ -30,6 +31,9 @@ const props = defineProps({
     payment_types: { type: Array, required: true },
     prefill: { type: Object, default: () => ({}) },
 })
+const inertiaPage = usePage()
+const { showToast } = useGeneral()
+const parentTransferError = computed(() => inertiaPage.props.errors?.parent_transfer || null)
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin')
 const canEditPayments = computed(() => ['club_director', 'superadmin'].includes(props.auth_user?.profile_type))
 const currentClubName = computed(() =>
@@ -93,6 +97,57 @@ const filteredConcepts = computed(() => {
     return (props.concepts || []).filter(c => Number(c.club_id) === Number(form.club_id))
 })
 
+const eventTitleForConcept = (concept) => concept?.event?.title || concept?.event_title || null
+const isEventConcept = (concept) => Boolean(concept?.event_id && concept?.event_fee_component_id)
+const isRequiredEventConcept = (concept) => Boolean(concept?.event_fee_component?.is_required ?? true)
+const conceptAmount = (concept) => Number(concept?.amount ?? 0)
+const eventConceptGroups = computed(() => {
+    const groups = new Map()
+
+    filteredConcepts.value
+        .filter(isEventConcept)
+        .forEach((concept) => {
+            const key = `${concept.event_id}:${concept.club_id}`
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    id: concept.id,
+                    concept: eventTitleForConcept(concept) || concept.concept,
+                    amount: 0,
+                    club_id: concept.club_id,
+                    event_id: concept.event_id,
+                    event_title: eventTitleForConcept(concept) || concept.concept,
+                    is_event_bundle: true,
+                    concepts: [],
+                    scopes: concept.scopes || [],
+                    payment_expected_by: concept.payment_expected_by,
+                    reusable: false,
+                })
+            }
+
+            const group = groups.get(key)
+            group.concepts.push(concept)
+            group.amount += conceptAmount(concept)
+            group.id = group.concepts
+                .slice()
+                .sort((a, b) => Number(a.event_fee_component?.sort_order ?? 0) - Number(b.event_fee_component?.sort_order ?? 0) || Number(a.id) - Number(b.id))[0].id
+            group.scopes = group.concepts[0]?.scopes || group.scopes
+        })
+
+    return Array.from(groups.values()).map((group) => ({
+        ...group,
+        amount: Number(group.amount.toFixed(2)),
+        concepts: group.concepts.sort((a, b) => Number(a.event_fee_component?.sort_order ?? 0) - Number(b.event_fee_component?.sort_order ?? 0) || Number(a.id) - Number(b.id)),
+    }))
+})
+
+const selectableConcepts = computed(() => {
+    const groupedEventConceptIds = new Set(eventConceptGroups.value.flatMap(group => group.concepts.map(concept => Number(concept.id))))
+    return [
+        ...eventConceptGroups.value,
+        ...filteredConcepts.value.filter(concept => !groupedEventConceptIds.has(Number(concept.id))),
+    ]
+})
+
 const filteredMembers = computed(() => {
     if (!form.club_id) return props.members || []
     return (props.members || []).filter(m => Number(m.club_id) === Number(form.club_id))
@@ -107,7 +162,13 @@ const filteredAccounts = computed(() => {
     return (props.accounts || []).filter(a => Number(a.club_id) === Number(form.club_id))
 })
 
-const selectedConcept = computed(() => filteredConcepts.value.find(c => c.id === selectedConceptId.value) || null)
+const selectedConcept = computed(() => selectableConcepts.value.find(c => Number(c.id) === Number(selectedConceptId.value)) || null)
+const selectedEventComponentIds = ref([])
+const selectedEventBundleConcepts = computed(() => selectedConcept.value?.is_event_bundle ? selectedConcept.value.concepts || [] : [])
+const selectedEventComponentConcepts = computed(() => {
+    const selectedIds = new Set(selectedEventComponentIds.value.map(id => Number(id)))
+    return selectedEventBundleConcepts.value.filter(concept => selectedIds.has(Number(concept.id)))
+})
 const scopesForConcept = computed(() => selectedConcept.value?.scopes ?? [])
 const selectedScope = computed(() => scopesForConcept.value.find(s => s.id === selectedScopeId.value) || null)
 const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? '')
@@ -135,8 +196,14 @@ const payeeOptions = computed(() => {
     const pushOption = (option) => {
         if (!option?.id) return
         if (!customConceptMode.value && !selectedConceptIsReusable.value && option.scopeId && selectedConceptId.value) {
-            const completionKey = buildCompletedTargetKey(selectedConceptId.value, option.type, option.id)
-            if (completedPaymentTargetSet.value.has(completionKey)) {
+            const conceptIdsToCheck = selectedEventBundleConcepts.value.length
+                ? selectedEventBundleConcepts.value.map(concept => concept.id)
+                : [selectedConceptId.value]
+            const allSelectedConceptsComplete = conceptIdsToCheck.every((conceptId) => {
+                const completionKey = buildCompletedTargetKey(conceptId, option.type, option.id)
+                return completedPaymentTargetSet.value.has(completionKey)
+            })
+            if (allSelectedConceptsComplete) {
                 return
             }
         }
@@ -243,14 +310,32 @@ const payeeOptions = computed(() => {
 })
 
 const selectedPayee = computed(() => payeeOptions.value.find(option => option.key === selectedPayeeKey.value) || null)
+const paymentTotalForConcept = (concept) => {
+    if (!concept?.id || !selectedPayee.value) return 0
+    const key = buildCompletedTargetKey(concept.id, selectedPayee.value.type, selectedPayee.value.id)
+    return Number(paymentTotalsMap.value[key] ?? 0)
+}
+const remainingForEventConcept = (concept) => Math.max(conceptAmount(concept) - paymentTotalForConcept(concept), 0)
+const pendingRequiredEventConcepts = computed(() => selectedEventBundleConcepts.value.filter(concept => isRequiredEventConcept(concept) && remainingForEventConcept(concept) > 0))
+const pendingEventConcepts = computed(() => selectedEventBundleConcepts.value.filter(concept => remainingForEventConcept(concept) > 0))
+const defaultSelectedEventComponentIds = () => {
+    const requiredPending = pendingRequiredEventConcepts.value
+    return (requiredPending.length ? requiredPending : pendingEventConcepts.value).map(concept => concept.id)
+}
 const selectedPayeePaymentTotal = computed(() => {
     if (!selectedConceptId.value || !selectedPayee.value) return 0
+    if (selectedEventBundleConcepts.value.length) {
+        return selectedEventBundleConcepts.value.reduce((sum, concept) => sum + paymentTotalForConcept(concept), 0)
+    }
     const key = buildCompletedTargetKey(selectedConceptId.value, selectedPayee.value.type, selectedPayee.value.id)
     return Number(paymentTotalsMap.value[key] ?? 0)
 })
 const selectedRemainingAmount = computed(() => {
     if (selectedConceptIsReusable.value) return null
     if (customConceptMode.value || form.payment_type === 'initial') return null
+    if (selectedEventBundleConcepts.value.length) {
+        return selectedEventComponentConcepts.value.reduce((sum, concept) => sum + remainingForEventConcept(concept), 0)
+    }
     const expected = Number(selectedConceptExpected.value ?? 0)
     if (!Number.isFinite(expected) || expected <= 0) return null
     return Math.max(expected - selectedPayeePaymentTotal.value, 0)
@@ -357,6 +442,7 @@ watch(selectedConceptId, (id) => {
     selectedMemberId.value = null
     selectedStaffId.value = null
     selectedPayeeKey.value = null
+    selectedEventComponentIds.value = defaultSelectedEventComponentIds()
     form.amount_paid = ''
 })
 
@@ -387,6 +473,15 @@ watch(selectedPayee, (payee) => {
     }
 })
 
+watch([selectedPayeeKey, selectedConceptId, paymentTotalsMap], () => {
+    if (!selectedEventBundleConcepts.value.length) {
+        selectedEventComponentIds.value = []
+        return
+    }
+
+    selectedEventComponentIds.value = defaultSelectedEventComponentIds()
+}, { immediate: true })
+
 watch([selectedRemainingAmount, selectedPayeeKey, selectedConceptId, customConceptMode, () => form.payment_type], ([remaining, payeeKey, conceptId, isManual, paymentType]) => {
     if (isManual || paymentType === 'initial') return
     if (!conceptId || !payeeKey) {
@@ -416,8 +511,8 @@ watch(() => form.club_id, () => {
     selectedPayeeKey.value = null
     form.payment_concept_id = null
     page.value = 1
-    if (filteredConcepts.value.length) {
-        selectedConceptId.value = filteredConcepts.value[0].id
+    if (selectableConcepts.value.length) {
+        selectedConceptId.value = selectableConcepts.value[0].id
         form.payment_concept_id = selectedConceptId.value
     }
 })
@@ -443,7 +538,8 @@ const applyPrefill = () => {
         form.club_id = Number(prefill.club_id)
     }
 
-    const concept = (filteredConcepts.value || []).find(c => Number(c.id) === Number(prefill.concept_id))
+    const concept = (selectableConcepts.value || []).find(c => Number(c.id) === Number(prefill.concept_id))
+        || eventConceptGroups.value.find(group => group.concepts.some(item => Number(item.id) === Number(prefill.concept_id)))
     if (concept) {
         selectedConceptId.value = concept.id
         form.payment_concept_id = concept.id
@@ -470,7 +566,7 @@ const applyPrefill = () => {
     })
 }
 
-watch([filteredConcepts, () => form.club_id], applyPrefill, { immediate: true })
+watch([selectableConcepts, () => form.club_id], applyPrefill, { immediate: true })
 
 watch(customConceptMode, (val) => {
     form.clearErrors()
@@ -500,7 +596,7 @@ watch(payeeOptions, (options) => {
 
 // When club changes, reset selections and pick first concept for that club
 watch(() => form.club_id, () => {
-    selectedConceptId.value = filteredConcepts.value[0]?.id ?? null
+    selectedConceptId.value = selectableConcepts.value[0]?.id ?? null
     selectedScopeId.value = null
     selectedMemberId.value = null
     selectedStaffId.value = null
@@ -626,6 +722,10 @@ const submit = async () => {
             form.setError('payment_concept_id', 'Selecciona un pagador valido para este concepto.')
             return
         }
+        if (selectedEventBundleConcepts.value.length && !selectedEventComponentConcepts.value.length) {
+            form.setError('payment_concept_id', 'Selecciona al menos un componente del evento.')
+            return
+        }
         if (!selectedScopeId.value) {
             form.setError('payment_concept_id', 'No se encontro un alcance valido para el pagador seleccionado.')
             return
@@ -639,8 +739,13 @@ const submit = async () => {
             payload.payment_concept_id = null
             payload.concept_text = customConceptText.value || 'Saldo inicial'
             payload.pay_to = customPayTo.value || 'club_budget'
+        } else if (selectedEventBundleConcepts.value.length) {
+            payload.payment_concept_id = null
+            payload.concept_text = selectedConcept.value?.event_title || selectedConcept.value?.concept || 'Pago de evento'
+            payload.event_concept_ids = selectedEventComponentConcepts.value.map(concept => concept.id)
         }
         await createClubPayment(payload)
+        showToast('Ingreso guardado correctamente.', 'success')
         form.reset('amount_paid', 'notes', 'check_image', 'zelle_phone')
         if (customConceptMode.value) {
             customConceptText.value = ''
@@ -719,6 +824,13 @@ const downloadReceipt = (payment) => {
     window.open(route('payment-receipts.download', receiptId), '_blank')
 }
 
+const paymentConceptLabel = (payment) =>
+    payment?.event_title
+    || payment?.concept?.event_title
+    || payment?.concept?.concept
+    || payment?.concept_text
+    || '—'
+
 // Searching/pagination of recent payments
 const searchTerm = ref('')
 const pageSize = ref(10)
@@ -733,7 +845,7 @@ const filteredPayments = computed(() => {
     if (!q) return clubFiltered
     return clubFiltered.filter(p => {
         const name = (p.member_display_name ?? p.staff_display_name ?? '').toLowerCase()
-        const concept = (p.concept?.concept ?? p.concept_text ?? '').toLowerCase()
+        const concept = paymentConceptLabel(p).toLowerCase()
         return name.includes(q) || concept.includes(q)
     })
 })
@@ -820,8 +932,8 @@ const setFormMode = (mode) => {
                                         class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                                     >
                                         <option :value="null" disabled>Selecciona un concepto…</option>
-                                        <option v-for="c in filteredConcepts" :key="c.id" :value="c.id">
-                                            {{ c.concept }} • {{ c.amount ?? '—' }}
+                                        <option v-for="c in selectableConcepts" :key="c.is_event_bundle ? `event-${c.event_id}-${c.club_id}` : c.id" :value="c.id">
+                                            {{ c.is_event_bundle ? `● ${c.event_title}` : c.concept }} • {{ Number(c.amount ?? 0).toFixed(2) }}
                                         </option>
                                     </select>
                                     <input
@@ -833,6 +945,57 @@ const setFormMode = (mode) => {
                                     />
                                     <div v-if="form.errors.payment_concept_id" class="mt-1 text-sm text-red-600">
                                         {{ form.errors.payment_concept_id }}
+                                    </div>
+                                    <div v-if="selectedEventBundleConcepts.length && !customConceptMode" class="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <div>
+                                                <div class="text-xs font-semibold uppercase tracking-wide text-blue-700">Desglose del evento</div>
+                                                <div class="mt-0.5 text-sm font-medium text-gray-900">{{ selectedConcept.event_title }}</div>
+                                            </div>
+                                            <div class="flex items-center gap-3">
+                                                <button
+                                                    type="button"
+                                                    class="text-xs font-medium text-blue-700 hover:underline"
+                                                    @click="selectedEventComponentIds = defaultSelectedEventComponentIds()"
+                                                >
+                                                    Marcar obligatorio
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="text-xs font-medium text-blue-700 hover:underline"
+                                                    @click="selectedEventComponentIds = pendingEventConcepts.map(concept => concept.id)"
+                                                >
+                                                    Marcar todo
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="mt-3 space-y-2">
+                                            <label
+                                                v-for="component in selectedEventBundleConcepts"
+                                                :key="component.id"
+                                                class="flex items-start gap-3 rounded-md bg-white px-3 py-2 text-sm"
+                                                :class="remainingForEventConcept(component) <= 0 ? 'opacity-60' : ''"
+                                            >
+                                                <input
+                                                    v-model="selectedEventComponentIds"
+                                                    type="checkbox"
+                                                    class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    :value="component.id"
+                                                    :disabled="remainingForEventConcept(component) <= 0 || (isRequiredEventConcept(component) && remainingForEventConcept(component) > 0)"
+                                                />
+                                                <span class="flex-1">
+                                                    <span class="flex flex-wrap items-center gap-2 font-medium text-gray-900">
+                                                        <span>{{ component.event_fee_component?.label || component.concept }}</span>
+                                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="isRequiredEventConcept(component) ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'">
+                                                            {{ isRequiredEventConcept(component) ? 'Obligatorio' : 'Opcional' }}
+                                                        </span>
+                                                    </span>
+                                                    <span class="block text-xs text-gray-500">
+                                                        Esperado ${{ conceptAmount(component).toFixed(2) }} · Pagado ${{ paymentTotalForConcept(component).toFixed(2) }} · Pendiente ${{ remainingForEventConcept(component).toFixed(2) }}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -984,7 +1147,7 @@ const setFormMode = (mode) => {
                                 </div>
 
                                 <div v-if="form.payment_type === 'zelle'">
-                                    <label class="block text-sm font-medium text-gray-700">Telefono Zelle</label>
+                                    <label class="block text-sm font-medium text-gray-700">Teléfono Zelle del remitente</label>
                                     <input
                                         v-model="form.zelle_phone"
                                         type="text"
@@ -992,6 +1155,9 @@ const setFormMode = (mode) => {
                                         class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                                         placeholder="(555) 555-5555"
                                     />
+                                    <div class="mt-1 text-xs text-gray-500">
+                                        La cuenta bancaria del club define el número receptor; aquí guarda el número desde donde se envió el dinero.
+                                    </div>
                                     <div v-if="form.errors.zelle_phone" class="mt-1 text-sm text-red-600">
                                         {{ form.errors.zelle_phone }}
                                     </div>
@@ -1087,7 +1253,11 @@ const setFormMode = (mode) => {
                         No hay transferencias pendientes de validar.
                     </div>
 
-                    <div v-else-if="showPendingParentTransfers" class="mt-4 overflow-x-auto">
+                    <div v-if="parentTransferError" class="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {{ parentTransferError }}
+                    </div>
+
+                    <div v-if="props.pending_parent_transfers.length && showPendingParentTransfers" class="mt-4 overflow-x-auto">
                         <table class="min-w-full text-sm text-gray-700">
                             <thead class="bg-blue-50/70">
                                 <tr>
@@ -1151,7 +1321,7 @@ const setFormMode = (mode) => {
                         </table>
                     </div>
 
-                    <div v-else class="mt-3 text-sm text-blue-900">
+                    <div v-else-if="props.pending_parent_transfers.length" class="mt-3 text-sm text-blue-900">
                         La lista de transferencias pendientes esta colapsada.
                     </div>
                 </section>
@@ -1296,6 +1466,10 @@ const setFormMode = (mode) => {
                                             class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                                             {{ p.account_label ?? p.pay_to }}
                                         </span>
+                                        <span v-if="p.event_title || p.concept?.event_title"
+                                            class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                                            ● {{ p.event_title || p.concept?.event_title }}
+                                        </span>
 
                                         <span v-if="p.concept?.reusable"
                                             class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-800">
@@ -1313,16 +1487,25 @@ const setFormMode = (mode) => {
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
-                                        <b>{{ p.concept?.concept ?? p.concept_text ?? '—' }}</b>
+                                        <b>{{ paymentConceptLabel(p) }}</b>
                                         • Esperado: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
                                         <span v-if="p.pay_to || p.account_label"> • Cuenta: {{ p.account_label ?? p.pay_to }}</span>
                                         • Pagado: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
                                         • Fecha: {{ formatISODateLocal(p.payment_date) }}
                                     </div>
+                                    <div v-if="p.allocations?.length" class="mt-2 grid gap-1 text-xs text-gray-600 sm:grid-cols-2">
+                                        <div
+                                            v-for="allocation in p.allocations"
+                                            :key="allocation.id"
+                                            class="rounded-md bg-gray-50 px-2 py-1"
+                                        >
+                                            {{ allocation.component_label || allocation.concept_name }}: ${{ Number(allocation.amount || 0).toFixed(2) }}
+                                        </div>
+                                    </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
                                         Recibido por: {{ p.received_by?.name ?? '—' }}
-                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • Zelle: {{ p.zelle_phone }}</span>
+	                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • Zelle remitente: {{ p.zelle_phone }}</span>
                                     </div>
 
                                     <div v-if="p.payment_type === 'check' && p.check_image_path" class="mt-2">
@@ -1445,7 +1628,7 @@ const setFormMode = (mode) => {
                     </div>
 
                     <div v-if="editForm.payment_type === 'zelle'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Telefono Zelle</label>
+                        <label class="block text-sm font-medium text-gray-700">Teléfono Zelle del remitente</label>
                         <input
                             v-model="editForm.zelle_phone"
                             type="text"
@@ -1453,6 +1636,9 @@ const setFormMode = (mode) => {
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                             placeholder="(555) 555-5555"
                         />
+                        <div class="mt-1 text-xs text-gray-500">
+                            La cuenta bancaria del club define el número receptor; aquí guarda el número desde donde se envió el dinero.
+                        </div>
                         <div v-if="editForm.errors.zelle_phone" class="mt-1 text-sm text-red-600">
                             {{ editForm.errors.zelle_phone }}
                         </div>

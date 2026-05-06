@@ -1001,5 +1001,6 @@ onMounted(async () => {
 
             </div>
         </details>
+
     </PathfinderLayout>
 </template>

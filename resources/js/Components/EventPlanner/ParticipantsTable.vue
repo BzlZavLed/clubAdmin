@@ -13,6 +13,10 @@ const props = defineProps({
         type: Number,
         required: true
     },
+    eventScopeType: {
+        type: String,
+        default: 'club'
+    },
     members: {
         type: Array,
         default: () => []
@@ -36,6 +40,18 @@ const props = defineProps({
     paymentConfig: {
         type: Object,
         default: () => ({ concept_id: null, amount: null, total_amount: null, is_payable: false, concepts: [] })
+    },
+    canManage: {
+        type: Boolean,
+        default: true
+    },
+    clubSummary: {
+        type: Array,
+        default: () => []
+    },
+    participantRoster: {
+        type: Array,
+        default: () => []
     }
 })
 
@@ -43,6 +59,7 @@ const emit = defineEmits(['updated', 'finish-list'])
 const { tr } = useLocale()
 const highlightIds = ref(new Set())
 const selectedParticipantIds = ref([])
+const showRosterModal = ref(false)
 
 const refresh = async () => {
     const { data } = await axios.get(route('event-participants.index', { event: props.eventId }))
@@ -71,6 +88,7 @@ const selectedParentIds = ref([])
 const customParticipant = ref({ name: '', role: 'invitee', status: 'invited', note: '' })
 
 const existingMemberIds = computed(() => new Set(props.participants.map((p) => p.member_id).filter(Boolean)))
+const existingStaffIds = computed(() => new Set(props.participants.map((p) => p.staff_id).filter(Boolean).map(Number)))
 const existingStaffNames = computed(() => new Set(props.participants.filter((p) => p.role === 'staff').map((p) => p.participant_name)))
 const existingParentNames = computed(() => new Set(props.participants.filter((p) => p.role === 'parent').map((p) => p.participant_name)))
 
@@ -107,7 +125,7 @@ const parentByName = computed(() => {
 
 const paymentByMember = computed(() => {
     const map = new Map()
-    const entries = props.paymentSummary?.by_member_id || {}
+    const entries = props.paymentSummary?.by_member_required_id || props.paymentSummary?.by_member_id || {}
     for (const [id, total] of Object.entries(entries)) {
         map.set(Number(id), Number(total))
     }
@@ -116,7 +134,7 @@ const paymentByMember = computed(() => {
 
 const paymentByStaff = computed(() => {
     const map = new Map()
-    const entries = props.paymentSummary?.by_staff_id || {}
+    const entries = props.paymentSummary?.by_staff_required_id || props.paymentSummary?.by_staff_id || {}
     for (const [id, total] of Object.entries(entries)) {
         map.set(Number(id), Number(total))
     }
@@ -133,8 +151,96 @@ const staffByName = computed(() => {
     return map
 })
 
+const staffById = computed(() => {
+    const map = new Map()
+    for (const staffMember of props.staff) {
+        map.set(Number(staffMember.id), staffMember)
+    }
+    return map
+})
+
+const asNumber = (value) => Number(value || 0)
+const formatMoney = (value) => {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(asNumber(value))
+}
+const rowEnrolledMemberCount = (row) => asNumber(row.enrolled_member_count ?? row.paid_member_count ?? 0)
+const rowConfirmedMemberCount = (row) => {
+    if (row.has_required_payment) {
+        return asNumber(row.confirmed_unpaid_member_count)
+    }
+
+    return asNumber(row.manual_confirmed_member_count ?? row.confirmed_member_count ?? 0)
+}
+const rowMemberCapacity = (row) => asNumber(row.member_count)
+const rowEnrolledStaffCount = (row) => asNumber(row.enrolled_staff_count ?? row.paid_staff_count ?? 0)
+const rowConfirmedStaffCount = (row) => {
+    if (row.has_required_payment) {
+        return asNumber(row.confirmed_unpaid_staff_count ?? row.confirmed_staff_count ?? 0)
+    }
+
+    return asNumber(row.confirmed_staff_count)
+}
+const rowStaffCapacity = (row) => asNumber(row.staff_participant_count)
+
+const showEnrolledMembersColumn = computed(() => props.clubSummary.some((row) => {
+    return row.has_required_payment
+        || asNumber(row.expected_member_payment) > 0
+        || rowEnrolledMemberCount(row) > 0
+        || asNumber(row.paid_member_count) > 0
+}))
+const showConfirmedMembersColumn = computed(() => props.clubSummary.some((row) => rowConfirmedMemberCount(row) > 0))
+const showEnrolledStaffColumn = computed(() => props.clubSummary.some((row) => rowEnrolledStaffCount(row) > 0 || asNumber(row.paid_staff_count) > 0))
+const showConfirmedStaffColumn = computed(() => props.clubSummary.some((row) => rowConfirmedStaffCount(row) > 0))
+const summaryColumnCount = computed(() => {
+    return 2
+        + (showEnrolledMembersColumn.value ? 1 : 0)
+        + (showConfirmedMembersColumn.value ? 1 : 0)
+        + (showEnrolledStaffColumn.value ? 1 : 0)
+        + (showConfirmedStaffColumn.value ? 1 : 0)
+})
+
+const summaryTotals = computed(() => props.clubSummary.reduce((totals, row) => ({
+    clubs: totals.clubs + 1,
+    enrolledMembers: totals.enrolledMembers + rowEnrolledMemberCount(row),
+    confirmedMembers: totals.confirmedMembers + rowConfirmedMemberCount(row),
+    enrolledStaff: totals.enrolledStaff + rowEnrolledStaffCount(row),
+    confirmedStaff: totals.confirmedStaff + rowConfirmedStaffCount(row),
+}), {
+    clubs: 0,
+    enrolledMembers: 0,
+    confirmedMembers: 0,
+    enrolledStaff: 0,
+    confirmedStaff: 0,
+}))
+const showRosterAssociationColumn = computed(() => props.eventScopeType === 'union' && props.participantRoster.some((row) => row.association_name))
+const rosterTotals = computed(() => props.participantRoster.reduce((totals, row) => ({
+    participants: totals.participants + 1,
+    enrolled: totals.enrolled + (row.is_enrolled ? 1 : 0),
+    confirmed: totals.confirmed + (row.is_confirmed ? 1 : 0),
+    totalPaid: totals.totalPaid + asNumber(row.total_paid),
+    optionalPaid: totals.optionalPaid + asNumber(row.optional_paid),
+}), {
+    participants: 0,
+    enrolled: 0,
+    confirmed: 0,
+    totalPaid: 0,
+    optionalPaid: 0,
+}))
+const optionalStatusLabel = (status) => ({
+    paid: tr('Opcionales pagados', 'Optionals paid'),
+    partial: tr('Opcionales parciales', 'Partial optionals'),
+    not_paid: tr('Opcionales pendientes', 'Optionals pending'),
+    not_available: tr('Sin opcionales', 'No optionals'),
+}[status] || tr('Sin opcionales', 'No optionals'))
+const optionalStatusClass = (status) => ({
+    paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    partial: 'border-amber-200 bg-amber-50 text-amber-700',
+    not_paid: 'border-gray-200 bg-gray-50 text-gray-600',
+    not_available: 'border-gray-200 bg-gray-50 text-gray-500',
+}[status] || 'border-gray-200 bg-gray-50 text-gray-500')
+
 const paymentStatusFor = (participant) => {
-    const totalExpected = Number(props.paymentConfig?.total_amount ?? props.paymentConfig?.amount ?? 0)
+    const totalExpected = Number(props.paymentConfig?.required_total_amount ?? props.paymentConfig?.total_amount ?? props.paymentConfig?.amount ?? 0)
     if (!props.paymentConfig?.is_payable || totalExpected <= 0) {
         return { status: 'na', amount: 0, payerType: null, payerId: null }
     }
@@ -153,6 +259,16 @@ const paymentStatusFor = (participant) => {
         }
     }
 
+    if (participant.staff_id) {
+        const amount = paymentByStaff.value.get(Number(participant.staff_id)) || 0
+        return {
+            status: amount >= totalExpected ? 'paid' : 'unpaid',
+            amount,
+            payerType: 'staff',
+            payerId: participant.staff_id
+        }
+    }
+
     return { status: 'na', amount: 0, payerType: null, payerId: null }
 }
 
@@ -164,17 +280,24 @@ const paymentLinkFor = (participant) => {
         }
     }
     if (status.status === 'paid') return null
-    const participantClubId = participant.member_id
-        ? Number(memberById.value.get(participant.member_id)?.club_id || 0)
-        : 0
-    const conceptId = Array.isArray(props.paymentConfig?.concepts) && props.paymentConfig.concepts.length === 1
-        ? props.paymentConfig.concepts[0].id
-        : props.paymentConfig?.concept_id
+    let participantClubId = 0
+    if (participant.member_id) {
+        participantClubId = Number(memberById.value.get(participant.member_id)?.club_id || 0)
+    } else if (participant.staff_id) {
+        participantClubId = Number(staffById.value.get(Number(participant.staff_id))?.club_id || 0)
+    }
+    const clubConcepts = Array.isArray(props.paymentConfig?.concepts)
+        ? props.paymentConfig.concepts.filter((concept) => Number(concept.club_id) === Number(participantClubId))
+        : []
+    const conceptId = clubConcepts[0]?.id
+        || (Array.isArray(props.paymentConfig?.concepts) && props.paymentConfig.concepts.length === 1
+            ? props.paymentConfig.concepts[0].id
+            : props.paymentConfig?.concept_id)
 
     return route('club.director.payments', {
         club_id: participantClubId || null,
         concept_id: conceptId || null,
-        amount: props.paymentConfig.total_amount ?? props.paymentConfig.amount ?? null,
+        amount: props.paymentConfig.required_total_amount ?? props.paymentConfig.total_amount ?? props.paymentConfig.amount ?? null,
         member_id: status.payerType === 'member' ? status.payerId : null,
         staff_id: status.payerType === 'staff' ? status.payerId : null,
     })
@@ -212,9 +335,12 @@ const availableParents = computed(() => {
 })
 
 const availableStaff = computed(() => {
-    if (!restrictedStaffIds.value.length) return props.staff
-    const restricted = new Set(restrictedStaffIds.value)
-    return props.staff.filter((staffMember) => !restricted.has(staffMember.id))
+    const existing = existingStaffIds.value
+    const eligible = !restrictedStaffIds.value.length
+        ? props.staff
+        : props.staff.filter((staffMember) => !new Set(restrictedStaffIds.value).has(staffMember.id))
+
+    return eligible.filter((staffMember) => !existing.has(Number(staffMember.id)))
 })
 
 const addMembers = async (memberIds) => {
@@ -254,8 +380,9 @@ const addStaffForClasses = async (classIds) => {
         const isMatch = staffClasses.some((item) => classIds.includes(item.id))
         if (!isMatch) continue
         const name = staffMember.name || `Staff #${staffMember.id}`
-        if (existingStaffNames.value.has(name)) continue
+        if (existingStaffIds.value.has(Number(staffMember.id)) || existingStaffNames.value.has(name)) continue
         await axios.post(route('event-participants.store', { event: props.eventId }), {
+            staff_id: staffMember.id,
             participant_name: name,
             role: 'staff',
             status: 'invited',
@@ -295,8 +422,9 @@ const addStaff = async () => {
     for (const staffId of selectedStaffIds.value) {
         const staffMember = props.staff.find((item) => item.id === staffId)
         const name = staffMember?.name || `Staff #${staffId}`
-        if (existingStaffNames.value.has(name)) continue
+        if (existingStaffIds.value.has(Number(staffId)) || existingStaffNames.value.has(name)) continue
         const id = await addParticipant({
+            staff_id: staffId,
             participant_name: name,
             role: 'staff',
             status: 'invited',
@@ -344,6 +472,7 @@ const addCustom = async () => {
 const updateStatus = async (participant, status, refreshAfter = true) => {
     await axios.put(route('event-participants.update', { eventParticipant: participant.id }), {
         member_id: participant.member_id ?? null,
+        staff_id: participant.staff_id ?? null,
         participant_name: participant.participant_name,
         role: participant.role,
         status,
@@ -405,6 +534,266 @@ const confirmSelected = async () => {
 
 <template>
     <div class="space-y-4">
+        <template v-if="!canManage">
+            <div class="rounded-lg border bg-white p-4">
+                <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                        <h3 class="text-base font-semibold text-gray-900">{{ tr('Resumen por club', 'Club summary') }}</h3>
+                        <p class="mt-1 max-w-3xl text-xs text-gray-500">
+                            {{ tr('Para miembros, la inscripción se calcula por pago obligatorio cuando el evento tiene cobro. El staff se cuenta por confirmación de asistencia.', 'For members, enrollment is based on required payment when the event has fees. Staff is counted by attendance confirmation.') }}
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            class="rounded border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="!participantRoster.length"
+                            @click="showRosterModal = true"
+                        >
+                            {{ tr('Lista general', 'General list') }} · {{ participantRoster.length }}
+                        </button>
+                        <div class="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                            {{ tr('Solo lectura', 'Read only') }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div class="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                        <div class="flex items-center text-[11px] font-semibold uppercase text-gray-500">
+                            {{ tr('Clubes', 'Clubs') }}
+                            <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-bold text-gray-600" :title="tr('Clubes visibles para tu nivel en este evento.', 'Clubs visible to your level for this event.')">i</span>
+                        </div>
+                        <div class="mt-1 text-xl font-semibold text-gray-900">{{ summaryTotals.clubs }}</div>
+                    </div>
+                    <div v-if="showEnrolledMembersColumn" class="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                        <div class="flex items-center text-[11px] font-semibold uppercase text-gray-500">
+                            {{ tr('Miembros inscritos', 'Enrolled members') }}
+                            <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700" :title="tr('Miembros que ya cubrieron el pago obligatorio del evento. Si el evento no tiene cobro obligatorio, se toma la confirmación.', 'Members who already covered the required event payment. If the event has no required payment, confirmation is used.')">i</span>
+                        </div>
+                        <div class="mt-1 text-xl font-semibold text-gray-900">{{ summaryTotals.enrolledMembers }}</div>
+                    </div>
+                    <div v-if="showConfirmedMembersColumn" class="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                        <div class="flex items-center text-[11px] font-semibold uppercase text-gray-500">
+                            {{ tr('Miembros confirmados', 'Confirmed members') }}
+                            <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-700" :title="tr('Miembros marcados como confirmados por el club que todavía no cuentan como inscritos por pago obligatorio.', 'Members marked confirmed by the club who do not yet count as enrolled by required payment.')">i</span>
+                        </div>
+                        <div class="mt-1 text-xl font-semibold text-gray-900">{{ summaryTotals.confirmedMembers }}</div>
+                    </div>
+                    <div v-if="showEnrolledStaffColumn" class="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                        <div class="flex items-center text-[11px] font-semibold uppercase text-gray-500">
+                            {{ tr('Staff inscrito', 'Enrolled staff') }}
+                            <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700" :title="tr('Staff con pago obligatorio completo para el evento.', 'Staff with completed required event payment.')">i</span>
+                        </div>
+                        <div class="mt-1 text-xl font-semibold text-gray-900">{{ summaryTotals.enrolledStaff }}</div>
+                    </div>
+                    <div v-if="showConfirmedStaffColumn" class="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                        <div class="flex items-center text-[11px] font-semibold uppercase text-gray-500">
+                            {{ tr('Staff confirmado', 'Confirmed staff') }}
+                            <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700" :title="tr('Staff confirmado por el club que todavía no cuenta como inscrito por pago obligatorio.', 'Staff confirmed by the club who does not yet count as enrolled by required payment.')">i</span>
+                        </div>
+                        <div class="mt-1 text-xl font-semibold text-gray-900">{{ summaryTotals.confirmedStaff }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-lg border bg-white">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50 text-left text-gray-600">
+                        <tr>
+	                            <th class="px-4 py-3 font-medium">{{ tr('Club', 'Club') }}</th>
+	                            <th class="px-4 py-3 font-medium">{{ tr('Estado', 'Status') }}</th>
+	                            <th v-if="showEnrolledMembersColumn" class="px-4 py-3 font-medium">
+	                                <span class="inline-flex items-center">
+	                                    {{ tr('Miembros inscritos', 'Enrolled members') }}
+	                                    <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700" :title="tr('Cuenta miembros con pago obligatorio completo.', 'Counts members with completed required payment.')">i</span>
+	                                </span>
+	                            </th>
+	                            <th v-if="showConfirmedMembersColumn" class="px-4 py-3 font-medium">
+	                                <span class="inline-flex items-center">
+	                                    {{ tr('Miembros confirmados', 'Confirmed members') }}
+	                                    <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-700" :title="tr('Cuenta confirmados que todavía no aparecen como inscritos por pago obligatorio.', 'Counts confirmed members who do not yet appear as enrolled by required payment.')">i</span>
+	                                </span>
+	                            </th>
+	                            <th v-if="showEnrolledStaffColumn" class="px-4 py-3 font-medium">
+	                                <span class="inline-flex items-center">
+	                                    {{ tr('Staff inscrito', 'Enrolled staff') }}
+	                                    <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700" :title="tr('Cuenta staff con pago obligatorio completo.', 'Counts staff with completed required payment.')">i</span>
+	                                </span>
+	                            </th>
+	                            <th v-if="showConfirmedStaffColumn" class="px-4 py-3 font-medium">
+	                                <span class="inline-flex items-center">
+	                                    {{ tr('Staff confirmado', 'Confirmed staff') }}
+	                                    <span class="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700" :title="tr('Cuenta staff confirmado que todavía no está inscrito por pago obligatorio.', 'Counts confirmed staff who is not yet enrolled by required payment.')">i</span>
+	                                </span>
+	                            </th>
+	                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="club in clubSummary" :key="club.club_id" class="border-t align-top">
+                            <td class="px-4 py-3">
+                                <div class="font-medium text-gray-900">{{ club.club_name }}</div>
+                                <div class="text-xs text-gray-500">{{ club.district_name || club.church_name || '—' }}</div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold"
+                                    :class="club.signup_status === 'signed_up' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : (club.signup_status === 'declined' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-gray-200 bg-gray-50 text-gray-600')"
+                                >
+                                    {{ club.signup_status || 'targeted' }}
+                                </span>
+                                <div v-if="club.signed_up_at" class="mt-1 text-xs text-gray-500">{{ club.signed_up_at }}</div>
+                            </td>
+                            <td v-if="showEnrolledMembersColumn" class="px-4 py-3 text-gray-700">
+                                <span class="font-semibold text-gray-900">{{ rowEnrolledMemberCount(club) }}</span>
+                                <span class="text-gray-400"> / {{ rowMemberCapacity(club) }}</span>
+                            </td>
+                            <td v-if="showConfirmedMembersColumn" class="px-4 py-3 text-gray-700">
+                                <span class="font-semibold text-gray-900">{{ rowConfirmedMemberCount(club) }}</span>
+                                <span class="text-gray-400"> / {{ rowMemberCapacity(club) }}</span>
+                            </td>
+                            <td v-if="showEnrolledStaffColumn" class="px-4 py-3 text-gray-700">
+                                <span class="font-semibold text-gray-900">{{ rowEnrolledStaffCount(club) }}</span>
+                                <span class="text-gray-400"> / {{ rowStaffCapacity(club) }}</span>
+                            </td>
+                            <td v-if="showConfirmedStaffColumn" class="px-4 py-3 text-gray-700">
+                                <span class="font-semibold text-gray-900">{{ rowConfirmedStaffCount(club) }}</span>
+                                <span class="text-gray-400"> / {{ rowStaffCapacity(club) }}</span>
+                            </td>
+                        </tr>
+                        <tr v-if="!clubSummary.length">
+                            <td :colspan="summaryColumnCount" class="px-4 py-8 text-center text-gray-500">
+                                {{ tr('No hay clubes visibles para este evento.', 'No visible clubs for this event.') }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div v-if="showRosterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+                    <div class="flex flex-col gap-3 border-b px-5 py-4 md:flex-row md:items-start md:justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">{{ tr('Lista general de participantes', 'General participant list') }}</h3>
+                            <p class="mt-1 text-sm text-gray-500">
+                                {{ tr('Miembros y staff confirmados por el club, junto con los inscritos por pago obligatorio completo.', 'Members and staff confirmed by the club, plus participants enrolled by completed required payment.') }}
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <a
+                                v-if="participantRoster.length"
+                                :href="route('events.participant-roster.pdf', { event: eventId })"
+                                class="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                            >
+                                {{ tr('Exportar PDF', 'Export PDF') }}
+                            </a>
+                            <button
+                                type="button"
+                                class="rounded border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                                @click="showRosterModal = false"
+                            >
+                                {{ tr('Cerrar', 'Close') }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid gap-3 border-b bg-gray-50 px-5 py-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+                        <div>
+                            <div class="text-[11px] font-semibold uppercase text-gray-500">{{ tr('Participantes', 'Participants') }}</div>
+                            <div class="text-lg font-semibold text-gray-900">{{ rosterTotals.participants }}</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-semibold uppercase text-gray-500">{{ tr('Inscritos', 'Enrolled') }}</div>
+                            <div class="text-lg font-semibold text-gray-900">{{ rosterTotals.enrolled }}</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-semibold uppercase text-gray-500">{{ tr('Confirmados', 'Confirmed') }}</div>
+                            <div class="text-lg font-semibold text-gray-900">{{ rosterTotals.confirmed }}</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-semibold uppercase text-gray-500">{{ tr('Pagado total', 'Total paid') }}</div>
+                            <div class="text-lg font-semibold text-gray-900">{{ formatMoney(rosterTotals.totalPaid) }}</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-semibold uppercase text-gray-500">{{ tr('Opcionales', 'Optionals') }}</div>
+                            <div class="text-lg font-semibold text-gray-900">{{ formatMoney(rosterTotals.optionalPaid) }}</div>
+                        </div>
+                    </div>
+
+                    <div class="overflow-auto">
+                        <table class="min-w-full text-sm">
+                            <thead class="sticky top-0 bg-gray-50 text-left text-gray-600">
+                                <tr>
+                                    <th class="px-4 py-3 font-medium">{{ tr('Participante', 'Participant') }}</th>
+                                    <th class="px-4 py-3 font-medium">{{ tr('Club', 'Club') }}</th>
+                                    <th class="px-4 py-3 font-medium">{{ tr('Distrito', 'District') }}</th>
+                                    <th v-if="showRosterAssociationColumn" class="px-4 py-3 font-medium">{{ tr('Asociación', 'Association') }}</th>
+                                    <th class="px-4 py-3 font-medium">{{ tr('Estado', 'Status') }}</th>
+                                    <th class="px-4 py-3 text-right font-medium">{{ tr('Pagado', 'Paid') }}</th>
+                                    <th class="px-4 py-3 font-medium">{{ tr('Opcionales', 'Optionals') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="row in participantRoster" :key="row.participant_key || row.member_id || row.staff_id" class="border-t align-top">
+                                    <td class="px-4 py-3">
+                                        <div class="font-medium text-gray-900">{{ row.name }}</div>
+                                        <div class="mt-1 text-xs text-gray-500">{{ row.participant_type_label || '—' }}</div>
+                                    </td>
+                                    <td class="px-4 py-3 text-gray-700">{{ row.club_name || '—' }}</td>
+                                    <td class="px-4 py-3 text-gray-700">{{ row.district_name || '—' }}</td>
+                                    <td v-if="showRosterAssociationColumn" class="px-4 py-3 text-gray-700">{{ row.association_name || '—' }}</td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex flex-wrap gap-1">
+                                            <span
+                                                v-if="row.is_enrolled"
+                                                class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700"
+                                            >
+                                                {{ tr('Inscrito', 'Enrolled') }}
+                                            </span>
+                                            <span
+                                                v-if="row.is_confirmed"
+                                                class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700"
+                                            >
+                                                {{ tr('Confirmado', 'Confirmed') }}
+                                            </span>
+                                        </div>
+                                        <div v-if="row.required_expected > 0" class="mt-1 text-xs text-gray-500">
+                                            {{ tr('Obligatorio', 'Required') }}: {{ formatMoney(row.required_paid) }} / {{ formatMoney(row.required_expected) }}
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-right font-semibold text-gray-900">
+                                        {{ formatMoney(row.total_paid) }}
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold" :class="optionalStatusClass(row.optional_status)">
+                                            {{ optionalStatusLabel(row.optional_status) }}
+                                        </span>
+                                        <div v-if="row.optional_components?.length" class="mt-2 space-y-1 text-xs text-gray-600">
+                                            <div
+                                                v-for="component in row.optional_components"
+                                                :key="`${row.participant_key || row.member_id || row.staff_id}-${component.label}`"
+                                                class="flex items-start justify-between gap-3"
+                                            >
+                                                <span class="break-words">{{ component.label }}</span>
+                                                <span class="whitespace-nowrap" :class="component.is_paid ? 'text-emerald-700' : 'text-gray-500'">
+                                                    {{ formatMoney(component.paid_amount) }} / {{ formatMoney(component.expected_amount) }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr v-if="!participantRoster.length">
+                                    <td :colspan="showRosterAssociationColumn ? 7 : 6" class="px-4 py-8 text-center text-gray-500">
+                                        {{ tr('Todavía no hay participantes confirmados o inscritos.', 'There are no confirmed or enrolled participants yet.') }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <template v-else>
         <div class="bg-white rounded-lg border p-4 space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
                 <div>
@@ -610,6 +999,7 @@ const confirmSelected = async () => {
             </tbody>
         </table>
         </div>
+        </template>
     </div>
 </template>
 

@@ -3,16 +3,20 @@
 namespace Tests\Feature;
 
 use App\Models\Association;
+use App\Models\BankInfo;
 use App\Models\Church;
 use App\Models\Club;
 use App\Models\District;
 use App\Models\Event;
 use App\Models\EventClubSettlement;
+use App\Models\Expense;
 use App\Models\Member;
 use App\Models\MemberPathfinder;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
+use App\Models\Staff;
 use App\Models\Union;
 use App\Models\UnionClubCatalog;
 use App\Models\User;
@@ -207,7 +211,747 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $this->assertCount(2, $associationView['settlement_receipts']);
     }
 
-    public function test_union_event_summary_tracks_expected_paid_and_deposited_amounts_across_districts_and_associations(): void
+    public function test_event_breakdown_can_be_paid_as_one_payment_with_component_allocations(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+        $associationDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $association->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $event = $this->createHierarchicalEvent(
+            $associationDirector,
+            'association',
+            $association->id,
+            [$club],
+            ['pathfinders'],
+            'Association Camporee Bundle',
+            [
+                ['label' => 'Insurance', 'amount' => 50],
+                ['label' => 'T-Shirt', 'amount' => 50],
+                ['label' => 'Signup', 'amount' => 100],
+            ],
+            true
+        );
+
+        $parent = User::factory()->create([
+            'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $member = $this->createPathfinderMember($club, $parent, 'North Camper');
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('event-participants.store', $event), [
+                'member_id' => $member->id,
+                'participant_name' => 'North Camper',
+                'role' => 'kid',
+                'status' => 'confirmed',
+            ])
+            ->assertOk();
+
+        app(EventFinanceService::class)->syncPaymentConcepts($event->fresh(), $associationDirector->id);
+
+        $conceptIds = PaymentConcept::query()
+            ->where('event_id', $event->id)
+            ->where('club_id', $club->id)
+            ->where('status', 'active')
+            ->orderBy('event_fee_component_id')
+            ->pluck('id')
+            ->all();
+
+        $this->assertCount(3, $conceptIds);
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.payments.store'), [
+                'club_id' => $club->id,
+                'event_concept_ids' => $conceptIds,
+                'member_id' => $member->id,
+                'amount_paid' => 200,
+                'payment_date' => '2026-05-05',
+                'payment_type' => 'cash',
+            ])
+            ->assertCreated();
+
+        $payment = Payment::query()->where('member_id', $member->id)->firstOrFail();
+
+        $this->assertNull($payment->payment_concept_id);
+        $this->assertSame('200.00', $payment->amount_paid);
+        $this->assertSame(1, Payment::query()->where('member_id', $member->id)->count());
+        $this->assertSame(1, PaymentReceipt::query()->where('payment_id', $payment->id)->count());
+        $this->assertEqualsCanonicalizing([50.0, 50.0, 100.0], PaymentAllocation::query()
+            ->where('payment_id', $payment->id)
+            ->pluck('amount')
+            ->map(fn ($amount) => (float) $amount)
+            ->all());
+
+        $summary = collect(app(EventFinanceService::class)->clubSignupSummary($event->fresh()))->firstWhere('club_id', $club->id);
+
+        $this->assertSame(200.0, $summary['paid_amount']);
+        $this->assertSame(0.0, $summary['remaining_amount']);
+        $this->assertSame(200.0, $summary['pending_settlement_amount']);
+        $this->assertCount(3, $summary['pending_settlement_breakdown']);
+    }
+
+    public function test_event_optional_components_do_not_count_member_as_enrolled_until_required_fee_is_paid(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+        $associationDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $association->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $parent = User::factory()->create([
+            'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $member = $this->createPathfinderMember($club, $parent, 'North Camper');
+
+        $event = $this->createHierarchicalEvent(
+            $associationDirector,
+            'association',
+            $association->id,
+            [$club],
+            ['pathfinders'],
+            'Association Camporee Optional Shirt',
+            [
+                ['label' => 'Inscripción', 'amount' => 50, 'is_required' => true],
+                ['label' => 'Camiseta', 'amount' => 35, 'is_required' => false],
+            ],
+            true
+        );
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('event-participants.store', $event), [
+                'member_id' => $member->id,
+                'participant_name' => 'North Camper',
+                'role' => 'kid',
+                'status' => 'confirmed',
+            ])
+            ->assertOk();
+
+        $concepts = PaymentConcept::query()
+            ->where('event_id', $event->id)
+            ->where('club_id', $club->id)
+            ->with('eventFeeComponent:id,label,is_required')
+            ->get();
+
+        $registration = $concepts->first(fn (PaymentConcept $concept) => $concept->eventFeeComponent?->label === 'Inscripción');
+        $shirt = $concepts->first(fn (PaymentConcept $concept) => $concept->eventFeeComponent?->label === 'Camiseta');
+
+        $this->assertNotNull($registration);
+        $this->assertNotNull($shirt);
+        $this->assertTrue((bool) $registration->eventFeeComponent->is_required);
+        $this->assertFalse((bool) $shirt->eventFeeComponent->is_required);
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.payments.store'), [
+                'club_id' => $club->id,
+                'event_concept_ids' => [$shirt->id],
+                'member_id' => $member->id,
+                'amount_paid' => 35,
+                'payment_date' => '2026-05-05',
+                'payment_type' => 'cash',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('event_concept_ids');
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.payments.store'), [
+                'club_id' => $club->id,
+                'event_concept_ids' => [$registration->id],
+                'member_id' => $member->id,
+                'amount_paid' => 50,
+                'payment_date' => '2026-05-05',
+                'payment_type' => 'cash',
+            ])
+            ->assertCreated();
+
+        $summaryAfterRegistration = collect(app(EventFinanceService::class)->clubSignupSummary($event->fresh()))->firstWhere('club_id', $club->id);
+        $this->assertSame(50.0, $summaryAfterRegistration['expected_amount']);
+        $this->assertSame(50.0, $summaryAfterRegistration['required_paid_amount']);
+        $this->assertSame(0.0, $summaryAfterRegistration['optional_paid_amount']);
+        $this->assertSame(0.0, $summaryAfterRegistration['remaining_amount']);
+        $this->assertSame(50.0, $summaryAfterRegistration['pending_settlement_amount']);
+        $this->assertSame(['Inscripción'], collect($summaryAfterRegistration['pending_settlement_breakdown'])->pluck('label')->all());
+
+        $ownerResponse = $this->actingAs($associationDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+        $ownerProps = $ownerResponse->viewData('page')['props'];
+        $clubSummary = collect($ownerProps['participantClubSummary'])->firstWhere('club_id', $club->id);
+        $this->assertSame(1, $clubSummary['paid_member_count']);
+        $this->assertSame(1, $clubSummary['confirmed_paid_member_count']);
+        $this->assertSame(0, $clubSummary['confirmed_unpaid_member_count']);
+        $this->assertTrue($clubSummary['has_required_payment']);
+        $this->assertSame(50.0, $clubSummary['expected_member_payment']);
+        $rosterRow = collect($ownerProps['participantRoster'])->firstWhere('member_id', $member->id);
+        $this->assertNotNull($rosterRow);
+        $this->assertTrue($rosterRow['is_confirmed']);
+        $this->assertTrue($rosterRow['is_enrolled']);
+        $this->assertSame(50.0, $rosterRow['total_paid']);
+        $this->assertSame('not_paid', $rosterRow['optional_status']);
+        $this->assertSame('Camiseta', $rosterRow['optional_components'][0]['label']);
+        $this->assertFalse($rosterRow['optional_components'][0]['is_paid']);
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.payments.store'), [
+                'club_id' => $club->id,
+                'event_concept_ids' => [$shirt->id],
+                'member_id' => $member->id,
+                'amount_paid' => 35,
+                'payment_date' => '2026-05-06',
+                'payment_type' => 'cash',
+            ])
+            ->assertCreated();
+
+        $summaryAfterOptional = collect(app(EventFinanceService::class)->clubSignupSummary($event->fresh()))->firstWhere('club_id', $club->id);
+        $this->assertSame(85.0, $summaryAfterOptional['paid_amount']);
+        $this->assertSame(50.0, $summaryAfterOptional['required_paid_amount']);
+        $this->assertSame(35.0, $summaryAfterOptional['optional_paid_amount']);
+        $this->assertSame(85.0, $summaryAfterOptional['pending_settlement_amount']);
+        $this->assertEqualsCanonicalizing(
+            ['Inscripción', 'Camiseta'],
+            collect($summaryAfterOptional['pending_settlement_breakdown'])->pluck('label')->all()
+        );
+        $ownerAfterOptional = $this->actingAs($associationDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+        $rosterAfterOptional = collect($ownerAfterOptional->viewData('page')['props']['participantRoster'])->firstWhere('member_id', $member->id);
+        $this->assertSame(85.0, $rosterAfterOptional['total_paid']);
+        $this->assertSame(35.0, $rosterAfterOptional['optional_paid']);
+        $this->assertSame('paid', $rosterAfterOptional['optional_status']);
+        $this->assertTrue($rosterAfterOptional['optional_components'][0]['is_paid']);
+    }
+
+    public function test_owner_participant_summary_counts_required_payment_as_member_enrollment_without_manual_confirmation(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+        $associationDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $association->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $parent = User::factory()->create([
+            'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $member = $this->createPathfinderMember($club, $parent, 'North Camper');
+        $event = $this->createHierarchicalEvent(
+            $associationDirector,
+            'association',
+            $association->id,
+            [$club],
+            ['pathfinders'],
+            'Association Camporee Registration',
+            [
+                ['label' => 'Inscripción', 'amount' => 50, 'is_required' => true],
+            ],
+            true
+        );
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('event-participants.store', $event), [
+                'member_id' => $member->id,
+                'participant_name' => 'North Camper',
+                'role' => 'kid',
+                'status' => 'invited',
+            ])
+            ->assertOk();
+
+        $registration = PaymentConcept::query()
+            ->where('event_id', $event->id)
+            ->where('club_id', $club->id)
+            ->where('status', 'active')
+            ->firstOrFail();
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.payments.store'), [
+                'club_id' => $club->id,
+                'event_concept_ids' => [$registration->id],
+                'member_id' => $member->id,
+                'amount_paid' => 50,
+                'payment_date' => '2026-05-05',
+                'payment_type' => 'cash',
+            ])
+            ->assertCreated();
+
+        $ownerResponse = $this->actingAs($associationDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+
+        $clubSummary = collect($ownerResponse->viewData('page')['props']['participantClubSummary'])->firstWhere('club_id', $club->id);
+        $this->assertSame(1, $clubSummary['enrolled_member_count']);
+        $this->assertSame(0, $clubSummary['manual_confirmed_member_count']);
+        $this->assertSame(0, $clubSummary['confirmed_unpaid_member_count']);
+        $this->assertSame(1, $clubSummary['paid_member_count']);
+        $this->assertTrue($clubSummary['has_required_payment']);
+    }
+
+    public function test_owner_participant_summary_separates_staff_confirmation_from_staff_enrollment_payment(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+        $staff = $this->createStaffForClub($club, 'North Staff');
+
+        $associationDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $association->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $event = $this->createHierarchicalEvent(
+            $associationDirector,
+            'association',
+            $association->id,
+            [$club],
+            ['pathfinders'],
+            'Association Staff Registration',
+            [
+                ['label' => 'Inscripción', 'amount' => 50, 'is_required' => true],
+            ],
+            true
+        );
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('event-participants.store', $event), [
+                'staff_id' => $staff->id,
+                'participant_name' => 'North Staff',
+                'role' => 'staff',
+                'status' => 'confirmed',
+            ])
+            ->assertOk();
+
+        $ownerBeforePayment = $this->actingAs($associationDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+        $beforeRow = collect($ownerBeforePayment->viewData('page')['props']['participantClubSummary'])->firstWhere('club_id', $club->id);
+        $this->assertSame(1, $beforeRow['confirmed_staff_count']);
+        $this->assertSame(1, $beforeRow['confirmed_unpaid_staff_count']);
+        $this->assertSame(0, $beforeRow['enrolled_staff_count']);
+        $beforeRosterStaff = collect($ownerBeforePayment->viewData('page')['props']['participantRoster'])->firstWhere('staff_id', $staff->id);
+        $this->assertSame('staff', $beforeRosterStaff['participant_type']);
+        $this->assertTrue($beforeRosterStaff['is_confirmed']);
+        $this->assertFalse($beforeRosterStaff['is_enrolled']);
+        $this->assertSame(50.0, $beforeRosterStaff['required_expected']);
+
+        $concept = PaymentConcept::query()
+            ->where('event_id', $event->id)
+            ->where('club_id', $club->id)
+            ->firstOrFail();
+        $this->recordStaffPayment($concept, $staff, $clubDirector, 50, '2026-05-06');
+
+        $ownerAfterPayment = $this->actingAs($associationDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+        $afterRow = collect($ownerAfterPayment->viewData('page')['props']['participantClubSummary'])->firstWhere('club_id', $club->id);
+        $this->assertSame(1, $afterRow['confirmed_staff_count']);
+        $this->assertSame(0, $afterRow['confirmed_unpaid_staff_count']);
+        $this->assertSame(1, $afterRow['enrolled_staff_count']);
+        $this->assertSame(1, $afterRow['paid_staff_count']);
+        $this->assertSame(1, $afterRow['confirmed_paid_staff_count']);
+        $afterRosterStaff = collect($ownerAfterPayment->viewData('page')['props']['participantRoster'])->firstWhere('staff_id', $staff->id);
+        $this->assertTrue($afterRosterStaff['is_confirmed']);
+        $this->assertTrue($afterRosterStaff['is_enrolled']);
+        $this->assertSame(50.0, $afterRosterStaff['total_paid']);
+        $this->assertSame(50.0, $afterRosterStaff['required_paid']);
+
+        $pdfResponse = $this->actingAs($associationDirector)
+            ->get(route('events.participant-roster.pdf', $event))
+            ->assertOk();
+        $this->assertStringContainsString('application/pdf', $pdfResponse->headers->get('content-type'));
+    }
+
+    public function test_parent_portal_and_event_deposit_module_use_separate_bank_info(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+        $associationDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $association->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $parent = User::factory()->create([
+            'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+        $member = $this->createPathfinderMember($club, $parent, 'North Camper');
+
+        BankInfo::query()->where('bankable_type', Club::class)
+            ->where('bankable_id', $club->id)
+            ->where('pay_to', 'club_budget')
+            ->firstOrFail()
+            ->update([
+                'label' => 'Cuenta del club',
+                'bank_name' => 'Club Bank',
+                'account_holder' => 'North Pathfinders',
+                'account_number' => '123456789',
+                'routing_number' => '021000021',
+                'is_active' => true,
+                'accepts_parent_deposits' => true,
+                'accepts_event_deposits' => false,
+                'requires_receipt_upload' => true,
+            ]);
+
+        BankInfo::create([
+            'bankable_type' => Association::class,
+            'bankable_id' => $association->id,
+            'pay_to' => 'association_budget',
+            'label' => 'Cuenta de asociación',
+            'bank_name' => 'Association Bank',
+            'account_holder' => $association->name,
+            'account_number' => '987654321',
+            'routing_number' => '111000025',
+            'is_active' => true,
+            'accepts_parent_deposits' => false,
+            'accepts_event_deposits' => true,
+            'requires_receipt_upload' => true,
+        ]);
+
+        $event = $this->createHierarchicalEvent(
+            $associationDirector,
+            'association',
+            $association->id,
+            [$club],
+            ['pathfinders'],
+            'Association Camporee 2026',
+            [['label' => 'Registration', 'amount' => 25]],
+            true
+        );
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('event-participants.store', $event), [
+                'member_id' => $member->id,
+                'participant_name' => 'North Camper',
+                'role' => 'kid',
+                'status' => 'confirmed',
+            ])
+            ->assertOk();
+
+        $parentResponse = $this->actingAs($parent)
+            ->get(route('parent.payments.index'))
+            ->assertOk();
+        $parentProps = $parentResponse->viewData('page')['props'];
+        $charge = collect($parentProps['expected_payments'])->firstWhere('event_title', 'Association Camporee 2026');
+
+        $this->assertNotNull($charge);
+        $this->assertSame('Club Bank', $charge['deposit_account']['bank_name']);
+        $this->assertSame('123456789', $charge['deposit_account']['account_number']);
+
+        $concept = PaymentConcept::query()
+            ->where('event_id', $event->id)
+            ->where('club_id', $club->id)
+            ->firstOrFail();
+        $this->recordMemberPayment($concept, $member, $clubDirector, 25, '2026-05-06');
+
+        $settlementResponse = $this->actingAs($clubDirector)
+            ->getJson(route('club.director.event-settlements.index', ['club_id' => $club->id]))
+            ->assertOk();
+
+        $this->assertSame('Association Bank', $settlementResponse->json('data.0.organizer_bank_info.bank_name'));
+        $this->assertSame(25, $settlementResponse->json('data.0.pending_settlement_amount'));
+        $this->assertSame(1, $settlementResponse->json('data.0.paid_members_count'));
+        $this->assertSame('North Camper', $settlementResponse->json('data.0.paid_members.0.name'));
+        $this->assertSame(25, $settlementResponse->json('data.0.paid_members.0.total_paid'));
+        $this->assertSame('Registration', $settlementResponse->json('data.0.paid_members.0.breakdown.0.label'));
+    }
+
+    public function test_treasury_tracks_cash_bank_locations_and_local_movements(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+        Payment::create([
+            'club_id' => $club->id,
+            'concept_text' => 'Cash dues',
+            'pay_to' => 'club_budget',
+            'amount_paid' => 100,
+            'payment_date' => '2026-05-01',
+            'payment_type' => 'cash',
+            'received_by_user_id' => $clubDirector->id,
+        ]);
+
+        Payment::create([
+            'club_id' => $club->id,
+            'concept_text' => 'Electronic dues',
+            'pay_to' => 'club_budget',
+            'amount_paid' => 50,
+            'payment_date' => '2026-05-01',
+            'payment_type' => 'transfer',
+            'received_by_user_id' => $clubDirector->id,
+        ]);
+
+        Expense::create([
+            'club_id' => $club->id,
+            'pay_to' => 'club_budget',
+            'funds_location' => 'cash',
+            'amount' => 15,
+            'expense_date' => '2026-05-01',
+            'description' => 'Cash snacks',
+            'created_by_user_id' => $clubDirector->id,
+            'status' => 'completed',
+        ]);
+
+        Expense::create([
+            'club_id' => $club->id,
+            'pay_to' => 'club_budget',
+            'funds_location' => 'bank',
+            'amount' => 10,
+            'expense_date' => '2026-05-01',
+            'description' => 'Bank supplies',
+            'created_by_user_id' => $clubDirector->id,
+            'status' => 'completed',
+        ]);
+
+        $treasuryResponse = $this->actingAs($clubDirector)
+            ->getJson(route('club.director.treasury.data', ['club_id' => $club->id]))
+            ->assertOk()
+            ->assertJsonPath('summary.cash_balance', 85)
+            ->assertJsonPath('summary.bank_balance', 40);
+        $this->assertSame('club_budget', $treasuryResponse->json('income_rows.0.pay_to'));
+        $this->assertNotEmpty($treasuryResponse->json('income_rows.0.account_label'));
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.director.treasury.movements.store'), [
+                'club_id' => $club->id,
+                'movement_type' => 'cash_deposit',
+                'amount' => 40,
+                'movement_date' => '2026-05-02',
+                'reference' => 'DEP-001',
+            ])
+            ->assertCreated();
+
+        $this->actingAs($clubDirector)
+            ->getJson(route('club.director.treasury.data', ['club_id' => $club->id]))
+            ->assertOk()
+            ->assertJsonPath('summary.cash_balance', 45)
+            ->assertJsonPath('summary.bank_balance', 80);
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.director.treasury.movements.store'), [
+                'club_id' => $club->id,
+                'movement_type' => 'cash_withdrawal',
+                'amount' => 10,
+                'movement_date' => '2026-05-03',
+                'reference' => 'WDR-001',
+            ])
+            ->assertCreated();
+
+        $this->actingAs($clubDirector)
+            ->getJson(route('club.director.treasury.data', ['club_id' => $club->id]))
+            ->assertOk()
+            ->assertJsonPath('summary.cash_balance', 55)
+            ->assertJsonPath('summary.bank_balance', 70);
+
+        $report = $this->actingAs($clubDirector)
+            ->getJson(route('financial.accounts', ['club_id' => $club->id]))
+            ->assertOk();
+
+        $clubBudget = collect($report->json('data.accounts'))->firstWhere('account', 'club_budget');
+        $this->assertSame(55.0, (float) $clubBudget['cash_balance']);
+        $this->assertSame(70.0, (float) $clubBudget['bank_balance']);
+        $this->assertSame(25.0, (float) $clubBudget['expenses']);
+        $this->assertSame(125.0, (float) $clubBudget['balance']);
+        $this->assertSame('cash', collect($report->json('data.expenses'))->firstWhere('description', 'Cash snacks')['location']);
+        $this->assertSame('bank', collect($report->json('data.expenses'))->firstWhere('description', 'Bank supplies')['location']);
+
+        $ledger = $this->actingAs($clubDirector)
+            ->getJson(route('financial.report', [
+                'mode' => 'account',
+                'club_id' => $club->id,
+            ]))
+            ->assertOk();
+
+        $ledgerAccount = collect($ledger->json('data.accounts'))->firstWhere('pay_to', 'club_budget');
+        $this->assertSame(55.0, (float) $ledgerAccount['totals']['cash_balance']);
+        $this->assertSame(70.0, (float) $ledgerAccount['totals']['bank_balance']);
+        $this->assertSame(50.0, (float) $ledgerAccount['totals']['movements']);
+        $this->assertContains('treasury_movement', collect($ledgerAccount['entries'])->pluck('entry_type')->all());
+
+        $cashLedger = $this->actingAs($clubDirector)
+            ->getJson(route('financial.report', [
+                'mode' => 'account',
+                'club_id' => $club->id,
+                'location' => 'cash',
+            ]))
+            ->assertOk();
+        $cashEntries = collect($cashLedger->json('data.accounts.0.entries'));
+        $this->assertSame(['cash'], $cashEntries->where('entry_type', 'payment')->pluck('location')->unique()->values()->all());
+        $this->assertSame(['cash'], $cashEntries->where('entry_type', 'expense')->pluck('location')->unique()->values()->all());
+
+        $bankLedger = $this->actingAs($clubDirector)
+            ->getJson(route('financial.report', [
+                'mode' => 'account',
+                'club_id' => $club->id,
+                'location' => 'bank',
+            ]))
+            ->assertOk();
+        $bankEntries = collect($bankLedger->json('data.accounts.0.entries'));
+        $this->assertSame(['bank'], $bankEntries->where('entry_type', 'payment')->pluck('location')->unique()->values()->all());
+        $this->assertSame(['bank'], $bankEntries->where('entry_type', 'expense')->pluck('location')->unique()->values()->all());
+    }
+
+    public function test_superadmin_can_load_treasury_and_event_settlement_data_from_active_club_context(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+        $superadmin = User::factory()->create([
+            'profile_type' => 'superadmin',
+            'role_key' => 'superadmin',
+            'scope_type' => 'global',
+            'scope_id' => null,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $session = ['superadmin_context' => ['club_id' => $club->id]];
+
+        $this->actingAs($superadmin)
+            ->withSession($session)
+            ->getJson(route('club.director.treasury.data'))
+            ->assertOk()
+            ->assertJsonPath('club.id', $club->id);
+
+        $this->actingAs($superadmin)
+            ->withSession($session)
+            ->getJson(route('club.director.event-settlements.index'))
+            ->assertOk()
+            ->assertJsonPath('club.id', $club->id);
+    }
+
+	    public function test_zelle_payments_store_sender_phone_separately_from_club_receiver_phone(): void
+	    {
+	        [$union, $association] = $this->seedUnionAndAssociation();
+	        $this->seedClubCatalogs($union);
+
+	        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+	        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+	        [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+	        $parent = User::factory()->create([
+	            'profile_type' => 'parent',
+	            'role_key' => 'parent',
+	            'sub_role' => null,
+	            'status' => 'active',
+	            'email_verified_at' => now(),
+	        ]);
+	        $member = $this->createPathfinderMember($club, $parent, 'North Camper');
+
+	        $concept = PaymentConcept::create([
+	            'club_id' => $club->id,
+	            'concept' => 'Monthly dues',
+	            'amount' => 20,
+	            'payment_expected_by' => '2026-05-31',
+	            'type' => 'mandatory',
+	            'status' => 'active',
+	            'pay_to' => 'club_budget',
+	            'created_by' => $clubDirector->id,
+	        ]);
+
+	        $payload = [
+	            'club_id' => $club->id,
+	            'payment_concept_id' => $concept->id,
+	            'member_id' => $member->id,
+	            'amount_paid' => 20,
+	            'payment_date' => '2026-05-01',
+	            'payment_type' => 'zelle',
+	        ];
+
+	        $this->actingAs($clubDirector)
+	            ->postJson(route('club.payments.store'), $payload)
+	            ->assertStatus(422)
+	            ->assertJsonPath('message', 'Ingresa el teléfono Zelle desde donde se envió el dinero.');
+
+	        $this->actingAs($clubDirector)
+	            ->postJson(route('club.payments.store'), $payload + ['zelle_phone' => '555-2121'])
+	            ->assertCreated();
+
+	        $this->assertDatabaseHas('payments', [
+	            'club_id' => $club->id,
+	            'payment_concept_id' => $concept->id,
+	            'payment_type' => 'zelle',
+	            'zelle_phone' => '555-2121',
+	        ]);
+
+	        $this->assertSame('555-0100', BankInfo::query()->where('bankable_id', $club->id)->value('zelle_phone'));
+	    }
+
+	    public function test_union_event_summary_tracks_expected_paid_and_deposited_amounts_across_districts_and_associations(): void
     {
         $union = Union::create(['name' => 'Continental Union', 'status' => 'active']);
         $this->seedClubCatalogs($union);
@@ -231,6 +975,24 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             'role_key' => 'union_youth_director',
             'scope_type' => 'union',
             'scope_id' => $union->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+        $associationEastDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $associationEast->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+        $associationWestDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $associationWest->id,
             'sub_role' => null,
             'status' => 'active',
             'email_verified_at' => now(),
@@ -303,6 +1065,49 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $this->recordMemberPayment($eastInsurance, $eastMember, $directorEast, 60, '2026-05-10');
         $this->recordMemberPayment($eastRegistration, $eastMember, $directorEast, 140, '2026-05-10');
         $this->recordMemberPayment($westInsurance, $westMember, $directorWest, 60, '2026-05-10');
+
+        $eastAssociationResponse = $this->actingAs($associationEastDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+        $eastAssociationProps = $eastAssociationResponse->viewData('page')['props'];
+        $this->assertFalse($eastAssociationProps['canEditEvent']);
+        $this->assertSame([$clubEast->id], collect($eastAssociationProps['clubSignupSummary'])->pluck('club_id')->all());
+        $this->assertSame(200.0, collect($eastAssociationProps['clubSignupSummary'])->first()['pending_settlement_amount']);
+        $eastParticipantRow = collect($eastAssociationProps['participantClubSummary'])->first();
+        $this->assertSame($clubEast->id, $eastParticipantRow['club_id']);
+        $this->assertSame(1, $eastParticipantRow['paid_member_count']);
+        $this->assertSame(0, $eastParticipantRow['confirmed_unpaid_member_count']);
+
+        $westAssociationResponse = $this->actingAs($associationWestDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+        $westAssociationProps = $westAssociationResponse->viewData('page')['props'];
+        $this->assertFalse($westAssociationProps['canEditEvent']);
+        $this->assertSame([$clubWest->id], collect($westAssociationProps['clubSignupSummary'])->pluck('club_id')->all());
+        $this->assertSame(60.0, collect($westAssociationProps['clubSignupSummary'])->first()['pending_settlement_amount']);
+        $westParticipantRow = collect($westAssociationProps['participantClubSummary'])->first();
+        $this->assertSame($clubWest->id, $westParticipantRow['club_id']);
+        $this->assertSame(0, $westParticipantRow['paid_member_count']);
+        $this->assertSame(1, $westParticipantRow['confirmed_unpaid_member_count']);
+
+        $unionOwnerResponse = $this->actingAs($unionDirector)
+            ->get(route('events.show', $event))
+            ->assertOk();
+        $unionOwnerProps = $unionOwnerResponse->viewData('page')['props'];
+        $this->assertTrue($unionOwnerProps['canEditEvent']);
+        $unionRoster = collect($unionOwnerProps['participantRoster']);
+        $this->assertCount(2, $unionRoster);
+        $eastRoster = $unionRoster->firstWhere('member_id', $eastMember->id);
+        $westRoster = $unionRoster->firstWhere('member_id', $westMember->id);
+        $this->assertSame('East Association', $eastRoster['association_name']);
+        $this->assertSame('West Association', $westRoster['association_name']);
+        $this->assertTrue($eastRoster['is_confirmed']);
+        $this->assertTrue($eastRoster['is_enrolled']);
+        $this->assertSame(200.0, $eastRoster['total_paid']);
+        $this->assertTrue($westRoster['is_confirmed']);
+        $this->assertFalse($westRoster['is_enrolled']);
+        $this->assertSame(60.0, $westRoster['total_paid']);
+        $this->assertSame(200.0, $westRoster['required_expected']);
 
         $this->actingAs($directorEast)
             ->from(route('events.show', $event))
@@ -409,6 +1214,21 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             'scope_id' => $club->id,
         ]);
 
+        BankInfo::create([
+            'bankable_type' => Club::class,
+            'bankable_id' => $club->id,
+            'pay_to' => 'club_budget',
+            'label' => 'Cuenta del club',
+            'bank_name' => 'Test Bank',
+            'account_holder' => $clubName,
+            'account_number' => '123456789',
+            'routing_number' => '021000021',
+            'zelle_phone' => '555-0100',
+            'is_active' => true,
+            'accepts_parent_deposits' => true,
+            'requires_receipt_upload' => true,
+        ]);
+
         return [$director->fresh(), $club->fresh()];
     }
 
@@ -490,6 +1310,29 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         return $member->fresh();
     }
 
+    protected function createStaffForClub(Club $club, string $name): Staff
+    {
+        $staffUser = User::factory()->create([
+            'name' => $name,
+            'profile_type' => 'club_personal',
+            'role_key' => 'club_personal',
+            'scope_type' => 'club',
+            'scope_id' => $club->id,
+            'club_id' => $club->id,
+            'sub_role' => 'staff',
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        return Staff::create([
+            'type' => $club->club_type,
+            'id_data' => 1,
+            'club_id' => $club->id,
+            'user_id' => $staffUser->id,
+            'status' => 'active',
+        ])->fresh();
+    }
+
     protected function recordMemberPayment(PaymentConcept $concept, Member $member, User $receiver, float $amount, string $paymentDate): Payment
     {
         $payment = Payment::create([
@@ -503,12 +1346,38 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             'amount_paid' => $amount,
             'expected_amount' => $concept->amount,
             'payment_date' => $paymentDate,
-            'payment_type' => 'cash',
+            'payment_type' => 'transfer',
             'zelle_phone' => null,
             'balance_due_after' => max((float) $concept->amount - $amount, 0),
             'check_image_path' => null,
             'received_by_user_id' => $receiver->id,
             'notes' => 'Test event payment',
+        ]);
+
+        app(PaymentReceiptService::class)->syncForPayment($payment);
+
+        return $payment->fresh();
+    }
+
+    protected function recordStaffPayment(PaymentConcept $concept, Staff $staff, User $receiver, float $amount, string $paymentDate): Payment
+    {
+        $payment = Payment::create([
+            'club_id' => $concept->club_id,
+            'payment_concept_id' => $concept->id,
+            'concept_text' => $concept->concept,
+            'pay_to' => $concept->pay_to,
+            'account_id' => null,
+            'member_id' => null,
+            'staff_id' => $staff->id,
+            'amount_paid' => $amount,
+            'expected_amount' => $concept->amount,
+            'payment_date' => $paymentDate,
+            'payment_type' => 'transfer',
+            'zelle_phone' => null,
+            'balance_due_after' => max((float) $concept->amount - $amount, 0),
+            'check_image_path' => null,
+            'received_by_user_id' => $receiver->id,
+            'notes' => 'Test event staff payment',
         ]);
 
         app(PaymentReceiptService::class)->syncForPayment($payment);

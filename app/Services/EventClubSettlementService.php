@@ -11,9 +11,20 @@ use Illuminate\Support\Str;
 
 class EventClubSettlementService
 {
-    public function recordSettlement(Event $event, Club $club, int $userId, array $breakdown, float $amount, \DateTimeInterface $depositedAt, ?string $reference = null, ?string $notes = null): EventClubSettlement
+    public function recordSettlement(
+        Event $event,
+        Club $club,
+        int $userId,
+        array $breakdown,
+        float $amount,
+        \DateTimeInterface $depositedAt,
+        ?string $reference = null,
+        ?string $notes = null,
+        ?string $depositProofPath = null,
+        ?string $depositProofOriginalName = null,
+    ): EventClubSettlement
     {
-        return DB::transaction(function () use ($event, $club, $userId, $breakdown, $amount, $depositedAt, $reference, $notes) {
+        return DB::transaction(function () use ($event, $club, $userId, $breakdown, $amount, $depositedAt, $reference, $notes, $depositProofPath, $depositProofOriginalName) {
             Club::query()->whereKey($club->id)->lockForUpdate()->first(['id']);
 
             $issuedAt = now();
@@ -32,6 +43,9 @@ class EventClubSettlementService
                 'deposited_at' => $depositedAt,
                 'reference' => $reference,
                 'notes' => $notes,
+                'deposit_proof_path' => $depositProofPath,
+                'deposit_proof_original_name' => $depositProofOriginalName,
+                'deposit_proof_uploaded_at' => $depositProofPath ? now() : null,
                 'club_code' => $clubCode,
                 'receipt_year' => $receiptYear,
                 'club_sequence' => $clubSequence,

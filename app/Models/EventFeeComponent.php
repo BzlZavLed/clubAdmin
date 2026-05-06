@@ -10,11 +10,13 @@ class EventFeeComponent extends Model
         'event_id',
         'label',
         'amount',
+        'is_required',
         'sort_order',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'is_required' => 'boolean',
         'sort_order' => 'integer',
     ];
 

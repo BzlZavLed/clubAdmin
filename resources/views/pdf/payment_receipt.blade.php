@@ -386,8 +386,16 @@
                                     <table class="info-table">
                                         <tr>
                                             <td class="info-label">Concepto</td>
-                                            <td class="info-value">{{ $payment?->concept?->concept ?? $payment?->concept_text ?? '—' }}</td>
+                                            <td class="info-value">{{ $concept_name ?? $payment?->concept?->concept ?? $payment?->concept_text ?? '—' }}</td>
                                         </tr>
+                                        @if(!empty($payment?->allocations) && $payment->allocations->isNotEmpty())
+                                            @foreach($payment->allocations as $allocation)
+                                                <tr>
+                                                    <td class="info-label">{{ $allocation->concept?->eventFeeComponent?->label ?? 'Componente' }}</td>
+                                                    <td class="info-value">${{ number_format((float) $allocation->amount, 2) }}</td>
+                                                </tr>
+                                            @endforeach
+                                        @endif
                                         <tr>
                                             <td class="info-label">Cuenta</td>
                                             <td class="info-value">{{ $payment?->account?->label ?? $payment?->pay_to ?? '—' }}</td>
@@ -415,7 +423,7 @@
                             <td>
                                 <div class="total-label">Importe recibido</div>
                                 <div class="total-support">
-                                    {{ $payment?->concept?->concept ?? $payment?->concept_text ?? 'Ingreso registrado' }}
+                                    {{ $concept_name ?? $payment?->concept?->concept ?? $payment?->concept_text ?? 'Ingreso registrado' }}
                                 </div>
                             </td>
                             <td class="total-amount">

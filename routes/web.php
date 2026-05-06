@@ -31,6 +31,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Controllers\WorkplanController;
 use App\Http\Controllers\ClubSettingsController;
+use App\Http\Controllers\ClubTreasuryController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventClubSettlementController;
 use App\Http\Controllers\EventPlanController;
@@ -46,6 +47,7 @@ use App\Http\Controllers\TaskFormController;
 use App\Http\Controllers\ClassInvestitureRequirementController;
 use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 use App\Http\Controllers\SuperAdminContextController;
+use App\Http\Controllers\SuperAdminEventTaskFormCatalogController;
 use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\UnionWorkplanController;
@@ -348,6 +350,16 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
         ->name('superadmin.context.set');
     Route::get('/super-admin/ai-logs', [\App\Http\Controllers\SuperAdminAiLogController::class, 'index'])
         ->name('superadmin.ai-logs.index');
+    Route::get('/super-admin/event-task-forms', [SuperAdminEventTaskFormCatalogController::class, 'index'])
+        ->name('superadmin.event-task-forms.index');
+    Route::post('/super-admin/event-task-forms/schemas', [SuperAdminEventTaskFormCatalogController::class, 'storeSchema'])
+        ->name('superadmin.event-task-forms.schemas.store');
+    Route::put('/super-admin/event-task-forms/schemas/{schema}', [SuperAdminEventTaskFormCatalogController::class, 'updateSchema'])
+        ->name('superadmin.event-task-forms.schemas.update');
+    Route::put('/super-admin/event-task-forms/templates/{template}', [SuperAdminEventTaskFormCatalogController::class, 'updateTemplate'])
+        ->name('superadmin.event-task-forms.templates.update');
+    Route::put('/super-admin/event-task-forms/tasks/{task}', [SuperAdminEventTaskFormCatalogController::class, 'updateTask'])
+        ->name('superadmin.event-task-forms.tasks.update');
     Route::get('/super-admin/churches/manage', [ChurchController::class, 'manage'])->name('superadmin.churches.manage');
     Route::get('/super-admin/unions', [UnionController::class, 'index'])->name('superadmin.unions.manage');
     Route::post('/super-admin/unions', [UnionController::class, 'store'])->name('superadmin.unions.store');
@@ -538,6 +550,14 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         fn() =>
         Inertia::render('ClubDirector/MyClubFinances', ['auth_user' => auth()->user()])
     )->name('club.my-club-finances');
+    Route::get('/club-director/event-settlements', [EventClubSettlementController::class, 'indexForClub'])
+        ->name('club.director.event-settlements.index');
+    Route::get('/club-director/treasury', [ClubTreasuryController::class, 'index'])
+        ->name('club.director.treasury');
+    Route::get('/club-director/treasury/data', [ClubTreasuryController::class, 'data'])
+        ->name('club.director.treasury.data');
+    Route::post('/club-director/treasury/movements', [ClubTreasuryController::class, 'storeMovement'])
+        ->name('club.director.treasury.movements.store');
 
     Route::get(
         '/club-director/members',
@@ -764,6 +784,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/events/{event}/club-settlements', [EventClubSettlementController::class, 'store'])->name('event-club-settlements.store');
     Route::get('/event-club-settlements/{settlement}/receipt', [EventClubSettlementController::class, 'download'])->name('event-club-settlements.download');
     Route::get('/events/{event}/pdf', [EventController::class, 'pdf'])->name('events.pdf');
+    Route::get('/events/{event}/participant-roster.pdf', [EventController::class, 'participantRosterPdf'])->name('events.participant-roster.pdf');
     Route::patch('/event-plans/{event}', [EventPlanController::class, 'update'])->name('event-plans.update');
 
     Route::get('/events/{event}/tasks', [EventTaskController::class, 'index'])->name('event-tasks.index');
@@ -815,6 +836,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('accounts/recalculate', [\App\Http\Controllers\AccountController::class, 'recalculate'])->name('accounts.recalculate');
         Route::put('accounts/{account}', [\App\Http\Controllers\AccountController::class, 'update'])->name('accounts.update');
         Route::delete('accounts/{account}', [\App\Http\Controllers\AccountController::class, 'destroy'])->name('accounts.destroy');
+        Route::get('bank-info', [\App\Http\Controllers\BankInfoController::class, 'clubIndex'])->name('bank-info.index');
+        Route::put('bank-info/{payTo}', [\App\Http\Controllers\BankInfoController::class, 'clubUpdate'])->name('bank-info.update');
 
         Route::get('payment-concepts',                [ClubController::class, 'paymentConceptsIndex'])->name('payment-concepts.index');
         Route::post('payment-concepts',               [ClubController::class, 'paymentConceptsStore'])->name('payment-concepts.store');

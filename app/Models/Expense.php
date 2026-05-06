@@ -13,6 +13,7 @@ class Expense extends Model
         'club_id',
         'event_id',
         'pay_to',
+        'funds_location',
         'payment_concept_id',
         'payee_id',
         'amount',

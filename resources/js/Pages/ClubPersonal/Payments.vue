@@ -71,6 +71,13 @@ const selectedMemberId = ref(null)
 const selectedConceptId = ref(null)
 const selectedConcept = computed(() => props.concepts.find(c => c.id === selectedConceptId.value) || null)
 const selectedConceptExpected = computed(() => selectedConcept.value?.amount ?? '')
+const eventTitleForConcept = (concept) => concept?.event?.title || concept?.event_title || null
+const conceptOptionLabel = (concept) => {
+    const eventTitle = eventTitleForConcept(concept)
+    if (!eventTitle) return concept.concept
+
+    return `● ${eventTitle} - ${concept.event_fee_component?.label || concept.concept}`
+}
 const prefillApplied = ref(false)
 
 // ----- Form -----
@@ -254,7 +261,7 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option :value="null" disabled>{{ tr('Selecciona un concepto…', 'Select a concept…') }}</option>
                             <option v-for="c in concepts" :key="c.id" :value="c.id">
-                                {{ c.concept }} • {{ c.amount ?? '—' }}
+                                {{ conceptOptionLabel(c) }} • {{ c.amount ?? '—' }}
                             </option>
                         </select>
                         <div class="mt-1 text-xs text-gray-500" v-if="selectedConcept && form.payment_type !== 'initial'">
@@ -325,10 +332,13 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                     <!-- Conditional fields -->
                     <div v-if="form.payment_type === 'zelle'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">{{ tr('Teléfono Zelle', 'Zelle phone') }}</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Teléfono Zelle del remitente', 'Sender Zelle phone') }}</label>
                         <input v-model="form.zelle_phone" type="text" inputmode="tel"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                             :placeholder="tr('(555) 555-5555', '(555) 555-5555')" />
+                        <p class="mt-1 text-xs text-gray-500">
+                            {{ tr('La cuenta bancaria del club define el número receptor; aquí guarda el número desde donde se envió el dinero.', 'The club bank account defines the receiving number; store the sender number here.') }}
+                        </p>
                         <div v-if="form.errors.zelle_phone" class="mt-1 text-sm text-red-600">
                             {{ form.errors.zelle_phone }}
                         </div>
@@ -444,8 +454,8 @@ const go = (n) => { page.value = Math.min(totalPages.value, Math.max(1, n)) }
 
                                     <div class="mt-0.5 text-xs text-gray-600">
                                         {{ tr('Recibido por', 'Received by') }}: {{ p.received_by?.name ?? '—' }}
-                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • {{ tr('Zelle', 'Zelle') }}: {{
-                                            p.zelle_phone }}</span>
+	                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • {{ tr('Zelle remitente', 'Sender Zelle') }}: {{
+	                                            p.zelle_phone }}</span>
                                     </div>
 
                                     <!-- Check image -->

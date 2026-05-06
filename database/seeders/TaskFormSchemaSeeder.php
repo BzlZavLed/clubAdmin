@@ -11,36 +11,6 @@ class TaskFormSchemaSeeder extends Seeder
     {
         $schemas = [
             [
-                'key' => 'permission_slips',
-                'name' => 'Permission Slip',
-                'description' => 'Collect parent/guardian consent and emergency details.',
-                'schema_json' => [
-                    'fields' => [
-                        ['key' => 'event_title', 'label' => 'Event Title', 'type' => 'text', 'required' => true],
-                        ['key' => 'event_dates', 'label' => 'Event Dates', 'type' => 'text', 'required' => true],
-                        ['key' => 'location', 'label' => 'Location', 'type' => 'text', 'required' => true],
-                        ['key' => 'drop_off', 'label' => 'Drop-off Instructions', 'type' => 'textarea'],
-                        ['key' => 'pickup', 'label' => 'Pick-up Instructions', 'type' => 'textarea'],
-                        ['key' => 'emergency_contact', 'label' => 'Emergency Contact', 'type' => 'text'],
-                        ['key' => 'notes', 'label' => 'Additional Notes', 'type' => 'textarea'],
-                    ],
-                ],
-            ],
-            [
-                'key' => 'transportation_plan',
-                'name' => 'Transportation Plan',
-                'description' => 'Transportation details and driver assignments.',
-                'schema_json' => [
-                    'fields' => [
-                        ['key' => 'vehicles', 'label' => 'Vehicles/Seats', 'type' => 'textarea', 'required' => true],
-                        ['key' => 'drivers', 'label' => 'Drivers', 'type' => 'textarea'],
-                        ['key' => 'route', 'label' => 'Route/Meeting Point', 'type' => 'text'],
-                        ['key' => 'departure_time', 'label' => 'Departure Time', 'type' => 'text'],
-                        ['key' => 'return_time', 'label' => 'Return Time', 'type' => 'text'],
-                    ],
-                ],
-            ],
-            [
                 'key' => 'emergency_contacts',
                 'name' => 'Emergency Contact List',
                 'description' => 'Emergency contacts and medical notes.',

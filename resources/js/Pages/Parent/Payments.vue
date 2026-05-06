@@ -56,6 +56,7 @@ const statusLabel = (status) => {
         case 'pending_review': return 'En revision'
         case 'approved': return 'Aprobado'
         case 'rejected': return 'Rechazado'
+        case 'optional': return 'Opcional'
         default: return 'Pendiente'
     }
 }
@@ -70,9 +71,24 @@ const statusClass = (status) => {
             return 'bg-amber-100 text-amber-800'
         case 'rejected':
             return 'bg-red-100 text-red-800'
+        case 'optional':
+            return 'bg-blue-100 text-blue-800'
         default:
             return 'bg-blue-100 text-blue-800'
     }
+}
+
+const depositAccountLines = (account) => {
+    if (!account) return []
+    return [
+        account.bank_name ? `Banco: ${account.bank_name}` : null,
+        account.account_holder ? `Titular: ${account.account_holder}` : null,
+        account.account_type ? `Tipo: ${account.account_type}` : null,
+        account.account_number ? `Cuenta: ${account.account_number}` : null,
+        account.routing_number ? `Routing: ${account.routing_number}` : null,
+        account.zelle_email ? `Zelle: ${account.zelle_email}` : null,
+        account.zelle_phone ? `Zelle tel: ${account.zelle_phone}` : null,
+    ].filter(Boolean)
 }
 
 const openTransferModal = (charge) => {
@@ -191,6 +207,18 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                         <span class="mx-1">•</span> Vence {{ formatDate(charge.due_date) }}
                                     </template>
                                 </div>
+                                <div v-if="charge.deposit_account" class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                                    <div class="font-medium">{{ charge.deposit_account.label || charge.deposit_account_label || 'Cuenta de depósito' }}</div>
+                                    <div class="mt-1 grid gap-1 md:grid-cols-2">
+                                        <div v-for="line in depositAccountLines(charge.deposit_account)" :key="`${charge.row_key}-${line}`">{{ line }}</div>
+                                    </div>
+                                    <div v-if="charge.deposit_account.deposit_instructions" class="mt-2 text-xs text-blue-800">
+                                        {{ charge.deposit_account.deposit_instructions }}
+                                    </div>
+                                </div>
+                                <div v-else-if="charge.can_submit_transfer" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                    El club todavia no publico datos de deposito para {{ charge.deposit_account_label || charge.pay_to || 'esta cuenta' }}.
+                                </div>
                             </div>
 
                             <div class="grid gap-2 text-sm lg:min-w-[320px]">
@@ -212,6 +240,9 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                 </div>
                                 <div v-if="charge.pending_amount > 0" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                                     Ya hay ${{ formatMoney(charge.pending_amount) }} enviado para revision en este cargo.
+                                </div>
+                                <div v-if="charge.transfer_blocked_reason" class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                                    {{ charge.transfer_blocked_reason }}
                                 </div>
                                 <div class="flex flex-wrap justify-end gap-2">
                                     <button
@@ -355,6 +386,16 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                 </div>
 
                 <form class="mt-5 space-y-4" @submit.prevent="submitTransfer">
+                    <div v-if="selectedCharge.deposit_account" class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm text-blue-900">
+                        <div class="font-medium">{{ selectedCharge.deposit_account.label || selectedCharge.deposit_account_label || 'Cuenta de depósito' }}</div>
+                        <div class="mt-1 grid gap-1 md:grid-cols-2">
+                            <div v-for="line in depositAccountLines(selectedCharge.deposit_account)" :key="`modal-${line}`">{{ line }}</div>
+                        </div>
+                        <div v-if="selectedCharge.deposit_account.deposit_instructions" class="mt-2 text-xs text-blue-800">
+                            {{ selectedCharge.deposit_account.deposit_instructions }}
+                        </div>
+                    </div>
+
                     <div class="grid gap-4 md:grid-cols-2">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Monto</label>

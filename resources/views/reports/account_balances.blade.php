@@ -24,6 +24,10 @@
     </style>
 </head>
 <body>
+    @php
+        $locationLabels = ['cash' => 'Efectivo', 'bank' => 'Banco', 'internal' => 'Interno'];
+    @endphp
+
     @if(!empty($qrCodeDataUri) && !empty($validationUrl))
         <div class="validation-footer">
             <table>
@@ -65,6 +69,8 @@
                     <th>Entries</th>
                     <th>Expenses</th>
                     <th>Balance</th>
+                    <th>Cash</th>
+                    <th>Bank</th>
                 </tr>
             </thead>
             <tbody>
@@ -74,6 +80,8 @@
                         <td>${{ number_format($acc['entries'] ?? 0, 2) }}</td>
                         <td>${{ number_format($acc['expenses'] ?? 0, 2) }}</td>
                         <td>${{ number_format($acc['balance'] ?? 0, 2) }}</td>
+                        <td>${{ number_format($acc['cash_balance'] ?? 0, 2) }}</td>
+                        <td>${{ number_format($acc['bank_balance'] ?? 0, 2) }}</td>
                     </tr>
                 @endforeach
             </tbody>
@@ -91,6 +99,7 @@
                     <th>Payer</th>
                     <th>Amount</th>
                     <th>Type</th>
+                    <th>Location</th>
                     <th>Receipt Ref</th>
                 </tr>
             </thead>
@@ -102,7 +111,13 @@
                         <td>{{ $p['concept'] }}</td>
                         <td>{{ $p['member']['applicant_name'] ?? $p['staff']['name'] ?? '—' }}</td>
                         <td>${{ number_format($p['amount_paid'] ?? 0, 2) }}</td>
-                        <td>{{ ucfirst($p['payment_type'] ?? '') }}</td>
+                        <td>
+                            {{ ucfirst($p['payment_type'] ?? '') }}
+                            @if(($p['payment_type'] ?? null) === 'zelle' && !empty($p['zelle_phone']))
+                                <br><span>De {{ $p['zelle_phone'] }}</span>
+                            @endif
+                        </td>
+                        <td>{{ $locationLabels[$p['location'] ?? ''] ?? '—' }}</td>
                         <td>{{ $p['receipt_ref'] ?? '—' }}</td>
                     </tr>
                 @endforeach
@@ -117,6 +132,7 @@
                 <tr>
                     <th>Date</th>
                     <th>Account</th>
+                    <th>Location</th>
                     <th>Amount</th>
                     <th>Status</th>
                     <th>Expense Receipt Ref</th>
@@ -130,6 +146,7 @@
                     <tr>
                         <td>{{ optional($e['expense_date'])->format('Y-m-d') ?? $e['expense_date'] }}</td>
                         <td>{{ $e['pay_to_label'] ?? $e['pay_to'] }}</td>
+                        <td>{{ $locationLabels[$e['location'] ?? ''] ?? '—' }}</td>
                         <td>${{ number_format($e['amount'] ?? 0, 2) }}</td>
                         <td>{{ $e['status'] ? ucfirst($e['status']) : '—' }}</td>
                         <td>{{ $e['receipt_ref'] ?? '—' }}</td>

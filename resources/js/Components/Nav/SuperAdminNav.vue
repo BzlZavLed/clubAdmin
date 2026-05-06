@@ -66,6 +66,12 @@ const menuItems = [
                 href: '/super-admin/ai-logs',
                 route: 'superadmin.ai-logs.index',
                 icon: DocumentTextIcon
+            },
+            {
+                name: 'Formularios de tareas',
+                href: '/super-admin/event-task-forms',
+                route: 'superadmin.event-task-forms.index',
+                icon: DocumentTextIcon
             }
         ]
     },
@@ -89,6 +95,12 @@ const menuItems = [
                 name: 'Ingresos',
                 href: '/club-director/payments',
                 route: 'club.director.payments',
+                icon: BanknotesIcon
+            },
+            {
+                name: 'Tesorería',
+                href: '/club-director/treasury',
+                route: 'club.director.treasury',
                 icon: BanknotesIcon
             },
             {

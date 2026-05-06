@@ -102,6 +102,9 @@ const feeComponents = computed(() => form.fee_components || [])
 const feeBreakdownTotal = computed(() => feeComponents.value.reduce((total, component) => {
     return total + Number(component?.amount || 0)
 }, 0))
+const requiredFeeBreakdownTotal = computed(() => feeComponents.value.reduce((total, component) => {
+    return component?.is_required ? total + Number(component?.amount || 0) : total
+}, 0))
 
 const syncInvolvedClubs = () => {
     if (isClubScope.value) {
@@ -150,6 +153,7 @@ const addFeeComponent = () => {
     form.fee_components.push({
         label: '',
         amount: '',
+        is_required: form.fee_components.length === 0,
     })
 }
 
@@ -177,8 +181,13 @@ const submit = () => {
         form.setError('target_club_types', tr('Selecciona al menos un tipo de club para eventos por encima del club.', 'Select at least one club type for events above club level.'))
         return
     }
+    const payableComponents = (form.fee_components || []).filter((component) => String(component.label || '').trim() !== '' && Number(component.amount || 0) > 0)
+    if (payableComponents.length && !payableComponents.some((component) => component.is_required)) {
+        form.setError('fee_components', tr('Marca al menos un concepto obligatorio, por ejemplo Inscripción.', 'Mark at least one required component, for example registration.'))
+        return
+    }
 
-    form.clearErrors('target_club_types')
+    form.clearErrors('target_club_types', 'fee_components')
     form.post(route('events.store'))
 }
 </script>
@@ -332,41 +341,60 @@ const submit = () => {
                 </label>
             </div>
             <div class="rounded border border-gray-200 p-4 space-y-3">
-                <div class="flex items-start justify-between gap-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <div class="text-sm font-semibold text-gray-800">{{ tr('Desglose de inscripción', 'Signup fee breakdown') }}</div>
                         <div class="text-xs text-gray-500">{{ tr('Cada componente genera su propio concepto de pago por miembro participante.', 'Each component creates its own payment concept per participating member.') }}</div>
                     </div>
-                    <div class="text-sm font-semibold text-gray-900">
-                        {{ tr('Total', 'Total') }}: ${{ feeBreakdownTotal.toFixed(2) }}
+                    <div class="shrink-0 text-sm font-semibold text-gray-900 sm:text-right">
+                        <div>{{ tr('Total', 'Total') }}: ${{ feeBreakdownTotal.toFixed(2) }}</div>
+                        <div class="text-xs font-medium text-gray-500">{{ tr('Obligatorio', 'Required') }}: ${{ requiredFeeBreakdownTotal.toFixed(2) }}</div>
                     </div>
                 </div>
+                <div v-if="form.errors.fee_components" class="text-sm text-red-600">{{ form.errors.fee_components }}</div>
                 <div class="space-y-2">
                     <div
                         v-for="(component, index) in feeComponents"
                         :key="`fee-component-${index}`"
-                        class="grid grid-cols-1 gap-2 rounded border border-gray-200 p-3 md:grid-cols-[minmax(0,1fr)_140px_auto]"
+                        class="space-y-3 rounded border border-gray-200 p-3"
                     >
-                        <input
-                            v-model="component.label"
-                            class="w-full rounded border px-3 py-2 text-sm"
-                            :placeholder="tr('Ej. Inscripción, seguro, camiseta', 'Ex. Registration, insurance, shirt')"
-                        />
-                        <input
-                            v-model="component.amount"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            class="w-full rounded border px-3 py-2 text-sm"
-                            placeholder="0.00"
-                        />
-                        <button
-                            type="button"
-                            class="rounded border border-red-200 px-3 py-2 text-sm text-red-700"
-                            @click="removeFeeComponent(index)"
-                        >
-                            {{ tr('Quitar', 'Remove') }}
-                        </button>
+                        <label class="block">
+                            <span class="text-xs font-medium text-gray-600">{{ tr('Concepto', 'Component') }}</span>
+                            <input
+                                v-model="component.label"
+                                class="mt-1 w-full rounded border px-3 py-2 text-sm"
+                                :placeholder="tr('Ej. Inscripción, seguro, transporte', 'Ex. Registration, insurance, transport')"
+                            />
+                        </label>
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,9rem)_minmax(0,10rem)_auto] sm:items-end">
+                            <label class="block">
+                                <span class="text-xs font-medium text-gray-600">{{ tr('Monto', 'Amount') }}</span>
+                                <input
+                                    v-model="component.amount"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    class="mt-1 w-full rounded border px-3 py-2 text-sm"
+                                    placeholder="0.00"
+                                />
+                            </label>
+                            <div>
+                                <span class="text-xs font-medium text-gray-600">{{ tr('Tipo', 'Type') }}</span>
+                                <label class="mt-1 flex items-center gap-2 rounded border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                                    <input v-model="component.is_required" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                    {{ tr('Obligatorio', 'Required') }}
+                                </label>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-red-200 text-lg font-semibold leading-none text-red-700 hover:bg-red-50 sm:justify-self-end"
+                                :aria-label="tr('Quitar componente', 'Remove component')"
+                                :title="tr('Quitar componente', 'Remove component')"
+                                @click="removeFeeComponent(index)"
+                            >
+                                ×
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <button type="button" class="rounded border px-3 py-2 text-sm text-gray-700" @click="addFeeComponent">

@@ -46,11 +46,27 @@ const props = defineProps({
     parents: Array,
     paymentSummary: Object,
     paymentConfig: Object,
+    participantClubSummary: {
+        type: Array,
+        default: () => [],
+    },
+    participantRoster: {
+        type: Array,
+        default: () => [],
+    },
     canEditEvent: {
         type: Boolean,
         default: false,
     },
+    canManageParticipants: {
+        type: Boolean,
+        default: true,
+    },
     taskResponsibilityOptions: {
+        type: Array,
+        default: () => [],
+    },
+    taskFormSchemaKeys: {
         type: Array,
         default: () => [],
     },
@@ -81,6 +97,8 @@ const accountsState = ref(props.accounts || [])
 const parentsState = ref(props.parents || [])
 const paymentSummaryState = ref(props.paymentSummary || { total_received: 0, by_member_id: {}, by_staff_id: {} })
 const paymentConfigState = ref(props.paymentConfig || { concept_id: null, concept_label: null, amount: null, is_payable: false })
+const participantClubSummaryState = ref(props.participantClubSummary || [])
+const participantRosterState = ref(props.participantRoster || [])
 const paymentRecordsState = ref(props.paymentRecords || [])
 const serpApiUsageState = ref(props.serpApiUsage || { month: null, limit: 250, used: 0, remaining: 250 })
 const supportsClubOperations = computed(() => !!props.supportsClubOperations)
@@ -95,6 +113,9 @@ const effectiveProfileType = computed(() => {
 })
 const isDownstreamClubViewer = computed(() => {
     return !props.canEditEvent && ['club_director', 'club_personal'].includes(effectiveProfileType.value || '')
+})
+const isIntermediateEventFinanceViewer = computed(() => {
+    return !props.canEditEvent && !supportsClubOperations.value && !isDownstreamClubViewer.value
 })
 const taskResponsibilityOptions = computed(() => props.taskResponsibilityOptions || [])
 const targetClubSummaryByDistrict = computed(() => {
@@ -114,8 +135,20 @@ const targetClubSummaryByDistrict = computed(() => {
 
     return Array.from(groups.values())
 })
+const paymentRecordsByClub = computed(() => {
+    const groups = new Map()
+    ;(paymentRecordsState.value || []).forEach((payment) => {
+        const clubId = Number(payment?.club_id || 0)
+        if (!clubId) return
+        if (!groups.has(clubId)) {
+            groups.set(clubId, [])
+        }
+        groups.get(clubId).push(payment)
+    })
+
+    return groups
+})
 const feeComponentsTotal = computed(() => feeComponentsState.value.reduce((total, component) => total + Number(component?.amount || 0), 0))
-const manageableSettlementClubIds = computed(() => new Set((props.manageableSettlementClubIds || []).map((id) => Number(id))))
 const transportMode = ref(planState.value?.plan_json?.transportation_mode || null)
 const autoCreateBudgetItem = ref(planState.value?.plan_json?.preferences?.auto_create_budget_item || false)
 const isPrivateTransport = computed(() => transportMode.value === 'private')
@@ -124,6 +157,28 @@ const isRentalTransport = computed(() => transportMode.value === 'rental')
 const formatMoney = (value) => {
     const num = Number(value || 0)
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(num)
+}
+
+const formatShortDate = (value) => {
+    if (!value) return '—'
+    const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00`)
+    if (Number.isNaN(parsed.getTime())) return String(value)
+
+    return new Intl.DateTimeFormat(undefined, { month: 'short', day: '2-digit', year: 'numeric' }).format(parsed)
+}
+
+const paymentRecordsForClub = (club) => paymentRecordsByClub.value.get(Number(club?.club_id || 0)) || []
+const paymentRecordsTotal = (records) => records.reduce((sum, payment) => sum + Number(payment?.amount_paid || 0), 0)
+const paymentRecordBreakdown = (payment) => {
+    if (Array.isArray(payment?.breakdown) && payment.breakdown.length) {
+        return payment.breakdown
+    }
+
+    return [{
+        component_label: payment?.concept_label || tr('Pago del evento', 'Event payment'),
+        amount: Number(payment?.amount_paid || 0),
+        is_required: null,
+    }]
 }
 
 const taskInstanceKey = (task) => task?.instance_key || (task?.active_assignment_id ? `task:${task.id}:assignment:${task.active_assignment_id}` : `task:${task?.id}`)
@@ -184,21 +239,12 @@ const eventForm = ref({
     fee_components: (props.feeComponents || []).map((component) => ({
         label: component.label || '',
         amount: component.amount ?? '',
+        is_required: component.is_required ?? true,
     })),
 })
 const eventFormSaving = ref(false)
 const eventFormError = ref('')
 const showEventModal = ref(false)
-const showSettlementModal = ref(false)
-const settlementModalClub = ref(null)
-const settlementForm = ref({
-    deposited_at: new Date().toISOString().slice(0, 16),
-    reference: '',
-    notes: '',
-})
-const settlementError = ref('')
-const settlementSaving = ref(false)
-
 const saveEventBasics = async () => {
     eventFormSaving.value = true
     eventFormError.value = ''
@@ -220,7 +266,14 @@ const saveEventBasics = async () => {
             .map((component) => ({
                 label: String(component.label || '').trim(),
                 amount: Number(component.amount || 0),
+                is_required: !!component.is_required,
             })),
+    }
+
+    if (payload.fee_components.length && !payload.fee_components.some((component) => component.is_required)) {
+        eventFormError.value = tr('Marca al menos un concepto obligatorio, por ejemplo Inscripción.', 'Mark at least one required component, for example registration.')
+        eventFormSaving.value = false
+        return
     }
 
     router.put(route('events.update', eventState.value.id), payload, {
@@ -254,6 +307,7 @@ watch(() => props.event, (nextEvent) => {
         fee_components: (props.feeComponents || []).map((component) => ({
             label: component.label || '',
             amount: component.amount ?? '',
+            is_required: component.is_required ?? true,
         })),
     }
 })
@@ -265,6 +319,7 @@ watch(() => props.feeComponents, (nextComponents) => {
         fee_components: (nextComponents || []).map((component) => ({
             label: component.label || '',
             amount: component.amount ?? '',
+            is_required: component.is_required ?? true,
         })),
     }
 })
@@ -331,52 +386,12 @@ const addEventFeeComponent = () => {
     eventForm.value.fee_components.push({
         label: '',
         amount: '',
+        is_required: eventForm.value.fee_components.length === 0,
     })
 }
 
 const removeEventFeeComponent = (index) => {
     eventForm.value.fee_components.splice(index, 1)
-}
-
-const canRecordSettlementForClub = (club) => manageableSettlementClubIds.value.has(Number(club.club_id))
-
-const openSettlementModal = (club) => {
-    settlementModalClub.value = club
-    settlementError.value = ''
-    settlementSaving.value = false
-    settlementForm.value = {
-        deposited_at: new Date().toISOString().slice(0, 16),
-        reference: '',
-        notes: '',
-    }
-    showSettlementModal.value = true
-}
-
-const saveSettlementReceipt = () => {
-    if (!settlementModalClub.value) return
-    settlementSaving.value = true
-    settlementError.value = ''
-
-    router.post(route('event-club-settlements.store', { event: eventState.value.id }), {
-        club_id: settlementModalClub.value.club_id,
-        deposited_at: settlementForm.value.deposited_at,
-        reference: settlementForm.value.reference || null,
-        notes: settlementForm.value.notes || null,
-    }, {
-        preserveScroll: true,
-        onSuccess: () => {
-            showSettlementModal.value = false
-            settlementSaving.value = false
-        },
-        onError: (errors) => {
-            const firstError = Object.values(errors || {})[0]
-            settlementError.value = Array.isArray(firstError) ? firstError[0] : (firstError || tr('No se pudo generar el recibo.', 'Unable to generate the receipt.'))
-            settlementSaving.value = false
-        },
-        onFinish: () => {
-            settlementSaving.value = false
-        },
-    })
 }
 
 watch(selectedPlaceOption, (value) => {
@@ -815,27 +830,54 @@ const taskKeyFromTitle = (title) => {
     return null
 }
 
-const supportedFormTaskKeys = new Set([
-    'permission_slips',
-    'transportation_plan',
-    'emergency_contacts',
-    'chaperone_assignments',
-    'camp_reservation',
-])
+const fixedDocumentTaskKeys = new Set(['permission_slips', 'permission_slip'])
+const documentTaskKeywords = ['release', 'doc', 'slip', 'permission', 'medical', 'insurance', 'rental']
+const globalTaskFormKeys = computed(() => new Set(props.taskFormSchemaKeys || []))
+
+const customFormSchemaForTask = (task) => task?.checklist_json?.custom_form_schema || null
+const hasCustomFormForTask = (task) => {
+    const customSchema = customFormSchemaForTask(task)
+    return Array.isArray(customSchema?.fields) && customSchema.fields.length > 0
+}
+
+const normalizedTaskKeyFor = (task) => (task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '') || '').toLowerCase()
+
+const isTransportationTask = (task) => normalizedTaskKeyFor(task) === 'transportation_plan'
+
+const isDocumentHandlerTask = (task) => {
+    const key = normalizedTaskKeyFor(task)
+    if (fixedDocumentTaskKeys.has(key)) return true
+    if (hasCustomFormForTask(task) || globalTaskFormKeys.value.has(key)) return false
+
+    const title = (task?.title || '').toLowerCase()
+    const source = key || title
+    return documentTaskKeywords.some((word) => source.includes(word))
+}
 
 const hasFormForTask = (task) => {
     const title = (task?.title || '').toLowerCase()
-    const customSchema = task?.checklist_json?.custom_form_schema
-    const hasCustom = Array.isArray(customSchema?.fields) && customSchema.fields.length > 0
+    const hasCustom = hasCustomFormForTask(task)
     if (title.includes('campsite reservation confirmed')) {
         return hasCustom
     }
-    const key = (task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '') || '').toLowerCase()
-    return supportedFormTaskKeys.has(key) || hasCustom
+    const key = normalizedTaskKeyFor(task)
+    return globalTaskFormKeys.value.has(key) || hasCustom || isTransportationTask(task) || isDocumentHandlerTask(task)
+}
+
+const taskCompletionActionLabel = (task) => {
+    if (isTransportationTask(task)) return tr('Abrir transporte', 'Open transportation')
+    if (isDocumentHandlerTask(task)) return tr('Ir a documentos', 'Go to documents')
+    return tr('Abrir formulario', 'Open form')
+}
+
+const taskCompletionBadgeLabel = (task) => {
+    if (isTransportationTask(task)) return tr('Transporte', 'Transportation')
+    if (isDocumentHandlerTask(task)) return tr('Documentos', 'Documents')
+    return tr('Formulario', 'Form')
 }
 
 const isFinalizeAttendeeTask = (task) => {
-    const key = (task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '') || '').toLowerCase()
+    const key = normalizedTaskKeyFor(task)
     const title = (task?.title || '').toLowerCase()
     return key === 'finalize_attendee_list' || title.includes('finalize attendee list')
 }
@@ -848,8 +890,7 @@ const isPermissionSlipTask = (task) => {
 }
 
 const hasAiSuggestedForm = (task) => {
-    const customSchema = task?.checklist_json?.custom_form_schema
-    return Array.isArray(customSchema?.fields) && customSchema.fields.length > 0
+    return hasCustomFormForTask(task)
 }
 
 const openTaskInfoModal = (task) => {
@@ -1588,27 +1629,30 @@ const removeChecklistTask = async (task) => {
 
 const openTaskForm = async (task) => {
     const taskKey = task?.checklist_json?.task_key || taskKeyFromTitle(task?.title || '')
-    const docKeywords = ['release', 'doc', 'slip', 'permission', 'medical', 'insurance', 'rental']
+    const normalizedTaskKey = String(taskKey || '').toLowerCase()
+    const hasCustomForm = hasCustomFormForTask(task)
+    const hasGlobalForm = globalTaskFormKeys.value.has(normalizedTaskKey)
     const title = (task?.title || '').toLowerCase()
-    const isFinalizeAttendeesTask = taskKey === 'finalize_attendee_list' || title.includes('finalize attendee list')
-    if (isFinalizeAttendeesTask) {
+    const isFinalizeAttendeesTask = normalizedTaskKey === 'finalize_attendee_list' || title.includes('finalize attendee list')
+    if (!hasCustomForm && isFinalizeAttendeesTask) {
         activeTab.value = 'participants'
         return
     }
-    const isDocTask = taskKey
-        ? docKeywords.some((word) => taskKey.includes(word))
-        : docKeywords.some((word) => title.includes(word))
-    if (isDocTask) {
+    if (!hasCustomForm && normalizedTaskKey === 'transportation_plan') {
+        transportTask.value = task
+        await openTransportModal()
+        return
+    }
+    const isFixedDocumentTask = fixedDocumentTaskKeys.has(normalizedTaskKey)
+    const isDocKeywordTask = taskKey
+        ? documentTaskKeywords.some((word) => normalizedTaskKey.includes(word))
+        : documentTaskKeywords.some((word) => title.includes(word))
+    if (!hasCustomForm && (isFixedDocumentTask || (!hasGlobalForm && isDocKeywordTask))) {
         documentPreset.value = {
             docType: taskKey || 'permission_slip',
             taskId: task.id,
         }
         activeTab.value = 'documents'
-        return
-    }
-    if (taskKey === 'transportation_plan') {
-        transportTask.value = task
-        await openTransportModal()
         return
     }
     formLoading.value = true
@@ -2666,12 +2710,12 @@ const saveBudgetPreference = async (value) => {
                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
                 @keydown.esc="showEventModal = false"
             >
-                <div class="w-full max-w-lg rounded-lg bg-white border shadow-xl">
+                <div class="w-full max-w-3xl rounded-lg bg-white border shadow-xl">
                     <div class="flex items-center justify-between px-5 py-4 border-b">
                         <h2 class="text-lg font-semibold text-gray-800">{{ tr('Editar detalles del evento', 'Edit Event Details') }}</h2>
                         <button type="button" class="text-gray-500 hover:text-gray-700" @click="showEventModal = false">×</button>
                     </div>
-                    <div class="p-5 space-y-4">
+                    <div class="max-h-[85vh] space-y-4 overflow-y-auto p-5">
                         <div>
                             <label class="text-xs text-gray-600">{{ tr('Descripción del evento', 'Event Description') }}</label>
                             <textarea
@@ -2711,26 +2755,50 @@ const saveBudgetPreference = async (value) => {
                             </div>
                         </div>
                         <div class="rounded border border-gray-200 p-4 space-y-3">
-                            <div class="flex items-center justify-between gap-3">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                 <div>
                                     <div class="text-xs font-semibold text-gray-700 uppercase tracking-wide">{{ tr('Desglose de inscripción', 'Signup fee breakdown') }}</div>
                                     <div class="text-xs text-gray-500">{{ tr('Edita los componentes que se cobran por participante.', 'Edit the components charged per participant.') }}</div>
                                 </div>
-                                <div class="text-sm font-semibold text-gray-900">
-                                    ${{ eventForm.fee_components.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) }}
+                                <div class="shrink-0 text-sm font-semibold text-gray-900 sm:text-right">
+                                    <div>${{ eventForm.fee_components.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) }}</div>
+                                    <div class="text-xs font-medium text-gray-500">
+                                        {{ tr('Obligatorio', 'Required') }}: ${{ eventForm.fee_components.filter((item) => item.is_required).reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) }}
+                                    </div>
                                 </div>
                             </div>
                             <div class="space-y-2">
                                 <div
                                     v-for="(component, index) in eventForm.fee_components"
                                     :key="`edit-fee-component-${index}`"
-                                    class="grid grid-cols-1 gap-2 rounded border border-gray-200 p-3 md:grid-cols-[minmax(0,1fr)_140px_auto]"
+                                    class="space-y-3 rounded border border-gray-200 p-3"
                                 >
-                                    <input v-model="component.label" class="w-full border rounded px-3 py-2 text-sm" :placeholder="tr('Concepto', 'Component')" />
-                                    <input v-model="component.amount" type="number" step="0.01" min="0" class="w-full border rounded px-3 py-2 text-sm" placeholder="0.00" />
-                                    <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm text-red-700" @click="removeEventFeeComponent(index)">
-                                        {{ tr('Quitar', 'Remove') }}
-                                    </button>
+                                    <label class="block">
+                                        <span class="text-xs font-medium text-gray-600">{{ tr('Concepto', 'Component') }}</span>
+                                        <input v-model="component.label" class="mt-1 w-full border rounded px-3 py-2 text-sm" :placeholder="tr('Ej. Inscripción', 'Ex. Registration')" />
+                                    </label>
+                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,9rem)_minmax(0,10rem)_auto] sm:items-end">
+                                        <label class="block">
+                                            <span class="text-xs font-medium text-gray-600">{{ tr('Monto', 'Amount') }}</span>
+                                            <input v-model="component.amount" type="number" step="0.01" min="0" class="mt-1 w-full border rounded px-3 py-2 text-sm" placeholder="0.00" />
+                                        </label>
+                                        <div>
+                                            <span class="text-xs font-medium text-gray-600">{{ tr('Tipo', 'Type') }}</span>
+                                            <label class="mt-1 flex items-center gap-2 rounded border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                                                <input v-model="component.is_required" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                                {{ tr('Obligatorio', 'Required') }}
+                                            </label>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-red-200 text-lg font-semibold leading-none text-red-700 hover:bg-red-50 sm:justify-self-end"
+                                            :aria-label="tr('Quitar componente', 'Remove component')"
+                                            :title="tr('Quitar componente', 'Remove component')"
+                                            @click="removeEventFeeComponent(index)"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <button type="button" class="rounded border px-3 py-2 text-sm text-gray-700" @click="addEventFeeComponent">
@@ -2752,68 +2820,6 @@ const saveBudgetPreference = async (value) => {
                             @click="saveEventBasics"
                         >
                             {{ eventFormSaving ? tr('Guardando...', 'Saving...') : tr('Guardar cambios', 'Save Changes') }}
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div
-                v-if="showSettlementModal && settlementModalClub"
-                class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-                @keydown.esc="showSettlementModal = false"
-            >
-                <div class="w-full max-w-lg rounded-lg bg-white border shadow-xl">
-                    <div class="flex items-center justify-between px-5 py-4 border-b">
-                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Recibo de deposito del club', 'Club deposit receipt') }}</h2>
-                        <button type="button" class="text-gray-500 hover:text-gray-700" @click="showSettlementModal = false">×</button>
-                    </div>
-                    <div class="p-5 space-y-4">
-                        <div>
-                            <div class="text-sm font-semibold text-gray-900">{{ settlementModalClub.club_name }}</div>
-                            <div class="text-xs text-gray-500">{{ settlementModalClub.district_name }}</div>
-                        </div>
-                        <div class="rounded border border-gray-200 p-3">
-                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{{ tr('Desglose a depositar', 'Breakdown to deposit') }}</div>
-                            <div class="space-y-2 text-sm">
-                                <div v-for="row in settlementModalClub.pending_settlement_breakdown || settlementModalClub.settlement_breakdown || []" :key="`${settlementModalClub.club_id}-${row.component_id || row.label}`" class="flex items-center justify-between">
-                                    <span>{{ row.label }}</span>
-                                    <span class="font-medium">${{ Number(row.amount || 0).toFixed(2) }}</span>
-                                </div>
-                            </div>
-                            <div class="mt-3 flex items-center justify-between border-t pt-3 text-sm font-semibold">
-                                <span>{{ tr('Total', 'Total') }}</span>
-                                <span>${{ Number(settlementModalClub.pending_settlement_amount || 0).toFixed(2) }}</span>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="text-xs text-gray-600">{{ tr('Fecha de deposito', 'Deposit date') }}</label>
-                                <input v-model="settlementForm.deposited_at" type="datetime-local" class="w-full border rounded px-3 py-2 text-sm" />
-                            </div>
-                            <div>
-                                <label class="text-xs text-gray-600">{{ tr('Referencia', 'Reference') }}</label>
-                                <input v-model="settlementForm.reference" class="w-full border rounded px-3 py-2 text-sm" />
-                            </div>
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-600">{{ tr('Notas', 'Notes') }}</label>
-                            <textarea v-model="settlementForm.notes" rows="3" class="w-full border rounded px-3 py-2 text-sm"></textarea>
-                        </div>
-                        <div v-if="settlementError" class="text-sm text-red-600">
-                            {{ settlementError }}
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-end gap-2 px-5 py-4 border-t">
-                        <button type="button" class="px-3 py-1 rounded text-sm bg-gray-200 text-gray-700" @click="showSettlementModal = false">
-                            {{ tr('Cancelar', 'Cancel') }}
-                        </button>
-                        <button
-                            type="button"
-                            class="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-60"
-                            :disabled="settlementSaving"
-                            @click="saveSettlementReceipt"
-                        >
-                            {{ settlementSaving ? tr('Guardando...', 'Saving...') : tr('Generar recibo', 'Generate receipt') }}
                         </button>
                     </div>
                 </div>
@@ -2902,12 +2908,18 @@ const saveBudgetPreference = async (value) => {
                                     <thead class="bg-gray-50 text-gray-600">
                                         <tr>
                                             <th class="px-4 py-2 text-left">{{ tr('Componente', 'Component') }}</th>
+                                            <th class="px-4 py-2 text-left">{{ tr('Tipo', 'Type') }}</th>
                                             <th class="px-4 py-2 text-right">{{ tr('Monto', 'Amount') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr v-for="component in feeComponentsState" :key="component.id" class="border-t">
                                             <td class="px-4 py-2 text-gray-800">{{ component.label }}</td>
+                                            <td class="px-4 py-2">
+                                                <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold" :class="component.is_required ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'">
+                                                    {{ component.is_required ? tr('Obligatorio', 'Required') : tr('Opcional', 'Optional') }}
+                                                </span>
+                                            </td>
                                             <td class="px-4 py-2 text-right font-medium text-gray-900">${{ Number(component.amount || 0).toFixed(2) }}</td>
                                         </tr>
                                     </tbody>
@@ -2970,14 +2982,6 @@ const saveBudgetPreference = async (value) => {
                                                     <button type="button" class="rounded border px-2 py-1 text-xs text-red-700 border-red-200" @click="updateClubSignupStatus(club, 'declined')">
                                                         {{ tr('No asistirá', 'Decline') }}
                                                     </button>
-                                                    <button
-                                                        v-if="canRecordSettlementForClub(club) && Number(club.pending_settlement_amount || 0) > 0"
-                                                        type="button"
-                                                        class="rounded border px-2 py-1 text-xs text-blue-700 border-blue-200"
-                                                        @click="openSettlementModal(club)"
-                                                    >
-                                                        {{ tr('Generar recibo de deposito', 'Generate deposit receipt') }}
-                                                    </button>
                                                     <template v-for="receipt in club.settlement_receipts || []" :key="receipt.id">
                                                         <a
                                                             :href="receipt.receipt_url"
@@ -2988,8 +2992,8 @@ const saveBudgetPreference = async (value) => {
                                                     </template>
                                                 </div>
 
-                                                <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2">
+	                                                <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+	                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2">
                                                         <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Esperado', 'Expected') }}</div>
                                                         <div class="mt-2 space-y-1 text-xs text-gray-500">
                                                             <div
@@ -3010,26 +3014,94 @@ const saveBudgetPreference = async (value) => {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2">
-                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cobrado por club', 'Collected by club') }}</div>
-                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.paid_amount || 0).toFixed(2) }}</div>
-                                                    </div>
-                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2">
-                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Pendiente de cobro', 'Still due from members') }}</div>
-                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.remaining_amount || 0).toFixed(2) }}</div>
-                                                    </div>
-                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2 xl:col-start-2">
-                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Depositado', 'Deposited') }}</div>
-                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.deposited_amount || 0).toFixed(2) }}</div>
-                                                    </div>
-                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-2 xl:col-start-4">
-                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Listo para depositar', 'Ready to deposit') }}</div>
-                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.pending_settlement_amount || 0).toFixed(2) }}</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </details>
-                                    </div>
+	                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-1">
+	                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cobrado por club', 'Collected by club') }}</div>
+	                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.paid_amount || 0).toFixed(2) }}</div>
+	                                                    </div>
+	                                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 xl:col-span-1">
+	                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Pendiente de cobro', 'Still due from members') }}</div>
+	                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.remaining_amount || 0).toFixed(2) }}</div>
+	                                                    </div>
+	                                                    <div
+	                                                        class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 sm:col-span-2"
+	                                                        :class="isIntermediateEventFinanceViewer ? 'xl:col-span-2' : 'xl:col-span-4'"
+	                                                    >
+	                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{{ tr('Depositado', 'Deposited') }}</div>
+	                                                        <div class="mt-1 text-lg font-semibold text-gray-900">${{ Number(club.deposited_amount || 0).toFixed(2) }}</div>
+	                                                    </div>
+	                                                    <div
+	                                                        v-if="isIntermediateEventFinanceViewer"
+	                                                        class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 sm:col-span-2 xl:col-span-2"
+	                                                    >
+	                                                        <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-700">{{ tr('Listo para depositar', 'Ready to deposit upward') }}</div>
+	                                                        <div class="mt-1 text-lg font-semibold text-amber-950">${{ Number(club.pending_settlement_amount || 0).toFixed(2) }}</div>
+	                                                        <div class="mt-1 text-xs text-amber-800">
+	                                                            {{ tr('Monto ya cobrado por el club y pendiente de enviar al dueño superior del evento.', 'Amount already collected by the club and pending transfer to the upper event owner.') }}
+	                                                        </div>
+	                                                    </div>
+		                                                </div>
+
+                                                    <details class="mt-4 rounded-lg border border-blue-100 bg-blue-50/40">
+                                                        <summary class="flex cursor-pointer list-none flex-col gap-2 px-3 py-2 text-sm marker:hidden sm:flex-row sm:items-center sm:justify-between">
+                                                            <span class="font-semibold text-blue-950">{{ tr('Pagos registrados', 'Registered payments') }}</span>
+                                                            <span class="text-xs font-medium text-blue-800">
+                                                                {{ paymentRecordsForClub(club).length }} {{ tr('pagos', 'payments') }} · {{ formatMoney(paymentRecordsTotal(paymentRecordsForClub(club))) }}
+                                                            </span>
+                                                        </summary>
+                                                        <div class="border-t border-blue-100 bg-white p-3">
+                                                            <div v-if="paymentRecordsForClub(club).length" class="max-h-72 overflow-auto">
+                                                                <table class="min-w-full text-xs">
+                                                                    <thead class="bg-gray-50 text-gray-600">
+                                                                        <tr>
+                                                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Fecha', 'Date') }}</th>
+                                                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Pagador', 'Payer') }}</th>
+                                                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Desglose', 'Breakdown') }}</th>
+                                                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Método', 'Method') }}</th>
+                                                                            <th class="px-3 py-2 text-right font-semibold">{{ tr('Monto', 'Amount') }}</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        <tr v-for="payment in paymentRecordsForClub(club)" :key="payment.id" class="border-t align-top">
+                                                                            <td class="px-3 py-2 whitespace-nowrap">{{ formatShortDate(payment.payment_date) }}</td>
+                                                                            <td class="px-3 py-2">
+                                                                                <div class="font-medium text-gray-900">{{ payment.payer_name || '—' }}</div>
+                                                                                <div class="text-[11px] capitalize text-gray-500">{{ payment.payer_type || '—' }}</div>
+                                                                            </td>
+                                                                            <td class="px-3 py-2">
+                                                                                <div class="space-y-1">
+                                                                                    <div
+                                                                                        v-for="(row, index) in paymentRecordBreakdown(payment)"
+                                                                                        :key="`${payment.id}-breakdown-${index}`"
+                                                                                        class="flex items-start justify-between gap-3"
+                                                                                    >
+                                                                                        <span class="min-w-0 break-words text-gray-700">
+                                                                                            {{ row.component_label || payment.concept_label || tr('Concepto', 'Concept') }}
+                                                                                            <span
+                                                                                                v-if="row.is_required !== null"
+                                                                                                class="ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                                                                                                :class="row.is_required ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'"
+                                                                                            >
+                                                                                                {{ row.is_required ? tr('Obligatorio', 'Required') : tr('Opcional', 'Optional') }}
+                                                                                            </span>
+                                                                                        </span>
+                                                                                        <span class="shrink-0 font-medium text-gray-900">{{ formatMoney(row.amount) }}</span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td class="px-3 py-2 capitalize">{{ payment.payment_type || '—' }}</td>
+                                                                            <td class="px-3 py-2 text-right font-semibold text-gray-900">{{ formatMoney(payment.amount_paid) }}</td>
+                                                                        </tr>
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                            <div v-else class="py-4 text-center text-sm text-gray-500">
+                                                                {{ tr('Este club todavía no tiene pagos registrados para el evento.', 'This club does not have registered event payments yet.') }}
+                                                            </div>
+                                                        </div>
+                                                    </details>
+	                                            </div>
+	                                        </details>
+	                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -3195,7 +3267,7 @@ const saveBudgetPreference = async (value) => {
                                                                                 class="rounded border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100"
                                                                                 @click="openTaskForm(task)"
                                                                             >
-                                                                                {{ tr('Abrir formulario', 'Open form') }}
+                                                                                {{ taskCompletionActionLabel(task) }}
                                                                             </button>
                                                                             <button
                                                                                 v-else-if="!hasFormForTask(task) && task.can_edit_form_definition"
@@ -3233,9 +3305,9 @@ const saveBudgetPreference = async (value) => {
                                                                         <span
                                                                             v-if="hasFormForTask(task)"
                                                                             class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
-                                                                            :title="tr('Formulario disponible', 'Form available')"
+                                                                            :title="tr('Accion disponible', 'Action available')"
                                                                         >
-                                                                            {{ tr('Formulario', 'Form') }}
+                                                                            {{ taskCompletionBadgeLabel(task) }}
                                                                         </span>
                                                                         <button
                                                                             v-else-if="task.can_edit_form_definition"
@@ -3429,12 +3501,16 @@ const saveBudgetPreference = async (value) => {
                             <ParticipantsTable
                                 :participants="participantsState"
                                 :event-id="eventState.id"
+                                :event-scope-type="eventState.scope_type || 'club'"
                                 :members="membersState"
                                 :classes="classesState"
                                 :staff="staffState"
                                 :parents="parentsState"
                                 :payment-summary="paymentSummaryState"
                                 :payment-config="paymentConfigState"
+                                :can-manage="props.canManageParticipants"
+                                :club-summary="participantClubSummaryState"
+                                :participant-roster="participantRosterState"
                                 @updated="updateParticipants"
                                 @finish-list="finishAttendeeList"
                             />

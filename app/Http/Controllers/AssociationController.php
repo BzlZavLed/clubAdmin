@@ -7,6 +7,7 @@ use App\Models\AssociationEvaluator;
 use App\Models\AssociationHonorClassSession;
 use App\Models\AssociationWorkplanEvent;
 use App\Models\AssociationWorkplanPublication;
+use App\Models\BankInfo;
 use App\Models\Church;
 use App\Models\Club;
 use App\Models\District;
@@ -18,6 +19,7 @@ use App\Models\UnionCarpetaRequirement;
 use App\Models\Union;
 use App\Models\User;
 use App\Support\SuperadminContext;
+use App\Support\BankInfoFormatter;
 use App\Services\WorkplanPropagationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -880,12 +882,18 @@ class AssociationController extends Controller
     public function associationSettings(Request $request)
     {
         $association = $this->resolveScopedAssociation($request);
+        $bankInfo = BankInfo::query()
+            ->where('bankable_type', Association::class)
+            ->where('bankable_id', $association->id)
+            ->where('pay_to', 'association_budget')
+            ->first();
 
         return Inertia::render('Association/Settings', [
             'association' => [
                 'id' => $association->id,
                 'name' => $association->name,
                 'insurance_payment_amount' => $association->insurance_payment_amount,
+                'bank_info' => BankInfoFormatter::payload($bankInfo),
             ],
         ]);
     }
@@ -896,9 +904,45 @@ class AssociationController extends Controller
 
         $validated = $request->validate([
             'insurance_payment_amount' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            'bank_info' => ['nullable', 'array'],
+            'bank_info.label' => ['nullable', 'string', 'max:255'],
+            'bank_info.bank_name' => ['nullable', 'string', 'max:255'],
+            'bank_info.account_holder' => ['nullable', 'string', 'max:255'],
+            'bank_info.account_type' => ['nullable', 'string', 'max:80'],
+            'bank_info.account_number' => ['nullable', 'string', 'max:255'],
+            'bank_info.routing_number' => ['nullable', 'string', 'max:255'],
+            'bank_info.zelle_email' => ['nullable', 'email', 'max:255'],
+            'bank_info.zelle_phone' => ['nullable', 'string', 'max:40'],
+            'bank_info.deposit_instructions' => ['nullable', 'string', 'max:2000'],
+            'bank_info.is_active' => ['boolean'],
+            'bank_info.accepts_event_deposits' => ['boolean'],
+            'bank_info.requires_receipt_upload' => ['boolean'],
         ]);
 
-        $association->update($validated);
+        $association->update([
+            'insurance_payment_amount' => $validated['insurance_payment_amount'] ?? null,
+        ]);
+
+        if (array_key_exists('bank_info', $validated)) {
+            $bankInfo = $validated['bank_info'] ?? [];
+            BankInfo::query()->updateOrCreate(
+                [
+                    'bankable_type' => Association::class,
+                    'bankable_id' => $association->id,
+                    'pay_to' => 'association_budget',
+                ],
+                [
+                    ...$bankInfo,
+                    'pay_to' => 'association_budget',
+                    'label' => $bankInfo['label'] ?? 'Presupuesto de asociación',
+                    'accepts_parent_deposits' => false,
+                    'accepts_event_deposits' => $bankInfo['accepts_event_deposits'] ?? true,
+                    'requires_receipt_upload' => $bankInfo['requires_receipt_upload'] ?? true,
+                    'is_active' => $bankInfo['is_active'] ?? true,
+                ],
+            );
+        }
+
         $this->syncInsurancePaymentConcepts($association->fresh(), $request->user()?->id);
 
         return back()->with('success', 'Settings saved.');

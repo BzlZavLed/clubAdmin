@@ -61,6 +61,7 @@ class ExpenseController extends Controller
                 'id',
                 'club_id',
                 'pay_to',
+                'funds_location',
                 'payment_concept_id',
                 'payee_id',
                 'amount',
@@ -106,6 +107,7 @@ class ExpenseController extends Controller
         $validated = $request->validate([
             'club_id' => ['required', 'integer', 'exists:clubs,id'],
             'pay_to' => ['required', 'string', 'max:255'],
+            'funds_location' => ['nullable', 'in:cash,bank'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'expense_date' => ['required', 'date'],
             'description' => ['nullable', 'string', 'max:2000'],
@@ -132,7 +134,8 @@ class ExpenseController extends Controller
             $account = $this->resolveAccount($club->id, $validated['pay_to']);
 
             $amount = (float) $validated['amount'];
-            $available = max((float) $account->balance, 0.0);
+            $fundsLocation = $validated['funds_location'] ?? 'cash';
+            $available = $this->locationBalanceFor($club, $validated['pay_to'], $fundsLocation);
             $fromAccount = $amount;
             $shortfall = 0.0;
             $reimbursementConcept = null;
@@ -194,6 +197,7 @@ class ExpenseController extends Controller
                 $expense = Expense::create([
                     'club_id' => $club->id,
                     'pay_to' => $validated['pay_to'],
+                    'funds_location' => $fundsLocation,
                     'payment_concept_id' => null,
                     'payee_id' => $payeeId,
                     'amount' => $fromAccount,
@@ -216,6 +220,7 @@ class ExpenseController extends Controller
                 $splitExpense = Expense::create([
                     'club_id' => $club->id,
                     'pay_to' => 'reimbursement_to',
+                    'funds_location' => null,
                     'payment_concept_id' => $reimbursementConcept->id,
                     'payee_id' => $reimbursementConcept->payee_id,
                     'amount' => $shortfall,
@@ -340,6 +345,7 @@ class ExpenseController extends Controller
 
         $validated = $request->validate([
             'pay_to' => ['required', 'string', 'max:255'],
+            'funds_location' => ['nullable', 'in:cash,bank'],
             'receipt_image' => ['required', 'image', 'max:5120'],
         ]);
 
@@ -352,11 +358,13 @@ class ExpenseController extends Controller
         }
 
         $account = $this->resolveAccount($expense->club_id, $validated['pay_to']);
+        $fundsLocation = $validated['funds_location'] ?? 'cash';
+        $club = \App\Models\Club::withoutGlobalScopes()->findOrFail($expense->club_id);
 
-        if ((float) $account->balance < (float) $expense->amount) {
+        if ($this->locationBalanceFor($club, $validated['pay_to'], $fundsLocation) < (float) $expense->amount) {
             return response()->json([
-                'message' => 'Insufficient balance to reimburse.',
-                'errors' => ['pay_to' => ['Insufficient balance to reimburse.']]
+                'message' => 'Saldo insuficiente en la ubicación seleccionada para reembolsar.',
+                'errors' => ['funds_location' => ['Saldo insuficiente en la ubicación seleccionada para reembolsar.']]
             ], 422);
         }
 
@@ -366,7 +374,7 @@ class ExpenseController extends Controller
             Storage::disk('public')->delete($expense->reimbursement_receipt_path);
         }
 
-        \DB::transaction(function () use ($expense, $account, $receiptPath, $request) {
+        \DB::transaction(function () use ($expense, $account, $receiptPath, $request, $fundsLocation) {
             $reimbursementAccount = $this->resolveAccount($expense->club_id, 'reimbursement_to');
 
             Payment::create([
@@ -389,6 +397,7 @@ class ExpenseController extends Controller
             Expense::create([
                 'club_id'             => $expense->club_id,
                 'pay_to'              => $account->pay_to,
+                'funds_location'      => $fundsLocation,
                 'amount'              => (float) $expense->amount,
                 'expense_date'        => now()->toDateString(),
                 'description'         => 'Reembolso a ' . ($expense->reimbursed_to ?? 'persona'),
@@ -421,6 +430,15 @@ class ExpenseController extends Controller
             ['club_id' => $clubId, 'pay_to' => $payTo],
             ['label' => $payTo, 'balance' => 0]
         );
+    }
+
+    protected function locationBalanceFor(\App\Models\Club $club, string $payTo, string $fundsLocation): float
+    {
+        $row = app(\App\Services\ClubTreasuryService::class)
+            ->locationBalancesByAccount($club)
+            ->firstWhere('account', $payTo);
+
+        return max((float) ($row[$fundsLocation . '_balance'] ?? 0), 0.0);
     }
 
     protected function resolveClubForUser($user, $clubId = null)

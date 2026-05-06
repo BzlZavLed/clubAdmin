@@ -69,6 +69,11 @@ class Payment extends Model
         return $this->hasOne(PaymentReceipt::class);
     }
 
+    public function allocations()
+    {
+        return $this->hasMany(PaymentAllocation::class);
+    }
+
     public function reversedPayment()
     {
         return $this->belongsTo(self::class, 'reversed_payment_id');

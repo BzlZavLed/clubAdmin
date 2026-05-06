@@ -95,6 +95,7 @@ const refreshBalances = async (clubId = null) => {
 }
 
 const fmtMoney = (n) => `$${Number(n ?? 0).toFixed(2)}`
+const locationLabel = (value) => value === 'bank' ? 'Banco' : value === 'cash' ? 'Efectivo' : value === 'internal' ? 'Interno' : '—'
 const fmtBytes = (bytes) => {
     if (!Number.isFinite(bytes)) return '—'
     const mb = bytes / (1024 * 1024)
@@ -208,7 +209,7 @@ watch(selectedClubId, async (id, old) => {
                             class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                             <div class="text-sm font-semibold text-gray-900">{{ acc.label || payToLabel(acc.account) }}</div>
                             <div class="text-xs text-gray-600">{{ acc.account ?? 'Sin asignar' }}</div>
-                            <div class="mt-2 grid grid-cols-3 gap-2 text-xs">
+                            <div class="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
                                 <div>
                                     <div class="text-gray-500">Entradas</div>
                                     <div class="font-semibold text-emerald-700">{{ fmtMoney(acc.entries) }}</div>
@@ -223,6 +224,14 @@ watch(selectedClubId, async (id, old) => {
                                         {{ fmtMoney(acc.balance) }}
                                     </div>
                                 </div>
+                                <div>
+                                    <div class="text-gray-500">Efectivo</div>
+                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.cash_balance) }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-gray-500">Banco</div>
+                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.bank_balance) }}</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -235,6 +244,8 @@ watch(selectedClubId, async (id, old) => {
                                 <th class="px-4 py-2 text-left font-semibold">Entradas</th>
                                 <th class="px-4 py-2 text-left font-semibold">Gastos</th>
                                 <th class="px-4 py-2 text-left font-semibold">Saldo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Efectivo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Banco</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -246,6 +257,8 @@ watch(selectedClubId, async (id, old) => {
                                     :class="Number(acc.balance) > 0 ? 'text-emerald-700' : 'text-red-700'">
                                     {{ fmtMoney(acc.balance) }}
                                 </td>
+                                <td class="px-4 py-2">{{ fmtMoney(acc.cash_balance) }}</td>
+                                <td class="px-4 py-2">{{ fmtMoney(acc.bank_balance) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -277,8 +290,10 @@ watch(selectedClubId, async (id, old) => {
                             </div>
                             <div class="mt-2 text-xs text-gray-600">
                                 <div><span class="font-medium text-gray-700">Cuenta:</span> {{ p.account_label || payToLabel(p.account) }}</div>
+                                <div><span class="font-medium text-gray-700">Ubicación:</span> {{ locationLabel(p.location) }}</div>
                                 <div><span class="font-medium text-gray-700">Concepto:</span> {{ p.concept }}</div>
                                 <div><span class="font-medium text-gray-700">Pagador:</span> {{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</div>
+                                <div v-if="p.payment_type === 'zelle' && p.zelle_phone"><span class="font-medium text-gray-700">Zelle remitente:</span> {{ p.zelle_phone }}</div>
                             </div>
                             <div class="mt-3">
                                 <a v-if="p.receipt_url"
@@ -305,6 +320,7 @@ watch(selectedClubId, async (id, old) => {
                                 <th class="px-4 py-2 text-left font-semibold">Pagador</th>
                                 <th class="px-4 py-2 text-left font-semibold">Monto</th>
                                 <th class="px-4 py-2 text-left font-semibold">Tipo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Ubicación</th>
                                 <th class="px-4 py-2 text-left font-semibold">Recibo</th>
                             </tr>
                         </thead>
@@ -315,7 +331,11 @@ watch(selectedClubId, async (id, old) => {
                                 <td class="px-4 py-2">{{ p.concept }}</td>
                                 <td class="px-4 py-2">{{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(p.amount_paid) }}</td>
-                                <td class="px-4 py-2 capitalize">{{ p.payment_type }}</td>
+                                <td class="px-4 py-2 capitalize">
+                                    <div>{{ p.payment_type }}</div>
+                                    <div v-if="p.payment_type === 'zelle' && p.zelle_phone" class="text-xs text-gray-500">De {{ p.zelle_phone }}</div>
+                                </td>
+                                <td class="px-4 py-2">{{ locationLabel(p.location) }}</td>
                                 <td class="px-4 py-2">
                                     <div class="flex items-center gap-2">
                                         <span v-if="p.receipt_ref" class="text-xs text-gray-600">{{ p.receipt_ref }}</span>
@@ -363,6 +383,7 @@ watch(selectedClubId, async (id, old) => {
                             </div>
                             <div class="mt-2 text-xs text-gray-600">
                                 <div><span class="font-medium text-gray-700">Cuenta:</span> {{ e.pay_to_label || payToLabel(e.pay_to) }}</div>
+                                <div><span class="font-medium text-gray-700">Ubicación:</span> {{ locationLabel(e.location) }}</div>
                                 <div v-if="e.is_event_related"><span class="font-medium text-gray-700">Origen:</span> Evento{{ e.event_title ? ` · ${e.event_title}` : '' }}</div>
                                 <div><span class="font-medium text-gray-700">Reembolsado a:</span> {{ e.reimbursed_to || '—' }}</div>
                                 <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
@@ -405,6 +426,7 @@ watch(selectedClubId, async (id, old) => {
                             <tr>
                                 <th class="px-4 py-2 text-left font-semibold">Fecha</th>
                                 <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
+                                <th class="px-4 py-2 text-left font-semibold">Ubicación</th>
                                 <th class="px-4 py-2 text-left font-semibold">Monto</th>
                                 <th class="px-4 py-2 text-left font-semibold">Estado</th>
                                 <th class="px-4 py-2 text-left font-semibold">Recibo</th>
@@ -416,6 +438,7 @@ watch(selectedClubId, async (id, old) => {
                             <tr v-for="e in expenses" :key="e.id" class="border-t">
                                 <td class="px-4 py-2">{{ new Date(e.expense_date).toLocaleDateString() }}</td>
                                 <td class="px-4 py-2">{{ e.pay_to_label || payToLabel(e.pay_to) }}</td>
+                                <td class="px-4 py-2">{{ locationLabel(e.location) }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(e.amount) }}</td>
                                 <td class="px-4 py-2">
                                     <span

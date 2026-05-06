@@ -12,11 +12,13 @@ use App\Models\Event;
 use App\Models\EventPlan;
 use App\Models\Member;
 use App\Models\ClubClass;
+use App\Models\Staff;
 use App\Models\User;
 use App\Models\PaymentConcept;
 use App\Models\PaymentConceptScope;
 use App\Models\Payment;
 use App\Models\Union;
+use App\Models\TaskFormSchema;
 use App\Services\ClubLogoService;
 use App\Services\EventFinanceService;
 use App\Services\EventTaskAssignmentService;
@@ -130,8 +132,17 @@ class EventController extends Controller
             'fee_components' => ['nullable', 'array'],
             'fee_components.*.label' => ['required_with:fee_components', 'string', 'max:255'],
             'fee_components.*.amount' => ['required_with:fee_components', 'numeric', 'min:0.01'],
+            'fee_components.*.is_required' => ['nullable', 'boolean'],
             'risk_level' => ['nullable', 'string', 'max:255'],
         ]);
+
+        $feeComponents = collect($validated['fee_components'] ?? [])
+            ->filter(fn (array $component) => trim((string) ($component['label'] ?? '')) !== '' && (float) ($component['amount'] ?? 0) > 0);
+        if ($feeComponents->isNotEmpty() && !$feeComponents->contains(fn (array $component) => (bool) ($component['is_required'] ?? true))) {
+            return back()
+                ->withErrors(['fee_components' => 'El desglose debe tener al menos un concepto obligatorio, por ejemplo Inscripción.'])
+                ->withInput();
+        }
 
         if (($validated['scope_type'] ?? 'club') !== 'club' && empty($validated['target_club_types'])) {
             return back()
@@ -231,10 +242,13 @@ class EventController extends Controller
             'budgetItems.expense',
             'budgetItems.reimbursementExpense',
             'participants.member:id,type,id_data,club_id,class_id,parent_id',
+            'participants.staff:id,club_id,user_id',
+            'participants.staff.user:id,name',
             'documents',
             'placeOptions',
             'targetClubs:id,club_name,church_name,district_id,club_type',
             'targetClubs.district:id,name,association_id',
+            'targetClubs.district.association:id,name',
             'feeComponents',
         ]);
         $visibleClubIds = $this->visibleEventClubIdsForUser(auth()->user(), $event);
@@ -251,11 +265,12 @@ class EventController extends Controller
                 return true;
             }
 
-            if (!$participant->member_id || !$participant->member?->club_id) {
+            $participantClubId = $participant->member?->club_id ?: $participant->staff?->club_id;
+            if (!$participantClubId) {
                 return false;
             }
 
-            return in_array((int) $participant->member->club_id, $visibleClubIds, true);
+            return in_array((int) $participantClubId, $visibleClubIds, true);
         })->values();
 
         $members = collect();
@@ -278,6 +293,7 @@ class EventController extends Controller
                 ->map(function ($row) {
                     return [
                         'id' => $row->id,
+                        'club_id' => $row->club_id,
                         'name' => $row->user?->name ?? '—',
                         'email' => $row->user?->email,
                         'assigned_class' => $row->assigned_class,
@@ -381,6 +397,25 @@ class EventController extends Controller
                     'class_name' => $class->class_name,
                 ])
                 ->values();
+
+            $staff = Staff::query()
+                ->whereIn('club_id', $visibleClubIds)
+                ->with(['user:id,name,email', 'classes:id,class_name'])
+                ->orderBy('club_id')
+                ->get(['id', 'club_id', 'user_id', 'assigned_class', 'type', 'status'])
+                ->map(function (Staff $row) {
+                    return [
+                        'id' => $row->id,
+                        'club_id' => $row->club_id,
+                        'name' => $row->user?->name ?? '—',
+                        'email' => $row->user?->email,
+                        'assigned_class' => $row->assigned_class,
+                        'type' => $row->type,
+                        'status' => $row->status,
+                        'classes' => $row->classes?->map(fn ($c) => ['id' => $c->id, 'class_name' => $c->class_name])->values(),
+                    ];
+                })
+                ->values();
         }
 
         $financeSummary = app(EventFinanceService::class)->paymentSummary($event, $visibleClubIds);
@@ -390,11 +425,16 @@ class EventController extends Controller
         $paymentSummary = [
             'total_received' => $financeSummary['total_received'],
             'by_member_id' => $financeSummary['by_member_id'],
+            'by_member_required_id' => $financeSummary['by_member_required_id'] ?? [],
             'by_staff_id' => $financeSummary['by_staff_id'],
+            'by_staff_required_id' => $financeSummary['by_staff_required_id'] ?? [],
         ];
         $paymentRecords = $financeSummary['records'];
         $paymentConceptLabel = collect($financeSummary['concepts'])->pluck('label')->first();
         $canEditEvent = auth()->user()?->can('update', $event) ?? false;
+        $canManageParticipants = $this->canManageParticipantsForUser(auth()->user(), $event, $visibleClubIds);
+        $participantClubSummary = $this->participantClubSummary($event, $visibleClubIds, $financeSummary, $clubSignupSummary);
+        $participantRoster = $this->participantMemberRoster($event, $visibleClubIds, $financeSummary);
         $manageableSettlementClubIds = $this->manageableSettlementClubIdsForUser(auth()->user(), $event);
         $taskAssignmentService = app(EventTaskAssignmentService::class);
 
@@ -413,6 +453,7 @@ class EventController extends Controller
                 'id' => $component->id,
                 'label' => $component->label,
                 'amount' => (float) $component->amount,
+                'is_required' => (bool) ($component->is_required ?? true),
                 'sort_order' => (int) $component->sort_order,
             ])->values(),
             'scopeLabel' => $this->scopeLabel((string) ($event->scope_type ?: 'club'), (int) ($event->scope_id ?: $event->club_id)),
@@ -434,6 +475,8 @@ class EventController extends Controller
             'staff' => $staff,
             'accounts' => $accounts,
             'parents' => $parents,
+            'participantClubSummary' => $participantClubSummary,
+            'participantRoster' => $participantRoster,
             'paymentSummary' => $paymentSummary,
             'paymentConfig' => [
                 'concept_id' => $event->payment_concept_id,
@@ -442,11 +485,19 @@ class EventController extends Controller
                 'is_payable' => $event->is_payable,
                 'concepts' => $financeSummary['concepts'],
                 'total_amount' => (float) ($event->payment_amount ?? 0),
+                'required_total_amount' => (float) $event->feeComponents
+                    ->filter(fn ($component) => (bool) ($component->is_required ?? true))
+                    ->sum(fn ($component) => (float) $component->amount),
             ],
             'canEditEvent' => $canEditEvent,
+            'canManageParticipants' => $canManageParticipants,
             'taskResponsibilityOptions' => ($event->scope_type ?: 'club') === 'club'
                 ? []
                 : $taskAssignmentService->responsibilityOptions($event),
+            'taskFormSchemaKeys' => TaskFormSchema::query()
+                ->orderBy('key')
+                ->pluck('key')
+                ->values(),
             'manageableSettlementClubIds' => $manageableSettlementClubIds,
             'paymentRecords' => $paymentRecords,
             'serpApiUsage' => $serpApiUsage,
@@ -532,6 +583,51 @@ class EventController extends Controller
         return $pdf->download('event-plan-' . $event->id . '.pdf');
     }
 
+    public function participantRosterPdf(Event $event)
+    {
+        $this->authorize('view', $event);
+
+        $event->load([
+            'participants.member:id,type,id_data,club_id,class_id,parent_id',
+            'participants.staff:id,club_id,user_id',
+            'participants.staff.user:id,name',
+            'targetClubs:id,club_name,church_name,district_id,club_type',
+            'targetClubs.district:id,name,association_id',
+            'targetClubs.district.association:id,name',
+            'feeComponents',
+        ]);
+
+        $visibleClubIds = $this->visibleEventClubIdsForUser(auth()->user(), $event);
+        $financeSummary = app(EventFinanceService::class)->paymentSummary($event, $visibleClubIds);
+        $roster = $this->participantMemberRoster($event, $visibleClubIds, $financeSummary);
+        $totals = collect($roster)->reduce(function (array $totals, array $row) {
+            $totals['participants']++;
+            $totals['enrolled'] += !empty($row['is_enrolled']) ? 1 : 0;
+            $totals['confirmed'] += !empty($row['is_confirmed']) ? 1 : 0;
+            $totals['total_paid'] += (float) ($row['total_paid'] ?? 0);
+            $totals['optional_paid'] += (float) ($row['optional_paid'] ?? 0);
+
+            return $totals;
+        }, [
+            'participants' => 0,
+            'enrolled' => 0,
+            'confirmed' => 0,
+            'total_paid' => 0.0,
+            'optional_paid' => 0.0,
+        ]);
+
+        $pdf = Pdf::loadView('pdf.event_participant_roster', [
+            'event' => $event,
+            'scopeLabel' => $this->scopeLabel((string) ($event->scope_type ?: 'club'), (int) ($event->scope_id ?: $event->club_id)),
+            'roster' => $roster,
+            'totals' => $totals,
+            'showAssociation' => ($event->scope_type ?: 'club') === 'union',
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ])->setPaper('letter', 'landscape');
+
+        return $pdf->download('event-participant-roster-' . $event->id . '.pdf');
+    }
+
     public function update(Request $request, Event $event)
     {
         $this->authorize('update', $event);
@@ -555,8 +651,17 @@ class EventController extends Controller
             'fee_components' => ['nullable', 'array'],
             'fee_components.*.label' => ['required_with:fee_components', 'string', 'max:255'],
             'fee_components.*.amount' => ['required_with:fee_components', 'numeric', 'min:0.01'],
+            'fee_components.*.is_required' => ['nullable', 'boolean'],
             'risk_level' => ['nullable', 'string', 'max:255'],
         ]);
+
+        $feeComponents = collect($validated['fee_components'] ?? [])
+            ->filter(fn (array $component) => trim((string) ($component['label'] ?? '')) !== '' && (float) ($component['amount'] ?? 0) > 0);
+        if ($request->has('fee_components') && $feeComponents->isNotEmpty() && !$feeComponents->contains(fn (array $component) => (bool) ($component['is_required'] ?? true))) {
+            return back()
+                ->withErrors(['fee_components' => 'El desglose debe tener al menos un concepto obligatorio, por ejemplo Inscripción.'])
+                ->withInput();
+        }
 
         $event->update([
             'title' => $validated['title'],
@@ -1237,16 +1342,491 @@ class EventController extends Controller
             return $targetClubIds;
         }
 
-        if (in_array($role, ['club_director', 'club_personal'], true)) {
-            $userClubIds = $this->userClubIdsForHierarchy($user);
+        $userClubIds = $this->userClubIdsForHierarchy($user);
 
-            return collect($targetClubIds)
-                ->filter(fn ($clubId) => in_array((int) $clubId, $userClubIds, true))
-                ->values()
-                ->all();
+        return collect($targetClubIds)
+            ->filter(fn ($clubId) => in_array((int) $clubId, $userClubIds, true))
+            ->values()
+            ->all();
+    }
+
+    protected function canManageParticipantsForUser($user, Event $event, array $visibleClubIds): bool
+    {
+        if (($event->scope_type ?: 'club') === 'club') {
+            return true;
         }
 
-        return $targetClubIds;
+        return in_array($this->plannerRoleKey($user), ['club_director', 'club_personal'], true)
+            && !empty($visibleClubIds);
+    }
+
+    protected function participantClubSummary(Event $event, array $visibleClubIds, array $financeSummary, $clubSignupSummary): array
+    {
+        if (($event->scope_type ?: 'club') === 'club') {
+            return [];
+        }
+
+        $clubs = $event->targetClubs
+            ->filter(fn (Club $club) => empty($visibleClubIds) || in_array((int) $club->id, $visibleClubIds, true))
+            ->values();
+        $clubIds = $clubs->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if (empty($clubIds)) {
+            return [];
+        }
+
+        $signupByClub = collect($clubSignupSummary)->keyBy('club_id');
+        $expectedByClub = collect($financeSummary['concepts'] ?? [])
+            ->filter(fn ($row) => (bool) ($row['is_required'] ?? true))
+            ->groupBy('club_id')
+            ->map(fn ($rows) => (float) collect($rows)->sum(fn ($row) => (float) ($row['amount'] ?? 0)));
+
+        $paidMemberIdsByClub = [];
+        $memberPayments = collect($financeSummary['by_member_required_id'] ?? $financeSummary['by_member_id'] ?? [])
+            ->mapWithKeys(fn ($amount, $memberId) => [(int) $memberId => (float) $amount]);
+        if ($memberPayments->isNotEmpty()) {
+            $memberClubById = Member::query()
+                ->whereIn('id', $memberPayments->keys()->all())
+                ->whereIn('club_id', $clubIds)
+                ->pluck('club_id', 'id')
+                ->map(fn ($clubId) => (int) $clubId);
+
+            foreach ($memberPayments as $memberId => $amount) {
+                $clubId = (int) ($memberClubById[(int) $memberId] ?? 0);
+                if (!$clubId) {
+                    continue;
+                }
+
+                $expected = (float) ($expectedByClub[$clubId] ?? $event->payment_amount ?? 0);
+                $isPaid = $expected > 0 ? $amount >= $expected : $amount > 0;
+                if ($isPaid) {
+                    $paidMemberIdsByClub[$clubId][(int) $memberId] = true;
+                }
+            }
+        }
+
+        $paidStaffIdsByClub = [];
+        $staffPayments = collect($financeSummary['by_staff_required_id'] ?? $financeSummary['by_staff_id'] ?? [])
+            ->mapWithKeys(fn ($amount, $staffId) => [(int) $staffId => (float) $amount]);
+        if ($staffPayments->isNotEmpty()) {
+            $staffClubById = Staff::query()
+                ->whereIn('id', $staffPayments->keys()->all())
+                ->whereIn('club_id', $clubIds)
+                ->pluck('club_id', 'id')
+                ->map(fn ($clubId) => (int) $clubId);
+
+            foreach ($staffPayments as $staffId => $amount) {
+                $clubId = (int) ($staffClubById[(int) $staffId] ?? 0);
+                if (!$clubId) {
+                    continue;
+                }
+
+                $expected = (float) ($expectedByClub[$clubId] ?? $event->payment_amount ?? 0);
+                $isPaid = $expected > 0 ? $amount >= $expected : $amount > 0;
+                if ($isPaid) {
+                    $paidStaffIdsByClub[$clubId]['staff:' . (int) $staffId] = true;
+                }
+            }
+        }
+
+        $staffNameClubLookup = Staff::query()
+            ->whereIn('club_id', $clubIds)
+            ->with('user:id,name')
+            ->get(['id', 'club_id', 'user_id'])
+            ->groupBy(fn (Staff $staff) => mb_strtolower(trim((string) ($staff->user?->name ?? ''))))
+            ->filter(fn ($rows, $name) => $name !== '' && $rows->count() === 1)
+            ->map(fn ($rows) => (int) $rows->first()->club_id);
+
+        $confirmedMemberIdsByClub = [];
+        $staffParticipantIdsByClub = [];
+        $confirmedStaffIdsByClub = [];
+
+        foreach ($event->participants as $participant) {
+            $status = strtolower((string) $participant->status);
+            if ($participant->member_id && $participant->member?->club_id) {
+                $clubId = (int) $participant->member->club_id;
+                if (in_array($clubId, $clubIds, true) && $status === 'confirmed') {
+                    $confirmedMemberIdsByClub[$clubId][(int) $participant->member_id] = true;
+                }
+                continue;
+            }
+
+            if (strtolower((string) $participant->role) !== 'staff') {
+                continue;
+            }
+
+            $clubId = (int) ($participant->staff?->club_id ?? 0);
+            if (!$clubId) {
+                $clubId = (int) ($staffNameClubLookup[mb_strtolower(trim((string) $participant->participant_name))] ?? 0);
+            }
+            if (!$clubId || !in_array($clubId, $clubIds, true)) {
+                continue;
+            }
+
+            $staffKey = $participant->staff_id
+                ? 'staff:' . (int) $participant->staff_id
+                : 'name:' . mb_strtolower(trim((string) $participant->participant_name));
+            $staffParticipantIdsByClub[$clubId][$staffKey] = true;
+            if ($status === 'confirmed') {
+                $confirmedStaffIdsByClub[$clubId][$staffKey] = true;
+            }
+        }
+
+        return $clubs
+            ->map(function (Club $club) use ($signupByClub, $expectedByClub, $paidMemberIdsByClub, $paidStaffIdsByClub, $confirmedMemberIdsByClub, $staffParticipantIdsByClub, $confirmedStaffIdsByClub) {
+                $clubId = (int) $club->id;
+                $signup = $signupByClub->get($clubId, []);
+                $confirmedMembers = $confirmedMemberIdsByClub[$clubId] ?? [];
+                $paidMembers = $paidMemberIdsByClub[$clubId] ?? [];
+                $confirmedStaff = $confirmedStaffIdsByClub[$clubId] ?? [];
+                $paidStaff = $paidStaffIdsByClub[$clubId] ?? [];
+                $hasRequiredPayment = (float) ($expectedByClub[$clubId] ?? 0) > 0;
+                $enrolledMembers = $hasRequiredPayment ? $paidMembers : $confirmedMembers;
+                $confirmedUnpaidMembers = array_diff_key($confirmedMembers, $paidMembers);
+                $confirmedUnpaidStaff = array_diff_key($confirmedStaff, $paidStaff);
+
+                return [
+                    'club_id' => $clubId,
+                    'club_name' => $club->club_name,
+                    'church_name' => $club->church_name,
+                    'district_id' => (int) ($club->district_id ?? 0),
+                    'district_name' => $club->district?->name ?: ($signup['district_name'] ?? null),
+                    'club_type' => $club->club_type,
+                    'signup_status' => $signup['signup_status'] ?? $club->pivot?->signup_status ?? 'targeted',
+                    'signed_up_at' => $signup['signed_up_at'] ?? optional($club->pivot?->signed_up_at)->toDateTimeString(),
+                    'member_count' => (int) ($signup['member_count'] ?? $signup['participant_count'] ?? 0),
+                    'enrolled_member_count' => count($enrolledMembers),
+                    'manual_confirmed_member_count' => count($confirmedMembers),
+                    'confirmed_member_count' => count($confirmedMembers),
+                    'confirmed_unpaid_member_count' => count($confirmedUnpaidMembers),
+                    'paid_member_count' => count($paidMembers),
+                    'confirmed_paid_member_count' => count(array_intersect_key($confirmedMembers, $paidMembers)),
+                    'staff_participant_count' => count($staffParticipantIdsByClub[$clubId] ?? []),
+                    'confirmed_staff_count' => count($confirmedStaff),
+                    'confirmed_unpaid_staff_count' => count($confirmedUnpaidStaff),
+                    'enrolled_staff_count' => count($paidStaff),
+                    'paid_staff_count' => count($paidStaff),
+                    'confirmed_paid_staff_count' => count(array_intersect_key($confirmedStaff, $paidStaff)),
+                    'has_required_payment' => $hasRequiredPayment,
+                    'expected_member_payment' => (float) ($expectedByClub[$clubId] ?? 0),
+                    'paid_amount' => (float) ($signup['paid_amount'] ?? 0),
+                    'remaining_amount' => (float) ($signup['remaining_amount'] ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    protected function participantMemberRoster(Event $event, array $visibleClubIds, array $financeSummary): array
+    {
+        if (($event->scope_type ?: 'club') === 'club') {
+            return [];
+        }
+
+        $clubs = $event->targetClubs
+            ->filter(fn (Club $club) => empty($visibleClubIds) || in_array((int) $club->id, $visibleClubIds, true))
+            ->keyBy('id');
+        $clubIds = $clubs->keys()->map(fn ($id) => (int) $id)->all();
+        if (empty($clubIds)) {
+            return [];
+        }
+
+        $concepts = collect($financeSummary['concepts'] ?? []);
+        $requiredExpectedByClub = $concepts
+            ->filter(fn ($row) => (bool) ($row['is_required'] ?? true))
+            ->groupBy('club_id')
+            ->map(fn ($rows) => round((float) collect($rows)->sum(fn ($row) => (float) ($row['amount'] ?? 0)), 2));
+        $optionalComponentsByClub = $concepts
+            ->filter(fn ($row) => ! (bool) ($row['is_required'] ?? true))
+            ->groupBy('club_id')
+            ->map(fn ($rows) => collect($rows)
+                ->groupBy(fn ($row) => (string) ($row['component_label'] ?: $row['label'] ?: 'Opcional'))
+                ->map(fn ($componentRows, $label) => [
+                    'label' => $label,
+                    'expected_amount' => round((float) collect($componentRows)->sum(fn ($row) => (float) ($row['amount'] ?? 0)), 2),
+                ])
+                ->values()
+                ->all());
+
+        $confirmedParticipantsByMember = [];
+        $confirmedParticipantsByStaff = [];
+        foreach ($event->participants as $participant) {
+            if (strtolower((string) $participant->status) !== 'confirmed') {
+                continue;
+            }
+
+            if ($participant->member_id) {
+                $clubId = (int) ($participant->member?->club_id ?? 0);
+                if (!$clubId || !in_array($clubId, $clubIds, true)) {
+                    continue;
+                }
+
+                $confirmedParticipantsByMember[(int) $participant->member_id] = $participant;
+                continue;
+            }
+
+            if ($participant->staff_id && strtolower((string) $participant->role) === 'staff') {
+                $clubId = (int) ($participant->staff?->club_id ?? 0);
+                if (!$clubId || !in_array($clubId, $clubIds, true)) {
+                    continue;
+                }
+
+                $confirmedParticipantsByStaff[(int) $participant->staff_id] = $participant;
+            }
+        }
+
+        $paymentsByMember = [];
+        $paymentsByStaff = [];
+        foreach (($financeSummary['records'] ?? []) as $record) {
+            $payerType = (string) ($record['payer_type'] ?? '');
+            if (!in_array($payerType, ['member', 'staff'], true) || empty($record['payer_id'])) {
+                continue;
+            }
+
+            $payerId = (int) $record['payer_id'];
+            $payments = $payerType === 'staff' ? $paymentsByStaff : $paymentsByMember;
+            $payments[$payerId] ??= [
+                'total_paid' => 0.0,
+                'required_paid' => 0.0,
+                'optional_paid' => 0.0,
+                'optional_by_label' => [],
+            ];
+
+            $payments[$payerId]['total_paid'] += (float) ($record['amount_paid'] ?? 0);
+            $breakdown = collect($record['breakdown'] ?? []);
+            if ($breakdown->isEmpty()) {
+                $payments[$payerId]['required_paid'] += (float) ($record['amount_paid'] ?? 0);
+                if ($payerType === 'staff') {
+                    $paymentsByStaff = $payments;
+                } else {
+                    $paymentsByMember = $payments;
+                }
+                continue;
+            }
+
+            foreach ($breakdown as $row) {
+                $amount = (float) ($row['amount'] ?? 0);
+                if ((bool) ($row['is_required'] ?? true)) {
+                    $payments[$payerId]['required_paid'] += $amount;
+                    continue;
+                }
+
+                $label = (string) ($row['component_label'] ?? 'Opcional');
+                $payments[$payerId]['optional_paid'] += $amount;
+                $payments[$payerId]['optional_by_label'][$label] =
+                    ($payments[$payerId]['optional_by_label'][$label] ?? 0) + $amount;
+            }
+
+            if ($payerType === 'staff') {
+                $paymentsByStaff = $payments;
+            } else {
+                $paymentsByMember = $payments;
+            }
+        }
+
+        $memberIds = collect(array_keys($confirmedParticipantsByMember))
+            ->merge(array_keys($paymentsByMember))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $staffIds = collect(array_keys($confirmedParticipantsByStaff))
+            ->merge(array_keys($paymentsByStaff))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        if (empty($memberIds) && empty($staffIds)) {
+            return [];
+        }
+
+        $members = Member::query()
+            ->when(empty($memberIds), fn ($query) => $query->whereRaw('1 = 0'))
+            ->whereIn('id', $memberIds)
+            ->whereIn('club_id', $clubIds)
+            ->with('club.district.association')
+            ->get(['id', 'type', 'id_data', 'club_id', 'class_id', 'parent_id'])
+            ->keyBy('id');
+        $staffRows = Staff::query()
+            ->when(empty($staffIds), fn ($query) => $query->whereRaw('1 = 0'))
+            ->whereIn('id', $staffIds)
+            ->whereIn('club_id', $clubIds)
+            ->with(['club.district.association', 'user:id,name'])
+            ->get(['id', 'type', 'id_data', 'club_id', 'user_id', 'assigned_class', 'status'])
+            ->keyBy('id');
+
+        $optionalPayload = function (int $clubId, array $payment) use ($optionalComponentsByClub): array {
+            $optionalComponents = collect($optionalComponentsByClub[$clubId] ?? [])
+                ->map(function (array $component) use ($payment) {
+                    $paid = round((float) ($payment['optional_by_label'][$component['label']] ?? 0), 2);
+
+                    return [
+                        'label' => $component['label'],
+                        'expected_amount' => (float) $component['expected_amount'],
+                        'paid_amount' => $paid,
+                        'is_paid' => $paid >= round((float) $component['expected_amount'], 2),
+                    ];
+                })
+                ->values()
+                ->all();
+            $optionalExpected = round((float) collect($optionalComponents)->sum(fn ($component) => (float) $component['expected_amount']), 2);
+            $optionalPaid = round((float) $payment['optional_paid'], 2);
+            $optionalStatus = match (true) {
+                $optionalExpected <= 0 => 'not_available',
+                $optionalPaid >= $optionalExpected => 'paid',
+                $optionalPaid > 0 => 'partial',
+                default => 'not_paid',
+            };
+
+            return [$optionalComponents, $optionalExpected, $optionalPaid, $optionalStatus];
+        };
+
+        $memberRows = collect($memberIds)
+            ->map(function (int $memberId) use ($members, $confirmedParticipantsByMember, $paymentsByMember, $requiredExpectedByClub, $optionalComponentsByClub) {
+                /** @var Member|null $member */
+                $member = $members->get($memberId);
+                if (!$member) {
+                    return null;
+                }
+
+                $clubId = (int) $member->club_id;
+                $payment = $paymentsByMember[$memberId] ?? [
+                    'total_paid' => 0.0,
+                    'required_paid' => 0.0,
+                    'optional_paid' => 0.0,
+                    'optional_by_label' => [],
+                ];
+                $requiredExpected = (float) ($requiredExpectedByClub[$clubId] ?? 0);
+                $isConfirmed = isset($confirmedParticipantsByMember[$memberId]);
+                $isEnrolled = $requiredExpected > 0
+                    ? round((float) $payment['required_paid'], 2) >= round($requiredExpected, 2)
+                    : $isConfirmed;
+
+                if (!$isConfirmed && !$isEnrolled) {
+                    return null;
+                }
+
+                [$optionalComponents, $optionalExpected, $optionalPaid, $optionalStatus] = (function (int $clubId, array $payment) use ($optionalComponentsByClub): array {
+                    $optionalComponents = collect($optionalComponentsByClub[$clubId] ?? [])
+                        ->map(function (array $component) use ($payment) {
+                            $paid = round((float) ($payment['optional_by_label'][$component['label']] ?? 0), 2);
+
+                            return [
+                                'label' => $component['label'],
+                                'expected_amount' => (float) $component['expected_amount'],
+                                'paid_amount' => $paid,
+                                'is_paid' => $paid >= round((float) $component['expected_amount'], 2),
+                            ];
+                        })
+                        ->values()
+                        ->all();
+                    $optionalExpected = round((float) collect($optionalComponents)->sum(fn ($component) => (float) $component['expected_amount']), 2);
+                    $optionalPaid = round((float) $payment['optional_paid'], 2);
+                    $optionalStatus = match (true) {
+                        $optionalExpected <= 0 => 'not_available',
+                        $optionalPaid >= $optionalExpected => 'paid',
+                        $optionalPaid > 0 => 'partial',
+                        default => 'not_paid',
+                    };
+
+                    return [$optionalComponents, $optionalExpected, $optionalPaid, $optionalStatus];
+                })($clubId, $payment);
+                $detail = ClubHelper::memberDetail($member);
+                $participant = $confirmedParticipantsByMember[$memberId] ?? null;
+
+                return [
+                    'participant_key' => 'member:' . $memberId,
+                    'participant_type' => 'member',
+                    'participant_type_label' => 'Miembro',
+                    'member_id' => $memberId,
+                    'staff_id' => null,
+                    'name' => $participant?->participant_name ?: ($detail['name'] ?? '—'),
+                    'club_id' => $clubId,
+                    'club_name' => $member->club?->club_name,
+                    'district_id' => (int) ($member->club?->district_id ?? 0),
+                    'district_name' => $member->club?->district?->name,
+                    'association_id' => (int) ($member->club?->district?->association_id ?? 0),
+                    'association_name' => $member->club?->district?->association?->name,
+                    'is_confirmed' => $isConfirmed,
+                    'is_enrolled' => $isEnrolled,
+                    'total_paid' => round((float) $payment['total_paid'], 2),
+                    'required_paid' => round((float) $payment['required_paid'], 2),
+                    'required_expected' => round($requiredExpected, 2),
+                    'optional_paid' => $optionalPaid,
+                    'optional_expected' => $optionalExpected,
+                    'optional_status' => $optionalStatus,
+                    'optional_components' => $optionalComponents,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $staffRosterRows = collect($staffIds)
+            ->map(function (int $staffId) use ($staffRows, $confirmedParticipantsByStaff, $paymentsByStaff, $requiredExpectedByClub, $optionalPayload) {
+                /** @var Staff|null $staff */
+                $staff = $staffRows->get($staffId);
+                if (!$staff) {
+                    return null;
+                }
+
+                $clubId = (int) $staff->club_id;
+                $payment = $paymentsByStaff[$staffId] ?? [
+                    'total_paid' => 0.0,
+                    'required_paid' => 0.0,
+                    'optional_paid' => 0.0,
+                    'optional_by_label' => [],
+                ];
+                $requiredExpected = (float) ($requiredExpectedByClub[$clubId] ?? 0);
+                $isConfirmed = isset($confirmedParticipantsByStaff[$staffId]);
+                $isEnrolled = $requiredExpected > 0
+                    ? round((float) $payment['required_paid'], 2) >= round($requiredExpected, 2)
+                    : $isConfirmed;
+
+                if (!$isConfirmed && !$isEnrolled) {
+                    return null;
+                }
+
+                [$optionalComponents, $optionalExpected, $optionalPaid, $optionalStatus] = $optionalPayload($clubId, $payment);
+                $detail = ClubHelper::staffDetail($staff);
+                $participant = $confirmedParticipantsByStaff[$staffId] ?? null;
+
+                return [
+                    'participant_key' => 'staff:' . $staffId,
+                    'participant_type' => 'staff',
+                    'participant_type_label' => 'Staff',
+                    'member_id' => null,
+                    'staff_id' => $staffId,
+                    'name' => $participant?->participant_name ?: ($detail['name'] ?? $staff->user?->name ?? '—'),
+                    'club_id' => $clubId,
+                    'club_name' => $staff->club?->club_name,
+                    'district_id' => (int) ($staff->club?->district_id ?? 0),
+                    'district_name' => $staff->club?->district?->name,
+                    'association_id' => (int) ($staff->club?->district?->association_id ?? 0),
+                    'association_name' => $staff->club?->district?->association?->name,
+                    'is_confirmed' => $isConfirmed,
+                    'is_enrolled' => $isEnrolled,
+                    'total_paid' => round((float) $payment['total_paid'], 2),
+                    'required_paid' => round((float) $payment['required_paid'], 2),
+                    'required_expected' => round($requiredExpected, 2),
+                    'optional_paid' => $optionalPaid,
+                    'optional_expected' => $optionalExpected,
+                    'optional_status' => $optionalStatus,
+                    'optional_components' => $optionalComponents,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        return $memberRows
+            ->concat($staffRosterRows)
+            ->sortBy([
+                ['association_name', 'asc'],
+                ['district_name', 'asc'],
+                ['club_name', 'asc'],
+                ['participant_type', 'asc'],
+                ['name', 'asc'],
+            ])
+            ->values()
+            ->all();
     }
 
     protected function manageableSettlementClubIdsForUser($user, Event $event): array

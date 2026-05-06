@@ -79,6 +79,10 @@ class PaymentReceiptController extends Controller
                 'payment.member:id,type,id_data,parent_id',
                 'payment.staff:id,type,id_data,user_id',
                 'payment.concept:id,concept,amount,reusable',
+                'payment.allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+                'payment.allocations.concept:id,concept,event_id,event_fee_component_id',
+                'payment.allocations.concept.event:id,title,start_at',
+                'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
             ])
             ->latest('issued_at')
             ->get()
@@ -100,6 +104,10 @@ class PaymentReceiptController extends Controller
                 'payment.member:id,type,id_data,parent_id',
                 'payment.staff:id,type,id_data,user_id',
                 'payment.concept:id,concept,amount,reusable',
+                'payment.allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+                'payment.allocations.concept:id,concept,event_id,event_fee_component_id',
+                'payment.allocations.concept.event:id,title,start_at',
+                'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
             ])
             ->latest('issued_at')
             ->get()
@@ -127,7 +135,7 @@ class PaymentReceiptController extends Controller
             'amount_paid' => $payment?->amount_paid,
             'payment_date' => optional($payment?->payment_date)->toDateString(),
             'payment_type' => $payment?->payment_type,
-            'concept_name' => $payment?->concept?->concept ?? $payment?->concept_text,
+            'concept_name' => $this->receiptConceptName($payment),
             'member_name' => $memberDetail['name'] ?? null,
             'staff_name' => $staffDetail['name'] ?? null,
             'download_url' => route('payment-receipts.download', $receipt),
@@ -148,6 +156,21 @@ class PaymentReceiptController extends Controller
         PaymentReceipt::query()
             ->whereIn('id', $ids)
             ->update(['last_downloaded_at' => Carbon::now()]);
+    }
+
+    protected function receiptConceptName($payment): string
+    {
+        if (!$payment) {
+            return '—';
+        }
+
+        if ($payment->relationLoaded('allocations') && $payment->allocations->isNotEmpty()) {
+            return $payment->allocations->first()?->concept?->event?->title
+                ?: $payment->concept_text
+                ?: 'Pago de evento';
+        }
+
+        return $payment->concept?->concept ?? $payment->concept_text ?? '—';
     }
 
     protected function authorizeReceipt($user, PaymentReceipt $receipt): void
@@ -186,6 +209,10 @@ class PaymentReceiptController extends Controller
             'payment.member:id,type,id_data,parent_id',
             'payment.staff:id,type,id_data,user_id',
             'payment.concept:id,concept,amount,reusable',
+            'payment.allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+            'payment.allocations.concept:id,concept,event_id,event_fee_component_id',
+            'payment.allocations.concept.event:id,title,start_at',
+            'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
             'payment.account:id,club_id,pay_to,label',
             'payment.receivedBy:id,name,email',
             'parentUser:id,name,email',
@@ -202,6 +229,7 @@ class PaymentReceiptController extends Controller
         $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
         $club = $receipt->club ?? $payment?->club;
         $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? '—';
+        $conceptName = $this->receiptConceptName($payment);
         $generatedAt = now();
         $validation = $documentValidationService->create(
             documentType: 'payment_receipt',
@@ -215,7 +243,7 @@ class PaymentReceiptController extends Controller
                 'payment_date' => optional($payment?->payment_date)->toDateString(),
                 'amount_paid' => $payment?->amount_paid,
                 'payment_type' => $payment?->payment_type,
-                'concept' => $payment?->concept?->concept ?? $payment?->concept_text,
+                'concept' => $conceptName,
                 'account' => $payment?->account?->label ?? $payment?->pay_to,
                 'recipient_name' => $recipientName,
                 'recipient_email' => $receipt->issued_to_email,
@@ -226,7 +254,7 @@ class PaymentReceiptController extends Controller
                 'Recibo' => $receipt->receipt_number,
                 'Club' => $club?->club_name ?? '—',
                 'Pagador' => $recipientName,
-                'Concepto' => $payment?->concept?->concept ?? $payment?->concept_text ?? '—',
+                'Concepto' => $conceptName,
                 'Importe' => '$' . number_format((float) ($payment?->amount_paid ?? 0), 2),
             ],
             generatedBy: $generatedBy,
@@ -241,6 +269,7 @@ class PaymentReceiptController extends Controller
             'staff_name' => $staffDetail['name'] ?? null,
             'recipient_name' => $recipientName,
             'recipient_email' => $receipt->issued_to_email,
+            'concept_name' => $conceptName,
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
             'qrCodeDataUri' => $validation['qr_code_data_uri'],

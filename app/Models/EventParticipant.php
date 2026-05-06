@@ -13,6 +13,7 @@ class EventParticipant extends Model
     protected $fillable = [
         'event_id',
         'member_id',
+        'staff_id',
         'participant_name',
         'role',
         'status',
@@ -35,5 +36,10 @@ class EventParticipant extends Model
     public function member()
     {
         return $this->belongsTo(Member::class);
+    }
+
+    public function staff()
+    {
+        return $this->belongsTo(Staff::class);
     }
 }

@@ -180,7 +180,11 @@ class EventBudgetItemController extends Controller
         $payTo = $item->funding_source ?: 'club_budget';
         $account = $this->resolveAccount($event->club_id, $payTo);
         $amount = (float) $item->total;
-        $available = max((float) $account->balance, 0.0);
+        $club = \App\Models\Club::withoutGlobalScopes()->findOrFail($event->club_id);
+        $locationBalance = app(\App\Services\ClubTreasuryService::class)
+            ->locationBalancesByAccount($club)
+            ->firstWhere('account', $payTo);
+        $available = max((float) ($locationBalance['cash_balance'] ?? 0), 0.0);
         $fromAccount = min($amount, $available);
         $shortfall = max($amount - $fromAccount, 0.0);
 
@@ -190,6 +194,7 @@ class EventBudgetItemController extends Controller
                 'club_id' => $event->club_id,
                 'event_id' => $event->id,
                 'pay_to' => $payTo,
+                'funds_location' => 'cash',
                 'payment_concept_id' => null,
                 'payee_id' => null,
                 'amount' => $fromAccount,
@@ -213,6 +218,7 @@ class EventBudgetItemController extends Controller
                 'club_id' => $event->club_id,
                 'event_id' => $event->id,
                 'pay_to' => 'reimbursement_to',
+                'funds_location' => null,
                 'payment_concept_id' => $reimbursementConcept->id,
                 'payee_id' => $reimbursementConcept->payee_id,
                 'amount' => $shortfall,

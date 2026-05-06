@@ -22,4 +22,9 @@ class EventTaskTemplate extends Model
         'is_custom' => 'boolean',
         'is_active' => 'boolean',
     ];
+
+    public function club()
+    {
+        return $this->belongsTo(Club::class)->withoutGlobalScopes();
+    }
 }

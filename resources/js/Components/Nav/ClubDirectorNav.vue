@@ -43,6 +43,12 @@ const menuItems = [
                 icon: BanknotesIcon
             },
             {
+                name: 'Tesorería',
+                href: '/club-director/treasury',
+                route: 'club.director.treasury',
+                icon: BanknotesIcon
+            },
+            {
                 name: 'Gastos',
                 href: '/club-director/expenses',
                 route: 'club.director.expenses',
