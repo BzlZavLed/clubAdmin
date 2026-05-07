@@ -143,7 +143,7 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
         <div class="space-y-5">
 
             <!-- Header card -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="flex flex-wrap items-start justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
@@ -162,28 +162,28 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
                 </div>
 
                 <!-- Month / Year filter -->
-                <div class="mt-4 flex flex-wrap items-end gap-3">
-                    <div>
+                <div class="mt-4 grid gap-3 sm:flex sm:flex-wrap sm:items-end">
+                    <div class="min-w-0">
                         <label class="block text-xs font-medium text-gray-500 mb-1">{{ tr('Mes', 'Month') }}</label>
                         <select
                             v-model="selectedMonth"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:w-auto"
                         >
                             <option v-for="m in months" :key="m.value" :value="m.value">{{ m.label }}</option>
                         </select>
                     </div>
-                    <div>
+                    <div class="min-w-0">
                         <label class="block text-xs font-medium text-gray-500 mb-1">{{ tr('Año', 'Year') }}</label>
                         <select
                             v-model="selectedYear"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:w-auto"
                         >
                             <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}</option>
                         </select>
                     </div>
                     <button
                         type="button"
-                        class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
+                        class="w-full rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 sm:w-auto"
                         @click="applyFilter"
                     >
                         {{ tr('Consultar', 'Search') }}
@@ -213,22 +213,22 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
 
             <!-- ── Rows (union / association / district level) ── -->
             <div v-if="level !== 'club'" class="space-y-3">
-                <div class="flex items-center justify-between">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <p class="text-sm font-semibold text-gray-700">{{ levelLabel }}</p>
                     <input
                         v-model="rowSearch"
                         type="search"
                         :placeholder="tr('Buscar…', 'Search...')"
-                        class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 w-48"
+                        class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:w-48"
                     />
                 </div>
 
-                <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400 sm:p-8">
                     {{ tr('Sin datos para el período seleccionado.', 'No data for the selected period.') }}
                 </div>
 
-                <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                    <table class="min-w-full divide-y divide-gray-100">
+                <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <table class="w-full min-w-[760px] divide-y divide-gray-100">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -286,7 +286,7 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
                                 <td class="px-4 py-4 text-right">
                                     <span
                                         v-if="rowIsDrillable"
-                                        class="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity select-none"
+                                        class="select-none text-xs text-blue-500 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                                     >
                                         {{ tr('Ver detalle', 'View details') }} →
                                     </span>
@@ -311,12 +311,12 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
                     </div>
                 </div>
 
-                <div v-if="!sessions.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                <div v-if="!sessions.length" class="rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400 sm:p-8">
                     {{ tr('Sin sesiones registradas para este período.', 'No sessions registered for this period.') }}
                 </div>
 
-                <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                    <table class="min-w-full divide-y divide-gray-100">
+                <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <table class="w-full min-w-[640px] divide-y divide-gray-100">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Fecha', 'Date') }}</th>
@@ -379,7 +379,7 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
             >
                 <div v-if="showConReporteModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="showConReporteModal = false">
                     <div class="absolute inset-0 bg-black/30" @click="showConReporteModal = false" />
-                    <div class="relative w-full max-w-sm rounded-2xl bg-white shadow-xl border border-gray-200 p-6">
+                    <div class="relative w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-4 shadow-xl sm:p-6">
                         <div class="flex items-start justify-between gap-4 mb-4">
                             <div class="flex items-center gap-2">
                                 <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">

@@ -266,7 +266,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
         <div class="space-y-6">
 
             <!-- Header -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
@@ -278,14 +278,14 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             {{ tr('Hay cambios posteriores a la ultima publicacion. Usa republicar para aplicar ediciones y eliminaciones; usa sincronizar faltantes si solo agregaste eventos nuevos.', 'There are changes after the last publication. Use republish to apply edits and deletions; use sync missing if you only added new events.') }}
                         </p>
                     </div>
-                    <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
                         <!-- Year selector -->
-                        <div class="flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-1 py-1">
+                        <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg border border-gray-300 bg-white px-1 py-1 sm:w-auto">
                             <button
                                 v-for="y in yearOptions" :key="y"
                                 type="button"
                                 :class="[
-                                    'rounded-md px-3 py-1 text-sm font-medium transition-colors',
+                                    'shrink-0 rounded-md px-3 py-1 text-sm font-medium transition-colors',
                                     y === year ? 'bg-red-700 text-white' : 'text-gray-600 hover:text-red-700',
                                 ]"
                                 @click="changeYear(y)"
@@ -295,7 +295,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             :href="pdfHref"
                             target="_blank"
                             rel="noopener"
-                            class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                            class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-center text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 sm:w-auto"
                         >
                             {{ tr('Imprimir PDF', 'Print PDF') }}
                         </a>
@@ -303,7 +303,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             v-if="!isPublished"
                             type="button"
                             :disabled="publishing || syncing || !events.length"
-                            class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
+                            class="w-full rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50 sm:w-auto"
                             @click="publishCalendar"
                         >
                             {{ tr('Publicar calendario', 'Publish calendar') }}
@@ -312,7 +312,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             v-else-if="needsRepublish"
                             type="button"
                             :disabled="publishing || syncing"
-                            class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+                            class="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50 sm:w-auto"
                             @click="publishCalendar"
                         >
                             {{ tr('Republicar cambios', 'Republish changes') }}
@@ -321,7 +321,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             v-if="isPublished"
                             type="button"
                             :disabled="publishing || syncing"
-                            class="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50"
+                            class="w-full rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50 sm:w-auto"
                             @click="syncMissingCalendar"
                         >
                             {{ tr('Sincronizar faltantes', 'Sync missing') }}
@@ -330,14 +330,14 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             v-if="isPublished"
                             type="button"
                             :disabled="publishing || syncing"
-                            class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
+                            class="w-full rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 sm:w-auto"
                             @click="unpublishCalendar"
                         >
                             {{ tr('Despublicar', 'Unpublish') }}
                         </button>
                         <button
                             type="button"
-                            class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 transition-colors"
+                            class="w-full rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-800 sm:w-auto"
                             @click="openCreate"
                         >
                             + {{ tr('Agregar evento', 'Add event') }}
@@ -362,12 +362,12 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                 </div>
             </div>
 
-            <div v-if="needsRepublish" class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+            <div v-if="needsRepublish" class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 sm:px-5">
                 {{ tr('Las asociaciones consultan el calendario de union y los clubes reciben copias publicadas a traves de cada asociacion. Si editaste o eliminaste eventos existentes, usa', 'Associations review the union calendar and clubs receive published copies through each association. If you edited or deleted existing events, use') }} <strong>{{ tr('Republicar cambios', 'Republish changes') }}</strong>. {{ tr('Si solo agregaste eventos nuevos, usa', 'If you only added new events, use') }} <strong>{{ tr('Sincronizar faltantes', 'Sync missing') }}</strong>.
             </div>
 
             <!-- Empty state -->
-            <div v-if="!events.length" class="rounded-2xl border border-dashed border-gray-200 p-12 text-center">
+            <div v-if="!events.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center sm:p-12">
                 <p class="text-sm font-medium text-gray-500">{{ tr('Sin eventos para', 'No events for') }} {{ year }}</p>
                 <p class="mt-1 text-xs text-gray-400">{{ tr('Haz clic en "Agregar evento" para comenzar el plan de trabajo.', 'Click "Add event" to start the workplan.') }}</p>
             </div>
@@ -377,7 +377,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                 <template v-for="[monthNum, monthEvents] in activeMonths" :key="monthNum">
                     <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                         <!-- Month header -->
-                        <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 px-6 py-3">
+                        <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 sm:px-6">
                             <span class="text-sm font-semibold text-gray-700">{{ months[monthNum - 1] }}</span>
                             <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">{{ monthEvents.length }}</span>
                         </div>
@@ -387,7 +387,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             <li
                                 v-for="ev in monthEvents"
                                 :key="ev.id"
-                                class="group flex items-start gap-4 px-6 py-4 hover:bg-gray-50 transition-colors"
+                                class="group flex items-start gap-3 px-4 py-4 transition-colors hover:bg-gray-50 sm:gap-4 sm:px-6"
                             >
                                 <!-- Date column -->
                                 <div class="w-14 shrink-0 text-center">
@@ -439,7 +439,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                 </div>
 
                                 <!-- Actions -->
-                                <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                <div class="flex shrink-0 items-center gap-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                                     <button
                                         type="button"
                                         class="rounded-md px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 transition-colors"
@@ -479,7 +479,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                     <div class="relative w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200 max-h-[90vh] flex flex-col">
 
                         <!-- Modal header -->
-                        <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
+                        <div class="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
                             <h3 class="text-sm font-semibold text-gray-900">
                                 {{ editingEvent ? tr('Editar evento', 'Edit event') : tr('Nuevo evento', 'New event') }}
                             </h3>
@@ -491,7 +491,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                         </div>
 
                         <!-- Modal body -->
-                        <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+                        <div class="flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
 
                             <!-- Title -->
                             <div>
@@ -506,7 +506,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             </div>
 
                             <!-- Type + Mandatory -->
-                            <div class="flex gap-3">
+                            <div class="flex flex-col gap-3 sm:flex-row">
                                 <div class="flex-1">
                                     <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Tipo', 'Type') }} <span class="text-red-500">*</span></label>
                                     <select v-model="form.event_type" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -523,7 +523,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             </div>
 
                             <!-- Dates -->
-                            <div class="grid grid-cols-2 gap-3">
+                            <div class="grid gap-3 sm:grid-cols-2">
                                 <div>
                                     <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Fecha', 'Date') }} <span class="text-red-500">*</span></label>
                                     <input v-model="form.date" type="date" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
@@ -536,7 +536,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             </div>
 
                             <!-- Times -->
-                            <div class="grid grid-cols-2 gap-3">
+                            <div class="grid gap-3 sm:grid-cols-2">
                                 <div>
                                     <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Hora inicio', 'Start time') }}</label>
                                     <input v-model="form.start_time" type="time" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
@@ -593,7 +593,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                         </div>
 
                         <!-- Modal footer -->
-                        <div class="flex justify-end gap-3 border-t border-gray-100 px-6 py-4 shrink-0">
+                        <div class="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-100 px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
                             <button
                                 type="button"
                                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -616,7 +616,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
         </Teleport>
 
         <Modal :show="confirmationModalOpen" max-width="md" @close="closeConfirmationModal">
-            <div class="p-6">
+            <div class="p-4 sm:p-6">
                 <h3 class="text-lg font-semibold text-gray-900">{{ confirmationTitle }}</h3>
                 <p class="mt-3 text-sm leading-6 text-gray-600">{{ confirmationMessage }}</p>
 

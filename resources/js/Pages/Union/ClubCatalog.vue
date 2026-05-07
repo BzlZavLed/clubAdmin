@@ -72,7 +72,7 @@ const submitClass = (clubCatalogId) => {
         <template #title>{{ tr('Catálogo de clubes y clases', 'Club and class catalog') }}</template>
 
         <div class="max-w-5xl mx-auto space-y-6">
-            <section class="rounded-lg border bg-white p-6 shadow-sm space-y-4">
+            <section class="space-y-4 rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <div>
                     <h2 class="text-lg font-semibold text-gray-900">{{ union?.name || tr('Unión', 'Union') }}</h2>
                     <p class="mt-1 text-sm text-gray-600">
@@ -98,7 +98,7 @@ const submitClass = (clubCatalogId) => {
                         <InputError class="mt-2" :message="clubTypeForm.errors.sort_order" />
                     </div>
 
-                    <PrimaryButton :disabled="clubTypeForm.processing || !availableClubTypeOptions.length" class="justify-self-start bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                    <PrimaryButton :disabled="clubTypeForm.processing || !availableClubTypeOptions.length" class="w-full justify-center rounded-md bg-red-600 px-6 py-2 text-white hover:bg-red-700 sm:w-auto md:justify-self-start">
                         {{ tr('Agregar tipo', 'Add type') }}
                     </PrimaryButton>
 
@@ -109,9 +109,9 @@ const submitClass = (clubCatalogId) => {
             </section>
 
             <section class="space-y-4">
-                <article v-for="clubCatalog in props.clubCatalogs" :key="clubCatalog.id" class="rounded-lg border bg-white p-6 shadow-sm">
-                    <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                        <div>
+                <article v-for="clubCatalog in props.clubCatalogs" :key="clubCatalog.id" class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
                             <h3 class="text-base font-semibold text-gray-900">{{ clubCatalog.name }}</h3>
                             <p class="mt-1 text-sm text-gray-600">
                                 {{ tr('Clases de referencia', 'Reference classes') }}: {{ (clubCatalog.class_catalogs || []).length }}
@@ -120,7 +120,7 @@ const submitClass = (clubCatalogId) => {
                                 {{ clubCatalog.club_type }}
                             </p>
                         </div>
-                        <div class="text-sm text-gray-500">
+                        <div class="inline-flex w-fit rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
                             {{ tr('Orden', 'Order') }}: {{ clubCatalog.sort_order }}
                         </div>
                     </div>
@@ -138,13 +138,35 @@ const submitClass = (clubCatalogId) => {
                             <InputError class="mt-2" :message="getClassForm(clubCatalog.id).errors.sort_order" />
                         </div>
 
-                        <PrimaryButton :disabled="getClassForm(clubCatalog.id).processing" class="justify-self-start bg-gray-800 hover:bg-gray-900 text-white px-6 py-2 rounded-md">
+                        <PrimaryButton :disabled="getClassForm(clubCatalog.id).processing" class="w-full justify-center rounded-md bg-gray-800 px-6 py-2 text-white hover:bg-gray-900 sm:w-auto md:justify-self-start">
                             {{ tr('Agregar clase', 'Add class') }}
                         </PrimaryButton>
                     </form>
 
-                    <div class="mt-5 overflow-x-auto">
-                        <table class="min-w-full text-sm">
+                    <div class="mt-5 space-y-3 sm:hidden">
+                        <div v-if="!(clubCatalog.class_catalogs || []).length" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-sm text-gray-500">
+                            {{ tr('Todavía no hay clases cargadas para este tipo de club.', 'There are no classes loaded for this club type yet.') }}
+                        </div>
+
+                        <article
+                            v-for="classCatalog in (clubCatalog.class_catalogs || [])"
+                            :key="classCatalog.id"
+                            class="rounded-lg border border-gray-200 px-3 py-3"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <p class="break-words text-sm font-semibold text-gray-900">{{ classCatalog.name }}</p>
+                                    <p class="mt-1 text-xs text-gray-500">{{ tr('Estado', 'Status') }}: {{ classCatalog.status }}</p>
+                                </div>
+                                <span class="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                                    #{{ classCatalog.sort_order }}
+                                </span>
+                            </div>
+                        </article>
+                    </div>
+
+                    <div class="mt-5 hidden overflow-x-auto sm:block">
+                        <table class="w-full min-w-[520px] text-sm">
                             <thead>
                                 <tr class="border-b text-left text-gray-500">
                                     <th class="pb-2 pr-4 font-medium">{{ tr('Clase', 'Class') }}</th>
@@ -166,7 +188,7 @@ const submitClass = (clubCatalogId) => {
                     </div>
                 </article>
 
-                <section v-if="!props.clubCatalogs.length" class="rounded-lg border bg-white p-6 text-sm text-gray-500 shadow-sm">
+                <section v-if="!props.clubCatalogs.length" class="rounded-lg border bg-white p-4 text-sm text-gray-500 shadow-sm sm:p-6">
                     {{ tr('Todavía no hay tipos de club definidos en este catálogo.', 'There are no club types defined in this catalog yet.') }}
                 </section>
             </section>

@@ -65,7 +65,7 @@ const saveAssociation = (association) => {
         <template #title>{{ tr('Asociaciones', 'Associations') }}</template>
 
         <div class="space-y-6">
-            <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
@@ -78,7 +78,7 @@ const saveAssociation = (association) => {
                     </div>
                     <button
                         type="button"
-                        class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:w-auto sm:shrink-0"
                         @click="showAddForm = !showAddForm"
                     >
                         {{ showAddForm ? tr('Cancelar', 'Cancel') : tr('+ Agregar asociación', '+ Add association') }}
@@ -86,7 +86,7 @@ const saveAssociation = (association) => {
                 </div>
             </section>
 
-            <section v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+            <section v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-6">
                 <h3 class="mb-4 text-sm font-semibold text-blue-900">{{ tr('Nueva asociación', 'New association') }}</h3>
                 <form class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]" @submit.prevent="submitAdd">
                     <div>
@@ -99,14 +99,14 @@ const saveAssociation = (association) => {
                         <InputError class="mt-1" :message="addForm.errors.name" />
                     </div>
                     <div class="self-end">
-                        <PrimaryButton type="submit" :disabled="addForm.processing">
+                        <PrimaryButton type="submit" :disabled="addForm.processing" class="w-full justify-center sm:w-auto">
                             {{ tr('Guardar asociación', 'Save association') }}
                         </PrimaryButton>
                     </div>
                 </form>
             </section>
 
-            <section v-if="!associations.length" class="rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-400 shadow-sm">
+            <section v-if="!associations.length" class="rounded-2xl border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-400 shadow-sm sm:p-8">
                 {{ tr('No hay asociaciones registradas. Agrega la primera.', 'There are no associations registered. Add the first one.') }}
             </section>
 
@@ -114,7 +114,7 @@ const saveAssociation = (association) => {
                 <article
                     v-for="association in associations"
                     :key="association.id"
-                    class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+                    class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5"
                 >
                     <template v-if="editingId !== association.id">
                         <div class="flex items-start justify-between gap-4">
@@ -157,7 +157,7 @@ const saveAssociation = (association) => {
                             <InputError class="mt-1" :message="editForms[association.id].errors.name" />
                         </div>
 
-                        <div class="mt-4 flex justify-end gap-3">
+                        <div class="mt-4 flex flex-wrap justify-end gap-3">
                             <button
                                 type="button"
                                 class="text-sm font-medium text-blue-600 hover:underline"

@@ -191,7 +191,7 @@ const requirementsReportTitle = computed(() => {
         <div class="space-y-5">
 
             <!-- Header card -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="flex flex-wrap items-start justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
@@ -257,7 +257,7 @@ const requirementsReportTitle = computed(() => {
                 <section class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     <button
                         type="button"
-                        class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50"
+                        class="flex w-full items-center justify-between gap-4 px-4 py-4 text-left hover:bg-gray-50 sm:px-5"
                         @click="toggleSection('progress')"
                     >
                         <div>
@@ -269,25 +269,25 @@ const requirementsReportTitle = computed(() => {
                         <span class="text-lg leading-none text-gray-400">{{ isSectionOpen('progress') ? '−' : '+' }}</span>
                     </button>
 
-                    <div v-show="isSectionOpen('progress')" class="border-t border-gray-100 p-5">
+                    <div v-show="isSectionOpen('progress')" class="border-t border-gray-100 p-4 sm:p-5">
                         <!-- ── Rows (union / association / district level) ── -->
                         <div v-if="level !== 'club'" class="space-y-3">
-                            <div class="flex items-center justify-between">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <p class="text-sm font-semibold text-gray-700">{{ levelLabel }}</p>
                                 <input
                                     v-model="rowSearch"
                                     type="search"
                                     :placeholder="tr('Buscar…', 'Search...')"
-                                    class="w-48 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:w-48"
                                 />
                             </div>
 
-                            <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                            <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400 sm:p-8">
                                 {{ tr('Sin datos.', 'No data.') }}
                             </div>
 
-                            <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-                                <table class="min-w-full divide-y divide-gray-100">
+                            <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+                                <table class="w-full min-w-[760px] divide-y divide-gray-100">
                                     <thead class="bg-gray-50">
                                         <tr>
                                             <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -335,7 +335,7 @@ const requirementsReportTitle = computed(() => {
                                             <td class="px-4 py-4 text-right">
                                                 <span
                                                     v-if="rowIsDrillable"
-                                                    class="select-none text-xs text-blue-500 opacity-0 transition-opacity group-hover:opacity-100"
+                                                    class="select-none text-xs text-blue-500 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                                                 >
                                                     {{ tr('Ver detalle', 'View details') }} →
                                                 </span>
@@ -362,16 +362,16 @@ const requirementsReportTitle = computed(() => {
                                     v-model="memberSearch"
                                     type="search"
                                     :placeholder="tr('Buscar miembro…', 'Search member...')"
-                                    class="w-48 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:w-48"
                                 />
                             </div>
 
-                            <div v-if="!filteredMembers.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                            <div v-if="!filteredMembers.length" class="rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400 sm:p-8">
                                 {{ tr('Sin miembros con clase asignada.', 'No members with assigned class.') }}
                             </div>
 
-                            <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-                                <table class="min-w-full divide-y divide-gray-100">
+                            <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+                                <table class="w-full min-w-[720px] divide-y divide-gray-100">
                                     <thead class="bg-gray-50">
                                         <tr>
                                             <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Miembro', 'Member') }}</th>
@@ -412,7 +412,7 @@ const requirementsReportTitle = computed(() => {
                 <section v-if="requirements_report.length" class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     <button
                         type="button"
-                        class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50"
+                        class="flex w-full items-center justify-between gap-4 px-4 py-4 text-left hover:bg-gray-50 sm:px-5"
                         @click="toggleSection('requirements')"
                     >
                         <div>
@@ -422,23 +422,23 @@ const requirementsReportTitle = computed(() => {
                         <span class="text-lg leading-none text-gray-400">{{ isSectionOpen('requirements') ? '−' : '+' }}</span>
                     </button>
 
-                    <div v-show="isSectionOpen('requirements')" class="space-y-3 border-t border-gray-100 p-5">
+                    <div v-show="isSectionOpen('requirements')" class="space-y-3 border-t border-gray-100 p-4 sm:p-5">
                         <div class="flex justify-end">
                             <input
                                 v-model="reqSearch"
                                 type="search"
                                 :placeholder="tr('Buscar requisito…', 'Search requirement...')"
-                                class="w-52 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:w-52"
                             />
                         </div>
 
                         <div v-for="group in reqGrouped" :key="group.club_type + group.class_name" class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                             <button
                                 type="button"
-                                class="flex w-full items-center justify-between gap-3 border-b border-gray-100 bg-gray-50 px-5 py-3 text-left hover:bg-gray-100"
+                                class="flex w-full items-start justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 text-left hover:bg-gray-100 sm:items-center sm:px-5"
                                 @click="toggleSection(`requirements-${group.club_type}-${group.class_name}`)"
                             >
-                                <span class="flex items-center gap-2">
+                                <span class="flex flex-wrap items-center gap-2">
                                     <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">{{ clubTypeLabel(group.club_type) }}</span>
                                     <span class="text-sm font-semibold text-gray-700">{{ group.class_name }}</span>
                                     <span class="text-xs text-gray-400">({{ group.items.length }})</span>
@@ -448,7 +448,7 @@ const requirementsReportTitle = computed(() => {
                                 </span>
                             </button>
                             <div v-show="isSectionOpen(`requirements-${group.club_type}-${group.class_name}`)" class="overflow-x-auto">
-                                <table class="min-w-full divide-y divide-gray-100">
+                                <table class="w-full min-w-[640px] divide-y divide-gray-100">
                                     <thead class="bg-gray-50/50">
                                         <tr>
                                             <th class="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Requisito', 'Requirement') }}</th>

@@ -14,7 +14,7 @@ const { tr } = useLocale()
 <template>
     <PathfinderLayout>
         <div class="space-y-6">
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold text-gray-900">{{ tr('Union', 'Union') }}</h2>
                 <p class="mt-2 text-sm text-gray-600">
                     {{ tr('Acceso inicial habilitado para el nivel union. La definicion completa del rol se puede conectar despues sin rehacer la base.', 'Initial access is enabled for the union level. The full role definition can be connected later without redoing the foundation.') }}

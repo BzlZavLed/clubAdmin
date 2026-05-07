@@ -294,8 +294,8 @@ const formatDateTime = (value) => {
         <template #title>{{ tr('Builder de carpetas', 'Carpeta builder') }}</template>
 
         <div class="max-w-5xl mx-auto space-y-6">
-            <section class="rounded-lg border bg-white p-6 shadow-sm space-y-4">
-                <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <section class="space-y-4 rounded-lg border bg-white p-4 shadow-sm sm:p-6">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union?.name || tr('Unión', 'Union') }}</h2>
                         <p class="text-sm text-gray-600">
@@ -303,7 +303,7 @@ const formatDateTime = (value) => {
                         </p>
                     </div>
 
-                    <a :href="route('union.dashboard')" class="inline-flex items-center rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    <a :href="route('union.dashboard')" class="inline-flex w-full items-center justify-center rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:w-auto">
                         {{ tr('Volver al panel', 'Back to dashboard') }}
                     </a>
                 </div>
@@ -318,7 +318,7 @@ const formatDateTime = (value) => {
                         <InputError class="mt-2" :message="systemForm.errors.evaluation_system" />
                     </div>
 
-                    <PrimaryButton :disabled="systemForm.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                    <PrimaryButton :disabled="systemForm.processing" class="w-full justify-center rounded-md bg-red-600 px-6 py-2 text-white hover:bg-red-700 sm:w-auto">
                         {{ tr('Guardar sistema', 'Save system') }}
                     </PrimaryButton>
                 </form>
@@ -331,7 +331,7 @@ const formatDateTime = (value) => {
                 </div>
             </section>
 
-            <section v-if="!isCarpetas" class="rounded-lg border bg-white p-6 shadow-sm">
+            <section v-if="!isCarpetas" class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h3 class="text-base font-semibold text-gray-900">{{ tr('Workflow en modo honores', 'Workflow in honors mode') }}</h3>
                 <p class="mt-2 text-sm text-gray-600">
                     {{ tr('Mientras la unión esté configurada en honores, el builder anual de carpetas permanece inactivo. Cambia el sistema a carpetas para empezar a definir ciclos anuales.', 'While the union is configured for honors, the annual carpeta builder stays inactive. Switch the system to carpetas to start defining annual cycles.') }}
@@ -339,7 +339,7 @@ const formatDateTime = (value) => {
             </section>
 
             <template v-else>
-                <section class="rounded-lg border bg-white p-6 shadow-sm space-y-4">
+                <section class="space-y-4 rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                     <div>
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Crear ciclo anual', 'Create annual cycle') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">
@@ -354,13 +354,13 @@ const formatDateTime = (value) => {
                             <InputError class="mt-2" :message="yearForm.errors.year" />
                         </div>
 
-                        <PrimaryButton :disabled="yearForm.processing" class="justify-self-start whitespace-normal text-center leading-tight bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                        <PrimaryButton :disabled="yearForm.processing" class="w-full justify-center whitespace-normal rounded-md bg-red-600 px-6 py-2 text-center leading-tight text-white hover:bg-red-700 sm:w-auto md:justify-self-start">
                             {{ tr('Crear borrador anual', 'Create yearly draft') }}
                         </PrimaryButton>
                     </form>
                 </section>
 
-                <section class="rounded-lg border bg-white p-6 shadow-sm">
+                <section class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                     <div>
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Ciclos de carpetas', 'Carpeta cycles') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">
@@ -374,20 +374,21 @@ const formatDateTime = (value) => {
                         </div>
 
                         <article v-for="yearRow in sortedYears" :key="yearRow.id" class="rounded-lg border border-gray-200 p-4">
-                            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div class="min-w-0">
                                     <div class="text-base font-semibold text-gray-900">{{ yearRow.year }}</div>
-                                    <div class="mt-1 text-sm text-gray-600">
-                                        {{ tr('Estado', 'Status') }}: {{ yearRow.status }} |
-                                        {{ tr('Publicado', 'Published') }}: {{ formatDateTime(yearRow.published_at) }}
+                                    <div class="mt-1 flex flex-col gap-1 text-sm text-gray-600 sm:block">
+                                        <span>{{ tr('Estado', 'Status') }}: {{ yearRow.status }}</span>
+                                        <span class="hidden sm:inline"> | </span>
+                                        <span>{{ tr('Publicado', 'Published') }}: {{ formatDateTime(yearRow.published_at) }}</span>
                                     </div>
                                 </div>
 
-                                <div class="flex flex-wrap justify-end gap-3 text-sm">
-                                    <button v-if="yearRow.status === 'draft'" type="button" class="text-blue-600 hover:underline" @click="publishYear(yearRow)">
+                                <div class="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
+                                    <button v-if="yearRow.status === 'draft'" type="button" class="rounded border border-blue-200 px-3 py-2 text-blue-600 hover:bg-blue-50 sm:border-0 sm:px-0 sm:py-0 sm:hover:bg-transparent sm:hover:underline" @click="publishYear(yearRow)">
                                         {{ tr('Publicar', 'Publish') }}
                                     </button>
-                                    <button v-if="yearRow.status !== 'archived'" type="button" class="text-amber-600 hover:underline" @click="archiveYear(yearRow)">
+                                    <button v-if="yearRow.status !== 'archived'" type="button" class="rounded border border-amber-200 px-3 py-2 text-amber-600 hover:bg-amber-50 sm:border-0 sm:px-0 sm:py-0 sm:hover:bg-transparent sm:hover:underline" @click="archiveYear(yearRow)">
                                         {{ tr('Archivar', 'Archive') }}
                                     </button>
                                 </div>
@@ -399,9 +400,9 @@ const formatDateTime = (value) => {
                                 </div>
 
                                 <div v-else class="mt-3 space-y-5">
-                                    <section v-for="clubCatalog in props.clubCatalogs" :key="`${yearRow.id}-club-${clubCatalog.id}`" class="rounded-lg border border-gray-100 bg-gray-50 p-4">
-                                        <div class="flex items-center justify-between gap-3">
-                                            <div>
+                                    <section v-for="clubCatalog in props.clubCatalogs" :key="`${yearRow.id}-club-${clubCatalog.id}`" class="rounded-lg border border-gray-100 bg-gray-50 p-3 sm:p-4">
+                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <div class="min-w-0">
                                                 <h4 class="text-sm font-semibold uppercase tracking-wide text-gray-700">{{ clubCatalog.name }}</h4>
                                                 <p class="mt-1 text-xs text-gray-500">
                                                     {{ tr('Clases de referencia', 'Reference classes') }}: {{ (clubCatalog.class_catalogs || []).length }}
@@ -417,10 +418,10 @@ const formatDateTime = (value) => {
                                             <article
                                                 v-for="classCatalog in (clubCatalog.class_catalogs || [])"
                                                 :key="`${yearRow.id}-class-${classCatalog.id}`"
-                                                class="rounded-lg border border-gray-200 bg-white p-4"
+                                                class="rounded-lg border border-gray-200 bg-white p-3 sm:p-4"
                                             >
-                                                <div class="flex items-start justify-between gap-3">
-                                                    <div>
+                                                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                    <div class="min-w-0">
                                                         <h5 class="text-sm font-semibold text-gray-900">{{ classCatalog.name }}</h5>
                                                         <p class="mt-1 text-xs text-gray-500">
                                                             {{ tr('Requisitos', 'Requirements') }}:
@@ -430,7 +431,7 @@ const formatDateTime = (value) => {
 
                                                     <button
                                                         type="button"
-                                                        class="text-sm text-blue-600 hover:underline"
+                                                        class="w-full rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 sm:w-auto sm:border-0 sm:px-0 sm:py-0 sm:font-normal sm:hover:bg-transparent sm:hover:underline"
                                                         @click="openRequirementModal(yearRow, clubCatalog, classCatalog)"
                                                     >
                                                         {{ tr('Agregar requisito', 'Add requirement') }}
@@ -441,8 +442,54 @@ const formatDateTime = (value) => {
                                                     {{ tr('Todavía no hay requisitos para esta clase.', 'There are no requirements for this class yet.') }}
                                                 </div>
 
-                                                <div v-else class="mt-3 overflow-x-auto">
-                                                    <table class="min-w-full text-sm">
+                                                <div v-else class="mt-3 space-y-3 sm:hidden">
+                                                    <article
+                                                        v-for="requirement in getRequirementsForClass(yearRow, clubCatalog, classCatalog)"
+                                                        :key="requirement.id"
+                                                        class="rounded-lg border border-gray-200 px-3 py-3"
+                                                    >
+                                                        <div class="flex items-start justify-between gap-3">
+                                                            <div class="min-w-0">
+                                                                <p class="break-words text-sm font-semibold text-gray-900">{{ requirement.title }}</p>
+                                                                <p v-if="requirement.description" class="mt-1 break-words text-xs text-gray-500">{{ requirement.description }}</p>
+                                                            </div>
+                                                            <span class="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                                                                #{{ requirement.sort_order }}
+                                                            </span>
+                                                        </div>
+
+                                                        <dl class="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-600">
+                                                            <div class="flex items-start justify-between gap-3">
+                                                                <dt class="font-medium text-gray-500">{{ tr('Tipo', 'Type') }}</dt>
+                                                                <dd class="text-right text-gray-800">{{ requirement.requirement_type }}</dd>
+                                                            </div>
+                                                            <div class="flex items-start justify-between gap-3">
+                                                                <dt class="font-medium text-gray-500">{{ tr('Validación', 'Validation') }}</dt>
+                                                                <dd class="text-right text-gray-800">{{ requirement.validation_mode }}</dd>
+                                                            </div>
+                                                            <div class="flex items-start justify-between gap-3">
+                                                                <dt class="font-medium text-gray-500">{{ tr('Evidencias', 'Evidence') }}</dt>
+                                                                <dd class="max-w-[60%] break-words text-right text-gray-800">
+                                                                    {{ Array.isArray(requirement.allowed_evidence_types) && requirement.allowed_evidence_types.length ? requirement.allowed_evidence_types.join(', ') : '—' }}
+                                                                </dd>
+                                                            </div>
+                                                        </dl>
+
+                                                        <div class="mt-3 border-t border-gray-100 pt-3">
+                                                            <button
+                                                                type="button"
+                                                                class="w-full rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                                                                :disabled="deletingRequirementId === requirement.id"
+                                                                @click="requestDeleteRequirement(requirement)"
+                                                            >
+                                                                {{ deletingRequirementId === requirement.id ? tr('Eliminando...', 'Deleting...') : tr('Eliminar', 'Delete') }}
+                                                            </button>
+                                                        </div>
+                                                    </article>
+                                                </div>
+
+                                                <div v-if="getRequirementsForClass(yearRow, clubCatalog, classCatalog).length" class="mt-3 hidden overflow-x-auto sm:block">
+                                                    <table class="w-full min-w-[760px] text-sm">
                                                         <thead>
                                                             <tr class="border-b text-left text-gray-500">
                                                                 <th class="pb-2 pr-4 font-medium">#</th>
@@ -495,7 +542,7 @@ const formatDateTime = (value) => {
         </div>
 
         <Modal :show="confirmationModalOpen" max-width="md" @close="closeConfirmationModal">
-            <div class="p-6">
+            <div class="p-4 sm:p-6">
                 <h3 class="text-lg font-semibold text-gray-900">
                     {{ confirmationTitle }}
                 </h3>
@@ -530,7 +577,7 @@ const formatDateTime = (value) => {
         </Modal>
 
         <Modal :show="requirementModalOpen" max-width="2xl" @close="closeRequirementModal">
-            <div class="p-6">
+            <div class="p-4 sm:p-6">
                 <div class="flex items-start justify-between gap-4">
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900">
@@ -546,7 +593,7 @@ const formatDateTime = (value) => {
                             {{ tr('No hay catálogo de clubes y clases todavía. Crea ese catálogo primero desde el menú lateral.', 'There is no club/class catalog yet. Create it first from the sidebar menu.') }}
                         </p>
                     </div>
-                    <button type="button" class="text-sm text-gray-500 hover:text-gray-700" @click="closeRequirementModal">
+                    <button type="button" class="shrink-0 text-sm text-gray-500 hover:text-gray-700" @click="closeRequirementModal">
                         {{ tr('Cerrar', 'Close') }}
                     </button>
                 </div>
@@ -616,11 +663,11 @@ const formatDateTime = (value) => {
                         <InputError class="mt-2" :message="requirementForm.errors.evidence_instructions" />
                     </div>
 
-                    <div class="flex items-center justify-end gap-3">
+                    <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
                         <button type="button" class="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="closeRequirementModal">
                             {{ tr('Cerrar', 'Close') }}
                         </button>
-                        <PrimaryButton :disabled="savingRequirement || !activeClubCatalog || !activeClassCatalog" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                        <PrimaryButton :disabled="savingRequirement || !activeClubCatalog || !activeClassCatalog" class="justify-center rounded-md bg-red-600 px-6 py-2 text-white hover:bg-red-700">
                             {{ savingRequirement ? tr('Guardando...', 'Saving...') : tr('Guardar requisito', 'Save requirement') }}
                         </PrimaryButton>
                     </div>
