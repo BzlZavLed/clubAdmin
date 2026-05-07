@@ -248,6 +248,8 @@ class SystemSmokeTest extends TestCase
             'home_address' => '123 Test St',
             'email_address' => 'parent@example.com',
             'signature' => 'Parent',
+            'is_sda' => true,
+            'baptism_date' => '2025-01-01',
         ]);
         $memberPost->assertStatus(302);
 

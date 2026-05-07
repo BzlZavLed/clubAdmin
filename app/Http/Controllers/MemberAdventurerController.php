@@ -20,12 +20,14 @@ use App\Models\Member;
 use App\Models\ClubCarpetaClassActivation;
 use App\Models\ClubClass;
 use App\Models\Staff;
+use App\Models\MemberPastoralCare;
 use App\Support\ClubHelper;
 use App\Models\ClassMemberPathfinder;
 use App\Services\PaymentReceiptService;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 use DB;
 use Auth;
@@ -97,7 +99,10 @@ class MemberAdventurerController extends Controller
                 'signed_at' => 'nullable|date',
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
+                'is_sda' => 'nullable|boolean',
+                'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
             ]);
+            $validated = $this->memberDetailPayload($validated);
 
             $validated['club_id'] = $club->id;
             $validated['club_name'] = $club->club_name;
@@ -115,9 +120,11 @@ class MemberAdventurerController extends Controller
                 'parent_id' => $parentId,
                 'assigned_staff_id' => null,
                 'status' => 'active',
+                ...$this->spiritualProfilePayload($request),
             ]);
 
             $tempMember->update(['member_id' => $member->id]);
+            $this->syncPastoralCareForMember($member->fresh(), $club);
 
             if ($request->boolean('mark_insurance_paid')) {
                 $this->handleInsurancePayment($club, $tempMember, $member);
@@ -153,7 +160,10 @@ class MemberAdventurerController extends Controller
                 'signature' => 'required|string|max:255',
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
+                'is_sda' => 'nullable|boolean',
+                'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
             ]);
+            $validated = $this->memberDetailPayload($validated);
 
             $validated['status'] = 'active';
             $validated['club_id'] = $club->id;
@@ -174,8 +184,11 @@ class MemberAdventurerController extends Controller
                     'parent_id' => $parentId,
                     'assigned_staff_id' => null,
                     'status' => 'active',
+                    ...$this->spiritualProfilePayload($request),
                 ]
             );
+            $memberRecord->update($this->spiritualProfilePayload($request));
+            $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
 
             if ($request->boolean('mark_insurance_paid')) {
                 $this->handleInsurancePayment($club, $member, $memberRecord);
@@ -378,7 +391,10 @@ class MemberAdventurerController extends Controller
                 'signed_at' => 'nullable|date',
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
+                'is_sda' => 'nullable|boolean',
+                'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
             ]);
+            $validated = $this->memberDetailPayload($validated);
 
             $validated['club_name'] = $club->club_name ?? null;
             $validated['director_name'] = $directorName;
@@ -396,6 +412,9 @@ class MemberAdventurerController extends Controller
                 ->first();
 
             if ($memberRecord) {
+                $memberRecord->update($this->spiritualProfilePayload($request));
+                $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
+
                 if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
                     $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
                 }
@@ -430,7 +449,10 @@ class MemberAdventurerController extends Controller
             'signature' => 'required|string|max:255',
             'mark_insurance_paid' => 'nullable|boolean',
             'mark_enrollment_paid' => 'nullable|boolean',
+            'is_sda' => 'nullable|boolean',
+            'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
         ]);
+        $validated = $this->memberDetailPayload($validated);
 
         $validated['club_id'] = $club->id;
         $validated['club_name'] = $club->club_name ?? $validated['club_name'];
@@ -449,6 +471,9 @@ class MemberAdventurerController extends Controller
             ->first();
 
         if ($memberRecord) {
+            $memberRecord->update($this->spiritualProfilePayload($request));
+            $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
+
             if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
                 $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
             }
@@ -459,6 +484,60 @@ class MemberAdventurerController extends Controller
         }
 
         return redirect()->back()->with('success', 'Adventurer member updated successfully.');
+    }
+
+    protected function memberDetailPayload(array $validated): array
+    {
+        return collect($validated)
+            ->except(['is_sda', 'baptism_date', 'mark_insurance_paid', 'mark_enrollment_paid'])
+            ->all();
+    }
+
+    protected function spiritualProfilePayload(Request $request): array
+    {
+        $isSda = $request->boolean('is_sda', true);
+
+        return [
+            'is_sda' => $isSda,
+            'baptism_date' => $isSda ? ($request->input('baptism_date') ?: null) : null,
+        ];
+    }
+
+    protected function syncPastoralCareForMember(Member $member, Club $club): void
+    {
+        $districtId = $club->district_id;
+        if (!$districtId && $club->church_id) {
+            $districtId = \App\Models\Church::query()
+                ->whereKey($club->church_id)
+                ->value('district_id');
+        }
+
+        if (!$member->is_sda) {
+            MemberPastoralCare::query()->updateOrCreate(
+                ['member_id' => $member->id],
+                [
+                    'district_id' => $districtId,
+                    'status' => 'active',
+                    'baptized_at' => null,
+                    'new_believer_until' => null,
+                    'updated_by' => auth()->id(),
+                ]
+            );
+
+            return;
+        }
+
+        if ($member->baptism_date) {
+            MemberPastoralCare::query()
+                ->where('member_id', $member->id)
+                ->update([
+                    'district_id' => $districtId,
+                    'baptized_at' => $member->baptism_date,
+                    'new_believer_until' => Carbon::parse($member->baptism_date)->addMonthsNoOverflow(18)->toDateString(),
+                    'status' => 'new_believer',
+                    'updated_by' => auth()->id(),
+                ]);
+        }
     }
 
     public function updateForParent(Request $request, $id)
@@ -892,16 +971,20 @@ class MemberAdventurerController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($m) use ($memberRows) {
-                $memberRow = $memberRows->firstWhere('id_data', $m->id);
+                $memberRow = $memberRows->first(fn ($row) => $row->type === 'adventurers' && (int) $row->id_data === (int) $m->id);
                 $memberId = optional($memberRow)->id;
                 $m->member_id = $memberId;
                 $m->current_class_id = optional($memberRow)->class_id;
+                $m->is_sda = (bool) (optional($memberRow)->is_sda ?? true);
+                $m->baptism_date = optional(optional($memberRow)->baptism_date)->toDateString()
+                    ?? optional($memberRow)->baptism_date;
                 return $m;
             });
 
         $pathfinderRows = MemberPathfinder::with('insuranceCard')->whereIn('id', $tempPathfinderIds)->get()
             ->map(function ($row) use ($memberRows, $pathfinderAssignments) {
-                $memberRow = $memberRows->firstWhere('id_data', $row->id);
+                $memberRow = $memberRows->first(fn ($memberRow) => in_array($memberRow->type, ['pathfinders', 'temp_pathfinder'], true)
+                    && (int) $memberRow->id_data === (int) $row->id);
                 $memberId = optional($memberRow)->id;
                 $age = null;
                 if ($row->birthdate) {
@@ -936,6 +1019,9 @@ class MemberAdventurerController extends Controller
                     'member_id' => $memberId,
                     'current_class_id' => optional($memberRow)->class_id,
                     'member_type' => 'temp_pathfinder',
+                    'is_sda' => (bool) (optional($memberRow)->is_sda ?? true),
+                    'baptism_date' => optional(optional($memberRow)->baptism_date)->toDateString()
+                        ?? optional($memberRow)->baptism_date,
                     'applicant_name' => $row->applicant_name,
                     'birthdate' => $row->birthdate,
                     'age' => $age,

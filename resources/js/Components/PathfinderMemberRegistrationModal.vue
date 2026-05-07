@@ -61,6 +61,8 @@ const form = useForm({
     signed_at: '',
     mark_insurance_paid: false,
     mark_enrollment_paid: false,
+    is_sda: true,
+    baptism_date: '',
 })
 
 const insuranceAmount = computed(() => Number(props.selectedClub?.insurance_payment_amount || 0))
@@ -91,6 +93,8 @@ const resetForm = () => {
     fillClubFields()
     form.mark_insurance_paid = false
     form.mark_enrollment_paid = false
+    form.is_sda = true
+    form.baptism_date = ''
 }
 
 const populateForEdit = (member) => {
@@ -137,6 +141,8 @@ const populateForEdit = (member) => {
     form.signed_at = member.signed_at ? String(member.signed_at).slice(0, 10) : ''
     form.mark_insurance_paid = Boolean(member.insurance_paid)
     form.mark_enrollment_paid = Boolean(member.enrollment_paid)
+    form.is_sda = member.is_sda !== false
+    form.baptism_date = member.baptism_date ? String(member.baptism_date).slice(0, 10) : ''
     showError.value = false
     form.clearErrors()
 }
@@ -148,6 +154,12 @@ watch(() => props.selectedClub, () => {
 watch(() => props.show, (isOpen) => {
     if (isOpen) {
         populateForEdit(props.editingMember)
+    }
+})
+
+watch(() => form.is_sda, (isSda) => {
+    if (!isSda) {
+        form.baptism_date = ''
     }
 })
 
@@ -212,6 +224,8 @@ const onSubmit = () => {
         signed_at: form.signed_at,
         mark_insurance_paid: form.mark_insurance_paid,
         mark_enrollment_paid: form.mark_enrollment_paid,
+        is_sda: form.is_sda,
+        baptism_date: form.baptism_date,
     }
 
     console.log('Submitting Pathfinder member payload', payload)
@@ -430,6 +444,21 @@ const onSubmit = () => {
                             <label class="mb-1 block text-sm font-medium text-gray-700">Fecha</label>
                             <input v-model="form.signed_at" type="date" class="w-full rounded border p-2" />
                         </div>
+                    </div>
+                </section>
+
+                <section class="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-blue-900">Estado espiritual</h3>
+                    <label class="flex items-start gap-3 rounded border bg-white px-3 py-2 text-sm text-gray-700">
+                        <input v-model="form.is_sda" type="checkbox" class="mt-1 h-4 w-4 accent-blue-600" />
+                        <span>
+                            <span class="block font-medium text-gray-900">Miembro bautizado de la Iglesia Adventista del Septimo Dia</span>
+                            <span class="text-gray-500">Si no esta marcado, aparecera en el modulo distrital de cuidado pastoral.</span>
+                        </span>
+                    </label>
+                    <div v-if="form.is_sda" class="mt-3">
+                        <label class="mb-1 block text-sm font-medium text-gray-700">Fecha de bautismo *</label>
+                        <input v-model="form.baptism_date" type="date" class="w-full rounded border p-2 text-sm" />
                     </div>
                 </section>
 

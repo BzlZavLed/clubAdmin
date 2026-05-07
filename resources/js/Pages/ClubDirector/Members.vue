@@ -328,6 +328,12 @@ const paymentBadgeClass = (paid) => (
         : 'inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700'
 )
 
+const sdaBadgeClass = (isSda) => (
+    isSda
+        ? 'inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700'
+        : 'inline-flex rounded-full bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700'
+)
+
 const normalizedMemberSearch = computed(() => memberSearch.value.trim().toLowerCase())
 
 const filteredMembers = computed(() => {
@@ -504,6 +510,7 @@ watch(filteredMembers, () => {
                         <tr>
                             <th class="p-2 text-left"></th>
                             <th class="p-2 text-left">Nombre</th>
+                            <th class="p-2 text-left">SDA</th>
                             <th class="p-2 text-left">Direccion</th>
                             <th class="p-2 text-left">{{ progressColumnLabel }}</th>
                             <th class="p-2 text-left">Inscripción</th>
@@ -522,6 +529,11 @@ watch(filteredMembers, () => {
                                         @change="() => toggleSelectMember(member.id)" />
                                 </td>
                                 <td class="p-2 font-semibold">{{ member.applicant_name }}</td>
+                                <td class="p-2">
+                                    <span :class="sdaBadgeClass(member.is_sda !== false)">
+                                        {{ member.is_sda !== false ? 'SDA' : 'Cuidado pastoral' }}
+                                    </span>
+                                </td>
                                 <td class="p-2">{{ member.home_address }}</td>
                                 <td class="p-2">{{ lastCompletedDisplay(member) }}</td>
                                 <td class="p-2">
@@ -569,7 +581,7 @@ watch(filteredMembers, () => {
 
                             <!-- Expandable Child Row -->
                             <tr v-if="expandedRows.has(member.id)" class="bg-gray-50 border-t">
-                                <td colspan="8" class="p-4">
+                                <td colspan="9" class="p-4">
                                     <div v-if="member.member_type === 'temp_pathfinder'" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
                                         <div><strong>Fecha de nacimiento:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
                                         <div><strong>Edad:</strong> {{ member.age ?? '—' }}</div>
@@ -593,6 +605,8 @@ watch(filteredMembers, () => {
                                         <div><strong>Numero de poliza:</strong> {{ member.insurance_number || '—' }}</div>
                                         <div><strong>Inscripción:</strong> {{ member.enrollment_paid ? 'Pagada' : 'Pendiente' }}</div>
                                         <div><strong>Seguro:</strong> {{ member.insurance_paid ? 'Pagado' : 'Pendiente' }}</div>
+                                        <div><strong>Miembro SDA:</strong> {{ member.is_sda !== false ? 'Si' : 'No' }}</div>
+                                        <div><strong>Fecha de bautismo:</strong> {{ member.baptism_date ? formatDate(member.baptism_date) : '—' }}</div>
                                         <div class="md:col-span-2">
                                             <strong>Tarjeta de seguro:</strong>
                                             <span v-if="member.insurance_card_url">
@@ -623,6 +637,8 @@ watch(filteredMembers, () => {
                                         <div><strong>Contacto de emergencia:</strong> {{ member.emergency_contact }}</div>
                                         <div><strong>Inscripción:</strong> {{ member.enrollment_paid ? 'Pagada' : 'Pendiente' }}</div>
                                         <div><strong>Seguro:</strong> {{ member.insurance_paid ? 'Pagado' : 'Pendiente' }}</div>
+                                        <div><strong>Miembro SDA:</strong> {{ member.is_sda !== false ? 'Si' : 'No' }}</div>
+                                        <div><strong>Fecha de bautismo:</strong> {{ member.baptism_date ? formatDate(member.baptism_date) : '—' }}</div>
                                         <div><strong>Alergias:</strong> {{ member.allergies }}</div>
                                         <div><strong>Restricciones fisicas:</strong> {{ member.physical_restrictions }}
                                         </div>
@@ -635,7 +651,7 @@ watch(filteredMembers, () => {
                             </tr>
                         </template>
                         <tr v-if="paginatedMembers.length === 0">
-                            <td colspan="8" class="p-4 text-center text-gray-500">
+                            <td colspan="9" class="p-4 text-center text-gray-500">
                                 No se encontraron miembros con ese criterio.
                             </td>
                         </tr>

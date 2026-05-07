@@ -54,6 +54,7 @@ use App\Http\Controllers\UnionController;
 use App\Http\Controllers\UnionWorkplanController;
 use App\Http\Controllers\AssociationController;
 use App\Http\Controllers\DistrictController;
+use App\Http\Controllers\DistrictPastoralCareController;
 use App\Http\Controllers\DocumentValidationController;
 use App\Http\Controllers\InvestitureRequestController;
 use App\Models\Association;
@@ -130,6 +131,10 @@ Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secreta
     Route::post('/district/clubs', [DistrictController::class, 'storeClub'])->name('district.clubs.store');
     Route::post('/district/clubs/{club}/director', [DistrictController::class, 'storeClubDirector'])->name('district.clubs.director.store');
     Route::patch('/district/clubs/{club}/members/{member}/insurance', [DistrictController::class, 'toggleMemberInsurance'])->name('district.clubs.members.insurance');
+    Route::get('/district/pastoral-care', [DistrictPastoralCareController::class, 'index'])->name('district.pastoral-care');
+    Route::patch('/district/pastoral-care/{member}', [DistrictPastoralCareController::class, 'update'])->name('district.pastoral-care.update');
+    Route::post('/district/pastoral-care/{member}/notes', [DistrictPastoralCareController::class, 'storeNote'])->name('district.pastoral-care.notes.store');
+    Route::delete('/district/pastoral-care/notes/{note}', [DistrictPastoralCareController::class, 'destroyNote'])->name('district.pastoral-care.notes.destroy');
     Route::get('/district/workplan', [DistrictController::class, 'workplan'])->name('district.workplan');
     Route::post('/district/workplan/publish', [DistrictController::class, 'publishWorkplan'])->name('district.workplan.publish');
     Route::post('/district/workplan/unpublish', [DistrictController::class, 'unpublishWorkplan'])->name('district.workplan.unpublish');

@@ -12,6 +12,7 @@ import {
     Cog6ToothIcon,
     ChartBarIcon,
     ClipboardDocumentListIcon,
+    HeartIcon,
 } from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
 
@@ -74,6 +75,7 @@ const sections = computed(() => {
                     { name: 'Panel', href: '/district/dashboard', route: 'district.dashboard', icon: HomeIcon },
                     { name: 'Iglesias', href: '/district/churches', route: 'district.churches', icon: BuildingLibraryIcon },
                     { name: 'Clubes', href: '/district/clubs', route: 'district.clubs', icon: UserGroupIcon },
+                    { name: 'Cuidado pastoral', href: '/district/pastoral-care', route: 'district.pastoral-care', icon: HeartIcon },
                     { name: 'Plan de trabajo', href: '/district/workplan', route: 'district.workplan', icon: ClipboardDocumentListIcon },
                     { name: 'Eventos', href: '/events', route: 'events.index', icon: CalendarDaysIcon },
                     ...(evaluationSystem.value === 'carpetas' ? [

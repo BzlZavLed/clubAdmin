@@ -14,6 +14,13 @@ class Member extends Model
         'parent_id',
         'assigned_staff_id',
         'status',
+        'is_sda',
+        'baptism_date',
+    ];
+
+    protected $casts = [
+        'is_sda' => 'boolean',
+        'baptism_date' => 'date',
     ];
 
     public function club()
@@ -24,5 +31,20 @@ class Member extends Model
     public function class()
     {
         return $this->belongsTo(ClubClass::class, 'class_id');
+    }
+
+    public function pastoralCare()
+    {
+        return $this->hasOne(MemberPastoralCare::class);
+    }
+
+    public function notes()
+    {
+        return $this->hasMany(MemberNote::class)->latest();
+    }
+
+    public function mentoredPastoralCare()
+    {
+        return $this->hasMany(MemberPastoralCare::class, 'mentor_member_id');
     }
 }
