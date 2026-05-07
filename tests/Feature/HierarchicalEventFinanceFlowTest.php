@@ -7,9 +7,12 @@ use App\Models\BankInfo;
 use App\Models\Church;
 use App\Models\Club;
 use App\Models\District;
+use App\Models\DocumentValidation;
 use App\Models\Event;
 use App\Models\EventClubSettlement;
 use App\Models\Expense;
+use App\Models\EventTask;
+use App\Models\EventTaskAssignment;
 use App\Models\Member;
 use App\Models\MemberPathfinder;
 use App\Models\Payment;
@@ -451,6 +454,109 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $this->assertSame(35.0, $rosterAfterOptional['optional_paid']);
         $this->assertSame('paid', $rosterAfterOptional['optional_status']);
         $this->assertTrue($rosterAfterOptional['optional_components'][0]['is_paid']);
+
+        $overdueClubTask = EventTask::create([
+            'event_id' => $event->id,
+            'title' => 'Cargar permisos medicos',
+            'description' => 'Tarea vencida usada para validar estado de preparacion.',
+            'due_at' => now()->subDay(),
+            'status' => 'todo',
+            'responsibility_level' => 'club',
+        ]);
+        EventTaskAssignment::create([
+            'event_task_id' => $overdueClubTask->id,
+            'scope_type' => 'club',
+            'scope_id' => $club->id,
+            'status' => 'todo',
+        ]);
+
+        $readinessResponse = $this->actingAs($associationDirector)
+            ->get(route('events.readiness', $event))
+            ->assertOk();
+        $readiness = $readinessResponse->viewData('page')['props']['readiness'];
+        $this->assertSame(1, $readiness['totals']['clubs']);
+        $this->assertSame(0, $readiness['totals']['blocked_clubs']);
+        $this->assertSame(1, $readiness['totals']['enrolled_members']);
+        $this->assertSame('placeholder', $readiness['reminder_processor']['status']);
+        $this->assertNotEmpty($readiness['reminders']);
+        $this->assertSame('not_ready', $readiness['closeout']['status']);
+        $this->assertSame('Pendientes por completar', $readiness['clubs'][0]['status_label']);
+        $taskBlocker = collect($readiness['clubs'][0]['blockers'])->firstWhere('type', 'tasks_pending');
+        $this->assertSame('pending', $taskBlocker['severity']);
+        $financialReport = $readiness['financial_report'];
+        $this->assertEqualsCanonicalizing(['Inscripción', 'Camiseta'], collect($financialReport['components'])->pluck('label')->all());
+        $this->assertSame(1, $financialReport['totals']['clubs']);
+        $this->assertSame(1, $financialReport['totals']['participants']);
+        $this->assertSame(85.0, $financialReport['totals']['paid_amount']);
+        $financeClub = collect($financialReport['clubs'])->firstWhere('club_id', $club->id);
+        $registrationComponent = collect($financialReport['components'])->firstWhere('label', 'Inscripción');
+        $shirtComponent = collect($financialReport['components'])->firstWhere('label', 'Camiseta');
+        $this->assertSame(50.0, $financeClub['component_amounts'][(string) $registrationComponent['id']]['paid_amount']);
+        $this->assertSame(35.0, $financeClub['component_amounts'][(string) $shirtComponent['id']]['paid_amount']);
+        $financeParticipant = collect($financialReport['participants'])->firstWhere('member_id', $member->id);
+        $this->assertSame(50.0, $financeParticipant['component_amounts'][(string) $registrationComponent['id']]['paid_amount']);
+        $this->assertSame(35.0, $financeParticipant['component_amounts'][(string) $shirtComponent['id']]['paid_amount']);
+
+        $readinessPdfResponse = $this->actingAs($associationDirector)
+            ->get(route('events.readiness.pdf', $event))
+            ->assertOk();
+        $this->assertStringContainsString('application/pdf', $readinessPdfResponse->headers->get('content-type'));
+        $this->assertTrue(DocumentValidation::query()->where('document_type', 'event_readiness_report')->exists());
+
+        $financialPdfResponse = $this->actingAs($associationDirector)
+            ->get(route('events.readiness.financial.pdf', ['event' => $event, 'include_targeted' => 0, 'include_breakdown' => 0]))
+            ->assertOk();
+        $this->assertStringContainsString('application/pdf', $financialPdfResponse->headers->get('content-type'));
+        $this->assertTrue(DocumentValidation::query()->where('document_type', 'event_financial_report')->exists());
+        $financialValidation = DocumentValidation::query()->where('document_type', 'event_financial_report')->latest('id')->firstOrFail();
+        $this->assertFalse((bool) data_get($financialValidation->document_snapshot, 'snapshot.include_participant_breakdown'));
+    }
+
+    public function test_readiness_marks_targeted_club_with_no_activity_as_attention_critical(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+
+        $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
+        [, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+
+        $associationDirector = User::factory()->create([
+            'profile_type' => 'association_youth_director',
+            'role_key' => 'association_youth_director',
+            'scope_type' => 'association',
+            'scope_id' => $association->id,
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $event = $this->createHierarchicalEvent(
+            $associationDirector,
+            'association',
+            $association->id,
+            [$club],
+            ['pathfinders'],
+            'Association Camporee No Activity',
+            [
+                ['label' => 'Inscripción', 'amount' => 50, 'is_required' => true],
+            ],
+            true
+        );
+
+        $readiness = $this->actingAs($associationDirector)
+            ->get(route('events.readiness', $event))
+            ->assertOk()
+            ->viewData('page')['props']['readiness'];
+
+        $this->assertSame(1, $readiness['totals']['blocked_clubs']);
+        $this->assertSame('Atencion critica requerida', $readiness['clubs'][0]['status_label']);
+        $signupBlocker = collect($readiness['clubs'][0]['blockers'])->firstWhere('type', 'signup_pending');
+        $this->assertSame('blocking', $signupBlocker['severity']);
+        $this->assertSame('Club sin avance', $signupBlocker['label']);
+        $this->assertSame(1, $readiness['financial_report']['totals']['clubs']);
+        $this->assertSame(0.0, $readiness['financial_report']['totals']['paid_amount']);
+        $this->assertSame($club->id, $readiness['financial_report']['clubs'][0]['club_id']);
     }
 
     public function test_owner_participant_summary_counts_required_payment_as_member_enrollment_without_manual_confirmation(): void
@@ -564,6 +670,10 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             ],
             true
         );
+        $event->targetClubs()->updateExistingPivot($club->id, [
+            'signup_status' => 'signed_up',
+            'signed_up_at' => now(),
+        ]);
 
         $this->actingAs($clubDirector)
             ->postJson(route('event-participants.store', $event), [
@@ -586,6 +696,15 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $this->assertTrue($beforeRosterStaff['is_confirmed']);
         $this->assertFalse($beforeRosterStaff['is_enrolled']);
         $this->assertSame(50.0, $beforeRosterStaff['required_expected']);
+
+        $readinessBeforePayment = $this->actingAs($associationDirector)
+            ->get(route('events.readiness', $event))
+            ->assertOk()
+            ->viewData('page')['props']['readiness'];
+        $this->assertSame(0, $readinessBeforePayment['totals']['blocked_clubs']);
+        $this->assertSame('Pendientes por completar', $readinessBeforePayment['clubs'][0]['status_label']);
+        $staffPaymentBlocker = collect($readinessBeforePayment['clubs'][0]['blockers'])->firstWhere('type', 'staff_payment_missing');
+        $this->assertSame('pending', $staffPaymentBlocker['severity']);
 
         $concept = PaymentConcept::query()
             ->where('event_id', $event->id)

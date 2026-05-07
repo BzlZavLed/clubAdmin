@@ -34,6 +34,7 @@ use App\Http\Controllers\ClubSettingsController;
 use App\Http\Controllers\ClubTreasuryController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventClubSettlementController;
+use App\Http\Controllers\EventReadinessController;
 use App\Http\Controllers\EventPlanController;
 use App\Http\Controllers\EventTaskController;
 use App\Http\Controllers\EventBudgetItemController;
@@ -785,6 +786,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/event-club-settlements/{settlement}/receipt', [EventClubSettlementController::class, 'download'])->name('event-club-settlements.download');
     Route::get('/events/{event}/pdf', [EventController::class, 'pdf'])->name('events.pdf');
     Route::get('/events/{event}/participant-roster.pdf', [EventController::class, 'participantRosterPdf'])->name('events.participant-roster.pdf');
+    Route::get('/events/{event}/readiness', [EventReadinessController::class, 'show'])->name('events.readiness');
+    Route::get('/events/{event}/readiness.pdf', [EventReadinessController::class, 'pdf'])->name('events.readiness.pdf');
+    Route::get('/events/{event}/readiness/financial.pdf', [EventReadinessController::class, 'financialPdf'])->name('events.readiness.financial.pdf');
     Route::patch('/event-plans/{event}', [EventPlanController::class, 'update'])->name('event-plans.update');
 
     Route::get('/events/{event}/tasks', [EventTaskController::class, 'index'])->name('event-tasks.index');

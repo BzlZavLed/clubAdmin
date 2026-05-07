@@ -2645,6 +2645,14 @@ const saveBudgetPreference = async (value) => {
                         <path d="M13.586 3.586a2 2 0 112.828 2.828l-8.5 8.5a1 1 0 01-.39.243l-3 1a1 1 0 01-1.265-1.265l1-3a1 1 0 01.243-.39l8.5-8.5zM12.172 5L5 12.172V15h2.828L15 7.828 12.172 5z"/>
                     </svg>
                 </button>
+                <div class="mb-4 flex flex-wrap gap-2 pr-8">
+                    <a
+                        :href="route('events.readiness', { event: eventState.id })"
+                        class="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                    >
+                        {{ tr('Ver preparación', 'View readiness') }}
+                    </a>
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <div class="text-xs text-gray-500">{{ tr('Scope', 'Scope') }}</div>

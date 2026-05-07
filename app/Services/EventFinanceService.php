@@ -310,6 +310,7 @@ class EventFinanceService
                 $allocationBreakdown = $hasAllocations
                     ? $payment->allocations
                         ->map(fn (PaymentAllocation $allocation) => [
+                            'component_id' => (int) ($allocation->event_fee_component_id ?: $allocation->concept?->event_fee_component_id ?: 0),
                             'component_label' => $allocation->concept?->eventFeeComponent?->label,
                             'is_required' => (bool) ($allocation->concept?->eventFeeComponent?->is_required ?? true),
                             'amount' => (float) $allocation->amount,
@@ -319,6 +320,7 @@ class EventFinanceService
                     : [];
                 $directBreakdown = (!$hasAllocations && $payment->concept)
                     ? [[
+                        'component_id' => (int) ($payment->concept?->event_fee_component_id ?? 0),
                         'component_label' => $payment->concept->eventFeeComponent?->label ?: $payment->concept_text ?: $payment->concept->concept,
                         'is_required' => (bool) ($payment->concept->eventFeeComponent?->is_required ?? true),
                         'amount' => (float) $payment->amount_paid,

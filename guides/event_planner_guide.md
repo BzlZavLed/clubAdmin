@@ -605,3 +605,159 @@ task_form_responses
 - `handler`: comportamiento que se abre al completar una tarea.
 - `template`: plantilla usada para crear tareas automaticamente.
 - `live task`: tarea real dentro de un evento existente.
+
+## Vista de Preparacion del Evento
+
+La vista `Ver preparacion` concentra en una sola pantalla el estado operativo del evento.
+
+Su objetivo es responder rapidamente:
+
+- Que clubes estan listos.
+- Que clubes tienen pendientes.
+- Que clubes requieren atencion critica.
+- Por que un club no esta listo.
+- Que recordatorios deberian enviarse.
+- Si el evento esta listo para cierre final.
+
+### Senales que Usa
+
+La preparacion se calcula en tiempo real. No guarda un estado separado.
+
+Usa estas fuentes:
+
+- Clubes involucrados en el evento.
+- Participantes confirmados por cada club.
+- Miembros inscritos por pago obligatorio completo.
+- Staff inscrito por pago obligatorio completo.
+- Tareas asignadas por nivel: organizador, asociacion, distrito o club.
+- Formularios de tareas completados cuando correspondan.
+- Documentos cargados al evento.
+- Pagos recibidos por conceptos del evento.
+- Depositos o comprobantes registrados hacia el organizador.
+- Conceptos financieros del evento, separados entre obligatorios y opcionales.
+
+### Estados por Club
+
+Cada club puede quedar en uno de estos estados:
+
+| Estado | Significado |
+| --- | --- |
+| `Preparacion completa` | No tiene alertas ni pendientes detectados. |
+| `Pendientes por completar` | Hay trabajo pendiente, pero no necesariamente critico. |
+| `Atencion critica requerida` | Hay un problema critico que debe resolverse antes de considerar listo al club. |
+
+Estos estados no bloquean tecnicamente el sistema. Son indicadores operativos para priorizar seguimiento.
+
+Ejemplos de alertas criticas:
+
+- Club que declino el evento.
+- Club marcado como dirigido/targeted sin participantes, pagos, tareas completadas ni documentos.
+
+Ejemplos de pendientes:
+
+- Club todavia no confirmo participacion, pero ya tiene algun avance registrado.
+- Hay dinero cobrado pendiente de depositar.
+- Miembros confirmados con pago obligatorio pendiente.
+- Staff confirmado con pago obligatorio pendiente.
+- Tareas asignadas al club que siguen pendientes, aunque ya esten vencidas.
+- Tareas del organizador que siguen pendientes, aunque ya esten vencidas.
+- Clubes sin participantes confirmados o inscritos todavia.
+
+### Recordatorios
+
+La vista genera una lista de recordatorios sugeridos, pero actualmente no envia correos automaticamente.
+
+Esto es intencional porque todavia no hay procesador de correo configurado para el proyecto.
+
+Por ahora los recordatorios funcionan como una bandeja operativa:
+
+- Indican a que club o responsable se deberia avisar.
+- Muestran la razon del aviso.
+- Incluyen un mensaje base en texto.
+- Marcan el estado del procesador como `placeholder`.
+
+### Como Activar Envio Real de Recordatorios en el Futuro
+
+Cuando exista un procesador de correo o servicio transaccional, implementar estos pasos:
+
+1. Crear una tabla para registrar recordatorios enviados, por ejemplo `event_readiness_reminders`.
+2. Guardar `event_id`, `scope_type`, `scope_id`, `reason`, `message`, `sent_at`, `sent_to_user_id`, `status` y `provider_message_id`.
+3. Crear un `Mailable` o `Notification`, por ejemplo `EventReadinessReminderNotification`.
+4. Crear un job en cola, por ejemplo `SendEventReadinessReminderJob`.
+5. Cambiar la vista para que el boton `Enviar recordatorios` dispare un endpoint seguro.
+6. El endpoint debe regenerar la preparacion, filtrar recordatorios pendientes y encolar los envios.
+7. Antes de enviar, revisar si ya existe un recordatorio igual enviado recientemente para evitar duplicados.
+8. Configurar SMTP, Mailgun, SES u otro proveedor en `.env`.
+9. Activar queue worker en produccion.
+
+Variables esperadas en `.env` cuando se habilite correo:
+
+```text
+MAIL_MAILER=smtp
+MAIL_HOST=
+MAIL_PORT=
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=
+MAIL_FROM_NAME=
+QUEUE_CONNECTION=database
+```
+
+Mientras esto no exista, no se debe prometer envio automatico al usuario final. La vista solo muestra los recordatorios que deben gestionarse manualmente.
+
+### Cierre del Evento
+
+La seccion de cierre muestra si el evento esta listo para cierre final.
+
+Actualmente es un checklist calculado, no un bloqueo irreversible.
+
+El cierre se considera listo cuando:
+
+- No hay alertas criticas.
+- Todos los clubes visibles estan listos.
+- No hay depositos pendientes.
+- El evento esta en curso o ya finalizo.
+
+### PDF de Preparacion
+
+La vista `Ver preparacion` tiene su propio PDF: `Exportar preparacion PDF`.
+
+Este PDF no es la lista general de participantes. Imprime:
+
+- Resumen de clubes listos, pendientes y con atencion critica.
+- Estado por club.
+- Inscritos de miembros y staff.
+- Avance de tareas.
+- Documentos cargados.
+- Depositos pendientes.
+- Alertas por club.
+- Recordatorios sugeridos.
+- Checklist de cierre.
+
+La lista general de participantes sigue existiendo como PDF separado desde la seccion de participantes.
+
+### Reporte Financiero del Evento
+
+La vista de preparacion incluye un reporte financiero resumido del evento.
+
+Este reporte muestra:
+
+- Todos los clubes visibles que fueron dirigidos o involucrados en el evento, aunque no hayan pagado todavia.
+- El estado del club en la preparacion.
+- El total obligatorio esperado.
+- El total pagado.
+- El monto pendiente de depositar al organizador.
+- Una columna por cada concepto del desglose financiero del evento.
+- Si cada concepto es obligatorio u opcional.
+- Un desglose por miembro o staff para ver quien pago cada concepto.
+
+Los clubes `targeted` sin ningun avance aparecen con atencion critica, pero siguen apareciendo en el reporte financiero con montos en cero para que no desaparezcan del seguimiento.
+
+Una version futura puede guardar un snapshot final con:
+
+- Lista general de participantes.
+- Estado de pagos.
+- Estado de depositos.
+- Estado de tareas y formularios.
+- Documentos/comprobantes asociados.
