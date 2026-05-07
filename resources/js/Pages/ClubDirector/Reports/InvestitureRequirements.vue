@@ -3,6 +3,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { computed, ref } from 'vue'
 import axios from 'axios'
 import { router } from '@inertiajs/vue3'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     club: {
@@ -23,12 +24,14 @@ const props = defineProps({
     },
 })
 
+const { tr } = useLocale()
+
 const itemLabelPlural = computed(() =>
-    props.club?.club_type === 'adventurers' ? 'Honores' : 'Requisitos de investidura'
+    props.club?.club_type === 'adventurers' ? tr('Honores', 'Honors') : tr('Requisitos de investidura', 'Investiture requirements')
 )
 
 const itemLabelSingular = computed(() =>
-    props.club?.club_type === 'adventurers' ? 'Honor' : 'Requisito'
+    props.club?.club_type === 'adventurers' ? tr('Honor', 'Honor') : tr('Requisito', 'Requirement')
 )
 const showPendingMembers = ref(false)
 const expandedMemberKey = ref(null)
@@ -102,14 +105,14 @@ const toggleMember = (clubClass, member) => {
 
 const evidenceLabel = (requirement) => {
     const type = requirement?.evidence?.evidence_type
-    if (!type) return 'Sin evidencia'
+    if (!type) return tr('Sin evidencia', 'No evidence')
     const labels = {
-        photo: 'Foto',
-        file: 'Archivo',
-        text: 'Texto',
-        video_link: 'Video',
-        external_link: 'Enlace',
-        physical_only: 'Fisico',
+        photo: tr('Foto', 'Photo'),
+        file: tr('Archivo', 'File'),
+        text: tr('Texto', 'Text'),
+        video_link: tr('Video', 'Video'),
+        external_link: tr('Enlace', 'Link'),
+        physical_only: tr('Fisico', 'Physical'),
     }
     return labels[type] || type
 }
@@ -166,7 +169,7 @@ const submitInvestitureRequest = async () => {
         tentativeInvestitureDate.value = ''
         router.reload({ only: ['investitureRequests'] })
     } catch (error) {
-        requestError.value = error?.response?.data?.message || 'No se pudo crear la solicitud de investidura.'
+        requestError.value = error?.response?.data?.message || tr('No se pudo crear la solicitud de investidura.', 'Could not create the investiture request.')
     } finally {
         requestSubmitting.value = false
     }
@@ -194,7 +197,7 @@ const updateTentativeDate = async (request) => {
         })
         router.reload({ only: ['investitureRequests'] })
     } catch (error) {
-        requestError.value = error?.response?.data?.message || 'No se pudo actualizar la fecha tentativa.'
+        requestError.value = error?.response?.data?.message || tr('No se pudo actualizar la fecha tentativa.', 'Could not update the tentative date.')
     } finally {
         dateUpdateLoading.value = { ...dateUpdateLoading.value, [request.id]: false }
     }
@@ -209,7 +212,7 @@ const completeCeremony = async (request) => {
         })
         router.reload({ only: ['investitureRequests'] })
     } catch (error) {
-        requestError.value = error?.response?.data?.message || 'No se pudo marcar la investidura como completada.'
+        requestError.value = error?.response?.data?.message || tr('No se pudo marcar la investidura como completada.', 'Could not mark the investiture as completed.')
     } finally {
         ceremonyCompletionLoading.value = { ...ceremonyCompletionLoading.value, [request.id]: false }
     }
@@ -221,23 +224,23 @@ const completeCeremony = async (request) => {
         <div class="px-4 sm:px-6 lg:px-8 py-6 space-y-6">
             <div class="flex flex-col gap-2">
                 <h1 class="text-xl font-semibold text-gray-900">
-                    {{ isCarpetas ? 'Carpetas por clase' : `${itemLabelPlural} por clase` }}
+                    {{ isCarpetas ? tr('Carpetas por clase', 'Folders by Class') : `${itemLabelPlural} ${tr('por clase', 'by class')}` }}
                 </h1>
                 <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <p class="text-sm text-gray-600">
-                        Club activo: <span class="font-medium text-gray-800">{{ club?.club_name || '—' }}</span>
+                        {{ tr('Club activo:', 'Active club:') }} <span class="font-medium text-gray-800">{{ club?.club_name || '—' }}</span>
                     </p>
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <label class="inline-flex items-center gap-2 text-sm text-gray-700">
                             <input v-model="showPendingMembers" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                            Mostrar miembros pendientes
+                            {{ tr('Mostrar miembros pendientes', 'Show pending members') }}
                         </label>
                         <a
                             v-if="!isCarpetas"
                             :href="route('club.reports.investiture-requirements.pdf', { club_id: club?.id, show_pending: showPendingMembers ? 1 : 0 })"
                             class="inline-flex items-center justify-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900"
                         >
-                            Exportar PDF
+                            {{ tr('Exportar PDF', 'Export PDF') }}
                         </a>
                     </div>
                 </div>
@@ -245,15 +248,15 @@ const completeCeremony = async (request) => {
 
             <section class="grid gap-4 md:grid-cols-3">
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Clases</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Clases', 'Classes') }}</div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">{{ classes.length }}</div>
                 </div>
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isCarpetas ? 'Miembros asignados' : itemLabelPlural }}</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isCarpetas ? tr('Miembros asignados', 'Assigned members') : itemLabelPlural }}</div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">{{ isCarpetas ? totalMembers : totalRequirements }}</div>
                 </div>
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isCarpetas ? 'Evidencias completadas' : 'Cumplimientos registrados' }}</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isCarpetas ? tr('Evidencias completadas', 'Completed evidence') : tr('Cumplimientos registrados', 'Recorded completions') }}</div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">{{ totalCompletions }}</div>
                 </div>
             </section>
@@ -261,38 +264,38 @@ const completeCeremony = async (request) => {
             <section v-if="isCarpetas" class="rounded-lg border bg-white p-5 shadow-sm">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div class="max-w-2xl">
-                        <h2 class="text-base font-semibold text-gray-900">Solicitud de investidura</h2>
+                        <h2 class="text-base font-semibold text-gray-900">{{ tr('Solicitud de investidura', 'Investiture Request') }}</h2>
                         <p class="mt-1 text-sm text-gray-600">
-                            Cuando el club esté listo, envía la solicitud para que la asociación asigne la revisión. Por ahora el evaluador sugerido será el pastor del distrito.
+                            {{ tr('Cuando el club esté listo, envía la solicitud para que la asociación asigne la revisión. Por ahora el evaluador sugerido será el pastor del distrito.', 'When the club is ready, submit the request so the association can assign the review. For now, the suggested evaluator will be the district pastor.') }}
                         </p>
                         <div v-if="investitureRequests.length" class="mt-3 space-y-2">
                             <div v-for="request in investitureRequests" :key="request.id" class="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
                                 <div class="font-medium text-gray-900">
-                                    Solicitud #{{ request.id }} · {{ request.status }} · {{ request.members_count }} miembro(s)
+                                    {{ tr('Solicitud', 'Request') }} #{{ request.id }} · {{ request.status }} · {{ request.members_count }} {{ tr('miembro(s)', 'member(s)') }}
                                 </div>
                                 <div class="mt-0.5 text-xs text-gray-500">
-                                    Ciclo {{ request.carpeta_year || '—' }} · Enviada {{ request.submitted_at || '—' }}
-                                    · Fecha tentativa {{ request.tentative_investiture_date || '—' }}
+                                    {{ tr('Ciclo', 'Cycle') }} {{ request.carpeta_year || '—' }} · {{ tr('Enviada', 'Submitted') }} {{ request.submitted_at || '—' }}
+                                    · {{ tr('Fecha tentativa', 'Tentative date') }} {{ request.tentative_investiture_date || '—' }}
                                     <template v-if="request.approved_investiture_date">
-                                        · Fecha autorizada {{ request.approved_investiture_date }}
+                                        · {{ tr('Fecha autorizada', 'Authorized date') }} {{ request.approved_investiture_date }}
                                     </template>
                                     <template v-if="request.assigned_evaluator_name">
-                                        · Evaluador: {{ request.assigned_evaluator_name }}
+                                        · {{ tr('Evaluador:', 'Evaluator:') }} {{ request.assigned_evaluator_name }}
                                     </template>
                                 </div>
                                 <div v-if="request.ceremony_representative_name" class="mt-3 rounded border border-green-200 bg-green-50 p-3 text-xs text-green-900">
-                                    <p class="font-semibold">Representante de asociación para la ceremonia</p>
+                                    <p class="font-semibold">{{ tr('Representante de asociación para la ceremonia', 'Association representative for the ceremony') }}</p>
                                     <p class="mt-1">{{ request.ceremony_representative_name }}</p>
                                     <p v-if="request.ceremony_representative_email" class="mt-1">
-                                        Correo: <a :href="`mailto:${request.ceremony_representative_email}`" class="font-medium underline">{{ request.ceremony_representative_email }}</a>
+                                        {{ tr('Correo:', 'Email:') }} <a :href="`mailto:${request.ceremony_representative_email}`" class="font-medium underline">{{ request.ceremony_representative_email }}</a>
                                     </p>
                                     <p v-if="request.ceremony_representative_phone" class="mt-1">
-                                        Teléfono: <a :href="`tel:${request.ceremony_representative_phone}`" class="font-medium underline">{{ request.ceremony_representative_phone }}</a>
+                                        {{ tr('Teléfono:', 'Phone:') }} <a :href="`tel:${request.ceremony_representative_phone}`" class="font-medium underline">{{ request.ceremony_representative_phone }}</a>
                                     </p>
                                 </div>
                                 <div v-if="request.ceremony_completed_at" class="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-                                    <p class="font-semibold">Investidura completada</p>
-                                    <p class="mt-1">Registrada: {{ request.ceremony_completed_at }}</p>
+                                    <p class="font-semibold">{{ tr('Investidura completada', 'Investiture completed') }}</p>
+                                    <p class="mt-1">{{ tr('Registrada:', 'Recorded:') }} {{ request.ceremony_completed_at }}</p>
                                 </div>
                                 <div
                                     v-if="canEditRequestDate(request)"
@@ -300,13 +303,13 @@ const completeCeremony = async (request) => {
                                     :class="request.status === 'date_change_requested' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'"
                                 >
                                     <p class="font-semibold" :class="request.status === 'date_change_requested' ? 'text-amber-900' : 'text-gray-900'">
-                                        {{ request.status === 'date_change_requested' ? 'La asociación solicitó una nueva fecha' : 'Editar fecha tentativa' }}
+                                        {{ request.status === 'date_change_requested' ? tr('La asociación solicitó una nueva fecha', 'The association requested a new date') : tr('Editar fecha tentativa', 'Edit tentative date') }}
                                     </p>
                                     <p v-if="request.status === 'date_change_requested'" class="mt-1 text-xs text-amber-800">
-                                        {{ request.date_change_reason || 'La fecha propuesta no está disponible para la asociación.' }}
+                                        {{ request.date_change_reason || tr('La fecha propuesta no está disponible para la asociación.', 'The proposed date is not available for the association.') }}
                                     </p>
                                     <p v-else-if="!request.tentative_investiture_date" class="mt-1 text-xs text-gray-600">
-                                        Esta solicitud no tiene fecha tentativa registrada.
+                                        {{ tr('Esta solicitud no tiene fecha tentativa registrada.', 'This request does not have a tentative date recorded.') }}
                                     </p>
                                     <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                                         <input
@@ -321,7 +324,7 @@ const completeCeremony = async (request) => {
                                             :disabled="dateUpdateLoading[request.id]"
                                             @click="updateTentativeDate(request)"
                                         >
-                                            {{ dateUpdateLoading[request.id] ? 'Guardando...' : (request.status === 'date_change_requested' ? 'Enviar nueva fecha' : 'Guardar fecha') }}
+                                            {{ dateUpdateLoading[request.id] ? tr('Guardando...', 'Saving...') : (request.status === 'date_change_requested' ? tr('Enviar nueva fecha', 'Send new date') : tr('Guardar fecha', 'Save date')) }}
                                         </button>
                                     </div>
                                 </div>
@@ -329,9 +332,9 @@ const completeCeremony = async (request) => {
                                     v-if="request.status === 'authorized' && !request.ceremony_completed_at"
                                     class="mt-3 rounded border border-emerald-200 bg-white p-3"
                                 >
-                                    <p class="font-semibold text-emerald-900">Cerrar solicitud después de la ceremonia</p>
+                                    <p class="font-semibold text-emerald-900">{{ tr('Cerrar solicitud después de la ceremonia', 'Close request after the ceremony') }}</p>
                                     <p class="mt-1 text-xs text-gray-600">
-                                        Cuando la investidura ya se haya realizado con el representante asignado por la asociación, marca esta solicitud como completada.
+                                        {{ tr('Cuando la investidura ya se haya realizado con el representante asignado por la asociación, marca esta solicitud como completada.', 'When the investiture has been held with the representative assigned by the association, mark this request as completed.') }}
                                     </p>
                                     <button
                                         type="button"
@@ -339,7 +342,7 @@ const completeCeremony = async (request) => {
                                         :disabled="ceremonyCompletionLoading[request.id]"
                                         @click="completeCeremony(request)"
                                     >
-                                        {{ ceremonyCompletionLoading[request.id] ? 'Guardando...' : 'Marcar investidura completada' }}
+                                        {{ ceremonyCompletionLoading[request.id] ? tr('Guardando...', 'Saving...') : tr('Marcar investidura completada', 'Mark investiture completed') }}
                                     </button>
                                 </div>
                             </div>
@@ -348,7 +351,7 @@ const completeCeremony = async (request) => {
 
                     <div v-if="!hasOpenInvestitureRequest" class="w-full max-w-md space-y-3">
                         <label class="block text-sm font-medium text-gray-700">
-                            Fecha tentativa de investidura <span class="font-normal text-gray-500">(opcional)</span>
+                            {{ tr('Fecha tentativa de investidura', 'Tentative investiture date') }} <span class="font-normal text-gray-500">{{ tr('(opcional)', '(optional)') }}</span>
                             <input
                                 v-model="tentativeInvestitureDate"
                                 type="date"
@@ -359,7 +362,7 @@ const completeCeremony = async (request) => {
                             v-model="requestNotes"
                             rows="3"
                             class="w-full rounded-md border-gray-300 text-sm"
-                            placeholder="Notas para la asociación o evaluador"
+                            :placeholder="tr('Notas para la asociación o evaluador', 'Notes for the association or evaluator')"
                         />
                         <p v-if="requestError" class="text-sm text-red-600">{{ requestError }}</p>
                         <button
@@ -368,15 +371,15 @@ const completeCeremony = async (request) => {
                             :disabled="requestSubmitting || hasOpenInvestitureRequest || !flattenedCarpetaMembers.length"
                             @click="submitInvestitureRequest"
                         >
-                            <template v-if="requestSubmitting">Enviando...</template>
-                            <template v-else>Solicitar investidura</template>
+                            <template v-if="requestSubmitting">{{ tr('Enviando...', 'Sending...') }}</template>
+                            <template v-else>{{ tr('Solicitar investidura', 'Request investiture') }}</template>
                         </button>
                     </div>
                 </div>
             </section>
 
             <section v-if="!classes.length" class="rounded-lg border bg-white p-6 text-sm text-gray-600 shadow-sm">
-                No hay clases configuradas para el club activo.
+                {{ tr('No hay clases configuradas para el club activo.', 'No classes are configured for the active club.') }}
             </section>
 
             <section v-if="isCarpetas" v-for="clubClass in classes" :key="`carpetas-${clubClass.id}`" class="rounded-lg border bg-white shadow-sm">
@@ -387,17 +390,17 @@ const completeCeremony = async (request) => {
                                 {{ clubClass.class_order ? `${clubClass.class_order}. ` : '' }}{{ clubClass.class_name }}
                             </h2>
                             <p class="text-sm text-gray-600">
-                                {{ clubClass.members_count }} miembro(s) asignados, {{ clubClass.requirements_count }} requisitos definidos por la union
+                                {{ clubClass.members_count }} {{ tr('miembro(s) asignados', 'assigned member(s)') }}, {{ clubClass.requirements_count }} {{ tr('requisitos definidos por la union', 'requirements defined by the union') }}
                             </p>
                         </div>
                         <div class="text-sm text-gray-600">
-                            {{ clubClass.completed_requirements_count }} evidencia(s) registradas
+                            {{ clubClass.completed_requirements_count }} {{ tr('evidencia(s) registradas', 'recorded evidence item(s)') }}
                         </div>
                     </div>
                 </div>
 
                 <div v-if="!clubClass.members.length" class="px-5 py-4 text-sm text-gray-500">
-                    No hay miembros asignados a esta clase.
+                    {{ tr('No hay miembros asignados a esta clase.', 'No members assigned to this class.') }}
                 </div>
 
                 <div v-else class="divide-y">
@@ -418,7 +421,7 @@ const completeCeremony = async (request) => {
                                     </span>
                                 </div>
                                 <p class="mt-1 text-sm text-gray-600">
-                                    Grado: {{ member.grade || '—' }} · Asignado: {{ formatDate(member.assigned_at) }}
+                                    {{ tr('Grado:', 'Grade:') }} {{ member.grade || '—' }} · {{ tr('Asignado:', 'Assigned:') }} {{ formatDate(member.assigned_at) }}
                                 </p>
                             </button>
 
@@ -428,17 +431,17 @@ const completeCeremony = async (request) => {
                                     class="rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                                     @click="toggleMember(clubClass, member)"
                                 >
-                                    {{ expandedMemberKey === memberKey(clubClass, member) ? 'Ocultar estado' : 'Ver estado' }}
+                                    {{ expandedMemberKey === memberKey(clubClass, member) ? tr('Ocultar estado', 'Hide status') : tr('Ver estado', 'View status') }}
                                 </button>
                                 <a
                                     v-if="member.has_evidence"
                                     :href="member.print_url"
                                     class="rounded bg-gray-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-gray-900"
                                 >
-                                    Imprimir carpeta
+                                    {{ tr('Imprimir carpeta', 'Print folder') }}
                                 </a>
                                 <span v-else class="rounded border border-gray-200 px-3 py-2 text-center text-sm text-gray-500">
-                                    Sin evidencia para imprimir
+                                    {{ tr('Sin evidencia para imprimir', 'No evidence to print') }}
                                 </span>
                             </div>
                         </div>
@@ -446,9 +449,9 @@ const completeCeremony = async (request) => {
                         <div v-if="canGeneratePublicLinks" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                 <div>
-                                    <p class="text-sm font-semibold text-slate-900">Enlace publico temporal</p>
+                                    <p class="text-sm font-semibold text-slate-900">{{ tr('Enlace publico temporal', 'Temporary public link') }}</p>
                                     <p class="text-xs text-slate-600">
-                                        Permite que este miembro suba evidencias sin crear una cuenta. Puede revocarse en cualquier momento.
+                                        {{ tr('Permite que este miembro suba evidencias sin crear una cuenta. Puede revocarse en cualquier momento.', 'Allows this member to upload evidence without creating an account. It can be revoked at any time.') }}
                                     </p>
                                 </div>
                                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -458,7 +461,7 @@ const completeCeremony = async (request) => {
                                         :disabled="accessLinkLoading[member.member_id]"
                                         @click="createAccessLink(member)"
                                     >
-                                        {{ accessLinkLoading[member.member_id] ? 'Generando...' : 'Generar enlace' }}
+                                        {{ accessLinkLoading[member.member_id] ? tr('Generando...', 'Generating...') : tr('Generar enlace', 'Generate link') }}
                                     </button>
                                     <button
                                         type="button"
@@ -466,31 +469,31 @@ const completeCeremony = async (request) => {
                                         :disabled="accessLinkLoading[member.member_id]"
                                         @click="revokeAccessLinks(member)"
                                     >
-                                        Revocar enlaces
+                                        {{ tr('Revocar enlaces', 'Revoke links') }}
                                     </button>
                                 </div>
                             </div>
                             <div v-if="accessLinks[member.member_id]" class="mt-3 rounded border bg-white p-3">
                                 <div class="break-all text-sm text-gray-800">{{ accessLinks[member.member_id].url }}</div>
-                                <div class="mt-1 text-xs text-gray-500">Expira: {{ accessLinks[member.member_id].expires_at || '—' }}</div>
+                                <div class="mt-1 text-xs text-gray-500">{{ tr('Expira:', 'Expires:') }} {{ accessLinks[member.member_id].expires_at || '—' }}</div>
                                 <button
                                     type="button"
                                     class="mt-2 rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
                                     @click="copyAccessLink(member)"
                                 >
-                                    Copiar enlace
+                                    {{ tr('Copiar enlace', 'Copy link') }}
                                 </button>
                             </div>
                         </div>
 
                         <div v-if="expandedMemberKey === memberKey(clubClass, member)" class="mt-4 rounded-lg border bg-gray-50 p-4">
                             <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                <p class="text-sm font-semibold text-gray-900">Estado de carpeta</p>
-                                <p class="text-xs text-gray-500">{{ member.pending_count }} pendiente(s)</p>
+                                <p class="text-sm font-semibold text-gray-900">{{ tr('Estado de carpeta', 'Folder status') }}</p>
+                                <p class="text-xs text-gray-500">{{ member.pending_count }} {{ tr('pendiente(s)', 'pending') }}</p>
                             </div>
 
                             <div v-if="!member.requirements.length" class="text-sm text-gray-500">
-                                Esta clase no tiene requisitos publicados para carpetas.
+                                {{ tr('Esta clase no tiene requisitos publicados para carpetas.', 'This class has no published folder requirements.') }}
                             </div>
 
                             <div v-else class="space-y-3">
@@ -508,26 +511,26 @@ const completeCeremony = async (request) => {
                                                 {{ requirement.description }}
                                             </p>
                                             <p class="mt-1 text-xs text-gray-500">
-                                                Tipo: {{ requirement.requirement_type || '—' }} · Validación: {{ requirement.validation_mode || 'electronic' }}
+                                                {{ tr('Tipo:', 'Type:') }} {{ requirement.requirement_type || '—' }} · {{ tr('Validación:', 'Validation:') }} {{ requirement.validation_mode || 'electronic' }}
                                             </p>
                                         </div>
                                         <span
                                             class="inline-flex w-fit rounded-full px-2 py-0.5 text-[11px] font-semibold"
                                             :class="requirement.completed ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'"
                                         >
-                                            {{ requirement.completed ? 'Completado' : 'Pendiente' }}
+                                            {{ requirement.completed ? tr('Completado', 'Completed') : tr('Pendiente', 'Pending') }}
                                         </span>
                                     </div>
 
                                     <div v-if="requirement.evidence" class="mt-3 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
                                         <div class="font-medium">{{ evidenceLabel(requirement) }}</div>
                                         <div class="mt-1 text-xs text-blue-800">
-                                            Registrada: {{ requirement.evidence.submitted_at || '—' }}
+                                            {{ tr('Registrada:', 'Recorded:') }} {{ requirement.evidence.submitted_at || '—' }}
                                         </div>
                                         <img
                                             v-if="requirement.evidence.is_image && requirement.evidence.file_url"
                                             :src="requirement.evidence.file_url"
-                                            alt="Evidencia"
+                                            :alt="tr('Evidencia', 'Evidence')"
                                             class="mt-2 h-20 w-28 rounded border bg-white object-cover"
                                         >
                                         <a
@@ -536,7 +539,7 @@ const completeCeremony = async (request) => {
                                             target="_blank"
                                             class="mt-2 inline-flex text-blue-700 underline"
                                         >
-                                            Ver archivo
+                                            {{ tr('Ver archivo', 'View file') }}
                                         </a>
                                         <a
                                             v-if="requirement.evidence.text_value && ['video_link', 'external_link'].includes(requirement.evidence.evidence_type)"
@@ -553,7 +556,7 @@ const completeCeremony = async (request) => {
                                             {{ requirement.evidence.text_value }}
                                         </p>
                                         <p v-if="requirement.evidence.physical_completed" class="mt-2">
-                                            Requisito físico marcado como completado.
+                                            {{ tr('Requisito físico marcado como completado.', 'Physical requirement marked completed.') }}
                                         </p>
                                     </div>
                                 </div>
@@ -571,17 +574,17 @@ const completeCeremony = async (request) => {
                                 {{ clubClass.class_order ? `${clubClass.class_order}. ` : '' }}{{ clubClass.class_name }}
                             </h2>
                             <p class="text-sm text-gray-600">
-                                {{ clubClass.members_count }} miembro(s) asignados, {{ clubClass.requirements_count }} {{ itemLabelPlural.toLowerCase() }}
+                                {{ clubClass.members_count }} {{ tr('miembro(s) asignados', 'assigned member(s)') }}, {{ clubClass.requirements_count }} {{ itemLabelPlural.toLowerCase() }}
                             </p>
                         </div>
                         <div class="text-sm text-gray-600">
-                            {{ clubClass.completed_requirements_count }} {{ itemLabelPlural.toLowerCase() }} con al menos un cumplimiento
+                            {{ clubClass.completed_requirements_count }} {{ itemLabelPlural.toLowerCase() }} {{ tr('con al menos un cumplimiento', 'with at least one completion') }}
                         </div>
                     </div>
                 </div>
 
                 <div v-if="!clubClass.requirements.length" class="px-5 py-4 text-sm text-gray-500">
-                    Esta clase no tiene {{ itemLabelPlural.toLowerCase() }} configurados.
+                    {{ tr('Esta clase no tiene', 'This class has no') }} {{ itemLabelPlural.toLowerCase() }} {{ tr('configurados.', 'configured.') }}
                 </div>
 
                 <div v-else class="divide-y">
@@ -596,7 +599,7 @@ const completeCeremony = async (request) => {
                                         v-if="!requirement.is_active"
                                         class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
                                     >
-                                        Inactivo
+                                        {{ tr('Inactivo', 'Inactive') }}
                                     </span>
                                 </div>
                                 <p v-if="requirement.description" class="mt-1 text-sm text-gray-600">
@@ -606,11 +609,11 @@ const completeCeremony = async (request) => {
 
                             <div class="grid grid-cols-2 gap-3 text-sm lg:min-w-[260px]">
                                 <div class="rounded border bg-gray-50 px-3 py-2">
-                                    <div class="text-[11px] uppercase tracking-wide text-gray-500">Completados</div>
+                                    <div class="text-[11px] uppercase tracking-wide text-gray-500">{{ tr('Completados', 'Completed') }}</div>
                                     <div class="font-semibold text-gray-900">{{ requirement.completed_count }}</div>
                                 </div>
                                 <div class="rounded border bg-gray-50 px-3 py-2">
-                                    <div class="text-[11px] uppercase tracking-wide text-gray-500">Pendientes</div>
+                                    <div class="text-[11px] uppercase tracking-wide text-gray-500">{{ tr('Pendientes', 'Pending') }}</div>
                                     <div class="font-semibold text-gray-900">{{ requirement.pending_count }}</div>
                                 </div>
                             </div>
@@ -618,20 +621,20 @@ const completeCeremony = async (request) => {
 
                         <div class="mt-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                Miembros que han completado este {{ itemLabelSingular.toLowerCase() }}
+                                {{ tr('Miembros que han completado este', 'Members who completed this') }} {{ itemLabelSingular.toLowerCase() }}
                             </p>
 
                             <div v-if="!requirement.completions.length" class="mt-2 text-sm text-gray-500">
-                                Nadie lo ha completado todavía.
+                                {{ tr('Nadie lo ha completado todavía.', 'No one has completed it yet.') }}
                             </div>
 
                             <div v-else class="mt-3 overflow-x-auto">
                                 <table class="min-w-full text-sm">
                                     <thead>
                                         <tr class="border-b text-left text-gray-500">
-                                            <th class="pb-2 pr-4 font-medium">Miembro</th>
-                                            <th class="pb-2 pr-4 font-medium">Fecha</th>
-                                            <th class="pb-2 font-medium">Actividad</th>
+                                            <th class="pb-2 pr-4 font-medium">{{ tr('Miembro', 'Member') }}</th>
+                                            <th class="pb-2 pr-4 font-medium">{{ tr('Fecha', 'Date') }}</th>
+                                            <th class="pb-2 font-medium">{{ tr('Actividad', 'Activity') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -651,10 +654,10 @@ const completeCeremony = async (request) => {
 
                         <div v-if="showPendingMembers" class="mt-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                Miembros pendientes
+                                {{ tr('Miembros pendientes', 'Pending members') }}
                             </p>
                             <div v-if="!getPendingMembers(clubClass, requirement).length" class="mt-2 text-sm text-gray-500">
-                                No hay pendientes para este {{ itemLabelSingular.toLowerCase() }}.
+                                {{ tr('No hay pendientes para este', 'No pending members for this') }} {{ itemLabelSingular.toLowerCase() }}.
                             </div>
                             <ul v-else class="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                                 <li

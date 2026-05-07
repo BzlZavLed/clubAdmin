@@ -7,6 +7,7 @@ import { fetchExpenses, createExpense, uploadExpenseReceipt, removeExpenseReceip
 import { useGeneral } from '@/Composables/useGeneral'
 import { compressImage } from '@/Utils/imageCompression'
 import { useAuth } from '@/Composables/useAuth'
+import { useLocale } from '@/Composables/useLocale'
 
 const payToOptions = ref([])
 const expenses = ref([])
@@ -25,6 +26,7 @@ const expensePage = ref(1)
 const expensePageSize = ref(10)
 const { showToast } = useGeneral()
 const { user } = useAuth()
+const { tr } = useLocale()
 const canSelectClub = computed(() => user.value?.profile_type === 'superadmin')
 const activeClubName = computed(() =>
     clubs.value.find(c => String(c.id) === String(form.club_id))?.club_name
@@ -53,7 +55,7 @@ const reimbursementReceiptFiles = ref({})
 
 const payToLabel = (val) => {
     const m = payToOptions.value.find(p => p.value === val)
-    return m?.label || (val ?? 'Sin asignar')
+    return m?.label || (val ?? tr('Sin asignar', 'Unassigned'))
 }
 const reimbursePayToOptions = computed(() => accounts.value.filter(a => a.pay_to !== 'reimbursement_to'))
 const expenseStatusMap = computed(() =>
@@ -65,7 +67,7 @@ const defaultReimbursePayTo = computed(() => {
 })
 
 const fmtMoney = (n) => `$${Number(n ?? 0).toFixed(2)}`
-const locationLabel = (value) => value === 'bank' ? 'Banco' : value === 'cash' ? 'Efectivo' : '—'
+const locationLabel = (value) => value === 'bank' ? tr('Banco', 'Bank') : value === 'cash' ? tr('Efectivo', 'Cash') : '—'
 const selectedBalance = computed(() => {
     const acc = accounts.value.find(a => a.pay_to === form.pay_to)
     return acc?.balance ?? null
@@ -108,7 +110,7 @@ const COMPLETED_STATUS = 'completed'
 const PENDING_REIMBURSEMENT_STATUS = 'pending_reimbursement'
 
 const expenseStatusLabel = (status) => {
-    return expenseStatusMap.value[status]?.name || status || 'Sin estado'
+    return expenseStatusMap.value[status]?.name || status || tr('Sin estado', 'No status')
 }
 
 const expenseStatusDescription = (status) => {
@@ -156,7 +158,7 @@ const loadData = async (clubId = null) => {
         if (!form.pay_to && payToOptions.value.length) form.pay_to = payToOptions.value[0].value
     } catch (e) {
         console.error(e)
-        loadError.value = e?.response?.data?.message || 'No se pudieron cargar los gastos.'
+        loadError.value = e?.response?.data?.message || tr('No se pudieron cargar los gastos.', 'Could not load expenses.')
     } finally {
         loading.value = false
     }
@@ -167,7 +169,7 @@ const submit = async () => {
     form.clearErrors()
     if (!form.club_id && clubs.value.length) form.club_id = clubs.value[0].id
     if (!form.club_id) {
-        form.setError('club_id', 'Selecciona un club')
+        form.setError('club_id', tr('Selecciona un club', 'Select a club'))
         saving.value = false
         return
     }
@@ -175,7 +177,7 @@ const submit = async () => {
         const { data } = await createExpense(form.data())
         const split = data?.data?.split_expense ?? null
         if (split) {
-            showToast(`Gasto registrado. Se creó un reembolso pendiente por ${fmtMoney(split.amount)}.`, 'info')
+            showToast(tr(`Gasto registrado. Se creó un reembolso pendiente por ${fmtMoney(split.amount)}.`, `Expense saved. A pending reimbursement was created for ${fmtMoney(split.amount)}.`), 'info')
         }
         await loadData(form.club_id)
         form.amount = ''
@@ -189,7 +191,7 @@ const submit = async () => {
                 form.setError(field, Array.isArray(messages) ? messages[0] : messages)
             })
         }
-        showToast(e?.response?.data?.message || 'No se pudo guardar el gasto.', 'error')
+        showToast(e?.response?.data?.message || tr('No se pudo guardar el gasto.', 'Could not save the expense.'), 'error')
         console.error(e)
     } finally {
         saving.value = false
@@ -243,17 +245,17 @@ const onNewReceiptChange = (event) => {
     const [file] = event.target.files || []
     if (!file) return
     if (file.size > MAX_RECEIPT_BYTES) {
-        showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
+        showToast(tr(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, `The image is larger than ${MAX_RECEIPT_MB}MB. Trying to compress it...`), 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
             if (compressed.size > MAX_RECEIPT_BYTES) {
-                showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, 'error')
+                showToast(tr(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, `The image is still too large. Maximum ${MAX_RECEIPT_MB}MB, current ${fmtBytes(compressed.size)}.`), 'error')
                 form.receipt_image = null
                 if (newReceiptInput.value) newReceiptInput.value.value = ''
                 return
             }
             form.receipt_image = compressed
         }).catch(() => {
-            showToast('No se pudo comprimir la imagen.', 'error')
+            showToast(tr('No se pudo comprimir la imagen.', 'Could not compress the image.'), 'error')
         })
         return
     }
@@ -271,15 +273,15 @@ const handleReceiptSelected = async (expenseId, event) => {
     if (!file) return
     let uploadFile = file
     if (file.size > MAX_RECEIPT_BYTES) {
-        showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
+        showToast(tr(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, `The image is larger than ${MAX_RECEIPT_MB}MB. Trying to compress it...`), 'info')
         try {
             uploadFile = await compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM })
         } catch {
-            showToast('No se pudo comprimir la imagen.', 'error')
+            showToast(tr('No se pudo comprimir la imagen.', 'Could not compress the image.'), 'error')
             return
         }
         if (uploadFile.size > MAX_RECEIPT_BYTES) {
-            showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(uploadFile.size)}.`, 'error')
+            showToast(tr(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(uploadFile.size)}.`, `The image is still too large. Maximum ${MAX_RECEIPT_MB}MB, current ${fmtBytes(uploadFile.size)}.`), 'error')
             return
         }
     }
@@ -293,7 +295,7 @@ const handleReceiptSelected = async (expenseId, event) => {
     } catch (e) {
         rowErrors.value = {
             ...rowErrors.value,
-                [expenseId]: e?.response?.data?.message || 'No se pudo subir el recibo.',
+                [expenseId]: e?.response?.data?.message || tr('No se pudo subir el recibo.', 'Could not upload the receipt.'),
         }
         console.error(e)
     } finally {
@@ -314,11 +316,11 @@ const removeReceiptNow = async (expense) => {
         const { data } = await removeExpenseReceipt(expense.id)
         const idx = expenses.value.findIndex(e => e.id === expense.id)
         if (idx !== -1) expenses.value[idx] = data?.data
-        showToast('Recibo eliminado.', 'success')
+        showToast(tr('Recibo eliminado.', 'Receipt removed.'), 'success')
     } catch (e) {
         rowErrors.value = {
             ...rowErrors.value,
-            [expense.id]: e?.response?.data?.message || 'No se pudo eliminar el recibo.',
+            [expense.id]: e?.response?.data?.message || tr('No se pudo eliminar el recibo.', 'Could not remove the receipt.'),
         }
         console.error(e)
     } finally {
@@ -331,10 +333,10 @@ const handleReimbursementReceiptSelected = (expense, event) => {
     event.target.value = ''
     if (!file) return
     if (file.size > MAX_RECEIPT_BYTES) {
-        showToast(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, 'info')
+        showToast(tr(`La imagen supera ${MAX_RECEIPT_MB}MB. Intentando comprimir...`, `The image is larger than ${MAX_RECEIPT_MB}MB. Trying to compress it...`), 'info')
         compressImage(file, { maxBytes: MAX_RECEIPT_BYTES, maxDim: MAX_RECEIPT_DIM }).then((compressed) => {
             if (compressed.size > MAX_RECEIPT_BYTES) {
-                showToast(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, 'error')
+                showToast(tr(`La imagen sigue siendo muy grande. Maximo ${MAX_RECEIPT_MB}MB, actual ${fmtBytes(compressed.size)}.`, `The image is still too large. Maximum ${MAX_RECEIPT_MB}MB, current ${fmtBytes(compressed.size)}.`), 'error')
                 return
             }
             if (isPendingReimbursement(expense)) {
@@ -344,7 +346,7 @@ const handleReimbursementReceiptSelected = (expense, event) => {
             }
             uploadReimbursementReceiptNow(expense, compressed)
         }).catch(() => {
-            showToast('No se pudo comprimir la imagen.', 'error')
+            showToast(tr('No se pudo comprimir la imagen.', 'Could not compress the image.'), 'error')
         })
         return
     }
@@ -364,11 +366,11 @@ const removeReimbursementReceiptNow = async (expense) => {
         const { data } = await removeReimbursementReceipt(expense.id)
         const idx = expenses.value.findIndex(e => e.id === expense.id)
         if (idx !== -1) expenses.value[idx] = data?.data
-        showToast('Recibo de reembolso eliminado.', 'success')
+        showToast(tr('Recibo de reembolso eliminado.', 'Reimbursement receipt removed.'), 'success')
     } catch (e) {
         rowErrors.value = {
             ...rowErrors.value,
-            [expense.id]: e?.response?.data?.message || 'No se pudo eliminar el recibo de reembolso.',
+            [expense.id]: e?.response?.data?.message || tr('No se pudo eliminar el recibo de reembolso.', 'Could not remove the reimbursement receipt.'),
         }
         console.error(e)
     } finally {
@@ -384,11 +386,11 @@ const uploadReimbursementReceiptNow = async (expense, file) => {
         const { data } = await uploadReimbursementReceipt(expense.id, file)
         const idx = expenses.value.findIndex(e => e.id === expense.id)
         if (idx !== -1) expenses.value[idx] = data?.data
-        showToast('Recibo de reembolso subido.', 'success')
+        showToast(tr('Recibo de reembolso subido.', 'Reimbursement receipt uploaded.'), 'success')
     } catch (e) {
         rowErrors.value = {
             ...rowErrors.value,
-            [expense.id]: e?.response?.data?.message || 'No se pudo subir el recibo de reembolso.',
+            [expense.id]: e?.response?.data?.message || tr('No se pudo subir el recibo de reembolso.', 'Could not upload the reimbursement receipt.'),
         }
         console.error(e)
     } finally {
@@ -401,24 +403,24 @@ const markReimbursed = async (expense) => {
     const payTo = reimbursePayToByExpense.value[expense.id] || defaultReimbursePayTo.value
     const fundsLocation = reimburseFundsLocationByExpense.value[expense.id] || 'cash'
     if (!payTo) {
-        rowErrors.value = { ...rowErrors.value, [expense.id]: 'Selecciona una cuenta para reembolsar.' }
+        rowErrors.value = { ...rowErrors.value, [expense.id]: tr('Selecciona una cuenta para reembolsar.', 'Select an account to reimburse from.') }
         return
     }
     const receiptFile = reimbursementReceiptFiles.value[expense.id]
     if (!receiptFile) {
-        rowErrors.value = { ...rowErrors.value, [expense.id]: 'Adjunta el recibo del reembolso.' }
+        rowErrors.value = { ...rowErrors.value, [expense.id]: tr('Adjunta el recibo del reembolso.', 'Attach the reimbursement receipt.') }
         return
     }
     reimbursingId.value = expense.id
     rowErrors.value = { ...rowErrors.value, [expense.id]: '' }
     try {
         await markExpenseReimbursed(expense.id, payTo, receiptFile, fundsLocation)
-        showToast('Reembolso registrado.', 'success')
+        showToast(tr('Reembolso registrado.', 'Reimbursement recorded.'), 'success')
         await loadData(form.club_id)
     } catch (e) {
         rowErrors.value = {
             ...rowErrors.value,
-            [expense.id]: e?.response?.data?.message || 'No se pudo marcar el reembolso.',
+            [expense.id]: e?.response?.data?.message || tr('No se pudo marcar el reembolso.', 'Could not mark the reimbursement.'),
         }
         console.error(e)
     } finally {
@@ -434,19 +436,19 @@ const markReimbursed = async (expense) => {
             <header class="pt-5 pb-3 flex items-center gap-3">
                 <BanknotesIcon class="h-6 w-6 text-gray-700" />
                 <div>
-                    <h1 class="text-lg font-semibold text-gray-900">Gastos</h1>
-                    <p class="text-sm text-gray-600">Registra egresos contra cuentas pay_to.</p>
+                    <h1 class="text-lg font-semibold text-gray-900">{{ tr('Gastos', 'Expenses') }}</h1>
+                    <p class="text-sm text-gray-600">{{ tr('Registra egresos contra cuentas pay_to.', 'Record expenses against pay_to accounts.') }}</p>
                 </div>
             </header>
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex items-center justify-between gap-3">
-                    <h2 class="text-base font-semibold text-gray-900">Nuevo gasto</h2>
+                    <h2 class="text-base font-semibold text-gray-900">{{ tr('Nuevo gasto', 'New Expense') }}</h2>
                     <div class="flex items-center gap-2">
                         <button @click="loadData" :disabled="loading"
                             class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
                             <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />
-                            <span>{{ loading ? 'Recargando…' : 'Recargar' }}</span>
+                            <span>{{ loading ? tr('Recargando...', 'Reloading...') : tr('Recargar', 'Reload') }}</span>
                         </button>
                     </div>
                 </div>
@@ -455,7 +457,7 @@ const markReimbursed = async (expense) => {
 
                 <div class="mt-4 grid gap-4 md:grid-cols-2">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Club</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Club', 'Club') }}</label>
                         <select v-if="canSelectClub" v-model="form.club_id" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
                         </select>
@@ -470,52 +472,52 @@ const markReimbursed = async (expense) => {
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Cuenta</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Cuenta', 'Account') }}</label>
                         <select v-model="form.pay_to" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="p in payToOptions" :key="p.value" :value="p.value">{{ p.label }}</option>
                         </select>
-                        <p v-if="selectedBalance !== null" class="text-xs text-gray-500 mt-1">Saldo actual: {{ fmtMoney(selectedBalance) }}</p>
+                        <p v-if="selectedBalance !== null" class="text-xs text-gray-500 mt-1">{{ tr('Saldo actual', 'Current balance') }}: {{ fmtMoney(selectedBalance) }}</p>
                         <div v-if="form.errors.pay_to" class="mt-1 text-sm text-red-600">{{ form.errors.pay_to }}</div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Origen del pago</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Origen del pago', 'Payment source') }}</label>
                         <select v-model="form.funds_location" class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="cash">Efectivo</option>
-                            <option value="bank">Banco</option>
+                            <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+                            <option value="bank">{{ tr('Banco', 'Bank') }}</option>
                         </select>
                         <div v-if="form.errors.funds_location" class="mt-1 text-sm text-red-600">{{ form.errors.funds_location }}</div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Monto</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Monto', 'Amount') }}</label>
                         <input type="number" step="0.01" min="0" v-model="form.amount"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
                         <div v-if="form.errors.amount" class="mt-1 text-sm text-red-600">{{ form.errors.amount }}</div>
                         <div v-else-if="amountExceedsBalance" class="mt-1 text-sm text-amber-700 border border-amber-200 bg-amber-50 rounded px-2 py-1">
-                            El monto excede el saldo actual. Se registrará un reembolso pendiente por {{ fmtMoney(shortfallAmount) }}.
+                            {{ tr('El monto excede el saldo actual. Se registrará un reembolso pendiente por', 'The amount exceeds the current balance. A pending reimbursement will be recorded for') }} {{ fmtMoney(shortfallAmount) }}.
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Fecha</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                         <input type="date" v-model="form.expense_date"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" />
                         <div v-if="form.errors.expense_date" class="mt-1 text-sm text-red-600">{{ form.errors.expense_date }}</div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Descripcion</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Descripcion', 'Description') }}</label>
                         <textarea rows="2" v-model="form.description"
                             class="mt-1 w-full rounded border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
                         <div v-if="form.errors.description" class="mt-1 text-sm text-red-600">{{ form.errors.description }}</div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Imagen del recibo (opcional)</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Imagen del recibo (opcional)', 'Receipt image (optional)') }}</label>
                         <input type="file" :accept="RECEIPT_ACCEPT" @change="onNewReceiptChange" ref="newReceiptInput"
                             class="mt-1 block w-full text-sm text-gray-700" />
-                        <p class="mt-1 text-xs text-gray-500">Adjunta ahora para marcar como completado, o agrega luego desde la tabla.</p>
+                        <p class="mt-1 text-xs text-gray-500">{{ tr('Adjunta ahora para marcar como completado, o agrega luego desde la tabla.', 'Attach it now to mark the expense complete, or add it later from the table.') }}</p>
                         <div v-if="form.errors.receipt_image" class="mt-1 text-sm text-red-600">{{ form.errors.receipt_image }}</div>
                     </div>
 
@@ -525,18 +527,18 @@ const markReimbursed = async (expense) => {
                     <button @click="submit" :disabled="disableSave"
                         class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
                         <ArrowPathIcon v-if="saving" class="h-4 w-4 animate-spin" />
-                        <span>{{ saving ? 'Guardando…' : 'Guardar gasto' }}</span>
+                        <span>{{ saving ? tr('Guardando...', 'Saving...') : tr('Guardar gasto', 'Save expense') }}</span>
                     </button>
                 </div>
             </section>
 
             <section class="mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <h2 class="text-base font-semibold text-gray-900">Gastos recientes</h2>
-                <div v-if="loading" class="mt-2 text-sm text-gray-500">Cargando…</div>
-                <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">No hay gastos aun.</div>
+                <h2 class="text-base font-semibold text-gray-900">{{ tr('Gastos recientes', 'Recent Expenses') }}</h2>
+                <div v-if="loading" class="mt-2 text-sm text-gray-500">{{ tr('Cargando...', 'Loading...') }}</div>
+                <div v-else-if="!expenses.length" class="mt-2 text-sm text-gray-500">{{ tr('No hay gastos aun.', 'There are no expenses yet.') }}</div>
                 <div v-else class="mt-2 flex items-center justify-between text-xs text-gray-600">
-                    <div>Mostrando {{ expenses.length ? expenseStartIdx + 1 : 0 }}–{{ expenseEndIdx }} de {{ expenses.length }}</div>
-                    <div>10 por pagina</div>
+                    <div>{{ tr('Mostrando', 'Showing') }} {{ expenses.length ? expenseStartIdx + 1 : 0 }}-{{ expenseEndIdx }} {{ tr('de', 'of') }} {{ expenses.length }}</div>
+                    <div>10 {{ tr('por pagina', 'per page') }}</div>
                 </div>
                 <div v-if="!loading && expenses.length" class="mt-3">
                     <div class="space-y-3 md:hidden">
@@ -556,46 +558,46 @@ const markReimbursed = async (expense) => {
                                 </span>
                             </div>
                             <div class="mt-2 text-xs text-gray-600">
-                                <div><span class="font-medium text-gray-700">Cuenta:</span> {{ payToLabel(e.pay_to) }}</div>
-                                <div><span class="font-medium text-gray-700">Origen:</span> {{ locationLabel(e.funds_location) }}</div>
-                                <div><span class="font-medium text-gray-700">Descripcion:</span> {{ e.description || '—' }}</div>
-                                <div><span class="font-medium text-gray-700">Reembolsado a:</span> {{ e.reimbursed_to || '—' }}</div>
+                                <div><span class="font-medium text-gray-700">{{ tr('Cuenta', 'Account') }}:</span> {{ payToLabel(e.pay_to) }}</div>
+                                <div><span class="font-medium text-gray-700">{{ tr('Origen', 'Source') }}:</span> {{ locationLabel(e.funds_location) }}</div>
+                                <div><span class="font-medium text-gray-700">{{ tr('Descripcion', 'Description') }}:</span> {{ e.description || '—' }}</div>
+                                <div><span class="font-medium text-gray-700">{{ tr('Reembolsado a', 'Reimbursed to') }}:</span> {{ e.reimbursed_to || '—' }}</div>
                                 <div v-if="e.pay_to === 'reimbursement_to' && settlementAccountLabel(e)">
-                                    <span class="font-medium text-gray-700">Liquidado con:</span> {{ settlementAccountLabel(e) }}
+                                    <span class="font-medium text-gray-700">{{ tr('Liquidado con', 'Settled with') }}:</span> {{ settlementAccountLabel(e) }}
                                 </div>
                             </div>
                             <div class="mt-3 flex flex-wrap items-center gap-2">
                                 <a v-if="receiptHref(e)" :href="receiptHref(e)" target="_blank" rel="noreferrer"
                                     class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                    Recibo gasto
+                                    {{ tr('Recibo gasto', 'Expense receipt') }}
                                 </a>
                                 <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
                                     <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
-                                    Sin recibo gasto
+                                    {{ tr('Sin recibo gasto', 'No expense receipt') }}
                                 </span>
                                 <a v-if="reimbursementReceiptHref(e)" :href="reimbursementReceiptHref(e)" target="_blank" rel="noreferrer"
                                     class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                    Recibo reembolso
+                                    {{ tr('Recibo reembolso', 'Reimbursement receipt') }}
                                 </a>
                                 <button
                                     v-if="receiptHref(e)"
                                     @click="removeReceiptNow(e)"
                                     :disabled="uploadingId === e.id"
                                     class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
-                                    <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo gasto' }}</span>
+                                    <span>{{ uploadingId === e.id ? tr('Eliminando...', 'Removing...') : tr('Eliminar recibo gasto', 'Remove expense receipt') }}</span>
                                 </button>
                                 <button
                                     v-if="reimbursementReceiptHref(e)"
                                     @click="removeReimbursementReceiptNow(e)"
                                     :disabled="uploadingId === e.id"
                                     class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
-                                    <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo reembolso' }}</span>
+                                    <span>{{ uploadingId === e.id ? tr('Eliminando...', 'Removing...') : tr('Eliminar recibo reembolso', 'Remove reimbursement receipt') }}</span>
                                 </button>
                                 <button
                                     v-if="e.pay_to === 'reimbursement_to' && isCompletedExpense(e) && !reimbursementReceiptHref(e)"
                                     @click="triggerReimbursementReceiptUpload(e.id)"
                                     class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
-                                    <span>Adjuntar recibo reembolso</span>
+                                    <span>{{ tr('Adjuntar recibo reembolso', 'Attach reimbursement receipt') }}</span>
                                 </button>
                                 <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                     :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
@@ -606,7 +608,7 @@ const markReimbursed = async (expense) => {
                                     :disabled="uploadingId === e.id"
                                     class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
                                     <ArrowPathIcon v-if="uploadingId === e.id" class="h-3.5 w-3.5 animate-spin" />
-                                    <span>{{ uploadingId === e.id ? 'Subiendo…' : 'Cargar imagen' }}</span>
+                                    <span>{{ uploadingId === e.id ? tr('Subiendo...', 'Uploading...') : tr('Cargar imagen', 'Upload image') }}</span>
                                 </button>
                                 <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                     :ref="el => { if (el) receiptInputs[e.id] = el }"
@@ -624,21 +626,21 @@ const markReimbursed = async (expense) => {
                                 <select
                                     v-model="reimburseFundsLocationByExpense[e.id]"
                                     class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
-                                    <option value="cash">Efectivo</option>
-                                    <option value="bank">Banco</option>
+                                    <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+                                    <option value="bank">{{ tr('Banco', 'Bank') }}</option>
                                 </select>
                                 <button
                                     @click="triggerReimbursementReceiptUpload(e.id)"
                                     :disabled="reimbursingId === e.id"
                                     class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
-                                    <span>Adjuntar recibo</span>
+                                    <span>{{ tr('Adjuntar recibo', 'Attach receipt') }}</span>
                                 </button>
                                 <button
                                     @click="markReimbursed(e)"
                                     :disabled="reimbursingId === e.id || !reimbursementReceiptFiles[e.id]"
                                     class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
                                     <ArrowPathIcon v-if="reimbursingId === e.id" class="h-3.5 w-3.5 animate-spin" />
-                                    <span>{{ reimbursingId === e.id ? 'Procesando…' : 'Marcar reembolsado' }}</span>
+                                    <span>{{ reimbursingId === e.id ? tr('Procesando...', 'Processing...') : tr('Marcar reembolsado', 'Mark reimbursed') }}</span>
                                 </button>
                             </div>
                         </div>
@@ -648,14 +650,14 @@ const markReimbursed = async (expense) => {
                         <table class="min-w-full text-sm text-gray-700">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-2 text-left font-semibold">Fecha</th>
-                                <th class="px-4 py-2 text-left font-semibold">Cuenta</th>
-                                <th class="px-4 py-2 text-left font-semibold">Origen</th>
-                                <th class="px-4 py-2 text-left font-semibold">Monto</th>
-                                <th class="px-4 py-2 text-left font-semibold">Estado</th>
-                                <th class="px-4 py-2 text-left font-semibold">Recibo</th>
-                                <th class="px-4 py-2 text-left font-semibold">Reembolsado a</th>
-                                <th class="px-4 py-2 text-left font-semibold">Descripcion</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Fecha', 'Date') }}</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Cuenta', 'Account') }}</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Origen', 'Source') }}</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Monto', 'Amount') }}</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Estado', 'Status') }}</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Recibo', 'Receipt') }}</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Reembolsado a', 'Reimbursed to') }}</th>
+                                <th class="px-4 py-2 text-left font-semibold">{{ tr('Descripcion', 'Description') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -684,21 +686,21 @@ const markReimbursed = async (expense) => {
                                         <select
                                             v-model="reimburseFundsLocationByExpense[e.id]"
                                             class="rounded border-gray-300 py-1 text-xs focus:border-blue-500 focus:ring-blue-500">
-                                            <option value="cash">Efectivo</option>
-                                            <option value="bank">Banco</option>
+                                            <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+                                            <option value="bank">{{ tr('Banco', 'Bank') }}</option>
                                         </select>
                                         <button
                                             @click="triggerReimbursementReceiptUpload(e.id)"
                                             :disabled="reimbursingId === e.id"
                                             class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
-                                            <span>Adjuntar recibo</span>
+                                            <span>{{ tr('Adjuntar recibo', 'Attach receipt') }}</span>
                                         </button>
                                         <button
                                             @click="markReimbursed(e)"
                                             :disabled="reimbursingId === e.id || !reimbursementReceiptFiles[e.id]"
                                             class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
                                             <ArrowPathIcon v-if="reimbursingId === e.id" class="h-3.5 w-3.5 animate-spin" />
-                                            <span>{{ reimbursingId === e.id ? 'Procesando…' : 'Marcar reembolsado' }}</span>
+                                            <span>{{ reimbursingId === e.id ? tr('Procesando...', 'Processing...') : tr('Marcar reembolsado', 'Mark reimbursed') }}</span>
                                         </button>
                                     </div>
                                 </td>
@@ -707,35 +709,35 @@ const markReimbursed = async (expense) => {
                                         <div class="flex items-center gap-2">
                                             <a v-if="receiptHref(e)" :href="receiptHref(e)" target="_blank" rel="noreferrer"
                                                 class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                                Recibo gasto
+                                                {{ tr('Recibo gasto', 'Expense receipt') }}
                                             </a>
                                             <span v-else class="text-xs text-gray-400 inline-flex items-center gap-1">
                                                 <ExclamationTriangleIcon class="h-4 w-4 text-amber-600" />
-                                                Sin recibo gasto
+                                                {{ tr('Sin recibo gasto', 'No expense receipt') }}
                                             </span>
                                             <a v-if="reimbursementReceiptHref(e)" :href="reimbursementReceiptHref(e)" target="_blank" rel="noreferrer"
                                                 class="inline-flex items-center rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                                Recibo reembolso
+                                                {{ tr('Recibo reembolso', 'Reimbursement receipt') }}
                                             </a>
                                             <button
                                                 v-if="receiptHref(e)"
                                                 @click="removeReceiptNow(e)"
                                                 :disabled="uploadingId === e.id"
                                                 class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
-                                                <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo gasto' }}</span>
+                                                <span>{{ uploadingId === e.id ? tr('Eliminando...', 'Removing...') : tr('Eliminar recibo gasto', 'Remove expense receipt') }}</span>
                                             </button>
                                             <button
                                                 v-if="reimbursementReceiptHref(e)"
                                                 @click="removeReimbursementReceiptNow(e)"
                                                 :disabled="uploadingId === e.id"
                                                 class="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60">
-                                                <span>{{ uploadingId === e.id ? 'Eliminando…' : 'Eliminar recibo reembolso' }}</span>
+                                                <span>{{ uploadingId === e.id ? tr('Eliminando...', 'Removing...') : tr('Eliminar recibo reembolso', 'Remove reimbursement receipt') }}</span>
                                             </button>
                                             <button
                                                 v-if="e.pay_to === 'reimbursement_to' && isCompletedExpense(e) && !reimbursementReceiptHref(e)"
                                                 @click="triggerReimbursementReceiptUpload(e.id)"
                                                 class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
-                                                <span>Adjuntar recibo reembolso</span>
+                                                <span>{{ tr('Adjuntar recibo reembolso', 'Attach reimbursement receipt') }}</span>
                                             </button>
                                             <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                                 :ref="el => { if (el) reimbursementReceiptInputs[e.id] = el }"
@@ -747,7 +749,7 @@ const markReimbursed = async (expense) => {
                                                 :disabled="uploadingId === e.id"
                                                 class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60">
                                                 <ArrowPathIcon v-if="uploadingId === e.id" class="h-3.5 w-3.5 animate-spin" />
-                                                <span>{{ uploadingId === e.id ? 'Subiendo…' : 'Cargar imagen' }}</span>
+                                                <span>{{ uploadingId === e.id ? tr('Subiendo...', 'Uploading...') : tr('Cargar imagen', 'Upload image') }}</span>
                                             </button>
                                             <input type="file" :accept="RECEIPT_ACCEPT" class="hidden"
                                                 :ref="el => { if (el) receiptInputs[e.id] = el }"
@@ -759,7 +761,7 @@ const markReimbursed = async (expense) => {
                                 <td class="px-4 py-2">
                                     <div>{{ e.reimbursed_to || '—' }}</div>
                                     <div v-if="e.pay_to === 'reimbursement_to' && settlementAccountLabel(e)" class="text-xs text-gray-500 mt-1">
-                                        Liquidado con: {{ settlementAccountLabel(e) }}
+                                        {{ tr('Liquidado con', 'Settled with') }}: {{ settlementAccountLabel(e) }}
                                     </div>
                                     <div v-if="rowErrors[e.id]" class="text-xs text-red-600 mt-1">{{ rowErrors[e.id] }}</div>
                                 </td>
@@ -772,12 +774,12 @@ const markReimbursed = async (expense) => {
                 <div v-if="expenses.length > expensePageSize" class="mt-3 flex items-center justify-between">
                     <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         :disabled="expensePage <= 1" @click="goExpensePage(expensePage - 1)">
-                        Anterior
+                        {{ tr('Anterior', 'Previous') }}
                     </button>
-                    <div class="text-xs text-gray-600">Pagina {{ expensePage }} de {{ totalExpensePages }}</div>
+                    <div class="text-xs text-gray-600">{{ tr('Pagina', 'Page') }} {{ expensePage }} {{ tr('de', 'of') }} {{ totalExpensePages }}</div>
                     <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         :disabled="expensePage >= totalExpensePages" @click="goExpensePage(expensePage + 1)">
-                        Siguiente
+                        {{ tr('Siguiente', 'Next') }}
                     </button>
                 </div>
             </section>

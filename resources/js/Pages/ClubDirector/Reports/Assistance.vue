@@ -23,6 +23,7 @@ import { ref, onMounted, computed,nextTick } from "vue";
 import html2pdf from 'html2pdf.js'
 import { useAuth } from "@/Composables/useAuth";
 import { useGeneral } from "@/Composables/useGeneral";
+import { useLocale } from "@/Composables/useLocale";
 import { usePage } from "@inertiajs/vue3";
 
 const selectedClub = ref(null);
@@ -42,6 +43,7 @@ const reportRef = ref(null)
 
 const { user, userClubIds } = useAuth();
 const { toast, showToast } = useGeneral();
+const { tr } = useLocale();
 const reports = ref([]);
 const page = usePage();
 const superadminContext = computed(() => page.props.auth?.superadmin_context ?? null);
@@ -60,14 +62,14 @@ const fetchMembers = async (clubId) => {
         const data = await fetchMembersByClub(clubId);
         if (Array.isArray(data) && data.length > 0) {
             members.value = data;
-            showToast("Miembros cargados", "success");
+            showToast(tr("Miembros cargados", "Members loaded"), "success");
         } else {
             members.value = [];
-            alert("No se encontraron miembros para este club.");
+            showToast(tr("No se encontraron miembros para este club.", "No members were found for this club."), "info");
         }
     } catch (error) {
         console.error("Failed to fetch members:", error);
-        showToast("Error al obtener miembros", "error");
+        showToast(tr("Error al obtener miembros", "Could not load members"), "error");
     }
 };
 
@@ -104,13 +106,13 @@ const fetchClubs = async () => {
         }
     } catch (error) {
         console.error("Failed to fetch clubs:", error);
-        showToast("Error al cargar clubes", "error");
+        showToast(tr("Error al cargar clubes", "Could not load clubs"), "error");
     }
 };
 
 const submitReport = async () => {
     if (!selectedClub.value) {
-        showToast("Selecciona un club primero", "error");
+        showToast(tr("Selecciona un club primero", "Select a club first"), "error");
         return;
     }
 
@@ -122,7 +124,7 @@ const submitReport = async () => {
     switch (reportType.value) {
         case "date":
             if (!selectedDate.value) {
-                showToast("Selecciona una fecha.", "error");
+                showToast(tr("Selecciona una fecha.", "Select a date."), "error");
                 return;
             }
             payload.date = selectedDate.value;
@@ -130,7 +132,7 @@ const submitReport = async () => {
 
         case "range":
             if (!startDate.value || !endDate.value) {
-                showToast("Selecciona fecha inicial y final.", "error");
+                showToast(tr("Selecciona fecha inicial y final.", "Select a start and end date."), "error");
                 return;
             }
             payload.start_date = startDate.value;
@@ -139,7 +141,7 @@ const submitReport = async () => {
 
         case "class":
             if (!selectedClassId.value) {
-                showToast("Selecciona una clase.", "error");
+                showToast(tr("Selecciona una clase.", "Select a class."), "error");
                 return;
             }
             payload.class_id = selectedClassId.value;
@@ -147,14 +149,14 @@ const submitReport = async () => {
 
         case "member":
             if (!selectedMemberId.value) {
-                showToast("Selecciona un miembro.", "error");
+                showToast(tr("Selecciona un miembro.", "Select a member."), "error");
                 return;
             }
             payload.member_id = selectedMemberId.value;
             break;
 
         default:
-            showToast("Selecciona un tipo de reporte.", "error");
+            showToast(tr("Selecciona un tipo de reporte.", "Select a report type."), "error");
             return;
     }
 
@@ -163,13 +165,13 @@ const submitReport = async () => {
         reports.value = response.data.reports;
         console.log(response);
         if (reports.value.length === 0) {
-            showToast("No se encontraron reportes para el criterio seleccionado.", "info");
+            showToast(tr("No se encontraron reportes para el criterio seleccionado.", "No reports were found for the selected criteria."), "info");
             return;
         }
-        showToast("Reporte generado correctamente", "success");
+        showToast(tr("Reporte generado correctamente", "Report generated successfully"), "success");
     } catch (error) {
         console.error("Error fetching report:", error);
-        showToast("No se pudo generar el reporte", "error");
+        showToast(tr("No se pudo generar el reporte", "Could not generate the report"), "error");
     }
 };
 
@@ -258,10 +260,10 @@ const selectedMemberName = computed(() => {
 
 const reportKindLabel = computed(() => {
     switch (reportType.value) {
-        case 'date': return 'Reporte de asistencia por fecha';
-        case 'range': return 'Reporte de asistencia por rango de fechas';
-        case 'class': return 'Reporte de asistencia por clase';
-        case 'member': return 'Reporte de asistencia por miembro';
+        case 'date': return tr('Reporte de asistencia por fecha', 'Attendance report by date');
+        case 'range': return tr('Reporte de asistencia por rango de fechas', 'Attendance report by date range');
+        case 'class': return tr('Reporte de asistencia por clase', 'Attendance report by class');
+        case 'member': return tr('Reporte de asistencia por miembro', 'Attendance report by member');
         default: return '';
     }
 });
@@ -286,8 +288,7 @@ const reportHeader = computed(() => {
     const club = selectedClub.value ? selectedClub.value.club_name : '';
     const kind = reportKindLabel.value;
     const filter = reportFilterDetail.value;
-    const merged = mergeReports.value ? ' (Combinado)' : '';
-    // Example: "NAD Eagles — Reporte de asistencia por clase (Rangers) (Combinado)"
+    const merged = mergeReports.value ? tr(' (Combinado)', ' (Merged)') : '';
     return [club, '—', kind, filter ? `(${filter})` : '', merged].filter(Boolean).join(' ');
 });
 
@@ -301,15 +302,19 @@ onMounted(() => {
         <div
             class="bg-yellow-100 text-yellow-800 text-sm px-4 py-2 text-center font-medium shadow-md lg:hidden"
         >
-            Para mejor experiencia, ve este reporte en escritorio o en modo
-            horizontal.
+            {{
+                tr(
+                    "Para mejor experiencia, ve este reporte en escritorio o en modo horizontal.",
+                    "For the best experience, view this report on desktop or in landscape mode."
+                )
+            }}
         </div>
         <div class="px-4 sm:px-6 lg:px-8 py-6">
             <!-- Heading -->
             <h1
                 class="text-lg sm:text-xl font-semibold text-gray-800 mb-6 text-center sm:text-left"
             >
-                Reporte de asistencia
+                {{ tr("Reporte de asistencia", "Attendance Report") }}
             </h1>
 
             <!-- Form Container -->
@@ -317,14 +322,14 @@ onMounted(() => {
                 <!-- Select Club -->
                 <div v-if="canSelectClub" class="col-span-full sm:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Selecciona un club</label
+                        >{{ tr("Selecciona un club", "Select a club") }}</label
                     >
                     <select
                         v-model="selectedClub"
                         @change="onClubChange"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-yellow-400 focus:border-yellow-400"
                     >
-                        <option disabled value="">-- Elige un club --</option>
+                        <option disabled value="">-- {{ tr("Elige un club", "Choose a club") }} --</option>
                         <option
                             v-for="club in clubs"
                             :key="club.id"
@@ -335,7 +340,7 @@ onMounted(() => {
                     </select>
                 </div>
                 <div v-else-if="selectedClub" class="col-span-full sm:col-span-1 rounded border bg-white px-3 py-2 text-sm text-gray-700">
-                    Club activo: <strong>{{ selectedClub.club_name }}</strong>
+                    {{ tr("Club activo", "Active club") }}: <strong>{{ selectedClub.club_name }}</strong>
                 </div>
 
                 <!-- Select Report Type -->
@@ -343,18 +348,18 @@ onMounted(() => {
                     <label
                         for="reportType"
                         class="block text-sm font-medium text-gray-700 mb-1"
-                        >Tipo de reporte</label
+                        >{{ tr("Tipo de reporte", "Report type") }}</label
                     >
                     <select
                         id="reportType"
                         v-model="reportType"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-yellow-400 focus:border-yellow-400"
                     >
-                        <option value="" disabled>Selecciona un tipo de reporte</option>
-                        <option value="date">Por fecha</option>
-                        <option value="range">Por rango de fechas</option>
-                        <option value="class">Por clase</option>
-                        <option value="member">Por miembro</option>
+                        <option value="" disabled>{{ tr("Selecciona un tipo de reporte", "Select a report type") }}</option>
+                        <option value="date">{{ tr("Por fecha", "By date") }}</option>
+                        <option value="range">{{ tr("Por rango de fechas", "By date range") }}</option>
+                        <option value="class">{{ tr("Por clase", "By class") }}</option>
+                        <option value="member">{{ tr("Por miembro", "By member") }}</option>
                     </select>
                 </div>
 
@@ -364,7 +369,7 @@ onMounted(() => {
                     v-if="reportType === 'date'"
                 >
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Selecciona fecha</label
+                        >{{ tr("Selecciona fecha", "Select date") }}</label
                     >
                     <input
                         type="date"
@@ -381,7 +386,7 @@ onMounted(() => {
                     <div>
                         <label
                             class="block text-sm font-medium text-gray-700 mb-1"
-                            >Fecha inicio</label
+                            >{{ tr("Fecha inicio", "Start date") }}</label
                         >
                         <input
                             type="date"
@@ -392,7 +397,7 @@ onMounted(() => {
                     <div>
                         <label
                             class="block text-sm font-medium text-gray-700 mb-1"
-                            >Fecha fin</label
+                            >{{ tr("Fecha fin", "End date") }}</label
                         >
                         <input
                             type="date"
@@ -408,13 +413,13 @@ onMounted(() => {
                     v-if="reportType === 'class'"
                 >
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Selecciona clase</label
+                        >{{ tr("Selecciona clase", "Select class") }}</label
                     >
                     <select
                         v-model="selectedClassId"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm"
                     >
-                        <option disabled value="">Elige una clase</option>
+                        <option disabled value="">{{ tr("Elige una clase", "Choose a class") }}</option>
                         <option
                             v-for="c in clubClasses"
                             :key="c.id"
@@ -431,13 +436,13 @@ onMounted(() => {
                     v-if="reportType === 'member'"
                 >
                     <label class="block text-sm font-medium text-gray-700 mb-1"
-                        >Selecciona miembro</label
+                        >{{ tr("Selecciona miembro", "Select member") }}</label
                     >
                     <select
                         v-model="selectedMemberId"
                         class="w-full border border-gray-300 rounded-md p-2 text-sm"
                     >
-                        <option disabled value="">Elige un miembro</option>
+                        <option disabled value="">{{ tr("Elige un miembro", "Choose a member") }}</option>
                         <option v-for="m in members" :key="m.id" :value="m.id">
                             {{ m.applicant_name }}
                         </option>
@@ -450,14 +455,14 @@ onMounted(() => {
                         @click="submitReport"
                         class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
                     >
-                        Generar reporte
+                        {{ tr("Generar reporte", "Generate report") }}
                     </button>
                     &nbsp;
                     <button
                         @click="exportPdf"
                         class="px-2 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700"
                     >
-                        Exportar PDF
+                        {{ tr("Exportar PDF", "Export PDF") }}
                     </button>
                     <label class="inline-flex items-center">
                         <input
@@ -466,7 +471,7 @@ onMounted(() => {
                             class="form-checkbox"
                         />
                         <span class="ml-2 text-sm"
-                            >Combinar todos los reportes en una tabla</span
+                            >{{ tr("Combinar todos los reportes en una tabla", "Merge all reports into one table") }}</span
                         >
                     </label>
                 </div>
@@ -477,24 +482,24 @@ onMounted(() => {
                             {{ reportHeader }}
                         </h2>
                         <p class="text-xs text-gray-500">
-                            Generado el {{ new Date().toLocaleString() }}
+                            {{ tr("Generado el", "Generated on") }} {{ new Date().toLocaleString() }}
                         </p>
                 </div>
                 <div v-if="mergeReports" class="overflow-x-auto">
                     <table class="w-full min-w-max border text-sm">
                         <thead>
                             <tr class="bg-gray-100">
-                                <th class="border p-1">Fecha</th>
-                                <th class="border p-1">Mes</th>
-                                <th class="border p-1">Ano</th>
-                                <th class="border p-1">Miembro</th>
-                                <th class="border p-1">Asistencia</th>
-                                <th class="border p-1">Puntualidad</th>
-                                <th class="border p-1">Uniforme</th>
-                                <th class="border p-1">Conductor</th>
-                                <th class="border p-1">Cuota</th>
-                                <th class="border p-1">Monto</th>
-                                <th class="border p-1">Total</th>
+                                <th class="border p-1">{{ tr("Fecha", "Date") }}</th>
+                                <th class="border p-1">{{ tr("Mes", "Month") }}</th>
+                                <th class="border p-1">{{ tr("Ano", "Year") }}</th>
+                                <th class="border p-1">{{ tr("Miembro", "Member") }}</th>
+                                <th class="border p-1">{{ tr("Asistencia", "Attendance") }}</th>
+                                <th class="border p-1">{{ tr("Puntualidad", "Punctuality") }}</th>
+                                <th class="border p-1">{{ tr("Uniforme", "Uniform") }}</th>
+                                <th class="border p-1">{{ tr("Conductor", "Driver") }}</th>
+                                <th class="border p-1">{{ tr("Cuota", "Dues") }}</th>
+                                <th class="border p-1">{{ tr("Monto", "Amount") }}</th>
+                                <th class="border p-1">{{ tr("Total", "Total") }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -542,7 +547,7 @@ onMounted(() => {
                             <summary
                                 class="cursor-pointer p-2 bg-gray-100 font-medium"
                             >
-                                Reporte: {{ report.date }} —
+                                {{ tr("Reporte", "Report") }}: {{ report.date }} —
                                 {{ report.class_name }} | {{ report.staff_name }} ({{ report.month }}
                                 {{ report.year }} )
                             </summary>
@@ -550,20 +555,20 @@ onMounted(() => {
                                 <table class="w-full text-sm border mt-2">
                                     <thead class="bg-gray-50">
                                         <tr>
-                                            <th class="border p-1">Miembro</th>
+                                            <th class="border p-1">{{ tr("Miembro", "Member") }}</th>
                                             <th class="border p-1">
-                                                Asistencia
+                                                {{ tr("Asistencia", "Attendance") }}
                                             </th>
                                             <th class="border p-1">
-                                                Puntualidad
+                                                {{ tr("Puntualidad", "Punctuality") }}
                                             </th>
-                                            <th class="border p-1">Uniforme</th>
+                                            <th class="border p-1">{{ tr("Uniforme", "Uniform") }}</th>
                                             <th class="border p-1">
-                                                Conductor
+                                                {{ tr("Conductor", "Driver") }}
                                             </th>
-                                            <th class="border p-1">Cuota</th>
-                                            <th class="border p-1">Monto</th>
-                                            <th class="border p-1">Total</th>
+                                            <th class="border p-1">{{ tr("Cuota", "Dues") }}</th>
+                                            <th class="border p-1">{{ tr("Monto", "Amount") }}</th>
+                                            <th class="border p-1">{{ tr("Total", "Total") }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>

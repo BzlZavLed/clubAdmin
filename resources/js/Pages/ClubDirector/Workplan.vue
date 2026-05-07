@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 import {
     previewWorkplan,
     confirmWorkplan,
@@ -47,6 +48,7 @@ const props = defineProps({
     }
 })
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 
 const isDirector = computed(() => props.auth_user?.profile_type === 'club_director')
 const isSuperadmin = computed(() => props.auth_user?.profile_type === 'superadmin')
@@ -544,7 +546,7 @@ async function handlePreview() {
         showDiffModal.value = true
     } catch (error) {
         console.error(error)
-        showToast('No se pudo previsualizar los cambios', 'error')
+        showToast(tr('No se pudo previsualizar los cambios', 'Could not preview changes'), 'error')
     }
 }
 
@@ -571,10 +573,10 @@ async function applyChanges() {
             sunday: (workplan.rules || []).filter(r => r.meeting_type === 'sunday').map(r => r.nth_week),
         }
         showDiffModal.value = false
-        showToast('Plan de trabajo actualizado')
+        showToast(tr('Plan de trabajo actualizado', 'Workplan updated'))
     } catch (error) {
         console.error(error)
-        showToast('No se pudieron aplicar los cambios', 'error')
+        showToast(tr('No se pudieron aplicar los cambios', 'Could not apply changes'), 'error')
     }
 }
 
@@ -612,14 +614,14 @@ function resolveCalendarYear() {
 }
 
 function defaultPlanName(year) {
-    const clubName = props.clubs.find(c => String(c.id) === String(selectedClubId.value))?.club_name || 'Club'
-    return `Plan anual ${clubName} ${year}`
+    const clubName = props.clubs.find(c => String(c.id) === String(selectedClubId.value))?.club_name || tr('Club', 'Club')
+    return tr(`Plan anual ${clubName} ${year}`, `Annual plan ${clubName} ${year}`)
 }
 
 function openExportModal() {
     if (!hasClubSelected.value || !isDirector.value) return
     if (!props.workplan?.id) {
-    showToast('Crea un plan de trabajo antes de exportar', 'warning')
+    showToast(tr('Crea un plan de trabajo antes de exportar', 'Create a workplan before exporting'), 'warning')
         return
     }
     const defaultSlug = props.integration_config?.church_slug || props.integration_config?.church?.slug || ''
@@ -666,7 +668,7 @@ async function saveObjectivesAndExport() {
     const missing = missingObjectiveEvents.value
     const incomplete = missing.find(ev => !objectiveAssignments.value[ev.id])
     if (incomplete) {
-        showToast('Selecciona un objetivo para cada evento', 'warning')
+        showToast(tr('Selecciona un objetivo para cada evento', 'Select an objective for each event'), 'warning')
         return
     }
     objectiveSaving.value = true
@@ -692,7 +694,7 @@ async function saveObjectivesAndExport() {
         await submitExport()
     } catch (error) {
         console.error(error)
-        showToast('No se pudieron guardar los objetivos', 'error')
+        showToast(tr('No se pudieron guardar los objetivos', 'Could not save objectives'), 'error')
     } finally {
         objectiveSaving.value = false
     }
@@ -734,7 +736,7 @@ async function submitExport() {
         }))
         if (invalidEvents.length) {
             exportError.value = {
-                message: 'Hay eventos con hora final invalida. Corrige la hora o usa un rango de fechas.',
+                message: tr('Hay eventos con hora final invalida. Corrige la hora o usa un rango de fechas.', 'Some events have an invalid end time. Correct the time or use a date range.'),
                 conflicts: invalidEvents,
                 imported: 0,
                 skipped: invalidEvents.length,
@@ -757,10 +759,10 @@ async function submitExport() {
         const data = await exportWorkplanToMyChurchAdmin(payload)
         exportResponse.value = data
         exportResponseOpen.value = true
-        showToast(`Exported ${data.sent_events || data.imported || 0} events`)
+        showToast(tr(`Exportados ${data.sent_events || data.imported || 0} eventos`, `Exported ${data.sent_events || data.imported || 0} events`))
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'Fallo la exportacion'
+        const message = error?.response?.data?.message || tr('Fallo la exportacion', 'Export failed')
         exportError.value = error?.response?.data || { message }
         exportResponseOpen.value = true
         showToast(message, 'error')
@@ -792,28 +794,28 @@ async function createWorkplanNow() {
             sunday: (workplan.rules || []).filter(r => r.meeting_type === 'sunday').map(r => r.nth_week),
         }
         workplanModalOpen.value = false
-        showToast('Plan de trabajo creado')
+        showToast(tr('Plan de trabajo creado', 'Workplan created'))
         // Refresh to sync props and state (ensures no stale defaults)
         window.location.reload()
     } catch (error) {
         console.error(error)
-        showToast('No se pudo crear el plan de trabajo', 'error')
+        showToast(tr('No se pudo crear el plan de trabajo', 'Could not create the workplan'), 'error')
     }
 }
 
 async function handleDeleteWorkplan() {
     if (!hasClubSelected.value || !props.workplan?.id) return
-    const confirmDelete = confirm('¿Eliminar el plan de trabajo actual? Esto borrara todos los eventos programados del club.')
+    const confirmDelete = confirm(tr('¿Eliminar el plan de trabajo actual? Esto borrara todos los eventos programados del club.', 'Delete the current workplan? This will remove all scheduled club events.'))
     if (!confirmDelete) return
     deletingWorkplan.value = true
     try {
         await deleteWorkplan(selectedClubId.value)
-        showToast('Plan de trabajo eliminado')
+        showToast(tr('Plan de trabajo eliminado', 'Workplan deleted'))
         const redirect = safeRoute('club.workplan', { club_id: selectedClubId.value }, '/club-director/workplan')
         window.location.assign(redirect)
     } catch (error) {
         console.error(error)
-        showToast('No se pudo eliminar el plan de trabajo', 'error')
+        showToast(tr('No se pudo eliminar el plan de trabajo', 'Could not delete the workplan'), 'error')
     } finally {
         deletingWorkplan.value = false
     }
@@ -831,7 +833,7 @@ async function saveEvent() {
     if (!hasClubSelected.value) return
     try {
         if (eventForm.value.end_date && eventForm.value.end_date < eventForm.value.date) {
-            showToast('La fecha final no puede ser anterior a la fecha inicial', 'warning')
+            showToast(tr('La fecha final no puede ser anterior a la fecha inicial', 'The end date cannot be before the start date'), 'warning')
             return
         }
         const payload = {
@@ -844,17 +846,17 @@ async function saveEvent() {
         if (editingEvent.value) {
             const { event } = await updateWorkplanEvent(editingEvent.value.id, payload)
             events.value = events.value.map(e => e.id === event.id ? normalizeEvents([event])[0] : e)
-            showToast('Evento actualizado')
+            showToast(tr('Evento actualizado', 'Event updated'))
         } else {
             const { event } = await createWorkplanEvent(payload)
             events.value = [...events.value, normalizeEvents([event])[0]]
-            showToast('Evento agregado')
+            showToast(tr('Evento agregado', 'Event added'))
         }
         eventModalOpen.value = false
         editingEvent.value = null
     } catch (error) {
         console.error(error)
-        showToast('No se pudo guardar el evento', 'error')
+        showToast(tr('No se pudo guardar el evento', 'Could not save the event'), 'error')
     }
 }
 
@@ -933,14 +935,14 @@ const applyPlanLocation = (item) => {
 async function removeEvent(ev) {
     if (isReadOnly.value) return
     if (!hasClubSelected.value) return
-    if (!confirm('¿Eliminar este evento?')) return
+    if (!confirm(tr('¿Eliminar este evento?', 'Delete this event?'))) return
     try {
         await deleteWorkplanEvent(ev.id)
         events.value = events.value.filter(e => e.id !== ev.id)
-        showToast('Evento eliminado')
+        showToast(tr('Evento eliminado', 'Event deleted'))
     } catch (error) {
         console.error(error)
-        showToast('No se pudo eliminar el evento', 'error')
+        showToast(tr('No se pudo eliminar el evento', 'Could not delete the event'), 'error')
     }
 }
 
@@ -991,7 +993,7 @@ function selectMeeting(ev) {
 async function savePlan() {
     if (!isStaff.value) return
     if (!selectedEvent.value) {
-        showToast('Selecciona una reunion primero', 'warning')
+        showToast(tr('Selecciona una reunion primero', 'Select a meeting first'), 'warning')
         return
     }
     if (!planForm.value.class_id && userClassId.value) {
@@ -1007,7 +1009,7 @@ async function savePlan() {
             class: plan.class || (staffProfile.value?.assigned_class_name ? { class_name: staffProfile.value.assigned_class_name } : undefined)
         }
         addOrUpdatePlanInEvents(enriched)
-        showToast(editingPlanId.value ? 'Plan de clase actualizado' : 'Plan de clase enviado')
+        showToast(editingPlanId.value ? tr('Plan de clase actualizado', 'Class plan updated') : tr('Plan de clase enviado', 'Class plan submitted'))
         editingPlanId.value = null
         planForm.value = {
             workplan_event_id: selectedEvent.value.id,
@@ -1021,7 +1023,7 @@ async function savePlan() {
         }
     } catch (e) {
         console.error(e)
-        showToast('No se pudo guardar el plan de clase', 'error')
+        showToast(tr('No se pudo guardar el plan de clase', 'Could not save the class plan'), 'error')
     }
 }
 
@@ -1034,10 +1036,10 @@ async function updatePlanStatus(plan, status) {
         if (planDetail.value?.id === plan.id) {
             planDetail.value = { ...updated, _event: planDetail.value._event }
         }
-        showToast(`Plan ${payload.status}`)
+        showToast(tr(`Plan ${payload.status}`, `Plan ${payload.status}`))
     } catch (e) {
         console.error(e)
-        showToast('No se pudo actualizar el estado', 'error')
+        showToast(tr('No se pudo actualizar el estado', 'Could not update the status'), 'error')
     }
 }
 
@@ -1085,7 +1087,7 @@ function editPlan(plan) {
         requested_date: normalizeDate(plan.requested_date || ev?.date),
         location_override: plan.location_override || ''
     }
-    showToast('Edita el plan a la derecha y guarda.')
+    showToast(tr('Edita el plan a la derecha y guarda.', 'Edit the plan on the right and save.'))
 }
 
 function openRequestModal(plan) {
@@ -1147,17 +1149,17 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Plan de trabajo</template>
+        <template #title>{{ tr('Plan de trabajo', 'Workplan') }}</template>
         <div class="px-6 py-4 space-y-6">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div class="space-y-2">
-                    <h1 class="text-2xl font-semibold text-gray-900">Plan de trabajo del club</h1>
-                    <p class="text-sm text-gray-600">Calendario de reuniones sabaticas y dominicales del club con eventos especiales.</p>
+                    <h1 class="text-2xl font-semibold text-gray-900">{{ tr('Plan de trabajo del club', 'Club Workplan') }}</h1>
+                    <p class="text-sm text-gray-600">{{ tr('Calendario de reuniones sabaticas y dominicales del club con eventos especiales.', 'Calendar for club Sabbath and Sunday meetings with special events.') }}</p>
                     <div class="flex items-center gap-2">
-                        <label class="text-sm text-gray-700">Club</label>
+                        <label class="text-sm text-gray-700">{{ tr('Club', 'Club') }}</label>
                         <template v-if="canSelectClub">
                             <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm" @change="onClubChange">
-                                <option value="">Selecciona un club</option>
+                                <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
                                 <option v-for="club in clubs" :key="club.id" :value="club.id">
                                     {{ club.club_name }}{{ club.church_name ? ` - ${club.church_name}` : '' }}
                                 </option>
@@ -1174,15 +1176,15 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                     <div class="flex flex-wrap gap-2 items-center">
                         <a :href="hasClubSelected ? pdfHref : '#'" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
                             <ArrowDownTrayIcon class="w-4 h-4" />
-                            <span class="sr-only">Descargar PDF</span>
+                            <span class="sr-only">{{ tr('Descargar PDF', 'Download PDF') }}</span>
                         </a>
                         <a :href="tablePdfHref" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="(!hasClubSelected || !isDirector) && 'opacity-50 pointer-events-none'">
                             <TableCellsIcon class="w-4 h-4" />
-                            <span>Tabla</span>
+                            <span>{{ tr('Tabla', 'Table') }}</span>
                         </a>
                         <a :href="hasClubSelected ? icsHref : '#'" target="_blank" class="p-2 rounded-md bg-white border text-sm text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
                             <CalendarDaysIcon class="w-4 h-4" />
-                            <span class="sr-only">Descargar ICS</span>
+                            <span class="sr-only">{{ tr('Descargar ICS', 'Download ICS') }}</span>
                         </a>
                         <button
                             v-if="isDirector && props.workplan?.id"
@@ -1191,7 +1193,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             type="button"
                             @click="openExportModal"
                         >
-                            Exportar a mychurchadmin.net
+                            {{ tr('Exportar a mychurchadmin.net', 'Export to mychurchadmin.net') }}
                         </button>
                         <button
                             v-if="isDirector && props.workplan?.id"
@@ -1200,20 +1202,20 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             type="button"
                             @click="handleDeleteWorkplan"
                         >
-                            Eliminar calendario
+                            {{ tr('Eliminar calendario', 'Delete calendar') }}
                         </button>
                     </div>
-                    <button class="text-sm text-blue-600 hover:underline" @click="showIcsHelp = true" type="button">¿Como agregar?</button>
+                    <button class="text-sm text-blue-600 hover:underline" @click="showIcsHelp = true" type="button">{{ tr('¿Como agregar?', 'How to add?') }}</button>
                 </div>
             </div>
 
             <div v-if="hasClubSelected" class="space-y-6">
                 <div v-if="!props.workplan?.id" class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded flex items-center justify-between">
                     <div>
-                        <p class="font-semibold">No hay plan de trabajo para este club.</p>
-                        <p class="text-sm">Define el rango de fechas y valores predeterminados para comenzar.</p>
+                        <p class="font-semibold">{{ tr('No hay plan de trabajo para este club.', 'There is no workplan for this club.') }}</p>
+                        <p class="text-sm">{{ tr('Define el rango de fechas y valores predeterminados para comenzar.', 'Define the date range and defaults to get started.') }}</p>
                     </div>
-                    <button class="px-3 py-2 bg-amber-600 text-white rounded text-sm" @click="openWorkplanModal">Crear plan de trabajo</button>
+                    <button class="px-3 py-2 bg-amber-600 text-white rounded text-sm" @click="openWorkplanModal">{{ tr('Crear plan de trabajo', 'Create workplan') }}</button>
                 </div>
 
                 <div class="bg-white shadow-sm rounded-lg p-4 border">
@@ -1227,11 +1229,11 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                     <div v-if="props.inherited_events.length" class="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
                         <span class="flex items-center gap-1">
                             <span class="inline-block w-3 h-3 rounded" style="background:#faf5ff;border-left:3px solid #a855f7"></span>
-                            Eventos de asociación
+                            {{ tr('Eventos de asociación', 'Association events') }}
                         </span>
                         <span class="flex items-center gap-1">
                             <span class="inline-block w-3 h-3 rounded" style="background:#f0fdf4;border-left:3px solid #2dd4bf"></span>
-                            Eventos de distrito
+                            {{ tr('Eventos de distrito', 'District events') }}
                         </span>
                     </div>
                 </div>
@@ -1241,15 +1243,15 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                 <div v-if="isStaff" class="space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                         <div>
-                            <h3 class="font-semibold text-gray-800">Planes de clase en dias de reunion</h3>
-                            <p class="text-sm text-gray-600">Elige una reunion sabatica/dominical y agrega tu plan de clase o salida.</p>
+                            <h3 class="font-semibold text-gray-800">{{ tr('Planes de clase en dias de reunion', 'Class plans on meeting days') }}</h3>
+                            <p class="text-sm text-gray-600">{{ tr('Elige una reunion sabatica/dominical y agrega tu plan de clase o salida.', 'Choose a Sabbath/Sunday meeting and add your class plan or outing.') }}</p>
                         </div>
-                        <div class="text-xs text-gray-500">Selecciona una reunion para comenzar.</div>
+                        <div class="text-xs text-gray-500">{{ tr('Selecciona una reunion para comenzar.', 'Select a meeting to start.') }}</div>
                     </div>
 
                     <div class="grid md:grid-cols-2 gap-4">
                         <div class="rounded-lg p-3 border bg-white space-y-2">
-                            <h4 class="font-semibold text-gray-800 text-sm">Fechas de reunion</h4>
+                            <h4 class="font-semibold text-gray-800 text-sm">{{ tr('Fechas de reunion', 'Meeting dates') }}</h4>
                             <div v-if="upcomingPlanEvents.length" class="space-y-2 max-h-[360px] overflow-y-auto pr-1">
                                 <button
                                     v-for="ev in upcomingPlanEvents"
@@ -1263,50 +1265,50 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                             <div class="text-xs text-gray-500">{{ normalizeDate(ev.date) }}</div>
                                             <div class="font-semibold text-gray-900 truncate">{{ ev.title }}</div>
                                             <div class="text-xs text-gray-600 capitalize">{{ ev.meeting_type }}</div>
-                                            <div class="text-[11px] text-gray-600">{{ formatTimeRange(ev) || 'Todo el dia' }}</div>
-                                            <div class="text-[11px] text-gray-600">Ubicacion: {{ ev.location || '—' }}</div>
+                                            <div class="text-[11px] text-gray-600">{{ formatTimeRange(ev) || tr('Todo el dia', 'All day') }}</div>
+                                            <div class="text-[11px] text-gray-600">{{ tr('Ubicacion', 'Location') }}: {{ ev.location || '—' }}</div>
                                         </div>
                                         <span v-if="ev.is_generated" class="text-[10px] px-2 py-0.5 rounded-full border border-black text-black bg-white inline-flex items-center justify-center">A</span>
                                     </div>
                                 </button>
                             </div>
                             <div v-else class="text-sm text-gray-600 space-y-2">
-                                <div>No hay reuniones programadas en el rango.</div>
+                                <div>{{ tr('No hay reuniones programadas en el rango.', 'There are no meetings scheduled in the range.') }}</div>
                                 <button
                                     class="px-3 py-1 border rounded text-sm text-blue-600 inline-flex items-center gap-1"
                                     type="button"
                                     @click="openEventModal()"
                                 >
-                                    Crear una reunion
+                                    {{ tr('Crear una reunion', 'Create a meeting') }}
                                 </button>
                             </div>
                         </div>
 
                         <div class="rounded-lg p-4 border bg-gray-50 border-gray-200">
                             <div class="flex items-center justify-between mb-2">
-                                <h4 class="font-semibold text-gray-800 text-sm">Crear plan de clase</h4>
-                                <span v-if="editingPlanId" class="text-xs text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded">Editando</span>
+                                <h4 class="font-semibold text-gray-800 text-sm">{{ tr('Crear plan de clase', 'Create class plan') }}</h4>
+                                <span v-if="editingPlanId" class="text-xs text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded">{{ tr('Editando', 'Editing') }}</span>
                             </div>
                             <div v-if="selectedEvent" class="space-y-3">
                                 <div class="text-xs text-gray-600 bg-white border rounded p-2">
-                                    Reunion: {{ normalizeDate(selectedEvent.date) }} · {{ selectedEvent.title }} ({{ selectedEvent.meeting_type }})
+                                    {{ tr('Reunion', 'Meeting') }}: {{ normalizeDate(selectedEvent.date) }} · {{ selectedEvent.title }} ({{ selectedEvent.meeting_type }})
                                 </div>
                                 <div>
-                                    <label class="block text-sm text-gray-700">Titulo</label>
+                                    <label class="block text-sm text-gray-700">{{ tr('Titulo', 'Title') }}</label>
                                     <input v-model="planForm.title" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff" />
                                 </div>
                                 <div>
-                                    <label class="block text-sm text-gray-700">Objetivo / Descripcion</label>
+                                    <label class="block text-sm text-gray-700">{{ tr('Objetivo / Descripcion', 'Objective / Description') }}</label>
                                     <textarea v-model="planForm.description" rows="3" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff"></textarea>
                                 </div>
                                 <div>
-                                    <label class="block text-sm text-gray-700">Requisito de investidura (opcional)</label>
+                                    <label class="block text-sm text-gray-700">{{ tr('Requisito de investidura (opcional)', 'Investiture requirement (optional)') }}</label>
                                     <select
                                         v-model="planForm.investiture_requirement_id"
                                         class="w-full border rounded px-3 py-2 text-sm"
                                         :disabled="!isStaff || !selectedClassRequirements.length"
                                     >
-                                        <option :value="null">Sin requisito vinculado</option>
+                                        <option :value="null">{{ tr('Sin requisito vinculado', 'No linked requirement') }}</option>
                                         <option
                                             v-for="req in selectedClassRequirements"
                                             :key="`req-${req.id}`"
@@ -1316,29 +1318,29 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                         </option>
                                     </select>
                                     <p v-if="!selectedClassRequirements.length" class="text-xs text-gray-500 mt-1">
-                                        Esta clase no tiene requisitos activos configurados.
+                                        {{ tr('Esta clase no tiene requisitos activos configurados.', 'This class has no active requirements configured.') }}
                                     </p>
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label class="block text-sm text-gray-700">Tipo</label>
+                                        <label class="block text-sm text-gray-700">{{ tr('Tipo', 'Type') }}</label>
                                         <select v-model="planForm.type" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff">
-                                            <option value="plan">Plan (en sitio)</option>
-                                            <option value="outing">Salida (requiere aprobacion)</option>
+                                            <option value="plan">{{ tr('Plan (en sitio)', 'Plan (on site)') }}</option>
+                                            <option value="outing">{{ tr('Salida (requiere aprobacion)', 'Outing (requires approval)') }}</option>
                                         </select>
                                     </div>
                                     <div>
-                                        <label class="block text-sm text-gray-700">Fecha</label>
+                                        <label class="block text-sm text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                                         <input type="date" v-model="planForm.requested_date" class="w-full border rounded px-3 py-2 text-sm" :disabled="!isStaff" />
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm text-gray-700">Ubicacion alternativa (para salidas)</label>
+                                    <label class="block text-sm text-gray-700">{{ tr('Ubicacion alternativa (para salidas)', 'Alternate location (for outings)') }}</label>
                                     <input
                                         v-model="planForm.location_override"
                                         class="w-full border rounded px-3 py-2 text-sm"
                                         :disabled="!isStaff"
-                                        placeholder="Opcional"
+                                        :placeholder="tr('Opcional', 'Optional')"
                                         @input="searchPlanLocation(planForm.location_override)"
                                     />
                                     <div v-if="planLocationSuggestions.length"
@@ -1348,16 +1350,16 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                             @click="applyPlanLocation(opt)">
                                             {{ opt.label }}
                                         </button>
-                                        <div v-if="planLocationLoading" class="px-3 py-2 text-xs text-gray-500">Buscando…</div>
+                                        <div v-if="planLocationLoading" class="px-3 py-2 text-xs text-gray-500">{{ tr('Buscando...', 'Searching...') }}</div>
                                     </div>
                                 </div>
                                 <div class="flex justify-end">
                                     <button class="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50" :disabled="!isStaff" @click="savePlan">
-                                        Guardar plan
+                                        {{ tr('Guardar plan', 'Save plan') }}
                                     </button>
                                 </div>
                             </div>
-                            <div v-else class="text-sm text-gray-600">Selecciona una reunion para crear un plan.</div>
+                            <div v-else class="text-sm text-gray-600">{{ tr('Selecciona una reunion para crear un plan.', 'Select a meeting to create a plan.') }}</div>
                         </div>
                     </div>
                 </div>
@@ -1365,31 +1367,31 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                 <div class="border-t pt-4">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
-                            <h4 class="font-semibold text-gray-800">Planes por clases</h4>
-                            <span class="text-xs text-gray-500">Actualizaciones de estado en tiempo real.</span>
+                            <h4 class="font-semibold text-gray-800">{{ tr('Planes por clases', 'Plans by class') }}</h4>
+                            <span class="text-xs text-gray-500">{{ tr('Actualizaciones de estado en tiempo real.', 'Real-time status updates.') }}</span>
                         </div>
                         <div class="flex flex-wrap gap-2 items-center">
                             <template v-if="isDirector">
-                                <label class="text-sm text-gray-700">Clase</label>
+                                <label class="text-sm text-gray-700">{{ tr('Clase', 'Class') }}</label>
                                 <select v-model="classFilter" class="border rounded px-3 py-1 text-sm">
-                                    <option value="">Todas</option>
+                                    <option value="">{{ tr('Todas', 'All') }}</option>
                                     <option v-for="opt in classesOptions" :key="opt.id" :value="opt.id">{{ opt.name }}</option>
                                 </select>
-                                <label class="text-sm text-gray-700">Requiere aprobacion</label>
+                                <label class="text-sm text-gray-700">{{ tr('Requiere aprobacion', 'Requires approval') }}</label>
                                 <input type="checkbox" v-model="needsApprovalOnly" class="mr-2">
-                                <label class="text-sm text-gray-700">Estado</label>
+                                <label class="text-sm text-gray-700">{{ tr('Estado', 'Status') }}</label>
                                 <select v-model="statusFilter" class="border rounded px-3 py-1 text-sm">
-                                    <option value="all">Todos</option>
-                                    <option value="pending">Pendiente</option>
-                                    <option value="approved">Aprobado</option>
-                                    <option value="rejected">Rechazado</option>
+                                    <option value="all">{{ tr('Todos', 'All') }}</option>
+                                    <option value="pending">{{ tr('Pendiente', 'Pending') }}</option>
+                                    <option value="approved">{{ tr('Aprobado', 'Approved') }}</option>
+                                    <option value="rejected">{{ tr('Rechazado', 'Rejected') }}</option>
                                 </select>
                             </template>
                             <template v-else>
-                                <span class="text-sm text-gray-700">Clase: {{ classDisplayName }}</span>
+                                <span class="text-sm text-gray-700">{{ tr('Clase', 'Class') }}: {{ classDisplayName }}</span>
                             </template>
                             <a :href="plansPdfHref" target="_blank" class="px-3 py-1 text-sm bg-white border rounded inline-flex items-center gap-1" :class="!hasClubSelected && 'opacity-50 pointer-events-none'">
-                                Exportar PDF
+                                {{ tr('Exportar PDF', 'Export PDF') }}
                             </a>
                         </div>
                     </div>
@@ -1397,11 +1399,11 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-gray-500">
                                 <tr>
-                                    <th class="py-2 pr-4">Fecha</th>
-                                    <th class="py-2 pr-4">Clase</th>
-                                    <th class="py-2 pr-4">Tipo</th>
-                                    <th class="py-2 pr-4">Personal</th>
-                                    <th class="py-2 pr-4">Estado</th>
+                                    <th class="py-2 pr-4">{{ tr('Fecha', 'Date') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Clase', 'Class') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Tipo', 'Type') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Personal', 'Staff') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Estado', 'Status') }}</th>
                                     <th class="py-2 pr-4"></th>
                                 </tr>
                             </thead>
@@ -1418,26 +1420,26 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                     </td>
                                     <td class="py-2 pr-4 text-right">
                                         <div class="flex justify-end gap-2">
-                                            <button class="text-blue-600 text-sm" @click="openPlanDetail(plan)">Ver</button>
+                                            <button class="text-blue-600 text-sm" @click="openPlanDetail(plan)">{{ tr('Ver', 'View') }}</button>
                                             <button
                                                 v-if="isStaff && (plan.status === 'rejected' || plan.status === 'changes_requested')"
                                                 class="text-amber-700 text-sm"
                                                 @click="editPlan(plan)"
                                             >
-                                                Actualizar
+                                                {{ tr('Actualizar', 'Update') }}
                                             </button>
                                             <template v-if="isDirector">
-                                                <button class="text-amber-700 text-sm" @click="openRequestModal(plan)">Solicitar actualizacion</button>
-                                                <button v-if="plan.status === 'submitted' || plan.status === 'changes_requested'" class="text-red-600 text-sm" @click="updatePlanStatus(plan, 'rejected')">Rechazar</button>
+                                                <button class="text-amber-700 text-sm" @click="openRequestModal(plan)">{{ tr('Solicitar actualizacion', 'Request update') }}</button>
+                                                <button v-if="plan.status === 'submitted' || plan.status === 'changes_requested'" class="text-red-600 text-sm" @click="updatePlanStatus(plan, 'rejected')">{{ tr('Rechazar', 'Reject') }}</button>
                                             </template>
                                         </div>
                                         <div v-if="plan.request_note" class="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded mt-2 p-2 text-left">
-                                            Nota: {{ plan.request_note }}
+                                            {{ tr('Nota', 'Note') }}: {{ plan.request_note }}
                                         </div>
                                     </td>
                                 </tr>
                                 <tr v-if="filteredPlans.length === 0">
-                                    <td colspan="6" class="py-3 text-center text-gray-500">No hay planes enviados.</td>
+                                    <td colspan="6" class="py-3 text-center text-gray-500">{{ tr('No hay planes enviados.', 'No submitted plans.') }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1448,16 +1450,16 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <div v-if="hasClubSelected" class="bg-white shadow-sm rounded-lg p-4 border space-y-4">
                     <div class="flex items-start justify-between gap-2">
                         <div>
-                            <h3 class="font-semibold text-gray-800">Plan de trabajo actual</h3>
-                            <p class="text-sm text-gray-600">{{ form.start_date }} → {{ form.end_date }} ({{ form.timezone || 'Sin zona horaria' }})</p>
-                            <p class="text-xs text-gray-500">Predeterminados: Sabado {{ form.default_sabbath_start_time || '—' }}-{{ form.default_sabbath_end_time || '—' }}, Domingo {{ form.default_sunday_start_time || '—' }}-{{ form.default_sunday_end_time || '—' }}</p>
-                            <p v-if="isExpired" class="text-xs text-red-600 font-semibold mt-1">El rango actual ha finalizado. El calendario es solo lectura; configura el siguiente plan.</p>
+                            <h3 class="font-semibold text-gray-800">{{ tr('Plan de trabajo actual', 'Current workplan') }}</h3>
+                            <p class="text-sm text-gray-600">{{ form.start_date }} → {{ form.end_date }} ({{ form.timezone || tr('Sin zona horaria', 'No time zone') }})</p>
+                            <p class="text-xs text-gray-500">{{ tr('Predeterminados', 'Defaults') }}: {{ tr('Sabado', 'Sabbath') }} {{ form.default_sabbath_start_time || '—' }}-{{ form.default_sabbath_end_time || '—' }}, {{ tr('Domingo', 'Sunday') }} {{ form.default_sunday_start_time || '—' }}-{{ form.default_sunday_end_time || '—' }}</p>
+                            <p v-if="isExpired" class="text-xs text-red-600 font-semibold mt-1">{{ tr('El rango actual ha finalizado. El calendario es solo lectura; configura el siguiente plan.', 'The current range has ended. The calendar is read-only; configure the next plan.') }}</p>
                         </div>
                     </div>
 
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="font-semibold text-gray-800">Lista de eventos</h3>
-                    <button v-if="!isReadOnly" class="px-3 py-2 text-sm rounded-md bg-amber-100 text-amber-800 border border-amber-200" @click="openEventModal()">Agregar evento especial</button>
+                    <h3 class="font-semibold text-gray-800">{{ tr('Lista de eventos', 'Event list') }}</h3>
+                    <button v-if="!isReadOnly" class="px-3 py-2 text-sm rounded-md bg-amber-100 text-amber-800 border border-amber-200" @click="openEventModal()">{{ tr('Agregar evento especial', 'Add special event') }}</button>
                 </div>
                 <div v-if="isMobile" class="space-y-3">
                     <div v-for="ev in pagedEvents" :key="ev.id" class="border rounded-lg p-3 bg-white shadow-sm">
@@ -1467,31 +1469,31 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         </div>
                         <div class="text-sm text-gray-700 mt-1">{{ formatDateTime(ev) }}</div>
                         <div class="text-xs text-gray-600">{{ formatTimeRange(ev) }}</div>
-                        <div class="text-xs text-gray-600">Ubicacion: {{ ev.location || '—' }}</div>
+                        <div class="text-xs text-gray-600">{{ tr('Ubicacion', 'Location') }}: {{ ev.location || '—' }}</div>
                         <div class="flex items-center justify-between mt-2">
                             <span v-if="ev.is_generated" class="text-[10px] px-2 py-0.5 rounded-full border border-black text-black bg-white">A</span>
                             <div class="flex gap-3" v-if="!isReadOnly">
-                                <button class="text-blue-600 text-sm" @click="openEventModal(ev)">Editar</button>
-                                <button class="text-red-600 text-sm" @click="removeEvent(ev)">Eliminar</button>
+                                <button class="text-blue-600 text-sm" @click="openEventModal(ev)">{{ tr('Editar', 'Edit') }}</button>
+                                <button class="text-red-600 text-sm" @click="removeEvent(ev)">{{ tr('Eliminar', 'Delete') }}</button>
                             </div>
                         </div>
                     </div>
-                    <div v-if="events.length === 0" class="text-sm text-gray-500 text-center py-4">No hay eventos.</div>
+                    <div v-if="events.length === 0" class="text-sm text-gray-500 text-center py-4">{{ tr('No hay eventos.', 'There are no events.') }}</div>
                     <div v-else class="flex items-center justify-between text-sm text-gray-700">
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">Anterior</button>
-                        <span>Pagina {{ currentPage }} / {{ totalPages }}</span>
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">Siguiente</button>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">{{ tr('Anterior', 'Previous') }}</button>
+                        <span>{{ tr('Pagina', 'Page') }} {{ currentPage }} / {{ totalPages }}</span>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">{{ tr('Siguiente', 'Next') }}</button>
                     </div>
                 </div>
                 <div v-else class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
                             <tr class="text-left text-gray-500">
-                                <th class="py-2 pr-4">Fecha</th>
-                                <th class="py-2 pr-4">Tipo</th>
-                                <th class="py-2 pr-4">Titulo</th>
-                                <th class="py-2 pr-4">Hora</th>
-                                <th class="py-2 pr-4">Ubicacion</th>
+                                <th class="py-2 pr-4">{{ tr('Fecha', 'Date') }}</th>
+                                <th class="py-2 pr-4">{{ tr('Tipo', 'Type') }}</th>
+                                <th class="py-2 pr-4">{{ tr('Titulo', 'Title') }}</th>
+                                <th class="py-2 pr-4">{{ tr('Hora', 'Time') }}</th>
+                                <th class="py-2 pr-4">{{ tr('Ubicacion', 'Location') }}</th>
                                 <th class="py-2 pr-4"></th>
                             </tr>
                         </thead>
@@ -1506,69 +1508,69 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 </td>
                                 <td class="py-2 pr-4">{{ ev.location || '—' }}</td>
                                 <td class="py-2 pr-4 text-right">
-                                    <button v-if="!isReadOnly" class="text-blue-600 text-sm mr-2" @click="openEventModal(ev)">Editar</button>
-                                    <button v-if="!isReadOnly" class="text-red-600 text-sm" @click="removeEvent(ev)">Eliminar</button>
+                                    <button v-if="!isReadOnly" class="text-blue-600 text-sm mr-2" @click="openEventModal(ev)">{{ tr('Editar', 'Edit') }}</button>
+                                    <button v-if="!isReadOnly" class="text-red-600 text-sm" @click="removeEvent(ev)">{{ tr('Eliminar', 'Delete') }}</button>
                                 </td>
                             </tr>
                             <tr v-if="events.length === 0">
-                                <td colspan="6" class="py-4 text-center text-gray-500">No hay eventos.</td>
+                                <td colspan="6" class="py-4 text-center text-gray-500">{{ tr('No hay eventos.', 'There are no events.') }}</td>
                             </tr>
                         </tbody>
                     </table>
                     <div v-if="events.length" class="flex items-center justify-between text-sm text-gray-700 mt-3">
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">Anterior</button>
-                        <span>Pagina {{ currentPage }} / {{ totalPages }}</span>
-                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">Siguiente</button>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === 1" @click="prevPage">{{ tr('Anterior', 'Previous') }}</button>
+                        <span>{{ tr('Pagina', 'Page') }} {{ currentPage }} / {{ totalPages }}</span>
+                        <button class="px-3 py-1 border rounded" :disabled="currentPage === totalPages" @click="nextPage">{{ tr('Siguiente', 'Next') }}</button>
                     </div>
                 </div>
             </div>
 
             <div v-else class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded">
-                <p>Selecciona un club para ver o administrar su plan de trabajo.</p>
+                <p>{{ tr('Selecciona un club para ver o administrar su plan de trabajo.', 'Select a club to view or manage its workplan.') }}</p>
                 <div v-if="canSelectClub && clubs.length" class="mt-2">
-                    <p class="text-sm font-medium">Clubes disponibles:</p>
+                    <p class="text-sm font-medium">{{ tr('Clubes disponibles', 'Available clubs') }}:</p>
                     <div class="mt-1 max-w-md">
                         <select
                             v-model="selectedClubId"
                             class="w-full border rounded px-3 py-2 text-sm bg-white"
                             @change="onClubChange"
                         >
-                            <option value="">Selecciona un club</option>
+                            <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">
-                                {{ isSuperadmin ? `${club.club_name} - ${club.church_name || 'Sin iglesia'}` : club.club_name }}
+                                {{ isSuperadmin ? `${club.club_name} - ${club.church_name || tr('Sin iglesia', 'No church')}` : club.club_name }}
                             </option>
                         </select>
                     </div>
                 </div>
                 <p v-else-if="!canSelectClub" class="mt-2 text-sm">
-                    No hay un club activo disponible para esta vista.
+                    {{ tr('No hay un club activo disponible para esta vista.', 'There is no active club available for this view.') }}
                 </p>
-                <p v-else class="mt-2 text-sm">No hay clubes creados en el sistema.</p>
+                <p v-else class="mt-2 text-sm">{{ tr('No hay clubes creados en el sistema.', 'There are no clubs created in the system.') }}</p>
             </div>
 
             <!-- Diff modal -->
             <div v-if="showDiffModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg max-w-xl w-full p-5">
-                    <h4 class="text-lg font-semibold mb-3">Previsualizar cambios</h4>
+                    <h4 class="text-lg font-semibold mb-3">{{ tr('Previsualizar cambios', 'Preview changes') }}</h4>
                     <div class="space-y-3 max-h-[60vh] overflow-y-auto">
                         <div>
-                            <h5 class="font-medium text-gray-800 mb-1">Para agregar</h5>
+                            <h5 class="font-medium text-gray-800 mb-1">{{ tr('Para agregar', 'To add') }}</h5>
                             <ul class="space-y-1 text-sm text-gray-700">
                                 <li v-for="(item, idx) in previewDiff.adds" :key="`add-${idx}`">
                                     {{ item.date }} — {{ item.meeting_type }} ({{ item.title }})
                                 </li>
-                                <li v-if="previewDiff.adds.length === 0" class="text-gray-400">Sin adiciones</li>
+                                <li v-if="previewDiff.adds.length === 0" class="text-gray-400">{{ tr('Sin adiciones', 'No additions') }}</li>
                             </ul>
                         </div>
                         <div>
-                            <h5 class="font-medium text-gray-800 mb-1">Para eliminar</h5>
-                            <p class="text-sm text-gray-700" v-if="previewDiff.removals.length">{{ previewDiff.removals.length }} reuniones generadas se eliminaran (las ediciones manuales se mantienen).</p>
-                            <p class="text-sm text-gray-400" v-else>Sin eliminaciones</p>
+                            <h5 class="font-medium text-gray-800 mb-1">{{ tr('Para eliminar', 'To remove') }}</h5>
+                            <p class="text-sm text-gray-700" v-if="previewDiff.removals.length">{{ previewDiff.removals.length }} {{ tr('reuniones generadas se eliminaran (las ediciones manuales se mantienen).', 'generated meetings will be removed (manual edits are kept).') }}</p>
+                            <p class="text-sm text-gray-400" v-else>{{ tr('Sin eliminaciones', 'No removals') }}</p>
                         </div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="showDiffModal = false">Cancelar</button>
-                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="applyChanges">Aplicar</button>
+                        <button class="px-4 py-2 border rounded" @click="showDiffModal = false">{{ tr('Cancelar', 'Cancel') }}</button>
+                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="applyChanges">{{ tr('Aplicar', 'Apply') }}</button>
                     </div>
                 </div>
             </div>
@@ -1576,38 +1578,38 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <!-- Event modal -->
             <div v-if="eventModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5">
-                    <h4 class="text-lg font-semibold mb-3">{{ editingEvent ? 'Editar evento' : 'Agregar evento' }}</h4>
+                    <h4 class="text-lg font-semibold mb-3">{{ editingEvent ? tr('Editar evento', 'Edit event') : tr('Agregar evento', 'Add event') }}</h4>
                     <div class="grid grid-cols-2 gap-3">
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Titulo</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Titulo', 'Title') }}</label>
                             <input type="text" v-model="eventForm.title" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Fecha inicio</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Fecha inicio', 'Start date') }}</label>
                             <input type="date" v-model="eventForm.date" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Tipo</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Tipo', 'Type') }}</label>
                             <select v-model="eventForm.meeting_type" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="sabbath">Sabado</option>
-                                <option value="sunday">Domingo</option>
-                                <option value="special">Especial</option>
+                                <option value="sabbath">{{ tr('Sabado', 'Sabbath') }}</option>
+                                <option value="sunday">{{ tr('Domingo', 'Sunday') }}</option>
+                                <option value="special">{{ tr('Especial', 'Special') }}</option>
                             </select>
                         </div>
                         <div v-if="eventForm.meeting_type === 'special'" class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Fecha fin</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Fecha fin', 'End date') }}</label>
                             <input type="date" v-model="eventForm.end_date" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Hora de inicio</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Hora de inicio', 'Start time') }}</label>
                             <input type="time" v-model="eventForm.start_time" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Hora de fin</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Hora de fin', 'End time') }}</label>
                             <input type="time" v-model="eventForm.end_time" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Ubicacion</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Ubicacion', 'Location') }}</label>
                             <div class="relative">
                                 <input type="text" v-model="eventForm.location"
                                     class="w-full border rounded px-3 py-2 text-sm"
@@ -1621,7 +1623,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                     <button type="button"
                                         class="w-full text-left px-3 py-2 text-gray-700 hover:bg-gray-100"
                                         @mousedown.prevent="closeLocationSuggestions">
-                                        Usar direccion escrita
+                                        {{ tr('Usar direccion escrita', 'Use typed address') }}
                                     </button>
                                     <button v-for="(opt, idx) in locationSuggestions" :key="idx" type="button"
                                         class="w-full text-left px-3 py-2 hover:bg-gray-100"
@@ -1630,34 +1632,34 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                     </button>
                                 </div>
                             </div>
-                            <p class="text-[11px] text-gray-500 mt-1">Busqueda con OpenStreetMap (1 req/seg).</p>
+                            <p class="text-[11px] text-gray-500 mt-1">{{ tr('Busqueda con OpenStreetMap (1 req/seg).', 'Search with OpenStreetMap (1 req/sec).') }}</p>
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Departamento</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Departamento', 'Department') }}</label>
                             <select v-model="eventForm.department_id" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Seleccionar</option>
+                                <option value="">{{ tr('Seleccionar', 'Select') }}</option>
                                 <option v-for="dept in departmentsOptions" :key="`dept-${dept.id}`" :value="dept.id">
                                     {{ dept.name }}
                                 </option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Objetivo</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Objetivo', 'Objective') }}</label>
                             <select v-model="eventForm.objective_key" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Seleccionar</option>
+                                <option value="">{{ tr('Seleccionar', 'Select') }}</option>
                                 <option v-for="obj in objectivesOptions" :key="`obj-${obj.key}`" :value="obj.key">
                                     {{ obj.source === 'local' ? `[Local] ${obj.name}` : obj.name }}
                                 </option>
                             </select>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Descripcion</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Descripcion', 'Description') }}</label>
                             <textarea v-model="eventForm.description" rows="3" class="w-full border rounded px-3 py-2 text-sm"></textarea>
                         </div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="eventModalOpen = false">Cancelar</button>
-                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="saveEvent">{{ editingEvent ? 'Guardar cambios' : 'Agregar evento' }}</button>
+                        <button class="px-4 py-2 border rounded" @click="eventModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
+                        <button class="px-4 py-2 bg-red-600 text-white rounded" @click="saveEvent">{{ editingEvent ? tr('Guardar cambios', 'Save changes') : tr('Agregar evento', 'Add event') }}</button>
                     </div>
                 </div>
             </div>
@@ -1666,45 +1668,45 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <div v-if="exportModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-5 space-y-4">
                     <div class="flex items-start justify-between gap-2">
-                        <h4 class="text-lg font-semibold">Exportar a mychurchadmin.net</h4>
+                        <h4 class="text-lg font-semibold">{{ tr('Exportar a mychurchadmin.net', 'Export to mychurchadmin.net') }}</h4>
                         <button class="text-gray-500" @click="exportModalOpen = false">✕</button>
                     </div>
                     <div class="text-sm text-gray-700">
-                        Esto enviara los eventos del plan de trabajo al sistema de calendario externo.
+                        {{ tr('Esto enviara los eventos del plan de trabajo al sistema de calendario externo.', 'This will send workplan events to the external calendar system.') }}
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Ano del calendario</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Ano del calendario', 'Calendar year') }}</label>
                             <input type="number" min="2000" v-model.number="exportForm.calendar_year" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div class="flex items-end gap-2">
                             <label class="inline-flex items-center gap-2 text-sm text-gray-700">
                                 <input type="checkbox" v-model="exportForm.publish_to_feed">
-                                Publicar en el feed
+                                {{ tr('Publicar en el feed', 'Publish to feed') }}
                             </label>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Departamento</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Departamento', 'Department') }}</label>
                             <select v-model="exportForm.department_id" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Seleccionar</option>
+                                <option value="">{{ tr('Seleccionar', 'Select') }}</option>
                                 <option v-for="dept in departmentsOptions" :key="`export-dept-${dept.id}`" :value="dept.id">
                                     {{ dept.name }}
                                 </option>
                             </select>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Nombre del plan</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Nombre del plan', 'Plan name') }}</label>
                             <input type="text" v-model="exportForm.plan_name" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-sm text-gray-600 mb-1">Slug de iglesia (opcional)</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Slug de iglesia (opcional)', 'Church slug (optional)') }}</label>
                             <input type="text" v-model="exportForm.church_slug" class="w-full border rounded px-3 py-2 text-sm" placeholder="iglesia-x">
                         </div>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="exportModalOpen = false">Cancelar</button>
+                        <button class="px-4 py-2 border rounded" @click="exportModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
                         <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" @click="submitExport">
-                            {{ exportLoading ? 'Exportando...' : 'Exportar' }}
+                            {{ exportLoading ? tr('Exportando...', 'Exporting...') : tr('Exportar', 'Export') }}
                         </button>
                     </div>
                     <button
@@ -1712,45 +1714,45 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         class="text-xs text-blue-600 underline"
                         @click="exportResponseOpen = true"
                     >
-                        Mostrar resumen de exportacion
+                        {{ tr('Mostrar resumen de exportacion', 'Show export summary') }}
                     </button>
                     <div v-if="exportResponseOpen && (exportResponse || exportError)" class="border rounded bg-gray-50 p-3 text-xs text-gray-700 max-h-80 overflow-y-auto">
                         <div class="flex items-center justify-between mb-2">
-                            <div class="font-semibold">Resumen de exportacion</div>
-                            <button class="text-xs text-gray-500" @click="exportResponseOpen = false">Ocultar</button>
+                            <div class="font-semibold">{{ tr('Resumen de exportacion', 'Export summary') }}</div>
+                            <button class="text-xs text-gray-500" @click="exportResponseOpen = false">{{ tr('Ocultar', 'Hide') }}</button>
                         </div>
                         <div v-if="exportError" class="text-[11px] text-red-700 mb-2">
-                            <div class="font-semibold mb-1">Error de exportacion</div>
-                            <div>{{ exportMessage || 'Fallo la exportacion' }}</div>
+                            <div class="font-semibold mb-1">{{ tr('Error de exportacion', 'Export error') }}</div>
+                            <div>{{ exportMessage || tr('Fallo la exportacion', 'Export failed') }}</div>
                         </div>
                         <div v-if="exportSummary" class="space-y-3">
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Estado</div>
+                                    <div class="text-gray-500">{{ tr('Estado', 'Status') }}</div>
                                     <div class="font-semibold">{{ exportSummary.status || 'ok' }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Importados</div>
+                                    <div class="text-gray-500">{{ tr('Importados', 'Imported') }}</div>
                                     <div class="font-semibold">{{ exportSummary.imported ?? exportSummary.sent_events ?? 0 }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Omitidos</div>
+                                    <div class="text-gray-500">{{ tr('Omitidos', 'Skipped') }}</div>
                                     <div class="font-semibold">{{ exportSummary.skipped ?? 0 }}</div>
                                 </div>
                                 <div class="bg-white border rounded p-2">
-                                    <div class="text-gray-500">Conflictos</div>
+                                    <div class="text-gray-500">{{ tr('Conflictos', 'Conflicts') }}</div>
                                     <div class="font-semibold">{{ exportSummary.conflicts?.length || 0 }}</div>
                                 </div>
                             </div>
                             <div v-if="exportSummary.conflicts?.length" class="border rounded bg-white">
-                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Conflictos</div>
+                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">{{ tr('Conflictos', 'Conflicts') }}</div>
                                 <div class="max-h-48 overflow-y-auto">
                                     <table class="min-w-full text-[11px]">
                                         <thead class="text-left text-gray-500">
                                             <tr>
-                                                <th class="py-1 px-2">Evento</th>
-                                                <th class="py-1 px-2">Problema</th>
-                                                <th class="py-1 px-2">Tipo</th>
+                                                <th class="py-1 px-2">{{ tr('Evento', 'Event') }}</th>
+                                                <th class="py-1 px-2">{{ tr('Problema', 'Problem') }}</th>
+                                                <th class="py-1 px-2">{{ tr('Tipo', 'Type') }}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1764,21 +1766,21 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 </div>
                             </div>
                             <div v-if="exportSummary.successes?.length" class="border rounded bg-white">
-                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">Eventos importados</div>
+                                <div class="px-2 py-1 text-[11px] font-semibold text-gray-600 border-b">{{ tr('Eventos importados', 'Imported events') }}</div>
                                 <div class="max-h-32 overflow-y-auto">
                                     <table class="min-w-full text-[11px]">
                                         <thead class="text-left text-gray-500">
                                             <tr>
-                                                <th class="py-1 px-2">Titulo</th>
-                                                <th class="py-1 px-2">Inicio</th>
-                                                <th class="py-1 px-2">Estado</th>
+                                                <th class="py-1 px-2">{{ tr('Titulo', 'Title') }}</th>
+                                                <th class="py-1 px-2">{{ tr('Inicio', 'Start') }}</th>
+                                                <th class="py-1 px-2">{{ tr('Estado', 'Status') }}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr v-for="row in exportSummary.successes" :key="`success-${row.external_id}`" class="border-t">
                                                 <td class="py-1 px-2">{{ row.title }}</td>
                                                 <td class="py-1 px-2">{{ row.start_at }}</td>
-                                                <td class="py-1 px-2">{{ row.review_status || 'pendiente' }}</td>
+                                                <td class="py-1 px-2">{{ row.review_status || tr('pendiente', 'pending') }}</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -1793,17 +1795,17 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <div v-if="objectiveModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-5 space-y-4">
                     <div class="flex items-start justify-between gap-2">
-                        <h4 class="text-lg font-semibold">Asignar objetivos antes de exportar</h4>
+                        <h4 class="text-lg font-semibold">{{ tr('Asignar objetivos antes de exportar', 'Assign objectives before exporting') }}</h4>
                         <button class="text-gray-500" @click="objectiveModalOpen = false">✕</button>
                     </div>
                     <div class="text-sm text-gray-700">
-                        Estos eventos recurrentes no tienen objetivo o tienen uno incorrecto. Asigna uno a cada evento o aplica un objetivo general a todos.
+                        {{ tr('Estos eventos recurrentes no tienen objetivo o tienen uno incorrecto. Asigna uno a cada evento o aplica un objetivo general a todos.', 'These events are missing an objective or have the wrong one. Assign one to each event or apply a general objective to all.') }}
                     </div>
                     <div class="flex flex-col sm:flex-row sm:items-end gap-3">
                         <div class="flex-1">
-                            <label class="block text-sm text-gray-600 mb-1">Objetivo general</label>
+                            <label class="block text-sm text-gray-600 mb-1">{{ tr('Objetivo general', 'General objective') }}</label>
                             <select v-model="bulkObjectiveId" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Seleccionar</option>
+                                <option value="">{{ tr('Seleccionar', 'Select') }}</option>
                                 <option v-for="obj in objectivesOptions" :key="`bulk-obj-${obj.key}`" :value="obj.key">
                                     {{ obj.source === 'local' ? `[Local] ${obj.name}` : obj.name }}
                                 </option>
@@ -1814,7 +1816,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             type="button"
                             @click="applyObjectiveToAll(objectiveTab === 'special' ? missingSpecialEvents : missingRecurrentEvents)"
                         >
-                            Aplicar a todos
+                            {{ tr('Aplicar a todos', 'Apply to all') }}
                         </button>
                     </div>
                     <div class="border rounded">
@@ -1825,7 +1827,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 type="button"
                                 @click="objectiveTab = 'recurrent'"
                             >
-                                Eventos recurrentes ({{ missingRecurrentEvents.length }})
+                                {{ tr('Eventos recurrentes', 'Recurring events') }} ({{ missingRecurrentEvents.length }})
                             </button>
                             <button
                                 class="px-3 py-2"
@@ -1833,17 +1835,17 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 type="button"
                                 @click="objectiveTab = 'special'"
                             >
-                                Eventos especiales ({{ missingSpecialEvents.length }})
+                                {{ tr('Eventos especiales', 'Special events') }} ({{ missingSpecialEvents.length }})
                             </button>
                         </div>
                         <div class="max-h-[320px] overflow-y-auto">
                             <table class="min-w-full text-sm">
                                 <thead class="text-left text-gray-500">
                                     <tr>
-                                        <th class="py-2 px-3">Evento</th>
-                                        <th class="py-2 px-3">Fecha</th>
-                                        <th class="py-2 px-3">Departamento</th>
-                                        <th class="py-2 px-3">Objetivo</th>
+                                        <th class="py-2 px-3">{{ tr('Evento', 'Event') }}</th>
+                                        <th class="py-2 px-3">{{ tr('Fecha', 'Date') }}</th>
+                                        <th class="py-2 px-3">{{ tr('Departamento', 'Department') }}</th>
+                                        <th class="py-2 px-3">{{ tr('Objetivo', 'Objective') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1857,7 +1859,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                         <td class="py-2 px-3">{{ getDepartmentName(getEventDepartmentId(ev)) }}</td>
                                         <td class="py-2 px-3">
                                             <select v-model="objectiveAssignments[ev.id]" class="w-full border rounded px-2 py-1 text-sm">
-                                                <option value="">Seleccionar</option>
+                                                <option value="">{{ tr('Seleccionar', 'Select') }}</option>
                                                 <option
                                                     v-for="obj in objectivesForDepartment(getEventDepartmentId(ev))"
                                                     :key="`obj-${ev.id}-${obj.key}`"
@@ -1869,19 +1871,19 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                         </td>
                                     </tr>
                                     <tr v-if="objectiveTab === 'recurrent' && missingRecurrentEvents.length === 0">
-                                        <td colspan="4" class="py-3 text-center text-gray-500">No hay objetivos pendientes.</td>
+                                        <td colspan="4" class="py-3 text-center text-gray-500">{{ tr('No hay objetivos pendientes.', 'There are no pending objectives.') }}</td>
                                     </tr>
                                     <tr v-else-if="objectiveTab === 'special' && missingSpecialEvents.length === 0">
-                                        <td colspan="4" class="py-3 text-center text-gray-500">No hay objetivos pendientes.</td>
+                                        <td colspan="4" class="py-3 text-center text-gray-500">{{ tr('No hay objetivos pendientes.', 'There are no pending objectives.') }}</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="objectiveModalOpen = false">Cancelar</button>
+                        <button class="px-4 py-2 border rounded" @click="objectiveModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
                         <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" :disabled="objectiveSaving" @click="saveObjectivesAndExport">
-                            {{ objectiveSaving ? 'Guardando...' : 'Guardar y exportar' }}
+                            {{ objectiveSaving ? tr('Guardando...', 'Saving...') : tr('Guardar y exportar', 'Save and export') }}
                         </button>
                     </div>
                 </div>
@@ -1890,36 +1892,36 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <div v-if="planDetailOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
                     <div class="flex items-center justify-between">
-                        <h4 class="text-lg font-semibold">Detalles del plan</h4>
+                        <h4 class="text-lg font-semibold">{{ tr('Detalles del plan', 'Plan details') }}</h4>
                         <button class="text-gray-500" @click="planDetailOpen = false">✕</button>
                     </div>
                     <div v-if="planDetail" class="space-y-2 text-sm text-gray-700">
                         <div class="text-xs text-gray-600">
-                            Reunion: {{ normalizeDate(planDetail._event?.date) }} · {{ planDetail._event?.title }} ({{ planDetail._event?.meeting_type }})
+                            {{ tr('Reunion', 'Meeting') }}: {{ normalizeDate(planDetail._event?.date) }} · {{ planDetail._event?.title }} ({{ planDetail._event?.meeting_type }})
                         </div>
-                        <div><span class="font-semibold">Titulo:</span> {{ planDetail.title }}</div>
-                        <div><span class="font-semibold">Tipo:</span> {{ planDetail.type }}</div>
-                        <div v-if="planDetail.description"><span class="font-semibold">Descripcion:</span> {{ planDetail.description }}</div>
-                        <div><span class="font-semibold">Fecha solicitada:</span> {{ normalizeDate(planDetail.requested_date) || '—' }}</div>
-                        <div><span class="font-semibold">Ubicacion alternativa:</span> {{ planDetail.location_override || '—' }}</div>
-                        <div><span class="font-semibold">Clase:</span> {{ planDetail.class?.class_name || '—' }}</div>
-                        <div><span class="font-semibold">Requisito vinculado:</span> {{ planDetail.investitureRequirement?.title || planDetail.investiture_requirement?.title || '—' }}</div>
-                        <div><span class="font-semibold">Personal:</span> {{ planDetail.staff?.name || planDetail.staff?.user?.name || '—' }}</div>
+                        <div><span class="font-semibold">{{ tr('Titulo', 'Title') }}:</span> {{ planDetail.title }}</div>
+                        <div><span class="font-semibold">{{ tr('Tipo', 'Type') }}:</span> {{ planDetail.type }}</div>
+                        <div v-if="planDetail.description"><span class="font-semibold">{{ tr('Descripcion', 'Description') }}:</span> {{ planDetail.description }}</div>
+                        <div><span class="font-semibold">{{ tr('Fecha solicitada', 'Requested date') }}:</span> {{ normalizeDate(planDetail.requested_date) || '—' }}</div>
+                        <div><span class="font-semibold">{{ tr('Ubicacion alternativa', 'Alternate location') }}:</span> {{ planDetail.location_override || '—' }}</div>
+                        <div><span class="font-semibold">{{ tr('Clase', 'Class') }}:</span> {{ planDetail.class?.class_name || '—' }}</div>
+                        <div><span class="font-semibold">{{ tr('Requisito vinculado', 'Linked requirement') }}:</span> {{ planDetail.investitureRequirement?.title || planDetail.investiture_requirement?.title || '—' }}</div>
+                        <div><span class="font-semibold">{{ tr('Personal', 'Staff') }}:</span> {{ planDetail.staff?.name || planDetail.staff?.user?.name || '—' }}</div>
                         <div>
-                            <span class="font-semibold">Estado:</span>
+                            <span class="font-semibold">{{ tr('Estado', 'Status') }}:</span>
                             <span class="text-[11px] px-2 py-0.5 rounded-full inline-block" :class="planStatusClass(planDetail.status)">{{ planDetail.status }}</span>
-                            <span class="ml-2 text-xs text-gray-500" v-if="planDetail.requires_approval">(Requiere aprobacion)</span>
+                            <span class="ml-2 text-xs text-gray-500" v-if="planDetail.requires_approval">({{ tr('Requiere aprobacion', 'Requires approval') }})</span>
                         </div>
                         <div v-if="planDetail.request_note" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
-                            <span class="font-semibold">Nota del director:</span> {{ planDetail.request_note }}
+                            <span class="font-semibold">{{ tr('Nota del director', 'Director note') }}:</span> {{ planDetail.request_note }}
                         </div>
                     </div>
                     <div class="flex justify-end gap-2" v-if="isDirector && planDetail?.requires_approval && planDetail.status === 'submitted'">
-                        <button class="px-3 py-2 border rounded text-red-700 border-red-500" @click="updatePlanStatus(planDetail, 'rejected')">Rechazar</button>
-                        <button class="px-3 py-2 border rounded text-green-700 border-green-500" @click="updatePlanStatus(planDetail, 'approved')">Aprobar</button>
+                        <button class="px-3 py-2 border rounded text-red-700 border-red-500" @click="updatePlanStatus(planDetail, 'rejected')">{{ tr('Rechazar', 'Reject') }}</button>
+                        <button class="px-3 py-2 border rounded text-green-700 border-green-500" @click="updatePlanStatus(planDetail, 'approved')">{{ tr('Aprobar', 'Approve') }}</button>
                     </div>
                     <div class="flex justify-end" v-else>
-                        <button class="px-4 py-2 border rounded" @click="planDetailOpen = false">Cerrar</button>
+                        <button class="px-4 py-2 border rounded" @click="planDetailOpen = false">{{ tr('Cerrar', 'Close') }}</button>
                     </div>
                 </div>
             </div>
@@ -1927,23 +1929,23 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <!-- ICS Help Modal -->
             <div v-if="showIcsHelp" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
-                    <h4 class="text-lg font-semibold">Agregar ICS a tu calendario</h4>
+                    <h4 class="text-lg font-semibold">{{ tr('Agregar ICS a tu calendario', 'Add ICS to your calendar') }}</h4>
                     <div class="space-y-2 text-sm text-gray-700">
                         <p class="font-medium text-gray-800">iOS (iPhone/iPad)</p>
                         <ol class="list-decimal list-inside space-y-1">
-                            <li>Toca el enlace “Descargar ICS”.</li>
-                            <li>Elige “Abrir en Calendario” (o compartir a Calendario).</li>
-                            <li>Toca “Agregar todos” o selecciona los eventos a importar.</li>
+                            <li>{{ tr('Toca el enlace "Descargar ICS".', 'Tap the "Download ICS" link.') }}</li>
+                            <li>{{ tr('Elige "Abrir en Calendario" (o compartir a Calendario).', 'Choose "Open in Calendar" (or share to Calendar).') }}</li>
+                            <li>{{ tr('Toca "Agregar todos" o selecciona los eventos a importar.', 'Tap "Add all" or select the events to import.') }}</li>
                         </ol>
                         <p class="font-medium text-gray-800 pt-2">Google Calendar (web)</p>
                         <ol class="list-decimal list-inside space-y-1">
-                            <li>Descarga el archivo .ics.</li>
-                            <li>Ve a calendar.google.com → “Otros calendarios” → “Importar”.</li>
-                            <li>Sube el archivo .ics y elige el calendario.</li>
+                            <li>{{ tr('Descarga el archivo .ics.', 'Download the .ics file.') }}</li>
+                            <li>{{ tr('Ve a calendar.google.com -> "Otros calendarios" -> "Importar".', 'Go to calendar.google.com -> "Other calendars" -> "Import".') }}</li>
+                            <li>{{ tr('Sube el archivo .ics y elige el calendario.', 'Upload the .ics file and choose the calendar.') }}</li>
                         </ol>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="showIcsHelp = false">Cerrar</button>
+                        <button class="px-4 py-2 border rounded" @click="showIcsHelp = false">{{ tr('Cerrar', 'Close') }}</button>
                     </div>
                 </div>
             </div>
@@ -1952,19 +1954,19 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <div v-if="requestModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
                     <div class="flex items-start justify-between gap-2">
-                        <h4 class="text-lg font-semibold">Solicitar actualizacion</h4>
+                        <h4 class="text-lg font-semibold">{{ tr('Solicitar actualizacion', 'Request update') }}</h4>
                         <button class="text-gray-500" @click="requestModalOpen = false">✕</button>
                     </div>
                     <div class="text-sm text-gray-700">
-                        Agrega una nota para enviar al personal. El estado cambiara a "cambios solicitados".
+                        {{ tr('Agrega una nota para enviar al personal. El estado cambiara a "cambios solicitados".', 'Add a note for staff. The status will change to "changes requested".') }}
                     </div>
                     <div>
-                        <label class="block text-sm text-gray-700 mb-1">Motivo / cambios solicitados</label>
+                        <label class="block text-sm text-gray-700 mb-1">{{ tr('Motivo / cambios solicitados', 'Reason / requested changes') }}</label>
                         <textarea v-model="requestNote" rows="4" class="w-full border rounded px-3 py-2 text-sm"></textarea>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="requestModalOpen = false">Cancelar</button>
-                        <button class="px-4 py-2 bg-amber-600 text-white rounded" @click="submitRequestNote">Enviar solicitud</button>
+                        <button class="px-4 py-2 border rounded" @click="requestModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
+                        <button class="px-4 py-2 bg-amber-600 text-white rounded" @click="submitRequestNote">{{ tr('Enviar solicitud', 'Send request') }}</button>
                     </div>
                 </div>
             </div>
@@ -1972,37 +1974,37 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             <!-- Create workplan modal -->
             <div v-if="workplanModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div class="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 space-y-4">
-                    <h4 class="text-lg font-semibold">Crear plan de trabajo</h4>
+                    <h4 class="text-lg font-semibold">{{ tr('Crear plan de trabajo', 'Create workplan') }}</h4>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-sm text-gray-700">Fecha de inicio</label>
+                            <label class="block text-sm text-gray-700">{{ tr('Fecha de inicio', 'Start date') }}</label>
                             <input type="date" v-model="form.start_date" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Fecha de fin</label>
+                            <label class="block text-sm text-gray-700">{{ tr('Fecha de fin', 'End date') }}</label>
                             <input type="date" v-model="form.end_date" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Zona horaria</label>
+                            <label class="block text-sm text-gray-700">{{ tr('Zona horaria', 'Time zone') }}</label>
                             <input v-model="form.timezone" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Ubicacion sabatica</label>
+                            <label class="block text-sm text-gray-700">{{ tr('Ubicacion sabatica', 'Sabbath location') }}</label>
                             <input v-model="form.default_sabbath_location" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Sabado inicio/fin</label>
+                            <label class="block text-sm text-gray-700">{{ tr('Sabado inicio/fin', 'Sabbath start/end') }}</label>
                             <div class="flex gap-2">
                                 <input type="time" v-model="form.default_sabbath_start_time" class="w-full border rounded px-3 py-2 text-sm" />
                                 <input type="time" v-model="form.default_sabbath_end_time" class="w-full border rounded px-3 py-2 text-sm" />
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Ubicacion dominical</label>
+                            <label class="block text-sm text-gray-700">{{ tr('Ubicacion dominical', 'Sunday location') }}</label>
                             <input v-model="form.default_sunday_location" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-700">Domingo inicio/fin</label>
+                            <label class="block text-sm text-gray-700">{{ tr('Domingo inicio/fin', 'Sunday start/end') }}</label>
                             <div class="flex gap-2">
                                 <input type="time" v-model="form.default_sunday_start_time" class="w-full border rounded px-3 py-2 text-sm" />
                                 <input type="time" v-model="form.default_sunday_end_time" class="w-full border rounded px-3 py-2 text-sm" />
@@ -2010,7 +2012,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         </div>
                         <div class="sm:col-span-2 space-y-3">
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-1">Recurrencia sabatica (n en el mes)</label>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">{{ tr('Recurrencia sabatica (n en el mes)', 'Sabbath recurrence (nth week of the month)') }}</label>
                                 <div class="flex flex-wrap gap-2">
                                     <button
                                         v-for="n in nthOptions"
@@ -2020,12 +2022,12 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                         :class="recurrence.sabbath.includes(n) ? 'bg-amber-600 text-white border-amber-700' : 'bg-white text-gray-700'"
                                         @click="toggleNth('sabbath', n)"
                                     >
-                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Sabado
+                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} {{ tr('Sabado', 'Sabbath') }}
                                     </button>
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-1">Recurrencia dominical (n en el mes)</label>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">{{ tr('Recurrencia dominical (n en el mes)', 'Sunday recurrence (nth week of the month)') }}</label>
                                 <div class="flex flex-wrap gap-2">
                                     <button
                                         v-for="n in nthOptions"
@@ -2035,15 +2037,15 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                         :class="recurrence.sunday.includes(n) ? 'bg-teal-600 text-white border-teal-700' : 'bg-white text-gray-700'"
                                         @click="toggleNth('sunday', n)"
                                     >
-                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} Domingo
+                                        {{ n }}{{ ['th','st','nd','rd'][n%10 > 3 ? 0 : n%10] || 'th' }} {{ tr('Domingo', 'Sunday') }}
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="px-4 py-2 border rounded" @click="workplanModalOpen = false">Cancelar</button>
-                        <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="createWorkplanNow">Guardar</button>
+                        <button class="px-4 py-2 border rounded" @click="workplanModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
+                        <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="createWorkplanNow">{{ tr('Guardar', 'Save') }}</button>
                     </div>
                 </div>
             </div>
@@ -2059,35 +2061,35 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 class="inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded"
                                 :class="inheritedEventModal._source_level === 'district' ? 'bg-teal-100 text-teal-700' : 'bg-purple-100 text-purple-700'"
                             >
-                                {{ inheritedEventModal._source_level === 'district' ? 'Evento de distrito' : 'Evento de asociación' }}
+                                {{ inheritedEventModal._source_level === 'district' ? tr('Evento de distrito', 'District event') : tr('Evento de asociación', 'Association event') }}
                             </span>
                         </div>
                         <button class="text-gray-400 hover:text-gray-600 text-lg leading-none" @click="inheritedEventModal = null">✕</button>
                     </div>
                     <dl class="space-y-2 text-sm">
                         <div class="flex gap-2">
-                            <dt class="text-gray-500 w-24 shrink-0">Fecha</dt>
+                            <dt class="text-gray-500 w-24 shrink-0">{{ tr('Fecha', 'Date') }}</dt>
                             <dd class="text-gray-900">{{ inheritedEventModal.date }}{{ inheritedEventModal.end_date && inheritedEventModal.end_date !== inheritedEventModal.date ? ' — ' + inheritedEventModal.end_date : '' }}</dd>
                         </div>
                         <div v-if="inheritedEventModal.start_time" class="flex gap-2">
-                            <dt class="text-gray-500 w-24 shrink-0">Hora</dt>
+                            <dt class="text-gray-500 w-24 shrink-0">{{ tr('Hora', 'Time') }}</dt>
                             <dd class="text-gray-900">{{ inheritedEventModal.start_time }}{{ inheritedEventModal.end_time ? ' – ' + inheritedEventModal.end_time : '' }}</dd>
                         </div>
                         <div v-if="inheritedEventModal.location" class="flex gap-2">
-                            <dt class="text-gray-500 w-24 shrink-0">Lugar</dt>
+                            <dt class="text-gray-500 w-24 shrink-0">{{ tr('Lugar', 'Place') }}</dt>
                             <dd class="text-gray-900">{{ inheritedEventModal.location }}</dd>
                         </div>
                         <div v-if="inheritedEventModal.description" class="flex gap-2">
-                            <dt class="text-gray-500 w-24 shrink-0">Descripción</dt>
+                            <dt class="text-gray-500 w-24 shrink-0">{{ tr('Descripción', 'Description') }}</dt>
                             <dd class="text-gray-900 whitespace-pre-line">{{ inheritedEventModal.description }}</dd>
                         </div>
                         <div v-if="inheritedEventModal.is_mandatory" class="flex gap-2">
-                            <dt class="text-gray-500 w-24 shrink-0">Obligatorio</dt>
-                            <dd class="text-gray-900">Sí</dd>
+                            <dt class="text-gray-500 w-24 shrink-0">{{ tr('Obligatorio', 'Required') }}</dt>
+                            <dd class="text-gray-900">{{ tr('Sí', 'Yes') }}</dd>
                         </div>
                     </dl>
                     <div class="flex justify-end">
-                        <button class="px-4 py-2 border rounded text-sm" @click="inheritedEventModal = null">Cerrar</button>
+                        <button class="px-4 py-2 border rounded text-sm" @click="inheritedEventModal = null">{{ tr('Cerrar', 'Close') }}</button>
                     </div>
                 </div>
             </div>

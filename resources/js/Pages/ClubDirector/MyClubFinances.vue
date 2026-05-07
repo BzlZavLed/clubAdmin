@@ -3,6 +3,7 @@ import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 import { computed, ref, watch, onMounted } from 'vue'
 import { PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
@@ -22,6 +23,7 @@ import {
 // 🧠 Auth state
 const { user } = useAuth()
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
 const clubs = ref([])
 const hasClub = ref(false)
@@ -90,11 +92,11 @@ const pcForm = useForm({
 
 // Small helpers for labels
 const scopeTypeOptions = [
-    { value: 'club_wide', label: 'Todo el club' },
-    { value: 'class', label: 'Clase especifica' },
-    { value: 'member', label: 'Miembro especifico' },
-    { value: 'staff_wide', label: 'Todo el personal' },
-    { value: 'staff', label: 'Personal especifico' }
+    { value: 'club_wide', label: tr('Todo el club', 'Whole club') },
+    { value: 'class', label: tr('Clase especifica', 'Specific class') },
+    { value: 'member', label: tr('Miembro especifico', 'Specific member') },
+    { value: 'staff_wide', label: tr('Todo el personal', 'All staff') },
+    { value: 'staff', label: tr('Personal especifico', 'Specific staff') }
 ]
 
 const payToOptions = computed(() => {
@@ -102,13 +104,13 @@ const payToOptions = computed(() => {
 })
 
 const typeOptions = [
-    { value: 'mandatory', label: 'Obligatorio' },
-    { value: 'optional', label: 'Opcional' }
+    { value: 'mandatory', label: tr('Obligatorio', 'Required') },
+    { value: 'optional', label: tr('Opcional', 'Optional') }
 ]
 
 const statusOptions = [
-    { value: 'active', label: 'Activo' },
-    { value: 'inactive', label: 'Inactivo' }
+    { value: 'active', label: tr('Activo', 'Active') },
+    { value: 'inactive', label: tr('Inactivo', 'Inactive') }
 ]
 
 // derive current club name (for sanity)
@@ -157,20 +159,20 @@ function scopeOf(pc) {
 }
 
 function scopeLabel(sc) {
-    if (!sc) return 'Sin alcance'
+    if (!sc) return tr('Sin alcance', 'No scope')
     switch (sc.scope_type) {
         case 'club_wide':
-            return `Todo el club (${sc.club?.club_name ?? sc.club_id})`
+            return `${tr('Todo el club', 'Whole club')} (${sc.club?.club_name ?? sc.club_id})`
         case 'staff_wide':
-            return `Todo el personal (${sc.club?.club_name ?? sc.club_id})`
+            return `${tr('Todo el personal', 'All staff')} (${sc.club?.club_name ?? sc.club_id})`
         case 'class':
-            return `Clase: ${sc.class?.class_name ?? sc.class_id}`
+            return `${tr('Clase', 'Class')}: ${sc.class?.class_name ?? sc.class_id}`
         case 'member':
-            return `Miembro: ${sc.member?.applicant_name ?? sc.member_id}`
+            return `${tr('Miembro', 'Member')}: ${sc.member?.applicant_name ?? sc.member_id}`
         case 'staff':
-            return `Personal: ${sc.staff?.name ?? sc.staff_id}`
+            return `${tr('Personal', 'Staff')}: ${sc.staff?.name ?? sc.staff_id}`
         default:
-            return 'Alcance desconocido'
+            return tr('Alcance desconocido', 'Unknown scope')
     }
 }
 
@@ -186,14 +188,14 @@ async function loadPaymentConcepts() {
 //DELETE PAYMENT CONCEPT
 async function deleteConcept(id) {
     if (!conceptClubId.value) return
-    if (!confirm('¿Eliminar este concepto?')) return
+    if (!confirm(tr('¿Eliminar este concepto?', 'Delete this concept?'))) return
     try {
         await deletePaymentConcept(conceptClubId.value, id)
-        showToast('Concepto eliminado', 'success')
+        showToast(tr('Concepto eliminado', 'Concept deleted'), 'success')
         await loadPaymentConcepts()
     } catch (e) {
         console.error(e)
-        showToast('No se pudo eliminar el concepto', 'error')
+        showToast(tr('No se pudo eliminar el concepto', 'Could not delete the concept'), 'error')
     }
 }
 
@@ -202,7 +204,7 @@ async function deleteConcept(id) {
     const editingConceptId = ref(null)
 
     const saveBtnLabel = computed(() =>
-    isEditingConcept.value ? 'Guardar cambios' : 'Guardar concepto'
+    isEditingConcept.value ? tr('Guardar cambios', 'Save changes') : tr('Guardar concepto', 'Save concept')
     )
 
 function resetConceptForm(keepClub = true) {
@@ -265,8 +267,8 @@ function resetConceptForm(keepClub = true) {
 
     // Save (create or update)
     async function savePaymentConcept() {
-    if (!pcForm.club_id) return showToast('Selecciona el club del concepto', 'error')
-    if (pcForm.scopes.length === 0) return showToast('Agrega al menos un alcance', 'error')
+    if (!pcForm.club_id) return showToast(tr('Selecciona el club del concepto', 'Select the concept club'), 'error')
+    if (pcForm.scopes.length === 0) return showToast(tr('Agrega al menos un alcance', 'Add at least one scope'), 'error')
 
     if (pcForm.pay_to !== 'reimbursement_to') {
         pcForm.payee_type = null
@@ -287,11 +289,11 @@ function resetConceptForm(keepClub = true) {
         if (isEditingConcept.value && editingConceptId.value) {
         // UPDATE
         await updatePaymentConcept(conceptClubId.value, editingConceptId.value, payload)
-        showToast('Concepto de pago actualizado', 'success')
+        showToast(tr('Concepto de pago actualizado', 'Payment concept updated'), 'success')
         } else {
         // CREATE
         await createPaymentConcept(conceptClubId.value, payload)
-        showToast('Concepto de pago creado', 'success')
+        showToast(tr('Concepto de pago creado', 'Payment concept created'), 'success')
         }
         resetConceptForm(true)
         await loadPaymentConcepts()
@@ -304,7 +306,7 @@ function resetConceptForm(keepClub = true) {
                 pcForm.setError(field, Array.isArray(messages) ? messages[0] : messages)
             })
         }
-        showToast(msg || 'No se pudo guardar el concepto', 'error')
+        showToast(msg || tr('No se pudo guardar el concepto', 'Could not save the concept'), 'error')
     }
     }
 
@@ -319,10 +321,10 @@ const fetchStaff = async (clubId) => {
         const response = await axios.get(`/clubs/${clubId}/staff`)
         staffList.value = response.data.staff
         if(staffList.value.length === 0) {
-            showToast('Crea personal primero, no se encontro ninguno','error')
+            showToast(tr('Crea personal primero, no se encontro ninguno', 'Create staff first; none were found'),'error')
             return
         }
-        showToast('Personal cargado','success');
+        showToast(tr('Personal cargado', 'Staff loaded'),'success');
     } catch (error) {
         console.error('Failed to fetch staff:', error)
     }
@@ -334,14 +336,14 @@ const fetchMembers = async (clubId) => {
         const data = await fetchMembersByClub(clubId)
         if (Array.isArray(data) && data.length > 0) {
             members.value = data
-            showToast('Miembros cargados', 'success')
+            showToast(tr('Miembros cargados', 'Members loaded'), 'success')
         } else {
             members.value = []
-            alert('No se encontraron miembros para este club.')
+            showToast(tr('No se encontraron miembros para este club.', 'No members were found for this club.'), 'info')
         }
     } catch (error) {
         console.error('Failed to fetch members:', error)
-        showToast('Error al obtener miembros', 'error')
+        showToast(tr('Error al obtener miembros', 'Could not load members'), 'error')
     }
 };
 
@@ -362,7 +364,7 @@ const loadAccounts = async (clubId) => {
 
 const saveAccount = async () => {
     if (!conceptClubId.value) return
-    if (!accountForm.pay_to) return showToast('Ingresa la clave de la cuenta', 'error')
+    if (!accountForm.pay_to) return showToast(tr('Ingresa la clave de la cuenta', 'Enter the account key'), 'error')
     savingAccount.value = true
     try {
         await createAccount(conceptClubId.value, {
@@ -371,10 +373,10 @@ const saveAccount = async () => {
         })
         accountForm.reset()
         await loadAccounts(conceptClubId.value)
-        showToast('Cuenta creada', 'success')
+        showToast(tr('Cuenta creada', 'Account created'), 'success')
     } catch (e) {
         console.error(e)
-        showToast(e?.response?.data?.message || 'No se pudo crear la cuenta', 'error')
+        showToast(e?.response?.data?.message || tr('No se pudo crear la cuenta', 'Could not create the account'), 'error')
     } finally {
         savingAccount.value = false
     }
@@ -392,16 +394,16 @@ const cancelEditAccount = () => {
 
 const updateAccountLabel = async (acc) => {
     if (!conceptClubId.value) return
-    if (!editingAccountLabel.value) return showToast('Ingresa un nombre', 'error')
+    if (!editingAccountLabel.value) return showToast(tr('Ingresa un nombre', 'Enter a name'), 'error')
     savingAccount.value = true
     try {
         await updateAccount(conceptClubId.value, acc.id, { label: editingAccountLabel.value })
         await loadAccounts(conceptClubId.value)
-        showToast('Cuenta actualizada', 'success')
+        showToast(tr('Cuenta actualizada', 'Account updated'), 'success')
         cancelEditAccount()
     } catch (e) {
         console.error(e)
-        showToast(e?.response?.data?.message || 'No se pudo actualizar la cuenta', 'error')
+        showToast(e?.response?.data?.message || tr('No se pudo actualizar la cuenta', 'Could not update the account'), 'error')
     } finally {
         savingAccount.value = false
     }
@@ -413,10 +415,10 @@ const removeAccount = async (acc) => {
     try {
         await deleteAccount(conceptClubId.value, acc.id)
         await loadAccounts(conceptClubId.value)
-        showToast('Cuenta eliminada', 'success')
+        showToast(tr('Cuenta eliminada', 'Account deleted'), 'success')
     } catch (e) {
         console.error(e)
-        showToast(e?.response?.data?.message || 'No se pudo eliminar la cuenta', 'error')
+        showToast(e?.response?.data?.message || tr('No se pudo eliminar la cuenta', 'Could not delete the account'), 'error')
     } finally {
         savingAccount.value = false
     }
@@ -433,10 +435,10 @@ const fetchClubs = async () => {
             conceptClubId.value = filtered[0].id
             pcForm.club_id = filtered[0].id
         }
-        showToast('Clubes cargados correctamente')
+        showToast(tr('Clubes cargados correctamente', 'Clubs loaded successfully'))
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error al cargar clubes', 'error')
+        showToast(tr('Error al cargar clubes', 'Could not load clubs'), 'error')
     }
 }
 
@@ -531,32 +533,32 @@ onMounted(async () => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Finanzas del club</template>
+        <template #title>{{ tr('Finanzas del club', 'Club Finances') }}</template>
         <section class="border rounded mb-4">
-            <div class="bg-gray-100 px-4 py-2 font-semibold">Cuentas (pay_to)</div>
+            <div class="bg-gray-100 px-4 py-2 font-semibold">{{ tr('Cuentas (pay_to)', 'Accounts (pay_to)') }}</div>
             <div class="p-4 space-y-4">
                 <div class="grid md:grid-cols-3 gap-3">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Clave (pay_to)</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Clave (pay_to)', 'Key (pay_to)') }}</label>
                         <input v-model="accountForm.pay_to" type="text" class="w-full mt-1 p-2 border rounded"
-                            placeholder="ej. club_budget" />
+                            :placeholder="tr('ej. club_budget', 'ex. club_budget')" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Etiqueta</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Etiqueta', 'Label') }}</label>
                         <input v-model="accountForm.label" type="text" class="w-full mt-1 p-2 border rounded"
-                            placeholder="Presupuesto del club" />
+                            :placeholder="tr('Presupuesto del club', 'Club budget')" />
                     </div>
                     <div class="flex items-end">
                         <button @click="saveAccount" :disabled="savingAccount || !conceptClubId"
                             class="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-                            {{ savingAccount ? 'Guardando…' : 'Crear cuenta' }}
+                            {{ savingAccount ? tr('Guardando...', 'Saving...') : tr('Crear cuenta', 'Create account') }}
                         </button>
                     </div>
                 </div>
 
                 <div v-if="accounts.length" class="mt-2 flex items-center justify-between text-xs text-gray-600">
-                    <div>Mostrando {{ accounts.length ? accountsStartIdx + 1 : 0 }}–{{ accountsEndIdx }} de {{ accounts.length }}</div>
-                    <div>10 por pagina</div>
+                    <div>{{ tr('Mostrando', 'Showing') }} {{ accounts.length ? accountsStartIdx + 1 : 0 }}-{{ accountsEndIdx }} {{ tr('de', 'of') }} {{ accounts.length }}</div>
+                    <div>10 {{ tr('por pagina', 'per page') }}</div>
                 </div>
 
                 <div class="space-y-3 md:hidden">
@@ -567,7 +569,7 @@ onMounted(async () => {
                                 <div class="text-xs text-gray-600">{{ acc.pay_to }}</div>
                             </div>
                             <div class="text-right">
-                                <div class="text-xs text-gray-500">Saldo</div>
+                                <div class="text-xs text-gray-500">{{ tr('Saldo', 'Balance') }}</div>
                                 <div class="font-semibold text-gray-900">{{ Number(acc.balance || 0).toFixed(2) }}</div>
                             </div>
                         </div>
@@ -578,16 +580,16 @@ onMounted(async () => {
                         </div>
                         <div class="mt-3 flex flex-wrap items-center gap-3 text-xs">
                             <button v-if="editingAccountId !== acc.id" @click="startEditAccount(acc)"
-                                class="text-blue-700 hover:underline">Editar</button>
+                                class="text-blue-700 hover:underline">{{ tr('Editar', 'Edit') }}</button>
                             <button v-else @click="updateAccountLabel(acc)"
-                                class="text-emerald-700 hover:underline">Guardar</button>
+                                class="text-emerald-700 hover:underline">{{ tr('Guardar', 'Save') }}</button>
                             <button v-if="editingAccountId === acc.id" @click="cancelEditAccount"
-                                class="text-gray-600 hover:underline">Cancelar</button>
+                                class="text-gray-600 hover:underline">{{ tr('Cancelar', 'Cancel') }}</button>
                             <button @click="removeAccount(acc)"
-                                class="text-red-600 hover:underline">Eliminar</button>
+                                class="text-red-600 hover:underline">{{ tr('Eliminar', 'Delete') }}</button>
                         </div>
                     </div>
-                    <div v-if="!accounts.length" class="text-sm text-gray-500">No hay cuentas para este club.</div>
+                    <div v-if="!accounts.length" class="text-sm text-gray-500">{{ tr('No hay cuentas para este club.', 'There are no accounts for this club.') }}</div>
                 </div>
 
                 <div class="hidden md:block overflow-x-auto">
@@ -595,9 +597,9 @@ onMounted(async () => {
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-3 py-2 text-left font-semibold">pay_to</th>
-                                <th class="px-3 py-2 text-left font-semibold">Etiqueta</th>
-                                <th class="px-3 py-2 text-left font-semibold">Saldo</th>
-                                <th class="px-3 py-2 text-left font-semibold">Acciones</th>
+                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Etiqueta', 'Label') }}</th>
+                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Saldo', 'Balance') }}</th>
+                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Acciones', 'Actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -613,18 +615,18 @@ onMounted(async () => {
                                 <td class="px-3 py-2">
                                     <div class="flex items-center gap-2">
                                         <button v-if="editingAccountId !== acc.id" @click="startEditAccount(acc)"
-                                            class="text-xs text-blue-700 hover:underline">Editar</button>
+                                            class="text-xs text-blue-700 hover:underline">{{ tr('Editar', 'Edit') }}</button>
                                         <button v-else @click="updateAccountLabel(acc)"
-                                            class="text-xs text-emerald-700 hover:underline">Guardar</button>
+                                            class="text-xs text-emerald-700 hover:underline">{{ tr('Guardar', 'Save') }}</button>
                                         <button v-if="editingAccountId === acc.id" @click="cancelEditAccount"
-                                            class="text-xs text-gray-600 hover:underline">Cancelar</button>
+                                            class="text-xs text-gray-600 hover:underline">{{ tr('Cancelar', 'Cancel') }}</button>
                                         <button @click="removeAccount(acc)"
-                                            class="text-xs text-red-600 hover:underline">Eliminar</button>
+                                            class="text-xs text-red-600 hover:underline">{{ tr('Eliminar', 'Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
                             <tr v-if="!accounts.length">
-                                <td class="px-3 py-3 text-sm text-gray-500" colspan="4">No hay cuentas para este club.</td>
+                                <td class="px-3 py-3 text-sm text-gray-500" colspan="4">{{ tr('No hay cuentas para este club.', 'There are no accounts for this club.') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -632,31 +634,31 @@ onMounted(async () => {
                 <div v-if="accounts.length > accountsPageSize" class="mt-3 flex items-center justify-between">
                     <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         :disabled="accountsPage <= 1" @click="goAccountsPage(accountsPage - 1)">
-                        Anterior
+                        {{ tr('Anterior', 'Previous') }}
                     </button>
-                    <div class="text-xs text-gray-600">Pagina {{ accountsPage }} de {{ totalAccountsPages }}</div>
+                    <div class="text-xs text-gray-600">{{ tr('Pagina', 'Page') }} {{ accountsPage }} {{ tr('de', 'of') }} {{ totalAccountsPages }}</div>
                     <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         :disabled="accountsPage >= totalAccountsPages" @click="goAccountsPage(accountsPage + 1)">
-                        Siguiente
+                        {{ tr('Siguiente', 'Next') }}
                     </button>
                 </div>
             </div>
         </section>
         <details class="border rounded">
             <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">
-                Conceptos de pago
+                {{ tr('Conceptos de pago', 'Payment Concepts') }}
             </summary>
 
             <div class="p-4 space-y-6">
                 <!-- Form -->
                 <div class="space-y-4">
-                    <h3 class="text-lg font-bold">Crear concepto de pago</h3>
+                    <h3 class="text-lg font-bold">{{ tr('Crear concepto de pago', 'Create Payment Concept') }}</h3>
 
                     <!-- Choose club -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Aplica al club</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Aplica al club', 'Applies to club') }}</label>
                         <select v-if="isSuperadmin" v-model="conceptClubId" class="w-full mt-1 p-2 border rounded" :disabled="isEditingConcept">
-                            <option value="">Selecciona un club</option>
+                            <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
                         <div v-else class="w-full mt-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -666,12 +668,12 @@ onMounted(async () => {
 
                     <div class="grid md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Concepto', 'Concept') }}</label>
                             <input v-model="pcForm.concept" type="text" class="w-full mt-1 p-2 border rounded"
-                                placeholder="Ej. cuota de inscripcion" />
+                                :placeholder="tr('Ej. cuota de inscripcion', 'Ex. enrollment fee')" />
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Monto</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Monto', 'Amount') }}</label>
                             <input
                                 v-model.number="pcForm.amount"
                                 type="number"
@@ -682,13 +684,13 @@ onMounted(async () => {
                             />
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Pago esperado para</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Pago esperado para', 'Payment expected by') }}</label>
                             <input v-model="pcForm.payment_expected_by" type="date"
                                 class="w-full mt-1 p-2 border rounded" />
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Tipo', 'Type') }}</label>
                             <select v-model="pcForm.type" class="w-full mt-1 p-2 border rounded">
                                 <option v-for="o in typeOptions" :key="o.value" :value="o.value">{{ o.label }}
                                 </option>
@@ -704,16 +706,16 @@ onMounted(async () => {
                                     class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
                                 <span>
-                                    <span class="block text-sm font-medium text-gray-700">Reusar</span>
+                                    <span class="block text-sm font-medium text-gray-700">{{ tr('Reusar', 'Reusable') }}</span>
                                     <span class="block text-xs text-gray-500">
-                                        Si esta activo, el concepto puede cobrarse varias veces al mismo pagador y cada cobro debe ser por el importe completo.
+                                        {{ tr('Si esta activo, el concepto puede cobrarse varias veces al mismo pagador y cada cobro debe ser por el importe completo.', 'If active, the concept can be charged multiple times to the same payer and each charge must be for the full amount.') }}
                                     </span>
                                 </span>
                             </label>
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Estado', 'Status') }}</label>
                             <select v-model="pcForm.status" class="w-full mt-1 p-2 border rounded">
                                 <option v-for="o in statusOptions" :key="o.value" :value="o.value">{{ o.label }}
                                 </option>
@@ -721,12 +723,12 @@ onMounted(async () => {
                         </div>
 
                         <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Pagar a</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Pagar a', 'Pay to') }}</label>
                             <select v-model="pcForm.pay_to" class="w-full mt-1 p-2 border rounded">
                                 <option v-for="o in payToOptions" :key="o.value" :value="o.value">{{ o.label }}
                                 </option>
                             </select>
-                            <p class="text-xs text-gray-500 mt-1">Creado por: {{ user.name }}</p>
+                            <p class="text-xs text-gray-500 mt-1">{{ tr('Creado por', 'Created by') }}: {{ user.name }}</p>
                         </div>
                     </div>
 
@@ -734,68 +736,67 @@ onMounted(async () => {
                     <!-- Conditional payee -->
                     <div v-if="pcForm.pay_to === 'reimbursement_to'" class="grid md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Reembolsar a (tipo)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Reembolsar a (tipo)', 'Reimburse to (type)') }}</label>
                             <select v-model="pcForm.payee_type" class="w-full mt-1 p-2 border rounded">
-                                <option :value="null">Seleccionar…</option>
-                                <option value="StaffAdventurer">Personal</option>
-                                <option value="MemberAdventurer">Miembro</option>
-                                <option value="User">Director/Usuario</option>
+                                <option :value="null">{{ tr('Seleccionar...', 'Select...') }}</option>
+                                <option value="StaffAdventurer">{{ tr('Personal', 'Staff') }}</option>
+                                <option value="MemberAdventurer">{{ tr('Miembro', 'Member') }}</option>
+                                <option value="User">{{ tr('Director/Usuario', 'Director/User') }}</option>
                             </select>
-                            <p class="text-xs text-gray-500 mt-1" v-if="!conceptClubId">Selecciona un club arriba para cargar
-                                personal/miembros</p>
+                            <p class="text-xs text-gray-500 mt-1" v-if="!conceptClubId">{{ tr('Selecciona un club arriba para cargar personal/miembros', 'Select a club above to load staff/members') }}</p>
                         </div>
 
                         <!-- Staff dropdown -->
         <div v-if="pcForm.payee_type === 'StaffAdventurer'">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar personal</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Seleccionar personal', 'Select staff') }}</label>
             <select v-model="pcForm.payee_id" :disabled="!conceptClubId || staffList.length === 0"
                 class="w-full mt-1 p-2 border rounded">
-                <option :value="null">Seleccionar personal</option>
+                <option :value="null">{{ tr('Seleccionar personal', 'Select staff') }}</option>
                 <option v-for="s in staffList" :key="s.staff_id || s.id" :value="s.staff_id || s.id">
                     {{ s.name }}
                 </option>
             </select>
             <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && staffList.length === 0">
-                No se encontro personal para este club.
+                {{ tr('No se encontro personal para este club.', 'No staff was found for this club.') }}
             </p>
                         </div>
 
                         <!-- Member dropdown -->
                         <div v-else-if="pcForm.payee_type === 'MemberAdventurer'">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar miembro</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Seleccionar miembro', 'Select member') }}</label>
             <select v-model="pcForm.payee_id" :disabled="!conceptClubId || members.length === 0"
                 class="w-full mt-1 p-2 border rounded">
-                <option :value="null">Seleccionar miembro</option>
+                <option :value="null">{{ tr('Seleccionar miembro', 'Select member') }}</option>
                 <option v-for="m in members" :key="m.member_id || m.id" :value="m.member_id || m.id">
                     {{ m.applicant_name }}
                 </option>
             </select>
             <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && members.length === 0">
-                No se encontraron miembros para este club.
+                {{ tr('No se encontraron miembros para este club.', 'No members were found for this club.') }}
             </p>
                         </div>
                         <div v-else-if="pcForm.payee_type === 'User'">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar director/usuario</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Seleccionar director/usuario', 'Select director/user') }}</label>
             <select v-model="pcForm.payee_id" :disabled="!conceptClubId || conceptUsers.length === 0"
                 class="w-full mt-1 p-2 border rounded">
-                <option :value="null">Seleccionar usuario</option>
+                <option :value="null">{{ tr('Seleccionar usuario', 'Select user') }}</option>
                 <option v-for="u in conceptUsers" :key="u.id" :value="u.id">
                     {{ u.name }}<span v-if="u.email"> ({{ u.email }})</span>
                 </option>
             </select>
             <p class="text-xs text-gray-500 mt-1" v-if="conceptClubId && conceptUsers.length === 0">
-                No se encontraron usuarios para este club.
+                {{ tr('No se encontraron usuarios para este club.', 'No users were found for this club.') }}
             </p>
                         </div>
                     </div>
 
                     <!-- Scope -->
                     <div class="mt-6">
-                        <h4 class="font-semibold mb-2">Alcance</h4>
+                        <h4 class="font-semibold mb-2">{{ tr('Alcance', 'Scope') }}</h4>
                         <div class="border rounded p-3" v-if="pcForm.scopes.length">
                             <div class="grid md:grid-cols-3 gap-3">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de alcance</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Tipo de alcance', 'Scope type') }}</label>
                                     <select v-model="pcForm.scopes[0].scope_type" @change="onScopeTypeChange(pcForm.scopes[0])"
                                         class="w-full p-2 border rounded">
                                         <option v-for="o in scopeTypeOptions" :key="o.value" :value="o.value">{{
@@ -804,9 +805,9 @@ onMounted(async () => {
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'club_wide' || pcForm.scopes[0].scope_type === 'staff_wide'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Club</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Club', 'Club') }}</label>
                                     <select v-if="isSuperadmin" v-model="pcForm.scopes[0].club_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Seleccionar club</option>
+                                        <option :value="null">{{ tr('Seleccionar club', 'Select club') }}</option>
                                         <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}
                                         </option>
                                     </select>
@@ -816,27 +817,27 @@ onMounted(async () => {
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'class'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Clase</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Clase', 'Class') }}</label>
                                     <select v-model="pcForm.scopes[0].class_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Seleccionar clase</option>
+                                        <option :value="null">{{ tr('Seleccionar clase', 'Select class') }}</option>
                                         <option v-for="c in conceptClasses" :key="c.id" :value="c.id">{{
                                             c.class_name }}</option>
                                     </select>
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'member'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Miembro</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Miembro', 'Member') }}</label>
                                     <select v-model="pcForm.scopes[0].member_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Seleccionar miembro</option>
+                                        <option :value="null">{{ tr('Seleccionar miembro', 'Select member') }}</option>
                                         <option v-for="m in conceptMembers" :key="m.id" :value="m.id">{{
                                             m.applicant_name }}</option>
                                     </select>
                                 </div>
 
                                 <div v-if="pcForm.scopes[0].scope_type === 'staff'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Personal</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ tr('Personal', 'Staff') }}</label>
                                     <select v-model="pcForm.scopes[0].staff_id" class="w-full p-2 border rounded">
-                                        <option :value="null">Seleccionar personal</option>
+                                        <option :value="null">{{ tr('Seleccionar personal', 'Select staff') }}</option>
                                         <option v-for="st in conceptStaff" :key="st.id" :value="st.id">{{ st.name }}
                                         </option>
                                     </select>
@@ -852,7 +853,7 @@ onMounted(async () => {
                         </button>
                         <button v-if="isEditingConcept" type="button" @click="cancelEditConcept"
                                 class="text-sm text-gray-600 hover:underline">
-                            Cancelar
+                            {{ tr('Cancelar', 'Cancel') }}
                         </button>
                     </div>
                 </div>
@@ -860,21 +861,21 @@ onMounted(async () => {
                 <!-- List -->
                 <div class="pt-6">
                     <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-lg font-bold">Conceptos de pago existentes</h3>
+                        <h3 class="text-lg font-bold">{{ tr('Conceptos de pago existentes', 'Existing Payment Concepts') }}</h3>
                         <button type="button" @click="loadPaymentConcepts"
                             class="px-3 py-1 bg-gray-700 text-white rounded text-sm hover:bg-gray-800">
-                            Actualizar
+                            {{ tr('Actualizar', 'Refresh') }}
                         </button>
                     </div>
 
                     <div v-if="paymentConcepts.length === 0" class="text-sm text-gray-500">
-                        No hay conceptos de pago creados.
+                        {{ tr('No hay conceptos de pago creados.', 'No payment concepts have been created.') }}
                     </div>
 
                     <div v-else>
                         <div v-if="paymentConcepts.length" class="mb-2 flex items-center justify-between text-xs text-gray-600">
-                            <div>Mostrando {{ paymentConcepts.length ? conceptsStartIdx + 1 : 0 }}–{{ conceptsEndIdx }} de {{ paymentConcepts.length }}</div>
-                            <div>10 por pagina</div>
+                            <div>{{ tr('Mostrando', 'Showing') }} {{ paymentConcepts.length ? conceptsStartIdx + 1 : 0 }}-{{ conceptsEndIdx }} {{ tr('de', 'of') }} {{ paymentConcepts.length }}</div>
+                            <div>10 {{ tr('por pagina', 'per page') }}</div>
                         </div>
                         <div class="space-y-3 md:hidden">
                             <div v-for="pc in pagedConcepts" :key="pc.id" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
@@ -888,15 +889,15 @@ onMounted(async () => {
                                     </div>
                                 </div>
                                 <div class="mt-2 text-xs text-gray-600">
-                                    <div><span class="font-medium text-gray-700">Vence:</span> {{ formatISODate(pc.payment_expected_by) }}</div>
-                                    <div><span class="font-medium text-gray-700">Tipo:</span> {{ pc.type }}</div>
-                                    <div><span class="font-medium text-gray-700">Reusar:</span> {{ pc.reusable ? 'Si' : 'No' }}</div>
-                                    <div><span class="font-medium text-gray-700">Pagar a:</span> {{ pc.pay_to }}</div>
-                                    <div><span class="font-medium text-gray-700">Estado:</span> {{ pc.status }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ tr('Vence', 'Due') }}:</span> {{ formatISODate(pc.payment_expected_by) }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ tr('Tipo', 'Type') }}:</span> {{ pc.type }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ tr('Reusar', 'Reusable') }}:</span> {{ pc.reusable ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ tr('Pagar a', 'Pay to') }}:</span> {{ pc.pay_to }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ tr('Estado', 'Status') }}:</span> {{ pc.status }}</div>
                                     <div>
-                                        <span class="font-medium text-gray-700">Alcances:</span>
+                                        <span class="font-medium text-gray-700">{{ tr('Alcances', 'Scopes') }}:</span>
                                         <span v-if="scopeOf(pc)">{{ scopeLabel(scopeOf(pc)) }}</span>
-                                        <span v-else class="text-gray-500 italic">Sin alcance</span>
+                                        <span v-else class="text-gray-500 italic">{{ tr('Sin alcance', 'No scope') }}</span>
                                     </div>
                                 </div>
                                 <div class="mt-3 flex items-center gap-2">
@@ -904,22 +905,22 @@ onMounted(async () => {
                                         type="button"
                                         class="p-1 rounded hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
                                         @click.prevent="editConcept(pc)"
-                                        aria-label="Editar"
-                                        title="Editar"
+                                        :aria-label="tr('Editar', 'Edit')"
+                                        :title="tr('Editar', 'Edit')"
                                     >
                                         <PencilSquareIcon class="h-5 w-5 text-blue-600" />
-                                        <span class="sr-only">Editar</span>
+                                        <span class="sr-only">{{ tr('Editar', 'Edit') }}</span>
                                     </button>
 
                                     <button
                                         type="button"
                                         class="p-1 rounded hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
                                         @click="deleteConcept(pc.id)"
-                                        aria-label="Eliminar"
-                                        title="Eliminar"
+                                        :aria-label="tr('Eliminar', 'Delete')"
+                                        :title="tr('Eliminar', 'Delete')"
                                     >
                                         <TrashIcon class="h-5 w-5 text-red-600" />
-                                        <span class="sr-only">Eliminar</span>
+                                        <span class="sr-only">{{ tr('Eliminar', 'Delete') }}</span>
                                     </button>
                                 </div>
                             </div>
@@ -929,16 +930,16 @@ onMounted(async () => {
                             <table class="min-w-full border rounded text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">Concepto</th>
-                                    <th class="p-2 text-left">Monto</th>
-                                    <th class="p-2 text-left">Club</th>
-                                    <th class="p-2 text-left">Vence</th>
-                                    <th class="p-2 text-left">Tipo</th>
-                                    <th class="p-2 text-left">Reusar</th>
-                                    <th class="p-2 text-left">Pagar a</th>
-                                    <th class="p-2 text-left">Estado</th>
-                                    <th class="p-2 text-left">Alcances</th>
-                                    <th class="p-2 text-left">Acciones</th>
+                                    <th class="p-2 text-left">{{ tr('Concepto', 'Concept') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Monto', 'Amount') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Club', 'Club') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Vence', 'Due') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Tipo', 'Type') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Reusar', 'Reusable') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Pagar a', 'Pay to') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Estado', 'Status') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Alcances', 'Scopes') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -951,34 +952,34 @@ onMounted(async () => {
                                     <td class="p-2">{{ pc.club?.club_name ?? conceptClubName }}</td>
                                     <td class="p-2">{{ formatISODate(pc.payment_expected_by) }}</td>
                                     <td class="p-2 capitalize">{{ pc.type }}</td>
-                                    <td class="p-2">{{ pc.reusable ? 'Si' : 'No' }}</td>
+                                    <td class="p-2">{{ pc.reusable ? tr('Si', 'Yes') : tr('No', 'No') }}</td>
                                     <td class="p-2 capitalize">{{ pc.pay_to }}</td>
                                     <td class="p-2 capitalize">{{ pc.status }}</td>
                                     <td class="p-2">
                                         <span v-if="scopeOf(pc)">{{ scopeLabel(scopeOf(pc)) }}</span>
-                                        <span v-else class="text-gray-500 italic">Sin alcance</span>
+                                        <span v-else class="text-gray-500 italic">{{ tr('Sin alcance', 'No scope') }}</span>
                                     </td>
                                     <td>
                                         <button
                                             type="button"
                                             class="p-1 rounded hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
                                             @click.prevent="editConcept(pc)"
-                                            aria-label="Editar"
-                                            title="Editar"
+                                            :aria-label="tr('Editar', 'Edit')"
+                                            :title="tr('Editar', 'Edit')"
                                         >
                                             <PencilSquareIcon class="h-5 w-5 text-blue-600" />
-                                            <span class="sr-only">Editar</span>
+                                            <span class="sr-only">{{ tr('Editar', 'Edit') }}</span>
                                         </button>
 
                                         <button
                                             type="button"
                                             class="p-1 rounded hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
                                             @click="deleteConcept(pc.id)"
-                                            aria-label="Eliminar"
-                                            title="Eliminar"
+                                            :aria-label="tr('Eliminar', 'Delete')"
+                                            :title="tr('Eliminar', 'Delete')"
                                         >
                                             <TrashIcon class="h-5 w-5 text-red-600" />
-                                            <span class="sr-only">Eliminar</span>
+                                            <span class="sr-only">{{ tr('Eliminar', 'Delete') }}</span>
                                         </button>
                                     </td>
                                 </tr>
@@ -988,12 +989,12 @@ onMounted(async () => {
                         <div v-if="paymentConcepts.length > conceptsPageSize" class="mt-3 flex items-center justify-between">
                             <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                                 :disabled="conceptsPage <= 1" @click="goConceptsPage(conceptsPage - 1)">
-                                Anterior
+                                {{ tr('Anterior', 'Previous') }}
                             </button>
-                            <div class="text-xs text-gray-600">Pagina {{ conceptsPage }} de {{ totalConceptsPages }}</div>
+                            <div class="text-xs text-gray-600">{{ tr('Pagina', 'Page') }} {{ conceptsPage }} {{ tr('de', 'of') }} {{ totalConceptsPages }}</div>
                             <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                                 :disabled="conceptsPage >= totalConceptsPages" @click="goConceptsPage(conceptsPage + 1)">
-                                Siguiente
+                                {{ tr('Siguiente', 'Next') }}
                             </button>
                         </div>
                     </div>

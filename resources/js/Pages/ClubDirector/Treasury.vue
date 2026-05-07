@@ -2,10 +2,12 @@
 import { computed, onMounted, ref } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 import { createEventClubSettlement, createTreasuryMovement, fetchClubEventSettlements, fetchClubTreasury } from '@/Services/api'
 import { ArrowPathIcon, BanknotesIcon, BuildingLibraryIcon, WalletIcon } from '@heroicons/vue/24/outline'
 
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 
 const props = defineProps({
     auth_user: Object,
@@ -51,25 +53,25 @@ const filteredIncomeRows = computed(() => {
 
 const formatMoney = (value) => Number(value || 0).toFixed(2)
 const formatDate = (value) => value ? String(value).slice(0, 10) : '—'
-const locationLabel = (value) => value === 'bank' ? 'Banco' : value === 'external' ? 'Externo' : value === 'internal' ? 'Interno' : 'Efectivo'
+const locationLabel = (value) => value === 'bank' ? tr('Banco', 'Bank') : value === 'external' ? tr('Externo', 'External') : value === 'internal' ? tr('Interno', 'Internal') : tr('Efectivo', 'Cash')
 const accountLabel = (row) => row?.account_label || treasury.value.accounts.find(account => account.value === row?.pay_to)?.label || row?.pay_to || '—'
 const paymentTypesLabel = (types) => (types || []).filter(Boolean).join(', ')
 const movementLabel = (value) => ({
-    cash_deposit: 'Depósito a banco',
-    cash_withdrawal: 'Retiro de banco',
-    event_settlement: 'Transferencia de evento',
+    cash_deposit: tr('Depósito a banco', 'Bank deposit'),
+    cash_withdrawal: tr('Retiro de banco', 'Bank withdrawal'),
+    event_settlement: tr('Transferencia de evento', 'Event transfer'),
 })[value] || value
 
 const bankInfoLines = (info) => {
     if (!info) return []
     return [
-        info.bank_name ? `Banco: ${info.bank_name}` : null,
-        info.account_holder ? `Titular: ${info.account_holder}` : null,
-        info.account_type ? `Tipo: ${info.account_type}` : null,
-        info.account_number ? `Cuenta: ${info.account_number}` : null,
+        info.bank_name ? `${tr('Banco', 'Bank')}: ${info.bank_name}` : null,
+        info.account_holder ? `${tr('Titular', 'Account holder')}: ${info.account_holder}` : null,
+        info.account_type ? `${tr('Tipo', 'Type')}: ${info.account_type}` : null,
+        info.account_number ? `${tr('Cuenta', 'Account')}: ${info.account_number}` : null,
         info.routing_number ? `Routing: ${info.routing_number}` : null,
         info.zelle_email ? `Zelle: ${info.zelle_email}` : null,
-        info.zelle_phone ? `Zelle tel: ${info.zelle_phone}` : null,
+        info.zelle_phone ? `${tr('Zelle tel', 'Zelle phone')}: ${info.zelle_phone}` : null,
     ].filter(Boolean)
 }
 
@@ -91,7 +93,7 @@ async function loadData() {
         eventSettlementRows.value = Array.isArray(settlementsData?.data) ? settlementsData.data : []
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudo cargar tesorería', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo cargar tesorería', 'Could not load treasury'), 'error')
     } finally {
         loading.value = false
     }
@@ -105,7 +107,7 @@ async function saveMovement() {
     savingMovement.value = true
     try {
         await createTreasuryMovement(movementForm.value)
-        showToast('Movimiento registrado', 'success')
+        showToast(tr('Movimiento registrado', 'Movement recorded'), 'success')
         movementForm.value = {
             movement_type: 'cash_deposit',
             pay_to: 'club_budget',
@@ -118,7 +120,7 @@ async function saveMovement() {
         await loadData()
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudo registrar el movimiento', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo registrar el movimiento', 'Could not record the movement'), 'error')
     } finally {
         savingMovement.value = false
     }
@@ -156,7 +158,7 @@ async function saveEventSettlement() {
             notes: settlementForm.value.notes,
             deposit_proof: settlementForm.value.deposit_proof,
         })
-        showToast('Transferencia de evento registrada', 'success')
+        showToast(tr('Transferencia de evento registrada', 'Event transfer recorded'), 'success')
         closeSettlementModal()
         await loadData()
     } catch (error) {
@@ -165,7 +167,7 @@ async function saveEventSettlement() {
         const firstError = errors ? Object.values(errors)[0] : null
         settlementError.value = Array.isArray(firstError)
             ? firstError[0]
-            : (firstError || error?.response?.data?.message || 'No se pudo registrar la transferencia')
+            : (firstError || error?.response?.data?.message || tr('No se pudo registrar la transferencia', 'Could not record the transfer'))
         showToast(settlementError.value, 'error')
     } finally {
         settlementSaving.value = false
@@ -177,15 +179,15 @@ onMounted(loadData)
 
 <template>
     <PathfinderLayout>
-        <template #title>Tesorería</template>
+        <template #title>{{ tr('Tesorería', 'Treasury') }}</template>
 
         <div class="space-y-6">
             <section class="rounded-lg border bg-white p-5 shadow-sm">
                 <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                        <h1 class="text-xl font-semibold text-gray-900">Tesorería del club</h1>
+                        <h1 class="text-xl font-semibold text-gray-900">{{ tr('Tesorería del club', 'Club Treasury') }}</h1>
                         <p class="mt-1 text-sm text-gray-600">
-                            Control de efectivo, banco y transferencias externas de eventos.
+                            {{ tr('Control de efectivo, banco y transferencias externas de eventos.', 'Control cash, bank funds, and external event transfers.') }}
                         </p>
                     </div>
                     <button
@@ -195,7 +197,7 @@ onMounted(loadData)
                         @click="loadData"
                     >
                         <ArrowPathIcon class="h-4 w-4" />
-                        {{ loading ? 'Cargando...' : 'Actualizar' }}
+                        {{ loading ? tr('Cargando...', 'Loading...') : tr('Actualizar', 'Refresh') }}
                     </button>
                 </div>
             </section>
@@ -204,21 +206,21 @@ onMounted(loadData)
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
                     <div class="flex items-center gap-2 text-sm text-gray-500">
                         <WalletIcon class="h-5 w-5" />
-                        Efectivo disponible
+                        {{ tr('Efectivo disponible', 'Available cash') }}
                     </div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">${{ formatMoney(summary.cash_balance) }}</div>
                 </div>
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
                     <div class="flex items-center gap-2 text-sm text-gray-500">
                         <BuildingLibraryIcon class="h-5 w-5" />
-                        Banco disponible
+                        {{ tr('Banco disponible', 'Available bank funds') }}
                     </div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">${{ formatMoney(summary.bank_balance) }}</div>
                 </div>
                 <div class="rounded-lg border bg-white p-4 shadow-sm">
                     <div class="flex items-center gap-2 text-sm text-gray-500">
                         <BanknotesIcon class="h-5 w-5" />
-                        Total disponible
+                        {{ tr('Total disponible', 'Total available') }}
                     </div>
                     <div class="mt-2 text-2xl font-semibold text-gray-900">${{ formatMoney(summary.total_available) }}</div>
                 </div>
@@ -227,15 +229,15 @@ onMounted(loadData)
             <section class="rounded-lg border bg-white p-5 shadow-sm">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Cuenta bancaria del club</h2>
-                        <p class="mt-1 text-sm text-gray-600">Cuenta física usada para pagos electrónicos y depósitos del club.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Cuenta bancaria del club', 'Club bank account') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">{{ tr('Cuenta física usada para pagos electrónicos y depósitos del club.', 'Physical account used for electronic payments and club deposits.') }}</p>
                     </div>
                     <a :href="route('club.settings')" class="text-sm font-medium text-blue-700 hover:underline">
-                        Configurar cuenta
+                        {{ tr('Configurar cuenta', 'Configure account') }}
                     </a>
                 </div>
                 <div v-if="bankInfo" class="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-                    <div class="font-semibold">{{ bankInfo.label || 'Cuenta bancaria del club' }}</div>
+                    <div class="font-semibold">{{ bankInfo.label || tr('Cuenta bancaria del club', 'Club bank account') }}</div>
                     <div class="mt-2 grid gap-1 md:grid-cols-2">
                         <div v-for="line in bankInfoLines(bankInfo)" :key="line">{{ line }}</div>
                     </div>
@@ -244,50 +246,50 @@ onMounted(loadData)
                     </div>
                 </div>
                 <div v-else class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                    El club no tiene cuenta bancaria registrada. No se deben recibir pagos electrónicos hasta configurarla.
+                    {{ tr('El club no tiene cuenta bancaria registrada. No se deben recibir pagos electrónicos hasta configurarla.', 'The club does not have a bank account registered. Electronic payments should not be received until it is configured.') }}
                 </div>
             </section>
 
             <section class="rounded-lg border bg-white p-5 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Depósitos y retiros</h2>
+                <h2 class="text-lg font-semibold text-gray-900">{{ tr('Depósitos y retiros', 'Deposits and Withdrawals') }}</h2>
                 <form class="mt-4 grid gap-4 md:grid-cols-2" @submit.prevent="saveMovement">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Tipo</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Tipo', 'Type') }}</label>
                         <select v-model="movementForm.movement_type" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-                            <option value="cash_deposit">Depositar efectivo a banco</option>
-                            <option value="cash_withdrawal">Retirar efectivo del banco</option>
+                            <option value="cash_deposit">{{ tr('Depositar efectivo a banco', 'Deposit cash to bank') }}</option>
+                            <option value="cash_withdrawal">{{ tr('Retirar efectivo del banco', 'Withdraw cash from bank') }}</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Cuenta</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Cuenta', 'Account') }}</label>
                         <select v-model="movementForm.pay_to" class="mt-1 w-full rounded border px-3 py-2 text-sm">
                             <option v-for="account in treasury.accounts" :key="account.value" :value="account.value">{{ account.label }}</option>
-                            <option v-if="!treasury.accounts.length" value="club_budget">Presupuesto del club</option>
+                            <option v-if="!treasury.accounts.length" value="club_budget">{{ tr('Presupuesto del club', 'Club budget') }}</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Monto</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Monto', 'Amount') }}</label>
                         <input v-model="movementForm.amount" type="number" min="0.01" step="0.01" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Fecha</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                         <input v-model="movementForm.movement_date" type="date" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Referencia</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Referencia', 'Reference') }}</label>
                         <input v-model="movementForm.reference" type="text" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Comprobante</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Comprobante', 'Proof') }}</label>
                         <input type="file" accept="image/*,application/pdf" class="mt-1 block w-full text-sm" @change="onMovementProofSelected" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Notas</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Notas', 'Notes') }}</label>
                         <textarea v-model="movementForm.notes" rows="2" class="mt-1 w-full rounded border px-3 py-2 text-sm"></textarea>
                     </div>
                     <div class="md:col-span-2">
                         <button type="submit" class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" :disabled="savingMovement">
-                            {{ savingMovement ? 'Guardando...' : 'Registrar movimiento' }}
+                            {{ savingMovement ? tr('Guardando...', 'Saving...') : tr('Registrar movimiento', 'Record movement') }}
                         </button>
                     </div>
                 </form>
@@ -296,26 +298,26 @@ onMounted(loadData)
             <section class="rounded-lg border bg-white p-5 shadow-sm">
                 <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Ingresos por ubicación</h2>
-                        <p class="mt-1 text-sm text-gray-600">Los ingresos se clasifican por tipo de pago: efectivo o banco.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Ingresos por ubicación', 'Income by Location') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">{{ tr('Los ingresos se clasifican por tipo de pago: efectivo o banco.', 'Income is classified by payment type: cash or bank.') }}</p>
                     </div>
                     <select v-model="incomeLocationFilter" class="rounded border px-3 py-2 text-sm">
-                        <option value="all">Todos</option>
-                        <option value="cash">Efectivo</option>
-                        <option value="bank">Banco</option>
+                        <option value="all">{{ tr('Todos', 'All') }}</option>
+                        <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+                        <option value="bank">{{ tr('Banco', 'Bank') }}</option>
                     </select>
                 </div>
                 <div class="mt-4 overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
-                                <th class="px-3 py-2">Fecha</th>
-                                <th class="px-3 py-2">Concepto</th>
-                                <th class="px-3 py-2">Cuenta</th>
-                                <th class="px-3 py-2">Pagador</th>
-                                <th class="px-3 py-2">Tipo</th>
-                                <th class="px-3 py-2">Ubicación</th>
-                                <th class="px-3 py-2 text-right">Monto</th>
+                                <th class="px-3 py-2">{{ tr('Fecha', 'Date') }}</th>
+                                <th class="px-3 py-2">{{ tr('Concepto', 'Concept') }}</th>
+                                <th class="px-3 py-2">{{ tr('Cuenta', 'Account') }}</th>
+                                <th class="px-3 py-2">{{ tr('Pagador', 'Payer') }}</th>
+                                <th class="px-3 py-2">{{ tr('Tipo', 'Type') }}</th>
+                                <th class="px-3 py-2">{{ tr('Ubicación', 'Location') }}</th>
+                                <th class="px-3 py-2 text-right">{{ tr('Monto', 'Amount') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -335,7 +337,7 @@ onMounted(loadData)
                                 <td class="px-3 py-2 text-right font-medium">${{ formatMoney(row.amount_paid) }}</td>
                             </tr>
                             <tr v-if="!filteredIncomeRows.length">
-                                <td colspan="7" class="px-3 py-6 text-center text-gray-500">No hay ingresos para este filtro.</td>
+                                <td colspan="7" class="px-3 py-6 text-center text-gray-500">{{ tr('No hay ingresos para este filtro.', 'No income for this filter.') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -343,9 +345,9 @@ onMounted(loadData)
             </section>
 
             <section class="rounded-lg border bg-white p-5 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Transferencias de eventos</h2>
+                <h2 class="text-lg font-semibold text-gray-900">{{ tr('Transferencias de eventos', 'Event Transfers') }}</h2>
                 <div v-if="!eventSettlementRows.length" class="mt-4 rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-                    No hay transferencias de eventos pendientes.
+                    {{ tr('No hay transferencias de eventos pendientes.', 'There are no pending event transfers.') }}
                 </div>
                 <div v-else class="mt-4 space-y-4">
                     <article v-for="row in eventSettlementRows" :key="row.event_id" class="rounded-lg border border-gray-200 p-4">
@@ -364,9 +366,9 @@ onMounted(loadData)
                                 <details v-if="row.paid_members?.length" class="rounded border border-gray-200 bg-white p-3 text-sm">
                                     <summary class="cursor-pointer list-none">
                                         <div class="flex items-center justify-between gap-3">
-                                            <span class="font-medium text-gray-900">Miembros con pagos</span>
+                                            <span class="font-medium text-gray-900">{{ tr('Miembros con pagos', 'Members with payments') }}</span>
                                             <span class="text-xs text-gray-600">
-                                                {{ row.paid_members_count }} miembros · ${{ formatMoney(row.paid_members_total) }}
+                                                {{ row.paid_members_count }} {{ tr('miembros', 'members') }} · ${{ formatMoney(row.paid_members_total) }}
                                             </span>
                                         </div>
                                     </summary>
@@ -377,8 +379,8 @@ onMounted(loadData)
                                                 <div class="font-semibold text-gray-900">${{ formatMoney(member.total_paid) }}</div>
                                             </div>
                                             <div class="mt-0.5 text-xs text-gray-500">
-                                                {{ member.payments_count }} pago{{ member.payments_count === 1 ? '' : 's' }}
-                                                <span v-if="member.last_payment_date"> · Último: {{ formatDate(member.last_payment_date) }}</span>
+                                                {{ member.payments_count }} {{ member.payments_count === 1 ? tr('pago', 'payment') : tr('pagos', 'payments') }}
+                                                <span v-if="member.last_payment_date"> · {{ tr('Último:', 'Last:') }} {{ formatDate(member.last_payment_date) }}</span>
                                                 <span v-if="paymentTypesLabel(member.payment_types)"> · {{ paymentTypesLabel(member.payment_types) }}</span>
                                             </div>
                                             <div v-if="member.breakdown?.length" class="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
@@ -390,7 +392,7 @@ onMounted(loadData)
                                     </div>
                                 </details>
                                 <div v-if="row.organizer_bank_info" class="rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-                                    <div class="font-semibold">{{ row.organizer_bank_info.label || 'Cuenta de destino' }}</div>
+                                    <div class="font-semibold">{{ row.organizer_bank_info.label || tr('Cuenta de destino', 'Destination account') }}</div>
                                     <div class="mt-1 grid gap-1 md:grid-cols-2">
                                         <div v-for="line in bankInfoLines(row.organizer_bank_info)" :key="`${row.event_id}-${line}`">{{ line }}</div>
                                     </div>
@@ -398,7 +400,7 @@ onMounted(loadData)
                             </div>
                             <div class="w-full space-y-3 lg:max-w-xs">
                                 <div class="rounded bg-gray-50 px-3 py-2">
-                                    <div class="text-xs text-gray-500">Pendiente</div>
+                                    <div class="text-xs text-gray-500">{{ tr('Pendiente', 'Pending') }}</div>
                                     <div class="text-xl font-semibold text-gray-900">${{ formatMoney(row.pending_settlement_amount) }}</div>
                                 </div>
                                 <button
@@ -407,7 +409,7 @@ onMounted(loadData)
                                     class="w-full rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
                                     @click="openSettlementModal(row)"
                                 >
-                                    Transferir a organización
+                                    {{ tr('Transferir a organización', 'Transfer to organization') }}
                                 </button>
                                 <div v-if="row.settlement_receipts?.length" class="space-y-1 text-sm">
                                     <a v-for="receipt in row.settlement_receipts" :key="receipt.id" :href="receipt.receipt_url" class="block text-blue-700 hover:underline">
@@ -421,16 +423,16 @@ onMounted(loadData)
             </section>
 
             <section class="rounded-lg border bg-white p-5 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Movimientos registrados</h2>
+                <h2 class="text-lg font-semibold text-gray-900">{{ tr('Movimientos registrados', 'Recorded Movements') }}</h2>
                 <div class="mt-4 overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
-                                <th class="px-3 py-2">Fecha</th>
-                                <th class="px-3 py-2">Tipo</th>
-                                <th class="px-3 py-2">Movimiento</th>
-                                <th class="px-3 py-2">Referencia</th>
-                                <th class="px-3 py-2 text-right">Monto</th>
+                                <th class="px-3 py-2">{{ tr('Fecha', 'Date') }}</th>
+                                <th class="px-3 py-2">{{ tr('Tipo', 'Type') }}</th>
+                                <th class="px-3 py-2">{{ tr('Movimiento', 'Movement') }}</th>
+                                <th class="px-3 py-2">{{ tr('Referencia', 'Reference') }}</th>
+                                <th class="px-3 py-2 text-right">{{ tr('Monto', 'Amount') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -440,12 +442,12 @@ onMounted(loadData)
                                 <td class="px-3 py-2">{{ locationLabel(row.from_location) }} → {{ locationLabel(row.to_location) }}</td>
                                 <td class="px-3 py-2">
                                     <div>{{ row.reference || row.receipt_number || '—' }}</div>
-                                    <a v-if="row.proof_url" :href="row.proof_url" target="_blank" rel="noopener" class="text-xs text-blue-700 hover:underline">Ver comprobante</a>
+                                    <a v-if="row.proof_url" :href="row.proof_url" target="_blank" rel="noopener" class="text-xs text-blue-700 hover:underline">{{ tr('Ver comprobante', 'View proof') }}</a>
                                 </td>
                                 <td class="px-3 py-2 text-right font-medium">${{ formatMoney(row.amount) }}</td>
                             </tr>
                             <tr v-if="!treasury.movements.length">
-                                <td colspan="5" class="px-3 py-6 text-center text-gray-500">No hay movimientos registrados.</td>
+                                <td colspan="5" class="px-3 py-6 text-center text-gray-500">{{ tr('No hay movimientos registrados.', 'No movements recorded.') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -457,42 +459,42 @@ onMounted(loadData)
             <div class="w-full max-w-xl rounded-lg border bg-white shadow-xl">
                 <div class="flex items-start justify-between gap-4 border-b px-5 py-4">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Transferir a organización</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Transferir a organización', 'Transfer to organization') }}</h2>
                         <p class="mt-1 text-sm text-gray-600">{{ selectedSettlement.event_title }}</p>
                     </div>
                     <button type="button" class="text-gray-500 hover:text-gray-700" @click="closeSettlementModal">×</button>
                 </div>
                 <div class="p-5 space-y-4">
                     <div class="rounded border border-gray-200 bg-gray-50 p-3">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Monto máximo depositable</div>
+                        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Monto máximo depositable', 'Maximum depositable amount') }}</div>
                         <div class="mt-1 text-2xl font-semibold text-gray-900">${{ formatMoney(selectedSettlement.pending_settlement_amount) }}</div>
                     </div>
                     <div class="grid gap-4 md:grid-cols-2">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Fecha</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                             <input v-model="settlementForm.deposited_at" type="datetime-local" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Referencia</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Referencia', 'Reference') }}</label>
                             <input v-model="settlementForm.reference" type="text" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
                         </div>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Comprobante</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Comprobante', 'Proof') }}</label>
                         <input type="file" accept="image/*,application/pdf" class="mt-1 block w-full text-sm" @change="onSettlementProofSelected" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Notas</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Notas', 'Notes') }}</label>
                         <textarea v-model="settlementForm.notes" rows="3" class="mt-1 w-full rounded border px-3 py-2 text-sm"></textarea>
                     </div>
                     <div v-if="settlementError" class="text-sm text-red-600">{{ settlementError }}</div>
                 </div>
                 <div class="flex justify-end gap-3 border-t px-5 py-4">
                     <button type="button" class="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="closeSettlementModal">
-                        Cancelar
+                        {{ tr('Cancelar', 'Cancel') }}
                     </button>
                     <button type="button" class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" :disabled="settlementSaving" @click="saveEventSettlement">
-                        {{ settlementSaving ? 'Guardando...' : 'Registrar transferencia' }}
+                        {{ settlementSaving ? tr('Guardando...', 'Saving...') : tr('Registrar transferencia', 'Record transfer') }}
                     </button>
                 </div>
             </div>

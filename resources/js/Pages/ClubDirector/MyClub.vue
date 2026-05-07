@@ -4,6 +4,7 @@ import CreateClassModal from '@/Components/CreateClassModal.vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 import { refreshPage } from '@/Helpers/general'
 import { computed, ref, watch, onMounted } from 'vue'
 
@@ -52,6 +53,7 @@ const canCreateAnotherClub = computed(() => isSuperadmin.value || directorClubCo
 const clubLimitReached = computed(() => !isSuperadmin.value && directorClubCount.value >= 2)
 
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 const today = new Date().toISOString().split("T")[0]
 
 // 🧠 UI & state
@@ -71,7 +73,7 @@ const editingObjectiveByClub = ref({})
 const showObjectiveFormByClub = ref({})
 
 // 🧠 Derived data
-const church_name = user.value.church_name || 'Iglesia desconocida'
+const church_name = computed(() => user.value.church_name || tr('Iglesia desconocida', 'Unknown church'))
 const clubId = ref(
     isSuperadmin.value
         ? (props.superadmin_context?.club_id || null)
@@ -82,7 +84,7 @@ const clubStaff = computed(() => {
     return clubs.value[0]?.staff_adventurers ?? []
 })
 if (!isSuperadmin.value && !user.value.pastor_name) {
-    showToast('Primero crea la iglesia', 'error')
+    showToast(tr('Primero crea la iglesia', 'Create the church first'), 'error')
 }
 
 const initialChurch = isSuperadmin.value
@@ -128,10 +130,10 @@ const clubForm = useForm({
     creation_date: today,
     pastor_name: isSuperadmin.value
         ? (initialChurch?.pastor_name || '')
-        : (user.value.pastor_name || 'Iglesia no creada'),
+        : (user.value.pastor_name || tr('Iglesia no creada', 'Church not created')),
     conference_name: initialDistrict.value?.association_name || (isSuperadmin.value
         ? (initialChurch?.conference || '')
-        : (user.value.conference_name || 'Iglesia no creada')),
+        : (user.value.conference_name || tr('Iglesia no creada', 'Church not created'))),
     conference_region: '',
     club_type: '',
     evaluation_system: 'honors',
@@ -159,7 +161,7 @@ const availableEvaluationSystems = computed(() => {
     return [
         {
             value,
-            label: value === 'carpetas' ? 'Carpetas' : 'Honores',
+            label: value === 'carpetas' ? tr('Carpetas', 'Folders') : tr('Honores', 'Honors'),
         },
     ]
 })
@@ -229,10 +231,10 @@ const fetchClubs = async () => {
         } else {
             churchClubs.value = []
         }
-        showToast('Clubes cargados correctamente')
+        showToast(tr('Clubes cargados correctamente', 'Clubs loaded successfully'))
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
-        showToast('Error al cargar clubes', 'error')
+        showToast(tr('Error al cargar clubes', 'Could not load clubs'), 'error')
     }
 }
 
@@ -240,26 +242,26 @@ const fetchClubs = async () => {
 const submitClub = async () => {
     try {
         await createClub(clubForm)
-        showToast('Club creado correctamente')
+        showToast(tr('Club creado correctamente', 'Club created successfully'))
         addClub.value = false
         await fetchClubs()
         await router.reload({ only: ['auth'] })
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudo crear el club', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo crear el club', 'Could not create the club'), 'error')
     }
 }
 
 const updateClub = async () => {
     try {
         await updateClubApi(clubForm)
-        showToast('Club actualizado correctamente')
+        showToast(tr('Club actualizado correctamente', 'Club updated successfully'))
         isEditing.value = false
         editingClubId.value = null
         fetchClubs()
     } catch (error) {
         console.error(error)
-        showToast('No se pudo actualizar el club', 'error')
+        showToast(tr('No se pudo actualizar el club', 'Could not update the club'), 'error')
     }
 }
 
@@ -284,26 +286,26 @@ const editClub = (club) => {
 
 // 🧠 Delete club or class
 const deleteClub = async (clubId) => {
-    if (!confirm('¿Seguro que deseas eliminar este club?')) return
+    if (!confirm(tr('¿Seguro que deseas eliminar este club?', 'Are you sure you want to delete this club?'))) return
     try {
         await deleteClubById(clubId)
-        showToast('Club eliminado correctamente')
+        showToast(tr('Club eliminado correctamente', 'Club deleted successfully'))
         fetchClubs()
     } catch (error) {
         console.error('Failed to delete club:', error)
-        showToast('Error al eliminar el club', 'error')
+        showToast(tr('Error al eliminar el club', 'Could not delete the club'), 'error')
     }
 }
 
 const deleteCls = async (classID) => {
-    if (!confirm('¿Seguro que deseas eliminar esta clase?')) return
+    if (!confirm(tr('¿Seguro que deseas eliminar esta clase?', 'Are you sure you want to delete this class?'))) return
     try {
         await deleteClassById(classID)
-        showToast('Clase eliminada correctamente')
+        showToast(tr('Clase eliminada correctamente', 'Class deleted successfully'))
         fetchClubs()
     } catch (error) {
         console.error('Failed to delete class:', error)
-        showToast('Error al eliminar la clase', 'error')
+        showToast(tr('Error al eliminar la clase', 'Could not delete the class'), 'error')
     }
 }
 
@@ -348,34 +350,34 @@ const getCarpetaClassRows = (club) => {
 
 const requirementTypeLabel = (value) => {
     const labels = {
-        speciality: 'Especialidad',
-        event: 'Evento',
-        class: 'Clase',
-        presentation: 'Presentacion',
-        other: 'Otro',
+        speciality: tr('Especialidad', 'Specialty'),
+        event: tr('Evento', 'Event'),
+        class: tr('Clase', 'Class'),
+        presentation: tr('Presentacion', 'Presentation'),
+        other: tr('Otro', 'Other'),
     }
 
-    return labels[value] || value || 'Otro'
+    return labels[value] || value || tr('Otro', 'Other')
 }
 
 const validationModeLabel = (value) => {
     const labels = {
-        electronic: 'Validacion electronica',
-        physical: 'Evidencia fisica',
-        hybrid: 'Mixto',
+        electronic: tr('Validacion electronica', 'Electronic validation'),
+        physical: tr('Evidencia fisica', 'Physical evidence'),
+        hybrid: tr('Mixto', 'Hybrid'),
     }
 
-    return labels[value] || value || 'Sin definir'
+    return labels[value] || value || tr('Sin definir', 'Undefined')
 }
 
 const evidenceTypeLabel = (value) => {
     const labels = {
-        photo: 'Foto',
-        file: 'Archivo',
-        text: 'Texto',
-        video_link: 'Video',
-        external_link: 'Enlace',
-        physical_only: 'Fisico',
+        photo: tr('Foto', 'Photo'),
+        file: tr('Archivo', 'File'),
+        text: tr('Texto', 'Text'),
+        video_link: tr('Video', 'Video'),
+        external_link: tr('Enlace', 'Link'),
+        physical_only: tr('Fisico', 'Physical'),
     }
 
     return labels[value] || value
@@ -427,7 +429,7 @@ const saveRequirement = async (cls) => {
     if (!classId) return
     const draft = getRequirementDraft(classId)
     if (!draft.title?.trim()) {
-        showToast('El requisito necesita un titulo', 'error')
+        showToast(tr('El requisito necesita un titulo', 'The requirement needs a title'), 'error')
         return
     }
 
@@ -441,51 +443,51 @@ const saveRequirement = async (cls) => {
         const editingId = editingRequirementByClass.value[classId]
         if (editingId) {
             await updateInvestitureRequirement(editingId, payload)
-            showToast('Requisito actualizado')
+            showToast(tr('Requisito actualizado', 'Requirement updated'))
         } else {
             await createInvestitureRequirement(classId, payload)
-            showToast('Requisito creado')
+            showToast(tr('Requisito creado', 'Requirement created'))
         }
         cancelRequirementEdit(classId)
         await fetchClubs()
     } catch (error) {
         console.error('Failed to save requirement:', error)
-        showToast('No se pudo guardar el requisito', 'error')
+        showToast(tr('No se pudo guardar el requisito', 'Could not save the requirement'), 'error')
     }
 }
 
 const removeRequirement = async (requirementId) => {
-    if (!confirm('¿Seguro que deseas eliminar este requisito?')) return
+    if (!confirm(tr('¿Seguro que deseas eliminar este requisito?', 'Are you sure you want to delete this requirement?'))) return
     try {
         await deleteInvestitureRequirement(requirementId)
-        showToast('Requisito eliminado')
+        showToast(tr('Requisito eliminado', 'Requirement deleted'))
         await fetchClubs()
     } catch (error) {
         console.error('Failed to delete requirement:', error)
-        showToast('No se pudo eliminar el requisito', 'error')
+        showToast(tr('No se pudo eliminar el requisito', 'Could not delete the requirement'), 'error')
     }
 }
 
 const activateCarpetaClass = async (club, catalogClass) => {
     try {
         await activateCarpetaClassForClub(club.id, catalogClass.id)
-        showToast('Clase activada correctamente')
+        showToast(tr('Clase activada correctamente', 'Class activated successfully'))
         await fetchClubs()
     } catch (error) {
         console.error('Failed to activate carpeta class:', error)
-        showToast(error?.response?.data?.message || 'No se pudo activar la clase', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo activar la clase', 'Could not activate the class'), 'error')
     }
 }
 
 const deactivateCarpetaClass = async (activationId) => {
-    if (!confirm('¿Seguro que deseas desactivar esta clase del club?')) return
+    if (!confirm(tr('¿Seguro que deseas desactivar esta clase del club?', 'Are you sure you want to deactivate this club class?'))) return
     try {
         await deactivateCarpetaClassForClub(activationId)
-        showToast('Clase desactivada correctamente')
+        showToast(tr('Clase desactivada correctamente', 'Class deactivated successfully'))
         await fetchClubs()
     } catch (error) {
         console.error('Failed to deactivate carpeta class:', error)
-        showToast(error?.response?.data?.message || 'No se pudo desactivar la clase', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo desactivar la clase', 'Could not deactivate the class'), 'error')
     }
 }
 
@@ -493,7 +495,7 @@ const deactivateCarpetaClass = async (activationId) => {
 const selectClub = async (nextClubId) => {
     try {
         await selectUserClub(nextClubId, user.value.id)
-        showToast('Club seleccionado correctamente')
+        showToast(tr('Club seleccionado correctamente', 'Club selected successfully'))
         clubId.value = Number(nextClubId)
         await router.reload({ only: ['auth'] })
         if (!isSuperadmin.value) {
@@ -602,7 +604,7 @@ const saveObjective = async (club) => {
 
     const draft = getObjectiveDraft(clubId)
     if (!draft.name?.trim()) {
-        showToast('El objetivo necesita un nombre', 'error')
+        showToast(tr('El objetivo necesita un nombre', 'The objective needs a name'), 'error')
         return
     }
 
@@ -617,41 +619,41 @@ const saveObjective = async (club) => {
         const editingId = editingObjectiveByClub.value[clubId]
         if (editingId) {
             await updateClubObjective(clubId, editingId, payload)
-            showToast('Objetivo actualizado')
+            showToast(tr('Objetivo actualizado', 'Objective updated'))
         } else {
             await createClubObjective(clubId, payload)
-            showToast('Objetivo creado')
+            showToast(tr('Objetivo creado', 'Objective created'))
         }
 
         cancelObjectiveEdit(clubId)
         await fetchClubs()
     } catch (error) {
         console.error('Failed to save objective:', error)
-        showToast(error?.response?.data?.message || 'No se pudo guardar el objetivo', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo guardar el objetivo', 'Could not save the objective'), 'error')
     }
 }
 
 const removeObjective = async (clubId, objectiveId) => {
-    if (!confirm('¿Seguro que deseas eliminar este objetivo?')) return
+    if (!confirm(tr('¿Seguro que deseas eliminar este objetivo?', 'Are you sure you want to delete this objective?'))) return
 
     try {
         await deleteClubObjective(clubId, objectiveId)
-        showToast('Objetivo eliminado')
+        showToast(tr('Objetivo eliminado', 'Objective deleted'))
         await fetchClubs()
     } catch (error) {
         console.error('Failed to delete objective:', error)
-        showToast(error?.response?.data?.message || 'No se pudo eliminar el objetivo', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo eliminar el objetivo', 'Could not delete the objective'), 'error')
     }
 }
 
 // 🧠 Start new form
 const startCreatingClub = () => {
     if (!canCreateAnotherClub.value) {
-        showToast('Ya tienes el maximo de 2 clubes asignados.', 'error')
+        showToast(tr('Ya tienes el maximo de 2 clubes asignados.', 'You already have the maximum of 2 assigned clubs.'), 'error')
         return
     }
     if (mustAttachInsteadOfCreate.value) {
-        showToast('Tu iglesia ya tiene ambos tipos de club. Debes adjuntarte al club existente disponible.', 'error')
+        showToast(tr('Tu iglesia ya tiene ambos tipos de club. Debes adjuntarte al club existente disponible.', 'Your church already has both club types. You must attach yourself to the available existing club.'), 'error')
         return
     }
     addClub.value = true
@@ -714,27 +716,27 @@ const selectChurch = (church) => {
 const attachToExistingClub = async (club) => {
     try {
         await attachDirectorToClub(club.id, user.value.id)
-        showToast('Ahora estas vinculado a este club como director')
+        showToast(tr('Ahora estas vinculado a este club como director', 'You are now linked to this club as director'))
         await fetchClubs()
         await router.reload({ only: ['auth'] })
     } catch (error) {
         console.error('Failed to attach to existing club:', error)
-        showToast(error?.response?.data?.message || 'No se pudo adjuntar al club', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo adjuntar al club', 'Could not attach to the club'), 'error')
     }
 }
 
 const unlinkFromClub = async (club) => {
-    const confirmed = window.confirm(`¿Seguro que deseas desvincularte del club ${club.club_name}?`)
+    const confirmed = window.confirm(tr(`¿Seguro que deseas desvincularte del club ${club.club_name}?`, `Are you sure you want to unlink yourself from club ${club.club_name}?`))
     if (!confirmed) return
 
     try {
         await detachDirectorFromClub(club.id, user.value.id)
-        showToast('Te desvinculaste del club correctamente')
+        showToast(tr('Te desvinculaste del club correctamente', 'You were unlinked from the club successfully'))
         await fetchClubs()
         await router.reload({ only: ['auth'] })
     } catch (error) {
         console.error('Failed to detach from club:', error)
-        showToast(error?.response?.data?.message || 'No se pudo desvincular del club', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo desvincular del club', 'Could not unlink from the club'), 'error')
     }
 }
 
@@ -773,28 +775,28 @@ const pcForm = useForm({
 
 // Small helpers for labels
 const scopeTypeOptions = [
-    { value: 'club_wide', label: 'Todo el club' },
-    { value: 'class', label: 'Clase especifica' },
-    { value: 'member', label: 'Miembro especifico' },
-    { value: 'staff_wide', label: 'Todo el personal' },
-    { value: 'staff', label: 'Personal especifico' }
+    { value: 'club_wide', label: tr('Todo el club', 'Whole club') },
+    { value: 'class', label: tr('Clase especifica', 'Specific class') },
+    { value: 'member', label: tr('Miembro especifico', 'Specific member') },
+    { value: 'staff_wide', label: tr('Todo el personal', 'All staff') },
+    { value: 'staff', label: tr('Personal especifico', 'Specific staff') }
 ]
 
 const payToOptions = [
-    { value: 'church_budget', label: 'Presupuesto de iglesia' },
-    { value: 'club_budget', label: 'Presupuesto de club' },
-    { value: 'conference', label: 'Conferencia' },
-    { value: 'reimbursement_to', label: 'Reembolso a…' }
+    { value: 'church_budget', label: tr('Presupuesto de iglesia', 'Church budget') },
+    { value: 'club_budget', label: tr('Presupuesto de club', 'Club budget') },
+    { value: 'conference', label: tr('Conferencia', 'Conference') },
+    { value: 'reimbursement_to', label: tr('Reembolso a...', 'Reimbursement to...') }
 ]
 
 const typeOptions = [
-    { value: 'mandatory', label: 'Obligatorio' },
-    { value: 'optional', label: 'Opcional' }
+    { value: 'mandatory', label: tr('Obligatorio', 'Required') },
+    { value: 'optional', label: tr('Opcional', 'Optional') }
 ]
 
 const statusOptions = [
-    { value: 'active', label: 'Activo' },
-    { value: 'inactive', label: 'Inactivo' }
+    { value: 'active', label: tr('Activo', 'Active') },
+    { value: 'inactive', label: tr('Inactivo', 'Inactive') }
 ]
 
 // derive current club name (for sanity)
@@ -806,7 +808,7 @@ const conceptClubName = computed(() => {
 // scope builder actions
 function addScope() {
     if (!conceptClubId.value) {
-        showToast('Selecciona un club para este concepto primero', 'error')
+        showToast(tr('Selecciona un club para este concepto primero', 'Select a club for this concept first'), 'error')
         return
     }
     pcForm.scopes.push({ scope_type: 'club_wide', club_id: conceptClubId.value })
@@ -853,11 +855,11 @@ async function loadPaymentConcepts() {
 
 async function savePaymentConcept() {
     if (!pcForm.club_id) {
-        showToast('Selecciona el club del concepto', 'error')
+        showToast(tr('Selecciona el club del concepto', 'Select the concept club'), 'error')
         return
     }
     if (pcForm.scopes.length === 0) {
-        showToast('Agrega al menos un alcance', 'error')
+        showToast(tr('Agrega al menos un alcance', 'Add at least one scope'), 'error')
         return
     }
 
@@ -869,7 +871,7 @@ async function savePaymentConcept() {
 
     try {
         // await createPaymentConcept(pcForm) // when backend ready
-        showToast('Concepto de pago guardado (stub)', 'success')
+        showToast(tr('Concepto de pago guardado (stub)', 'Payment concept saved (stub)'), 'success')
         pcForm.reset()
         pcForm.type = 'mandatory'
         pcForm.pay_to = 'club_budget'
@@ -878,17 +880,17 @@ async function savePaymentConcept() {
         pcForm.scopes = []
         await loadPaymentConcepts()
     } catch (e) {
-        showToast('No se pudo guardar el concepto', 'error')
+        showToast(tr('No se pudo guardar el concepto', 'Could not save the concept'), 'error')
     }
 }
 
 async function deleteConcept(id) {
     try {
         // await deletePaymentConcept(id)
-        showToast('Concepto eliminado (stub)', 'success')
+        showToast(tr('Concepto eliminado (stub)', 'Concept deleted (stub)'), 'success')
         await loadPaymentConcepts()
     } catch (e) {
-        showToast('No se pudo eliminar el concepto', 'error')
+        showToast(tr('No se pudo eliminar el concepto', 'Could not delete the concept'), 'error')
     }
 }
 
@@ -899,10 +901,10 @@ const fetchStaff = async (clubId) => {
         const response = await axios.get(`/clubs/${clubId}/staff`)
         staffList.value = response.data.staff
         if(staffList.value.length === 0) {
-            showToast('Crea personal primero, no se encontro ninguno','error')
+            showToast(tr('Crea personal primero, no se encontro ninguno', 'Create staff first; none were found'),'error')
             return
         }
-        showToast('Personal cargado','success');
+        showToast(tr('Personal cargado', 'Staff loaded'),'success');
         console.log(staffList.value);
     } catch (error) {
         console.error('Failed to fetch staff:', error)
@@ -915,14 +917,14 @@ const fetchMembers = async (clubId) => {
         const data = await fetchMembersByClub(clubId)
         if (Array.isArray(data) && data.length > 0) {
             members.value = data
-            showToast('Miembros cargados', 'success')
+            showToast(tr('Miembros cargados', 'Members loaded'), 'success')
         } else {
             members.value = []
-            alert('No se encontraron miembros para este club.')
+            showToast(tr('No se encontraron miembros para este club.', 'No members were found for this club.'), 'info')
         }
     } catch (error) {
         console.error('Failed to fetch members:', error)
-        showToast('Error al obtener miembros', 'error')
+        showToast(tr('Error al obtener miembros', 'Could not load members'), 'error')
     }
 };
 
@@ -949,15 +951,15 @@ onMounted(fetchClubs);
 
 <template>
     <PathfinderLayout>
-        <template #title>Mi club</template>
+        <template #title>{{ tr('Mi club', 'My Club') }}</template>
 
         <div v-if="isSuperadmin" class="mb-4 rounded border bg-white p-4 space-y-3">
-            <p class="text-sm font-semibold text-gray-800">Contexto Superadmin</p>
+            <p class="text-sm font-semibold text-gray-800">{{ tr('Contexto Superadmin', 'Superadmin Context') }}</p>
             <div class="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
                 <div class="text-sm text-gray-600">
-                    Club activo:
+                    {{ tr('Club activo', 'Active club') }}:
                     <span class="font-medium text-gray-900">
-                        {{ filteredClubs[0]?.club_name || 'Selecciona un club desde el selector global' }}
+                        {{ filteredClubs[0]?.club_name || tr('Selecciona un club desde el selector global', 'Select a club from the global selector') }}
                     </span>
                 </div>
                 <button
@@ -966,23 +968,23 @@ onMounted(fetchClubs);
                     class="px-3 py-2 rounded bg-blue-600 text-white text-sm"
                     @click="startCreatingClub"
                 >
-                    Crear nuevo club
+                    {{ tr('Crear nuevo club', 'Create new club') }}
                 </button>
             </div>
-            <p v-if="clubLimitReached" class="text-xs text-amber-700">Este director ya tiene el maximo de 2 clubes asignados.</p>
+            <p v-if="clubLimitReached" class="text-xs text-amber-700">{{ tr('Este director ya tiene el maximo de 2 clubes asignados.', 'This director already has the maximum of 2 assigned clubs.') }}</p>
         </div>
 
         <div v-else class="mb-4 rounded border bg-white p-4 space-y-3">
-            <p class="text-sm font-semibold text-gray-800">Gestion de clubes</p>
+            <p class="text-sm font-semibold text-gray-800">{{ tr('Gestion de clubes', 'Club Management') }}</p>
             <p v-if="mustAttachInsteadOfCreate" class="text-sm text-amber-700">
-                Esta iglesia ya tiene clubes de Aventureros y Conquistadores. En lugar de crear otro club, puedes adjuntarte al club existente que aun no diriges.
+                {{ tr('Esta iglesia ya tiene clubes de Aventureros y Conquistadores. En lugar de crear otro club, puedes adjuntarte al club existente que aun no diriges.', 'This church already has Adventurer and Pathfinder clubs. Instead of creating another club, you can attach yourself to an existing club you do not lead yet.') }}
             </p>
             <p v-else-if="missingChurchClubTypes.length && canCreateAnotherClub" class="text-sm text-gray-600">
-                Puedes crear un club nuevo para el tipo faltante:
+                {{ tr('Puedes crear un club nuevo para el tipo faltante', 'You can create a new club for the missing type') }}:
                 <strong>{{ missingChurchClubTypes.join(', ') }}</strong>.
             </p>
             <p v-else-if="clubLimitReached" class="text-sm text-amber-700">
-                Ya alcanzaste el maximo de 2 clubes asignados.
+                {{ tr('Ya alcanzaste el maximo de 2 clubes asignados.', 'You already reached the maximum of 2 assigned clubs.') }}
             </p>
 
             <div v-if="mustAttachInsteadOfCreate" class="space-y-2">
@@ -1000,7 +1002,7 @@ onMounted(fetchClubs);
                         class="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
                         @click="attachToExistingClub(club)"
                     >
-                        Adjuntarme como director
+                        {{ tr('Adjuntarme como director', 'Attach me as director') }}
                     </button>
                 </div>
             </div>
@@ -1008,13 +1010,13 @@ onMounted(fetchClubs);
 
         <div v-if="isEditing || addClub || (clubs.length === 0 && !clubId)" class="space-y-6">
             <p class="text-gray-700">
-                {{ isEditing ? 'Edita tu club a continuacion:' : 'Crea tu club a continuacion.' }}
+                {{ isEditing ? tr('Edita tu club a continuacion:', 'Edit your club below:') : tr('Crea tu club a continuacion.', 'Create your club below.') }}
             </p>
 
             <form class="space-y-4" @submit.prevent="isEditing ? updateClub() : submitClub()">
                 <div v-for="field in [
-                    { key: 'club_name', label: 'Nombre del club' },
-                    { key: 'creation_date', label: 'Fecha de creacion', type: 'date' }
+                    { key: 'club_name', label: tr('Nombre del club', 'Club name') },
+                    { key: 'creation_date', label: tr('Fecha de creacion', 'Creation date'), type: 'date' }
                 ]" :key="field.key">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
                     <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
@@ -1022,12 +1024,12 @@ onMounted(fetchClubs);
                 </div>
 
                 <div class="relative">
-                    <label class="block text-sm font-medium text-gray-700">Iglesia</label>
+                    <label class="block text-sm font-medium text-gray-700">{{ tr('Iglesia', 'Church') }}</label>
                     <input
                         v-model="churchSearch"
                         type="text"
                         class="w-full mt-1 p-2 border rounded"
-                        placeholder="Busca una iglesia"
+                        :placeholder="tr('Busca una iglesia', 'Search for a church')"
                         @focus="showChurchSuggestions = true"
                         @input="handleChurchInput"
                         @blur="() => setTimeout(() => { showChurchSuggestions = false }, 150)"
@@ -1044,16 +1046,16 @@ onMounted(fetchClubs);
                             @click="selectChurch(church)"
                         >
                             <div class="font-medium text-gray-900">{{ church.church_name }}</div>
-                            <div class="text-xs text-gray-500">Pastor: {{ church.pastor_name || '—' }}</div>
+                            <div class="text-xs text-gray-500">{{ tr('Pastor', 'Pastor') }}: {{ church.pastor_name || '—' }}</div>
                         </button>
                     </div>
                     <p class="mt-1 text-xs text-gray-500">
-                        Selecciona la iglesia para completar automaticamente el nombre del pastor.
+                        {{ tr('Selecciona la iglesia para completar automaticamente el nombre del pastor.', 'Select the church to automatically fill the pastor name.') }}
                     </p>
                 </div>
 
                 <div v-for="field in [
-                    { key: 'pastor_name', label: 'Nombre del pastor', readonly: true }
+                    { key: 'pastor_name', label: tr('Nombre del pastor', 'Pastor name'), readonly: true }
                 ]" :key="field.key">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
                     <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
@@ -1061,10 +1063,10 @@ onMounted(fetchClubs);
                 </div>
 
                 <div v-for="field in [
-                    { key: 'district_name', label: 'Distrito', readonly: true },
-                    { key: 'conference_name', label: 'Asociacion / Conferencia', readonly: true },
-                    { key: 'union_name', label: 'Union', readonly: true },
-                    { key: 'director_name', label: 'Nombre del director', readonly: true }
+                    { key: 'district_name', label: tr('Distrito', 'District'), readonly: true },
+                    { key: 'conference_name', label: tr('Asociacion / Conferencia', 'Association / Conference'), readonly: true },
+                    { key: 'union_name', label: tr('Union', 'Union'), readonly: true },
+                    { key: 'director_name', label: tr('Nombre del director', 'Director name'), readonly: true }
                 ]" :key="field.key">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
                     <input v-model="clubForm[field.key]" :type="field.type || 'text'" :readonly="field.readonly"
@@ -1072,17 +1074,17 @@ onMounted(fetchClubs);
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Tipo de club</label>
+                    <label class="block text-sm font-medium text-gray-700">{{ tr('Tipo de club', 'Club type') }}</label>
                     <select v-model="clubForm.club_type" class="w-full mt-1 p-2 border rounded">
-                        <option value="">Seleccionar tipo</option>
-                        <option value="adventurers">Aventureros</option>
-                        <option value="pathfinders">Conquistadores</option>
-                        <option value="master_guide">Guia Mayor</option>
+                        <option value="">{{ tr('Seleccionar tipo', 'Select type') }}</option>
+                        <option value="adventurers">{{ tr('Aventureros', 'Adventurers') }}</option>
+                        <option value="pathfinders">{{ tr('Conquistadores', 'Pathfinders') }}</option>
+                        <option value="master_guide">{{ tr('Guia Mayor', 'Master Guide') }}</option>
                     </select>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Sistema de evaluacion</label>
+                    <label class="block text-sm font-medium text-gray-700">{{ tr('Sistema de evaluacion', 'Evaluation system') }}</label>
                     <select v-model="clubForm.evaluation_system" class="w-full mt-1 p-2 border rounded bg-gray-50" disabled>
                         <option
                             v-for="option in availableEvaluationSystems"
@@ -1093,12 +1095,12 @@ onMounted(fetchClubs);
                         </option>
                     </select>
                     <p class="mt-1 text-xs text-gray-500">
-                        Este valor se toma de la configuracion de la union asociada a la iglesia seleccionada.
+                        {{ tr('Este valor se toma de la configuracion de la union asociada a la iglesia seleccionada.', 'This value comes from the union configuration linked to the selected church.') }}
                     </p>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Costo de inscripción</label>
+                    <label class="block text-sm font-medium text-gray-700">{{ tr('Costo de inscripción', 'Enrollment cost') }}</label>
                     <input
                         v-model="clubForm.enrollment_payment_amount"
                         type="number"
@@ -1108,32 +1110,32 @@ onMounted(fetchClubs);
                         placeholder="0.00"
                     />
                     <p class="mt-1 text-xs text-gray-500">
-                        Este monto se usa en el formulario de nuevos miembros y actualiza automaticamente el concepto de ingreso de inscripción.
+                        {{ tr('Este monto se usa en el formulario de nuevos miembros y actualiza automaticamente el concepto de ingreso de inscripción.', 'This amount is used in the new member form and automatically updates the enrollment income concept.') }}
                     </p>
                 </div>
 
                 <div class="flex items-center space-x-4">
                     <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
-                        {{ isEditing ? 'Actualizar club' : 'Guardar club' }}
+                        {{ isEditing ? tr('Actualizar club', 'Update club') : tr('Guardar club', 'Save club') }}
                     </button>
                     <button v-if="isEditing || addClub" type="button" @click="() => {
                         isEditing = false;
                         addClub = false;
                         editingClubId = null
                     }" class="text-sm text-gray-600 hover:underline">
-                        Cancelar edicion
+                        {{ tr('Cancelar edicion', 'Cancel edit') }}
                     </button>
                 </div>
             </form>
         </div>
         <div v-else-if="!clubId && clubs.length > 0" class="space-y-6">
-            <p class="text-gray-700">Selecciona un club existente de tu iglesia: {{ church_name || 'Iglesia desconocida' }}</p>
+            <p class="text-gray-700">{{ tr('Selecciona un club existente de tu iglesia', 'Select an existing club from your church') }}: {{ church_name || tr('Iglesia desconocida', 'Unknown church') }}</p>
             <table class="min-w-full border rounded text-sm">
                 <thead class="bg-gray-100">
                     <tr>
-                        <th class="p-2 text-left">Nombre</th>
-                        <th class="p-2 text-left">Tipo</th>
-                        <th class="p-2 text-left">Acciones</th>
+                        <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
+                        <th class="p-2 text-left">{{ tr('Tipo', 'Type') }}</th>
+                        <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1141,7 +1143,7 @@ onMounted(fetchClubs);
                         <td class="p-2">{{ club.club_name }}</td>
                         <td class="p-2 capitalize">{{ club.club_type }}</td>
                         <td class="p-2 space-x-2">
-                            <button @click="selectClub(club.id)" class="text-blue-600 hover:underline">Seleccionar</button>
+                            <button @click="selectClub(club.id)" class="text-blue-600 hover:underline">{{ tr('Seleccionar', 'Select') }}</button>
                         </td>
                     </tr>
                 </tbody>
@@ -1149,18 +1151,18 @@ onMounted(fetchClubs);
         </div>
         <div v-else class="space-y-4">
             <details open class="border rounded">
-                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Informacion del club</summary>
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Informacion del club', 'Club Information') }}</summary>
                 <div class="p-4">
                     <table class="min-w-full border rounded text-sm">
                         <thead class="bg-gray-100">
                             <tr>
-                                <th class="p-2 text-left">Nombre</th>
-                                <th class="p-2 text-left">Distrito</th>
-                                <th class="p-2 text-left">Tipo</th>
-                                <th class="p-2 text-left">Sistema</th>
-                                <th class="p-2 text-left">Inscripción</th>
-                                <th class="p-2 text-left">Creado</th>
-                                <th class="p-2 text-left">Acciones</th>
+                                <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
+                                <th class="p-2 text-left">{{ tr('Distrito', 'District') }}</th>
+                                <th class="p-2 text-left">{{ tr('Tipo', 'Type') }}</th>
+                                <th class="p-2 text-left">{{ tr('Sistema', 'System') }}</th>
+                                <th class="p-2 text-left">{{ tr('Inscripción', 'Enrollment') }}</th>
+                                <th class="p-2 text-left">{{ tr('Creado', 'Created') }}</th>
+                                <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1172,16 +1174,16 @@ onMounted(fetchClubs);
                                 <td class="p-2">{{ club.enrollment_payment_amount || '0.00' }}</td>
                                 <td class="p-2">{{ club.creation_date }}</td>
                                 <td class="p-2 space-x-2">
-                                    <button @click="editClub(club)" class="text-blue-600 hover:underline">Editar</button>
+                                    <button @click="editClub(club)" class="text-blue-600 hover:underline">{{ tr('Editar', 'Edit') }}</button>
                                     <button
                                         v-if="!isSuperadmin"
                                         @click="unlinkFromClub(club)"
                                         class="text-amber-600 hover:underline"
                                     >
-                                        Desvincularme
+                                        {{ tr('Desvincularme', 'Unlink me') }}
                                     </button>
                                     <button @click="deleteClub(club.id)"
-                                        class="text-red-600 hover:underline">Eliminar</button>
+                                        class="text-red-600 hover:underline">{{ tr('Eliminar', 'Delete') }}</button>
                                 </td>
                             </tr>
                         </tbody>
@@ -1191,43 +1193,43 @@ onMounted(fetchClubs);
                             v-if="canCreateAnotherClub && !mustAttachInsteadOfCreate"
                             @click="startCreatingClub"
                             class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                            + Crear club
+                            + {{ tr('Crear club', 'Create club') }}
                         </button>
                         <p v-else-if="mustAttachInsteadOfCreate" class="text-sm text-amber-700">
-                            Tu iglesia ya tiene ambos tipos de club. Adjuntate al club existente disponible para completar tus 2 clubes.
+                            {{ tr('Tu iglesia ya tiene ambos tipos de club. Adjuntate al club existente disponible para completar tus 2 clubes.', 'Your church already has both club types. Attach yourself to the available existing club to complete your 2 clubs.') }}
                         </p>
                         <p v-else-if="clubLimitReached" class="text-sm text-amber-700">
-                            Ya tienes el maximo de 2 clubes asignados.
+                            {{ tr('Ya tienes el maximo de 2 clubes asignados.', 'You already have the maximum of 2 assigned clubs.') }}
                         </p>
                     </div>
                 </div>
             </details>
 
             <details class="border rounded">
-                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Clases</summary>
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Clases', 'Classes') }}</summary>
                 <div class="p-4">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-bold">Clases del club</h3>
+                        <h3 class="text-lg font-bold">{{ tr('Clases del club', 'Club Classes') }}</h3>
                         <div class="flex items-center gap-2">
                             <button
                                 type="button"
                                 @click="exportClassesPdf(false)"
                                 class="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 text-sm"
                             >
-                                PDF clases
+                                {{ tr('PDF clases', 'Classes PDF') }}
                             </button>
                             <button
                                 type="button"
                                 @click="exportClassesPdf(true)"
                                 class="px-3 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-800 text-sm"
                             >
-                                PDF clases + requisitos
+                                {{ tr('PDF clases + requisitos', 'Classes + requirements PDF') }}
                             </button>
                             <button
                                 v-if="!filteredClubs.some(isCarpetaClub)"
                                 @click="openNewClassModal"
                                 class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                                + Agregar clase
+                                + {{ tr('Agregar clase', 'Add class') }}
                             </button>
                         </div>
                     </div>
@@ -1238,32 +1240,32 @@ onMounted(fetchClubs);
                     >
                         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                             <div>
-                                <p class="text-sm font-semibold text-amber-900">Carpeta de investidura definida por la union</p>
+                                <p class="text-sm font-semibold text-amber-900">{{ tr('Carpeta de investidura definida por la union', 'Investiture folder defined by the union') }}</p>
                                 <p class="text-xs text-amber-800 mt-1">
-                                    Esta clase debe cumplir exactamente la lista publicada por la union. Aqui no se editan requisitos locales.
+                                    {{ tr('Esta clase debe cumplir exactamente la lista publicada por la union. Aqui no se editan requisitos locales.', 'This class must follow exactly the list published by the union. Local requirements are not edited here.') }}
                                 </p>
                             </div>
                             <div class="text-xs text-amber-900">
-                                Ciclo:
-                                <span class="font-semibold">{{ club.published_carpeta_year?.year || 'Sin publicar' }}</span>
+                                {{ tr('Ciclo', 'Cycle') }}:
+                                <span class="font-semibold">{{ club.published_carpeta_year?.year || tr('Sin publicar', 'Unpublished') }}</span>
                             </div>
                         </div>
                     </div>
                     <table class="min-w-full border rounded text-left border-collapse">
                         <thead class="bg-gray-100">
                             <tr>
-                                <th class="border-b px-4 py-2">Club</th>
-                                <th class="border-b px-4 py-2">Orden</th>
-                                <th class="border-b px-4 py-2">Nombre</th>
-                                <th class="border-b px-4 py-2">Instructor</th>
-                                <th class="border-b px-4 py-2">Acciones</th>
+                                <th class="border-b px-4 py-2">{{ tr('Club', 'Club') }}</th>
+                                <th class="border-b px-4 py-2">{{ tr('Orden', 'Order') }}</th>
+                                <th class="border-b px-4 py-2">{{ tr('Nombre', 'Name') }}</th>
+                                <th class="border-b px-4 py-2">{{ tr('Instructor', 'Instructor') }}</th>
+                                <th class="border-b px-4 py-2">{{ tr('Acciones', 'Actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             <template v-for="club in filteredClubs" :key="club.id">
                                 <tr v-if="isCarpetaClub(club) && !getCarpetaClassRows(club).length">
                                     <td colspan="5" class="px-4 py-6 text-sm text-amber-800 bg-amber-50 border-b">
-                                        La union no tiene clases de carpeta configuradas para este tipo de club.
+                                        {{ tr('La union no tiene clases de carpeta configuradas para este tipo de club.', 'The union has no folder classes configured for this club type.') }}
                                     </td>
                                 </tr>
                                 <template
@@ -1280,7 +1282,7 @@ onMounted(fetchClubs);
                                                     class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
                                                     :class="cls.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'"
                                                 >
-                                                    {{ cls.is_active ? 'Activa' : 'Inactiva' }}
+                                                    {{ cls.is_active ? tr('Activa', 'Active') : tr('Inactiva', 'Inactive') }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1294,21 +1296,21 @@ onMounted(fetchClubs);
                                                     @click="activateCarpetaClass(club, cls)"
                                                     class="text-emerald-700 hover:underline"
                                                 >
-                                                    Activar
+                                                    {{ tr('Activar', 'Activate') }}
                                                 </button>
                                                 <button
                                                     v-else
                                                     @click="deactivateCarpetaClass(cls.activation.id)"
                                                     class="text-red-600 hover:underline"
                                                 >
-                                                    Desactivar
+                                                    {{ tr('Desactivar', 'Deactivate') }}
                                                 </button>
                                             </template>
                                             <template v-else>
                                                 <button @click="editCls(cls)"
-                                                    class="text-blue-600 hover:underline">Editar</button>
+                                                    class="text-blue-600 hover:underline">{{ tr('Editar', 'Edit') }}</button>
                                                 <button @click="deleteCls(cls.id)"
-                                                    class="text-red-600 hover:underline">Eliminar</button>
+                                                    class="text-red-600 hover:underline">{{ tr('Eliminar', 'Delete') }}</button>
                                             </template>
                                         </td>
                                     </tr>
@@ -1333,42 +1335,42 @@ onMounted(fetchClubs);
                                                                     {{ requirement.description }}
                                                                 </p>
                                                                 <p v-if="requirement.evidence_instructions" class="mt-2 text-xs text-gray-700">
-                                                                    <span class="font-medium">Instrucciones:</span> {{ requirement.evidence_instructions }}
+                                                                    <span class="font-medium">{{ tr('Instrucciones', 'Instructions') }}:</span> {{ requirement.evidence_instructions }}
                                                                 </p>
                                                             </div>
                                                             <div class="grid grid-cols-1 gap-2 text-xs text-gray-700 md:min-w-[220px]">
                                                                 <div class="rounded border bg-gray-50 px-2 py-1.5">
-                                                                    <span class="font-medium">Tipo:</span> {{ requirementTypeLabel(requirement.requirement_type) }}
+                                                                    <span class="font-medium">{{ tr('Tipo', 'Type') }}:</span> {{ requirementTypeLabel(requirement.requirement_type) }}
                                                                 </div>
                                                                 <div class="rounded border bg-gray-50 px-2 py-1.5">
-                                                                    <span class="font-medium">Validacion:</span> {{ validationModeLabel(requirement.validation_mode) }}
+                                                                    <span class="font-medium">{{ tr('Validacion', 'Validation') }}:</span> {{ validationModeLabel(requirement.validation_mode) }}
                                                                 </div>
                                                                 <div class="rounded border bg-gray-50 px-2 py-1.5">
-                                                                    <span class="font-medium">Evidencias:</span>
+                                                                    <span class="font-medium">{{ tr('Evidencias', 'Evidence') }}:</span>
                                                                         {{ (requirement.allowed_evidence_types || []).length
                                                                             ? requirement.allowed_evidence_types.map(evidenceTypeLabel).join(', ')
-                                                                            : 'Segun defina la union' }}
+                                                                            : tr('Segun defina la union', 'As defined by the union') }}
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     </li>
                                                 </ul>
                                                 <div v-else class="rounded border border-dashed border-amber-300 bg-white px-3 py-4 text-sm text-amber-800">
-                                                    No hay requisitos publicados para esta clase en el ciclo de carpeta actual de la union.
+                                                    {{ tr('No hay requisitos publicados para esta clase en el ciclo de carpeta actual de la union.', 'There are no published requirements for this class in the current union folder cycle.') }}
                                                 </div>
                                             </template>
 
                                             <template v-else>
                                                 <div class="flex items-center justify-between mb-2">
                                                     <p class="text-sm font-semibold text-gray-800">
-                                                        Requisitos de investidura<span v-if="club.club_type === 'adventurers'"> (Honores/Honors)</span>
+                                                        {{ tr('Requisitos de investidura', 'Investiture requirements') }}<span v-if="club.club_type === 'adventurers'"> (Honores/Honors)</span>
                                                     </p>
                                                     <button
                                                         type="button"
                                                         class="text-sm text-blue-700 hover:underline"
                                                         @click="startCreateRequirement(cls.id)"
                                                     >
-                                                        + Agregar requisito
+                                                        + {{ tr('Agregar requisito', 'Add requirement') }}
                                                     </button>
                                                 </div>
 
@@ -1393,39 +1395,39 @@ onMounted(fetchClubs);
                                                                     class="text-xs text-blue-700 hover:underline"
                                                                     @click="startEditRequirement(cls.id, requirement)"
                                                                 >
-                                                                    Editar
+                                                                    {{ tr('Editar', 'Edit') }}
                                                                 </button>
                                                                 <button
                                                                     type="button"
                                                                     class="text-xs text-red-700 hover:underline"
                                                                     @click="removeRequirement(requirement.id)"
                                                                 >
-                                                                    Eliminar
+                                                                    {{ tr('Eliminar', 'Delete') }}
                                                                 </button>
                                                             </div>
                                                         </div>
                                                     </li>
                                                 </ul>
-                                                <p v-else class="text-xs text-gray-500 mb-3">No hay requisitos registrados para esta clase.</p>
+                                                <p v-else class="text-xs text-gray-500 mb-3">{{ tr('No hay requisitos registrados para esta clase.', 'There are no requirements recorded for this class.') }}</p>
 
                                                 <div v-if="showRequirementFormByClass[cls.id]" class="grid grid-cols-1 md:grid-cols-4 gap-2">
                                                     <input
                                                         v-model="getRequirementDraft(cls.id).title"
                                                         type="text"
-                                                        placeholder="Titulo del requisito"
+                                                        :placeholder="tr('Titulo del requisito', 'Requirement title')"
                                                         class="border rounded px-2 py-1 text-sm md:col-span-2"
                                                     />
                                                     <input
                                                         v-model="getRequirementDraft(cls.id).description"
                                                         type="text"
-                                                        placeholder="Descripcion (opcional)"
+                                                        :placeholder="tr('Descripcion (opcional)', 'Description (optional)')"
                                                         class="border rounded px-2 py-1 text-sm"
                                                     />
                                                     <input
                                                         v-model.number="getRequirementDraft(cls.id).sort_order"
                                                         type="number"
                                                         min="1"
-                                                        placeholder="Orden"
+                                                        :placeholder="tr('Orden', 'Order')"
                                                         class="border rounded px-2 py-1 text-sm"
                                                     />
                                                 </div>
@@ -1435,14 +1437,14 @@ onMounted(fetchClubs);
                                                         class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
                                                         @click="saveRequirement(cls)"
                                                     >
-                                                        {{ editingRequirementByClass[cls.id] ? 'Actualizar' : 'Guardar' }}
+                                                        {{ editingRequirementByClass[cls.id] ? tr('Actualizar', 'Update') : tr('Guardar', 'Save') }}
                                                     </button>
                                                     <button
                                                         type="button"
                                                         class="text-xs text-gray-600 hover:underline"
                                                         @click="cancelRequirementEdit(cls.id)"
                                                     >
-                                                        Limpiar
+                                                        {{ tr('Limpiar', 'Clear') }}
                                                     </button>
                                                 </div>
                                             </template>
@@ -1456,20 +1458,20 @@ onMounted(fetchClubs);
             </details>
 
             <details class="border rounded">
-                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">Objetivos</summary>
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Objetivos', 'Objectives') }}</summary>
                 <div class="p-4">
                     <div class="flex justify-between items-center mb-4">
                         <div>
-                            <h3 class="text-lg font-bold">Objetivos del club</h3>
-                            <p class="text-sm text-gray-600">Estos objetivos son locales y luego pueden usarse en el plan de trabajo aun si no se importaron desde mychurchadmin.</p>
+                            <h3 class="text-lg font-bold">{{ tr('Objetivos del club', 'Club Objectives') }}</h3>
+                            <p class="text-sm text-gray-600">{{ tr('Estos objetivos son locales y luego pueden usarse en el plan de trabajo aun si no se importaron desde mychurchadmin.', 'These objectives are local and can later be used in the workplan even if they were not imported from mychurchadmin.') }}</p>
                         </div>
                     </div>
 
                     <table class="min-w-full border rounded text-left border-collapse">
                         <thead class="bg-gray-100">
                             <tr>
-                                <th class="border-b px-4 py-2">Club</th>
-                                <th class="border-b px-4 py-2">Objetivos</th>
+                                <th class="border-b px-4 py-2">{{ tr('Club', 'Club') }}</th>
+                                <th class="border-b px-4 py-2">{{ tr('Objetivos', 'Objectives') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1478,14 +1480,14 @@ onMounted(fetchClubs);
                                 <td class="px-4 py-3">
                                     <div class="flex items-center justify-between mb-3">
                                         <div class="text-sm text-gray-600">
-                                            {{ getClubObjectives(club).length }} objetivo(s) local(es)
+                                            {{ getClubObjectives(club).length }} {{ tr('objetivo(s) local(es)', 'local objective(s)') }}
                                         </div>
                                         <button
                                             type="button"
                                             class="text-sm text-blue-700 hover:underline"
                                             @click="startCreateObjective(club.id)"
                                         >
-                                            + Agregar objetivo
+                                            + {{ tr('Agregar objetivo', 'Add objective') }}
                                         </button>
                                     </div>
 
@@ -1503,7 +1505,7 @@ onMounted(fetchClubs);
                                                             v-if="objective.external_objective_id"
                                                             class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
                                                         >
-                                                            Vinculado a MCA #{{ objective.external_objective_id }}
+                                                            {{ tr('Vinculado a MCA', 'Linked to MCA') }} #{{ objective.external_objective_id }}
                                                         </span>
                                                         <span
                                                             v-else
@@ -1516,7 +1518,7 @@ onMounted(fetchClubs);
                                                         {{ objective.description }}
                                                     </p>
                                                     <p v-if="objective.annual_evaluation_metric" class="text-xs text-gray-600 mt-1">
-                                                        <span class="font-medium">Metrica anual:</span> {{ objective.annual_evaluation_metric }}
+                                                        <span class="font-medium">{{ tr('Metrica anual', 'Annual metric') }}:</span> {{ objective.annual_evaluation_metric }}
                                                     </p>
                                                 </div>
                                                 <div class="flex items-center gap-2">
@@ -1525,25 +1527,25 @@ onMounted(fetchClubs);
                                                         class="text-xs text-blue-700 hover:underline"
                                                         @click="startEditObjective(club.id, objective)"
                                                     >
-                                                        Editar
+                                                        {{ tr('Editar', 'Edit') }}
                                                     </button>
                                                     <button
                                                         type="button"
                                                         class="text-xs text-red-700 hover:underline"
                                                         @click="removeObjective(club.id, objective.id)"
                                                     >
-                                                        Eliminar
+                                                        {{ tr('Eliminar', 'Delete') }}
                                                     </button>
                                                 </div>
                                             </div>
                                         </li>
                                     </ul>
-                                    <p v-else class="text-xs text-gray-500 mb-3">No hay objetivos locales registrados para este club.</p>
+                                    <p v-else class="text-xs text-gray-500 mb-3">{{ tr('No hay objetivos locales registrados para este club.', 'There are no local objectives recorded for this club.') }}</p>
 
                                     <div v-if="showObjectiveFormByClub[club.id]" class="space-y-3 border rounded bg-gray-50 p-3">
                                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             <div>
-                                                <label class="block text-xs font-medium text-gray-600 mb-1">Iglesia</label>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">{{ tr('Iglesia', 'Church') }}</label>
                                                 <input
                                                     :value="club.church_name || '—'"
                                                     type="text"
@@ -1552,7 +1554,7 @@ onMounted(fetchClubs);
                                                 />
                                             </div>
                                             <div>
-                                                <label class="block text-xs font-medium text-gray-600 mb-1">Dpto</label>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">{{ tr('Dpto', 'Dept') }}</label>
                                                 <input
                                                     :value="club.club_type || '—'"
                                                     type="text"
@@ -1561,30 +1563,30 @@ onMounted(fetchClubs);
                                                 />
                                             </div>
                                             <div>
-                                                <label class="block text-xs font-medium text-gray-600 mb-1">Nombre</label>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">{{ tr('Nombre', 'Name') }}</label>
                                                 <input
                                                     v-model="getObjectiveDraft(club.id).name"
                                                     type="text"
-                                                    placeholder="Nombre del objetivo"
+                                                    :placeholder="tr('Nombre del objetivo', 'Objective name')"
                                                     class="w-full border rounded px-2 py-2 text-sm"
                                                 />
                                             </div>
                                             <div>
-                                                <label class="block text-xs font-medium text-gray-600 mb-1">Metrica de evaluacion anual</label>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">{{ tr('Metrica de evaluacion anual', 'Annual evaluation metric') }}</label>
                                                 <input
                                                     v-model="getObjectiveDraft(club.id).annual_evaluation_metric"
                                                     type="text"
-                                                    placeholder="Metrica anual"
+                                                    :placeholder="tr('Metrica anual', 'Annual metric')"
                                                     class="w-full border rounded px-2 py-2 text-sm"
                                                 />
                                             </div>
                                         </div>
                                         <div>
-                                            <label class="block text-xs font-medium text-gray-600 mb-1">Descripcion</label>
+                                            <label class="block text-xs font-medium text-gray-600 mb-1">{{ tr('Descripcion', 'Description') }}</label>
                                             <textarea
                                                 v-model="getObjectiveDraft(club.id).description"
                                                 rows="3"
-                                                placeholder="Descripcion"
+                                                :placeholder="tr('Descripcion', 'Description')"
                                                 class="w-full border rounded px-2 py-2 text-sm"
                                             />
                                         </div>
@@ -1594,14 +1596,14 @@ onMounted(fetchClubs);
                                                 class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
                                                 @click="saveObjective(club)"
                                             >
-                                                {{ editingObjectiveByClub[club.id] ? 'Actualizar' : 'Guardar' }}
+                                                {{ editingObjectiveByClub[club.id] ? tr('Actualizar', 'Update') : tr('Guardar', 'Save') }}
                                             </button>
                                             <button
                                                 type="button"
                                                 class="text-xs text-gray-600 hover:underline"
                                                 @click="cancelObjectiveEdit(club.id)"
                                             >
-                                                Limpiar
+                                                {{ tr('Limpiar', 'Clear') }}
                                             </button>
                                         </div>
                                     </div>

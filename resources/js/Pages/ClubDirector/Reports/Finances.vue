@@ -5,6 +5,7 @@ import { FunnelIcon, ArrowPathIcon } from '@heroicons/vue/24/outline'
 import axios from 'axios'
 import { fetchFinancialReportBootstrap } from '@/Services/api'
 import { useAuth } from '@/Composables/useAuth'
+import { useLocale } from '@/Composables/useLocale'
 
 // ─────────────────────────────────────
 // UI / Filter state
@@ -38,6 +39,7 @@ const scopeTypes = ref([])   // catalog: [{ value, label }]
 const payTo = ref([])        // catalog: [{ value, label }]
 const loadError = ref(null)
 const { user } = useAuth()
+const { tr } = useLocale()
 const canSelectClub = computed(() => (clubs.value?.length ?? 0) > 1)
 
 // ─────────────────────────────────────
@@ -59,15 +61,15 @@ const payToLabel = (val) => {
     return m?.label || (val ?? '—')
 }
 const locationLabel = (value) => ({
-    cash: 'Efectivo',
-    bank: 'Banco',
-    external: 'Externo',
-    internal: 'Interno',
+    cash: tr('Efectivo', 'Cash'),
+    bank: tr('Banco', 'Bank'),
+    external: tr('Externo', 'External'),
+    internal: tr('Interno', 'Internal'),
 })[value] || '—'
 const entryTypeLabel = (entry) => ({
-    payment: 'Ingreso',
-    expense: 'Gasto',
-    treasury_movement: 'Movimiento',
+    payment: tr('Ingreso', 'Income'),
+    expense: tr('Gasto', 'Expense'),
+    treasury_movement: tr('Movimiento', 'Movement'),
 })[entry?.entry_type] || '—'
 const entryLocationLabel = (entry) => {
     if (entry?.from_location || entry?.to_location) {
@@ -78,8 +80,8 @@ const entryLocationLabel = (entry) => {
 }
 const settlementSummary = (entry) => {
     if (!entry?.settlement_account_label) return null
-    const base = `Liquidado con ${entry.settlement_account_label}`
-    return entry?.settlement_date ? `${base} el ${formatDateMDY(entry.settlement_date)}` : base
+    const base = `${tr('Liquidado con', 'Settled with')} ${entry.settlement_account_label}`
+    return entry?.settlement_date ? `${base} ${tr('el', 'on')} ${formatDateMDY(entry.settlement_date)}` : base
 }
 
 const selectedConcept = computed(() =>
@@ -90,11 +92,11 @@ const conceptScopeLabel = computed(() => {
     const sc = selectedConcept.value?.scopes?.[0]
     if (!sc) return '—'
     switch (sc.scope_type) {
-        case 'club_wide': return `Club completo (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'class': return `Clase: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
-        case 'member': return `ID de miembro: ${sc.member_id ?? '—'}`
-        case 'staff_wide': return `Personal completo (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'staff': return `ID de personal: ${sc.staff_id ?? '—'}`
+        case 'club_wide': return `${tr('Club completo', 'Whole club')} (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'class': return `${tr('Clase', 'Class')}: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
+        case 'member': return `${tr('ID de miembro', 'Member ID')}: ${sc.member_id ?? '—'}`
+        case 'staff_wide': return `${tr('Personal completo', 'All staff')} (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'staff': return `${tr('ID de personal', 'Staff ID')}: ${sc.staff_id ?? '—'}`
         default: return sc.scope_type
     }
 })
@@ -171,11 +173,11 @@ const setTab = (sIdx, tIdx) => { activeTabForScope.value[sIdx] = tIdx }
 
 // Metrics builders (for any summary object)
 const summaryItemsFor = (sum) => ([
-    { key: 'payments_count', label: 'Pagos', value: (sum?.payments_count ?? 0).toLocaleString(), tone: 'text-gray-900' },
-    { key: 'amount_paid_sum', label: 'Total pagado', value: fmtMoney(sum?.amount_paid_sum ?? 0), tone: 'text-emerald-700' },
-    { key: 'expected_sum', label: 'Esperado', value: fmtMoney(sum?.expected_sum ?? 0), tone: 'text-blue-700' },
+    { key: 'payments_count', label: tr('Pagos', 'Payments'), value: (sum?.payments_count ?? 0).toLocaleString(), tone: 'text-gray-900' },
+    { key: 'amount_paid_sum', label: tr('Total pagado', 'Total paid'), value: fmtMoney(sum?.amount_paid_sum ?? 0), tone: 'text-emerald-700' },
+    { key: 'expected_sum', label: tr('Esperado', 'Expected'), value: fmtMoney(sum?.expected_sum ?? 0), tone: 'text-blue-700' },
     {
-        key: 'balance_remaining', label: 'Pendiente', value: fmtMoney(sum?.balance_remaining ?? 0),
+        key: 'balance_remaining', label: tr('Pendiente', 'Pending'), value: fmtMoney(sum?.balance_remaining ?? 0),
         tone: Number(sum?.balance_remaining ?? 0) > 0 ? 'text-amber-700' : 'text-gray-700'
     },
 ])
@@ -198,12 +200,12 @@ const paymentTypeBreakdown = computed(() => paymentTypeBreakdownFor(summary.valu
 // Payload builders & fetch
 // ─────────────────────────────────────
 const buildScopePayload = () => {
-    if (!selectedScopeType.value) throw new Error('Selecciona un tipo de alcance.')
+    if (!selectedScopeType.value) throw new Error(tr('Selecciona un tipo de alcance.', 'Select a scope type.'))
 
     // scopes that require an explicit id
     const needsId = ['class', 'member', 'staff']
     if (needsId.includes(selectedScopeType.value) && !selectedScopeId.value) {
-        throw new Error(`Selecciona un ${selectedScopeType.value}.`)
+        throw new Error(tr(`Selecciona un ${selectedScopeType.value}.`, `Select a ${selectedScopeType.value}.`))
     }
 
     // club_wide / staff_wide carry the club id as scope_id for backend
@@ -235,7 +237,7 @@ const fetchReport = async () => {
 
     // basic client-side date validation
     if (dateFrom.value && dateTo.value && dateTo.value < dateFrom.value) {
-        reportError.value = 'La fecha final no puede ser anterior a la fecha inicial.'
+        reportError.value = tr('La fecha final no puede ser anterior a la fecha inicial.', 'The end date cannot be before the start date.')
         loading.value = false
         return
     }
@@ -259,7 +261,7 @@ const fetchReport = async () => {
         scopeBlocks.value = []
     } catch (e) {
         console.error(e)
-        reportError.value = e?.response?.data?.message || 'No se pudo obtener el reporte.'
+        reportError.value = e?.response?.data?.message || tr('No se pudo obtener el reporte.', 'Could not retrieve the report.')
     } finally {
         loading.value = false
     }
@@ -301,7 +303,7 @@ onMounted(async () => {
         setDefaultPayTo()
     } catch (e) {
         console.error(e)
-        loadError.value = 'No se pudo cargar la informacion del reporte.'
+        loadError.value = tr('No se pudo cargar la informacion del reporte.', 'Could not load report information.')
     } finally {
         loading.value = false
     }
@@ -336,7 +338,7 @@ watch(selectedClubId, async (id, old) => {
             reportError.value = ''
         } catch (e) {
             console.error(e)
-            reportError.value = 'No se pudo cargar la informacion del club seleccionado.'
+            reportError.value = tr('No se pudo cargar la informacion del club seleccionado.', 'Could not load the selected club information.')
         } finally {
             loading.value = false
         }
@@ -349,24 +351,24 @@ watch(selectedClubId, async (id, old) => {
         <div class="min-h-screen bg-white px-4 pb-24 sm:px-6">
             <header class="pt-5 pb-3 flex items-center gap-3">
                 <FunnelIcon class="h-6 w-6 text-gray-700" />
-                <h1 class="text-lg font-semibold text-gray-900">Reporte financiero</h1>
+                <h1 class="text-lg font-semibold text-gray-900">{{ tr('Reporte financiero', 'Financial Report') }}</h1>
                 <div v-if="canSelectClub" class="ml-auto flex items-center gap-2 text-sm">
-                    <label class="text-gray-700">Club:</label>
+                    <label class="text-gray-700">{{ tr('Club:', 'Club:') }}</label>
                     <select v-model="selectedClubId"
                         class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
                         <option v-for="c in clubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
                     </select>
                 </div>
                 <div v-else class="ml-auto text-sm text-gray-700">
-                    Club: <strong>{{ clubs.find(c => String(c.id) === String(selectedClubId))?.club_name || '—' }}</strong>
+                    {{ tr('Club:', 'Club:') }} <strong>{{ clubs.find(c => String(c.id) === String(selectedClubId))?.club_name || '—' }}</strong>
                 </div>
             </header>
 
             <!-- FILTER BAR -->
             <section class="rounded-2xl border border-gray-200 p-4 shadow-sm">
-                <h2 class="text-base font-semibold text-gray-900">Opciones de filtro</h2>
+                <h2 class="text-base font-semibold text-gray-900">{{ tr('Opciones de filtro', 'Filter Options') }}</h2>
                 <p class="mt-0.5 text-sm text-gray-600">
-                    El reporte muestra movimientos por cuenta. Puedes filtrar por cuenta, concepto y rango de fechas, y luego imprimir exactamente esa seleccion.
+                    {{ tr('El reporte muestra movimientos por cuenta. Puedes filtrar por cuenta, concepto y rango de fechas, y luego imprimir exactamente esa seleccion.', 'The report shows movements by account. You can filter by account, concept, and date range, then print that exact selection.') }}
                 </p>
 
                 <div v-if="loadError" class="mt-2 text-sm text-red-600">{{ loadError }}</div>
@@ -374,20 +376,20 @@ watch(selectedClubId, async (id, old) => {
                 <!-- Account filter -->
 	                <div class="mt-4 grid gap-3 sm:grid-cols-2">
 	                    <div>
-	                        <label class="block text-sm font-medium text-gray-700">Cuenta (pay_to)</label>
+	                        <label class="block text-sm font-medium text-gray-700">{{ tr('Cuenta (pay_to)', 'Account (pay_to)') }}</label>
 	                        <select v-model="selectedPayTo"
 	                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-	                            <option value="all">Todas las cuentas</option>
+	                            <option value="all">{{ tr('Todas las cuentas', 'All accounts') }}</option>
 	                            <option v-for="p in payTo" :key="p.value" :value="p.value">{{ p.label }}</option>
 	                        </select>
 	                    </div>
 	                    <div>
-	                        <label class="block text-sm font-medium text-gray-700">Ubicación del dinero</label>
+	                        <label class="block text-sm font-medium text-gray-700">{{ tr('Ubicación del dinero', 'Money location') }}</label>
 	                        <select v-model="selectedLocation"
 	                            class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-	                            <option value="all">Todas las ubicaciones</option>
-	                            <option value="cash">Efectivo</option>
-	                            <option value="bank">Banco</option>
+	                            <option value="all">{{ tr('Todas las ubicaciones', 'All locations') }}</option>
+	                            <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+	                            <option value="bank">{{ tr('Banco', 'Bank') }}</option>
 	                        </select>
 	                    </div>
 	                </div>
@@ -395,15 +397,15 @@ watch(selectedClubId, async (id, old) => {
                 <!-- Concept filters -->
                 <div class="mt-4 grid gap-3 sm:grid-cols-2">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Concepto</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Concepto', 'Concept') }}</label>
                         <select v-model="selectedConceptId"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option :value="null" disabled>Selecciona un concepto…</option>
+                            <option :value="null" disabled>{{ tr('Selecciona un concepto...', 'Select a concept...') }}</option>
                             <option v-for="c in concepts" :key="c.id" :value="c.id">{{ c.concept }}</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Rango de fechas (opcional)</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Rango de fechas (opcional)', 'Date range (optional)') }}</label>
                         <div class="mt-1 flex gap-2">
                             <input type="date" v-model="dateFrom"
                                 class="w-full rounded-lg border-gray-300 py-2 text-sm" />
@@ -416,12 +418,12 @@ watch(selectedClubId, async (id, old) => {
                 <div class="mt-5 flex justify-end gap-3">
                     <a :href="pdfUrl" target="_blank" rel="noopener noreferrer"
                         class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        Abrir PDF
+                        {{ tr('Abrir PDF', 'Open PDF') }}
                     </a>
                     <button @click="fetchReport" :disabled="loading"
                         class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
                         <ArrowPathIcon v-if="loading" class="h-4 w-4 animate-spin" />
-                        <span>{{ loading ? 'Cargando…' : 'Generar reporte' }}</span>
+                        <span>{{ loading ? tr('Cargando...', 'Loading...') : tr('Generar reporte', 'Generate report') }}</span>
                     </button>
                 </div>
             </section>
@@ -438,23 +440,23 @@ watch(selectedClubId, async (id, old) => {
                             </div>
 	                            <div class="grid grid-cols-2 gap-4 text-right sm:grid-cols-5">
 	                                <div>
-	                                    <div class="text-xs text-gray-500">Ingresos</div>
+	                                    <div class="text-xs text-gray-500">{{ tr('Ingresos', 'Income') }}</div>
 	                                    <div class="font-semibold text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</div>
                                 </div>
                                 <div>
-                                    <div class="text-xs text-gray-500">Gastos</div>
+                                    <div class="text-xs text-gray-500">{{ tr('Gastos', 'Expenses') }}</div>
                                     <div class="font-semibold text-amber-700">{{ fmtMoney(acc.totals.spent) }}</div>
                                 </div>
                                 <div>
-	                                    <div class="text-xs text-gray-500">Neto</div>
+	                                    <div class="text-xs text-gray-500">{{ tr('Neto', 'Net') }}</div>
 	                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.net) }}</div>
 	                                </div>
 	                                <div>
-	                                    <div class="text-xs text-gray-500">Efectivo</div>
+	                                    <div class="text-xs text-gray-500">{{ tr('Efectivo', 'Cash') }}</div>
 	                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.cash_balance) }}</div>
 	                                </div>
 	                                <div>
-	                                    <div class="text-xs text-gray-500">Banco</div>
+	                                    <div class="text-xs text-gray-500">{{ tr('Banco', 'Bank') }}</div>
 	                                    <div class="font-semibold text-gray-900">{{ fmtMoney(acc.totals.bank_balance) }}</div>
 	                                </div>
 	                            </div>
@@ -463,8 +465,8 @@ watch(selectedClubId, async (id, old) => {
 
                     <div class="md:hidden p-4 space-y-3">
                         <div class="flex items-center justify-between text-xs text-gray-600">
-                            <div>Mostrando {{ acc.entries?.length ? entryStartIdxForAccount(acc) + 1 : 0 }}–{{ entryEndIdxForAccount(acc) }} de {{ acc.entries?.length ?? 0 }}</div>
-                            <div>10 por pagina</div>
+                            <div>{{ tr('Mostrando', 'Showing') }} {{ acc.entries?.length ? entryStartIdxForAccount(acc) + 1 : 0 }}-{{ entryEndIdxForAccount(acc) }} {{ tr('de', 'of') }} {{ acc.entries?.length ?? 0 }}</div>
+                            <div>10 {{ tr('por pagina', 'per page') }}</div>
                         </div>
                         <div v-for="e in pagedEntriesForAccount(acc)" :key="`${e.entry_type}-${e.id}`"
                             class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
@@ -485,13 +487,13 @@ watch(selectedClubId, async (id, old) => {
 	                                </span>
 	                            </div>
 	                            <div class="mt-1 text-xs text-gray-600">
-	                                <span class="font-medium text-gray-700">Ubicación:</span> {{ entryLocationLabel(e) }}
+	                                <span class="font-medium text-gray-700">{{ tr('Ubicación:', 'Location:') }}</span> {{ entryLocationLabel(e) }}
 	                            </div>
 	                            <div v-if="acc.pay_to === 'reimbursement_to'" class="mt-1 text-xs text-gray-600">
-                                <span class="font-medium text-gray-700">Miembro/Personal:</span> {{ e.member ?? e.staff ?? '—' }}
+                                <span class="font-medium text-gray-700">{{ tr('Miembro/Personal:', 'Member/Staff:') }}</span> {{ e.member ?? e.staff ?? '—' }}
                             </div>
                             <div v-if="acc.pay_to === 'reimbursement_to' && settlementSummary(e)" class="mt-1 text-xs text-gray-600">
-                                <span class="font-medium text-gray-700">Liquidacion:</span> {{ settlementSummary(e) }}
+                                <span class="font-medium text-gray-700">{{ tr('Liquidacion:', 'Settlement:') }}</span> {{ settlementSummary(e) }}
                             </div>
                             <div v-if="e.receipt_ref" class="mt-1 text-xs text-gray-600">
                                 <span class="font-medium text-gray-700">Ref:</span> {{ e.receipt_ref }}
@@ -504,7 +506,7 @@ watch(selectedClubId, async (id, old) => {
                         </div>
                         <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm">
                             <div class="flex items-center justify-between">
-                                <span class="text-gray-600">Totales</span>
+                                <span class="text-gray-600">{{ tr('Totales', 'Totals') }}</span>
 	                                    <div class="text-right">
 	                                        <div class="text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</div>
 	                                        <div class="text-blue-700">{{ fmtMoney(acc.totals.movements) }}</div>
@@ -512,19 +514,19 @@ watch(selectedClubId, async (id, old) => {
 	                                    </div>
                             </div>
                             <div class="mt-2 flex items-center justify-between font-semibold">
-                                <span class="text-gray-700">Saldo de la cuenta</span>
+                                <span class="text-gray-700">{{ tr('Saldo de la cuenta', 'Account balance') }}</span>
                                 <span>{{ fmtMoney(acc.totals.net) }}</span>
                             </div>
                         </div>
                         <div v-if="(acc.entries?.length ?? 0) > entriesPageSize" class="flex items-center justify-between">
                             <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                                 :disabled="pageForAccount(acc) <= 1" @click="setAccountPage(acc, pageForAccount(acc) - 1)">
-                                Anterior
+                                {{ tr('Anterior', 'Previous') }}
                             </button>
-                            <div class="text-xs text-gray-600">Pagina {{ pageForAccount(acc) }} de {{ totalPagesForAccount(acc) }}</div>
+                            <div class="text-xs text-gray-600">{{ tr('Pagina', 'Page') }} {{ pageForAccount(acc) }} {{ tr('de', 'of') }} {{ totalPagesForAccount(acc) }}</div>
                             <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                                 :disabled="pageForAccount(acc) >= totalPagesForAccount(acc)" @click="setAccountPage(acc, pageForAccount(acc) + 1)">
-                                Siguiente
+                                {{ tr('Siguiente', 'Next') }}
                             </button>
                         </div>
                     </div>
@@ -533,16 +535,16 @@ watch(selectedClubId, async (id, old) => {
                         <table class="min-w-full text-sm text-gray-700">
                             <thead class="bg-gray-50">
                                 <tr>
-	                                    <th class="px-4 py-2 text-left font-semibold">Fecha</th>
-	                                    <th class="px-4 py-2 text-left font-semibold">Tipo</th>
-	                                    <th class="px-4 py-2 text-left font-semibold">Ubicación</th>
-	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Miembro/Personal</th>
-	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">Liquidacion</th>
-	                                    <th class="px-4 py-2 text-left font-semibold">Concepto</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Fecha', 'Date') }}</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Tipo', 'Type') }}</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Ubicación', 'Location') }}</th>
+	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">{{ tr('Miembro/Personal', 'Member/Staff') }}</th>
+	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">{{ tr('Liquidacion', 'Settlement') }}</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Concepto', 'Concept') }}</th>
 	                                    <th class="px-4 py-2 text-left font-semibold">Ref.</th>
-	                                    <th class="px-4 py-2 text-right font-semibold">Movimientos</th>
-	                                    <th class="px-4 py-2 text-right font-semibold">Cargos</th>
-	                                    <th class="px-4 py-2 text-right font-semibold">Abonos</th>
+	                                    <th class="px-4 py-2 text-right font-semibold">{{ tr('Movimientos', 'Movements') }}</th>
+	                                    <th class="px-4 py-2 text-right font-semibold">{{ tr('Cargos', 'Charges') }}</th>
+	                                    <th class="px-4 py-2 text-right font-semibold">{{ tr('Abonos', 'Credits') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -581,13 +583,13 @@ watch(selectedClubId, async (id, old) => {
                             </tbody>
 	                            <tfoot>
 	                                <tr class="border-t bg-gray-50 font-semibold">
-	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">Totales</td>
+	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">{{ tr('Totales', 'Totals') }}</td>
 	                                    <td class="px-4 py-2 text-right text-blue-700">{{ fmtMoney(acc.totals.movements) }}</td>
 	                                    <td class="px-4 py-2 text-right text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</td>
 	                                    <td class="px-4 py-2 text-right text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</td>
 	                                </tr>
 	                                <tr class="border-t bg-white font-semibold">
-	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">Saldo de la cuenta</td>
+	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">{{ tr('Saldo de la cuenta', 'Account balance') }}</td>
 	                                    <td class="px-4 py-2 text-right" :colspan="3">{{ fmtMoney(acc.totals.net) }}</td>
 	                                </tr>
                             </tfoot>
@@ -596,19 +598,19 @@ watch(selectedClubId, async (id, old) => {
                     <div v-if="(acc.entries?.length ?? 0) > entriesPageSize" class="mt-3 flex items-center justify-between">
                         <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="pageForAccount(acc) <= 1" @click="setAccountPage(acc, pageForAccount(acc) - 1)">
-                            Anterior
+                            {{ tr('Anterior', 'Previous') }}
                         </button>
-                        <div class="text-xs text-gray-600">Pagina {{ pageForAccount(acc) }} de {{ totalPagesForAccount(acc) }}</div>
+                        <div class="text-xs text-gray-600">{{ tr('Pagina', 'Page') }} {{ pageForAccount(acc) }} {{ tr('de', 'of') }} {{ totalPagesForAccount(acc) }}</div>
                         <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="pageForAccount(acc) >= totalPagesForAccount(acc)" @click="setAccountPage(acc, pageForAccount(acc) + 1)">
-                            Siguiente
+                            {{ tr('Siguiente', 'Next') }}
                         </button>
                     </div>
                 </div>
             </section>
 
 	            <div v-else-if="!loading" class="mt-6 text-sm text-gray-500 text-center">
-	                No se encontraron movimientos para los filtros seleccionados.
+	                {{ tr('No se encontraron movimientos para los filtros seleccionados.', 'No movements found for the selected filters.') }}
 	            </div>
 
             <div v-if="reportError" class="mt-3 text-sm text-red-600 text-center">{{ reportError }}</div>

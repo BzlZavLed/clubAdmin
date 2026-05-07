@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3'
 import { XMarkIcon } from '@heroicons/vue/24/outline'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 import {
     fetchClubBankInfo,
     fetchMyChurchAdminCatalog,
@@ -34,6 +35,7 @@ const props = defineProps({
 })
 
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin')
 const selectedClubId = ref(props.selected_club_id || props.auth_user?.club_id || (props.clubs?.[0]?.id ?? ''))
 const inviteCode = ref(props.integration_config?.invite_code || '')
@@ -111,7 +113,7 @@ async function loadBankInfo() {
         }, {})
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudieron cargar los datos de depósito', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudieron cargar los datos de depósito', 'Could not load deposit information'), 'error')
     } finally {
         bankInfoLoading.value = false
     }
@@ -127,10 +129,10 @@ async function saveBankInfo(row) {
             accepts_event_deposits: false,
         })
         await loadBankInfo()
-        showToast('Datos de depósito guardados')
+        showToast(tr('Datos de depósito guardados', 'Deposit information saved'))
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudieron guardar los datos de depósito', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudieron guardar los datos de depósito', 'Could not save deposit information'), 'error')
     } finally {
         bankInfoSavingPayTo.value = null
     }
@@ -144,10 +146,10 @@ async function handleLogoSelected(event) {
     try {
         const data = await uploadClubLogo({ clubId: selectedClubId.value, file })
         logoUrl.value = data.logo_url
-        showToast('Logo del club actualizado')
+        showToast(tr('Logo del club actualizado', 'Club logo updated'))
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'No se pudo subir el logo'
+        const message = error?.response?.data?.message || tr('No se pudo subir el logo', 'Could not upload the logo')
         showToast(message, 'error')
     } finally {
         logoUploading.value = false
@@ -161,10 +163,10 @@ async function deleteLogo() {
     try {
         await removeClubLogo(selectedClubId.value)
         logoUrl.value = null
-        showToast('Logo removido')
+        showToast(tr('Logo removido', 'Logo removed'))
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'No se pudo remover el logo'
+        const message = error?.response?.data?.message || tr('No se pudo remover el logo', 'Could not remove the logo')
         showToast(message, 'error')
     } finally {
         logoUploading.value = false
@@ -174,7 +176,7 @@ async function deleteLogo() {
 async function fetchCatalog() {
     if (!hasClubSelected.value) return
     if (!inviteCode.value) {
-        showToast('Ingresa un codigo de invitacion primero', 'warning')
+        showToast(tr('Ingresa un codigo de invitacion primero', 'Enter an invitation code first'), 'warning')
         return
     }
     catalogLoading.value = true
@@ -185,10 +187,10 @@ async function fetchCatalog() {
         })
         console.log(data);
         catalog.value = data
-        showToast('Catalogo obtenido')
+        showToast(tr('Catalogo obtenido', 'Catalog retrieved'))
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'No se pudo obtener el catalogo'
+        const message = error?.response?.data?.message || tr('No se pudo obtener el catalogo', 'Could not retrieve the catalog')
         showToast(message, 'error')
     } finally {
         catalogLoading.value = false
@@ -198,11 +200,11 @@ async function fetchCatalog() {
 async function saveConfig() {
     if (!hasClubSelected.value) return
     if (!inviteCode.value) {
-        showToast('El codigo de invitacion es requerido', 'warning')
+        showToast(tr('El codigo de invitacion es requerido', 'The invitation code is required'), 'warning')
         return
     }
     if (!catalog.value) {
-        showToast('Obtiene el catalogo antes de guardar', 'warning')
+        showToast(tr('Obtiene el catalogo antes de guardar', 'Retrieve the catalog before saving'), 'warning')
         return
     }
     saving.value = true
@@ -223,10 +225,10 @@ async function saveConfig() {
             departments: data.config.departments || [],
             objectives: data.config.objectives || [],
         }
-        showToast('Configuracion guardada')
+        showToast(tr('Configuracion guardada', 'Configuration saved'))
     } catch (error) {
         console.error(error)
-        const message = error?.response?.data?.message || 'No se pudo guardar la configuracion'
+        const message = error?.response?.data?.message || tr('No se pudo guardar la configuracion', 'Could not save the configuration')
         showToast(message, 'error')
     } finally {
         saving.value = false
@@ -240,34 +242,33 @@ onMounted(() => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Configuracion</template>
+        <template #title>{{ tr('Configuracion', 'Settings') }}</template>
 
         <div class="space-y-6">
             <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-800">Logo del club</h2>
+                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Logo del club', 'Club Logo') }}</h2>
                         <p class="text-sm text-gray-600">
-                            Este logo se usará en recibos, reportes financieros y carpetas PDF del club.
-                            Si varios clubes pertenecen a la misma iglesia, pueden usar el mismo archivo de logo.
+                            {{ tr('Este logo se usará en recibos, reportes financieros y carpetas PDF del club. Si varios clubes pertenecen a la misma iglesia, pueden usar el mismo archivo de logo.', 'This logo will be used on receipts, financial reports, and club PDF folders. If multiple clubs belong to the same church, they can use the same logo file.') }}
                         </p>
                     </div>
                     <div class="w-full sm:w-auto">
                         <div v-if="logoUrl" class="flex items-start gap-3">
-                            <img :src="logoUrl" alt="Logo del club" class="h-20 w-20 rounded border object-contain bg-white p-2" />
+                            <img :src="logoUrl" :alt="tr('Logo del club', 'Club logo')" class="h-20 w-20 rounded border object-contain bg-white p-2" />
                             <button
                                 type="button"
                                 class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 text-red-700 transition hover:bg-red-50 disabled:opacity-60"
                                 :disabled="logoUploading || !hasClubSelected"
-                                aria-label="Remover logo"
-                                title="Remover logo"
+                                :aria-label="tr('Remover logo', 'Remove logo')"
+                                :title="tr('Remover logo', 'Remove logo')"
                                 @click="deleteLogo"
                             >
                                 <XMarkIcon class="h-5 w-5" />
                             </button>
                         </div>
                         <div v-else class="h-20 w-20 rounded border border-dashed bg-gray-50 text-xs text-gray-500 flex items-center justify-center text-center p-2">
-                            Sin logo
+                            {{ tr('Sin logo', 'No logo') }}
                         </div>
                     </div>
                 </div>
@@ -281,15 +282,15 @@ onMounted(() => {
                         :disabled="logoUploading || !hasClubSelected"
                         @change="handleLogoSelected"
                     />
-                    <span class="text-xs text-gray-500">PNG, JPG o WEBP. Máximo 4MB.</span>
+                    <span class="text-xs text-gray-500">{{ tr('PNG, JPG o WEBP. Máximo 4MB.', 'PNG, JPG, or WEBP. Maximum 4MB.') }}</span>
                 </div>
             </div>
 
             <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-800">Datos de depósito</h2>
-                        <p class="text-sm text-gray-600">Información bancaria publicada para pagos y transferencias del club.</p>
+                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Datos de depósito', 'Deposit Information') }}</h2>
+                        <p class="text-sm text-gray-600">{{ tr('Información bancaria publicada para pagos y transferencias del club.', 'Banking information published for club payments and transfers.') }}</p>
                     </div>
                     <button
                         type="button"
@@ -297,12 +298,12 @@ onMounted(() => {
                         :disabled="bankInfoLoading || !hasClubSelected"
                         @click="loadBankInfo"
                     >
-                        {{ bankInfoLoading ? 'Cargando...' : 'Actualizar' }}
+                        {{ bankInfoLoading ? tr('Cargando...', 'Loading...') : tr('Actualizar', 'Refresh') }}
                     </button>
                 </div>
 
                 <div v-if="!bankInfoRows.length" class="rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-                    No hay cuentas disponibles para configurar.
+                    {{ tr('No hay cuentas disponibles para configurar.', 'No accounts are available to configure.') }}
                 </div>
 
                 <div v-else class="space-y-4">
@@ -318,29 +319,29 @@ onMounted(() => {
                                 :disabled="bankInfoSavingPayTo === row.pay_to"
                                 @click="saveBankInfo(row)"
                             >
-                                {{ bankInfoSavingPayTo === row.pay_to ? 'Guardando...' : 'Guardar' }}
+                                {{ bankInfoSavingPayTo === row.pay_to ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
                             </button>
                         </div>
 
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
                             <div>
-                                <label class="block text-sm text-gray-700 mb-1">Etiqueta pública</label>
+                                <label class="block text-sm text-gray-700 mb-1">{{ tr('Etiqueta pública', 'Public label') }}</label>
                                 <input v-model="bankInfoForms[row.pay_to].label" type="text" class="w-full rounded border px-3 py-2 text-sm" />
                             </div>
                             <div>
-                                <label class="block text-sm text-gray-700 mb-1">Banco</label>
+                                <label class="block text-sm text-gray-700 mb-1">{{ tr('Banco', 'Bank') }}</label>
                                 <input v-model="bankInfoForms[row.pay_to].bank_name" type="text" class="w-full rounded border px-3 py-2 text-sm" />
                             </div>
                             <div>
-                                <label class="block text-sm text-gray-700 mb-1">Titular</label>
+                                <label class="block text-sm text-gray-700 mb-1">{{ tr('Titular', 'Account holder') }}</label>
                                 <input v-model="bankInfoForms[row.pay_to].account_holder" type="text" class="w-full rounded border px-3 py-2 text-sm" />
                             </div>
                             <div>
-                                <label class="block text-sm text-gray-700 mb-1">Tipo de cuenta</label>
+                                <label class="block text-sm text-gray-700 mb-1">{{ tr('Tipo de cuenta', 'Account type') }}</label>
                                 <input v-model="bankInfoForms[row.pay_to].account_type" type="text" class="w-full rounded border px-3 py-2 text-sm" />
                             </div>
                             <div>
-                                <label class="block text-sm text-gray-700 mb-1">Número de cuenta</label>
+                                <label class="block text-sm text-gray-700 mb-1">{{ tr('Número de cuenta', 'Account number') }}</label>
                                 <input v-model="bankInfoForms[row.pay_to].account_number" type="text" class="w-full rounded border px-3 py-2 text-sm" />
                             </div>
                             <div>
@@ -352,11 +353,11 @@ onMounted(() => {
                                 <input v-model="bankInfoForms[row.pay_to].zelle_email" type="email" class="w-full rounded border px-3 py-2 text-sm" />
                             </div>
                             <div>
-                                <label class="block text-sm text-gray-700 mb-1">Zelle teléfono</label>
+                                <label class="block text-sm text-gray-700 mb-1">{{ tr('Zelle teléfono', 'Zelle phone') }}</label>
                                 <input v-model="bankInfoForms[row.pay_to].zelle_phone" type="text" class="w-full rounded border px-3 py-2 text-sm" />
                             </div>
                             <div class="md:col-span-2">
-                                <label class="block text-sm text-gray-700 mb-1">Instrucciones</label>
+                                <label class="block text-sm text-gray-700 mb-1">{{ tr('Instrucciones', 'Instructions') }}</label>
                                 <textarea v-model="bankInfoForms[row.pay_to].deposit_instructions" rows="3" class="w-full rounded border px-3 py-2 text-sm"></textarea>
                             </div>
                         </div>
@@ -364,11 +365,11 @@ onMounted(() => {
                         <div class="mt-3 grid gap-2 text-sm md:grid-cols-2">
                             <label class="inline-flex items-center gap-2 rounded border border-gray-200 px-3 py-2">
                                 <input v-model="bankInfoForms[row.pay_to].is_active" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                                <span>Activo</span>
+                                <span>{{ tr('Activo', 'Active') }}</span>
                             </label>
                             <label class="inline-flex items-center gap-2 rounded border border-gray-200 px-3 py-2">
                                 <input v-model="bankInfoForms[row.pay_to].requires_receipt_upload" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                                <span>Comprobante</span>
+                                <span>{{ tr('Comprobante', 'Receipt') }}</span>
                             </label>
                         </div>
                     </div>
@@ -378,24 +379,24 @@ onMounted(() => {
             <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-800">Integracion con mychurchadmin.net</h2>
-                        <p class="text-sm text-gray-600">Usa un codigo de invitacion para obtener el catalogo y guardarlo para tu club.</p>
+                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Integracion con mychurchadmin.net', 'mychurchadmin.net Integration') }}</h2>
+                        <p class="text-sm text-gray-600">{{ tr('Usa un codigo de invitacion para obtener el catalogo y guardarlo para tu club.', 'Use an invitation code to retrieve the catalog and save it for your club.') }}</p>
                     </div>
                     <div v-if="canSelectClub" class="flex items-center gap-2">
-                        <label class="text-sm text-gray-700">Club</label>
+                        <label class="text-sm text-gray-700">{{ tr('Club', 'Club') }}</label>
                         <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm">
-                            <option value="">Selecciona un club</option>
+                            <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
                     </div>
                     <div v-else class="text-sm text-gray-700">
-                        Club activo: <strong>{{ clubs.find(club => String(club.id) === String(selectedClubId))?.club_name || props.auth_user?.club_name || '—' }}</strong>
+                        {{ tr('Club activo:', 'Active club:') }} <strong>{{ clubs.find(club => String(club.id) === String(selectedClubId))?.club_name || props.auth_user?.club_name || '—' }}</strong>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div class="md:col-span-2">
-                        <label class="block text-sm text-gray-700 mb-1">Codigo de invitacion</label>
+                        <label class="block text-sm text-gray-700 mb-1">{{ tr('Codigo de invitacion', 'Invitation code') }}</label>
                         <input
                             v-model="inviteCode"
                             type="text"
@@ -410,7 +411,7 @@ onMounted(() => {
                             @click="fetchCatalog"
                             type="button"
                         >
-                            {{ catalogLoading ? 'Obteniendo...' : 'Obtener' }}
+                            {{ catalogLoading ? tr('Obteniendo...', 'Retrieving...') : tr('Obtener', 'Retrieve') }}
                         </button>
                         <button
                             class="px-4 py-2 bg-emerald-600 text-white rounded text-sm disabled:opacity-60"
@@ -418,7 +419,7 @@ onMounted(() => {
                             @click="saveConfig"
                             type="button"
                         >
-                            {{ saving ? 'Guardando...' : 'Guardar configuracion' }}
+                            {{ saving ? tr('Guardando...', 'Saving...') : tr('Guardar configuracion', 'Save configuration') }}
                         </button>
                     </div>
                 </div>
@@ -427,43 +428,43 @@ onMounted(() => {
             <div v-if="catalog" class="bg-white shadow-sm rounded-lg p-5 border space-y-6">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                        <h3 class="font-semibold text-gray-800">Detalles del catalogo</h3>
-                        <p class="text-sm text-gray-600">Revisa la iglesia, departamentos y objetivos.</p>
+                        <h3 class="font-semibold text-gray-800">{{ tr('Detalles del catalogo', 'Catalog Details') }}</h3>
+                        <p class="text-sm text-gray-600">{{ tr('Revisa la iglesia, departamentos y objetivos.', 'Review the church, departments, and objectives.') }}</p>
                     </div>
                     <div class="text-sm text-gray-600">
-                        Estado: <span class="font-semibold">{{ catalog.status || '—' }}</span>
+                        {{ tr('Estado:', 'Status:') }} <span class="font-semibold">{{ catalog.status || '—' }}</span>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="border rounded p-3 bg-gray-50">
-                        <h4 class="text-sm font-semibold text-gray-800 mb-2">Iglesia</h4>
+                        <h4 class="text-sm font-semibold text-gray-800 mb-2">{{ tr('Iglesia', 'Church') }}</h4>
                         <div class="text-sm text-gray-700 space-y-1">
-                            <div><span class="font-medium">Nombre:</span> {{ catalog.church?.name || '—' }}</div>
+                            <div><span class="font-medium">{{ tr('Nombre:', 'Name:') }}</span> {{ catalog.church?.name || '—' }}</div>
                             <div><span class="font-medium">Slug:</span> {{ catalog.church_slug || catalog.church?.slug || '—' }}</div>
                             <div><span class="font-medium">ID:</span> {{ catalog.church?.id || '—' }}</div>
                         </div>
                     </div>
                     <div class="border rounded p-3 bg-gray-50">
-                        <h4 class="text-sm font-semibold text-gray-800 mb-2">Resumen</h4>
+                        <h4 class="text-sm font-semibold text-gray-800 mb-2">{{ tr('Resumen', 'Summary') }}</h4>
                         <div class="text-sm text-gray-700 space-y-1">
-                            <div><span class="font-medium">Departamentos:</span> {{ catalog.departments?.length || 0 }}</div>
-                            <div><span class="font-medium">Objetivos:</span> {{ catalog.objectives?.length || 0 }}</div>
+                            <div><span class="font-medium">{{ tr('Departamentos:', 'Departments:') }}</span> {{ catalog.departments?.length || 0 }}</div>
+                            <div><span class="font-medium">{{ tr('Objetivos:', 'Objectives:') }}</span> {{ catalog.objectives?.length || 0 }}</div>
                         </div>
                     </div>
                 </div>
 
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-800 mb-2">Departamentos</h4>
+                    <h4 class="text-sm font-semibold text-gray-800 mb-2">{{ tr('Departamentos', 'Departments') }}</h4>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-gray-500">
                                 <tr>
                                     <th class="py-2 pr-4">ID</th>
-                                    <th class="py-2 pr-4">Nombre</th>
-                                    <th class="py-2 pr-4">Usuario</th>
+                                    <th class="py-2 pr-4">{{ tr('Nombre', 'Name') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Usuario', 'User') }}</th>
                                     <th class="py-2 pr-4">Color</th>
-                                    <th class="py-2 pr-4">Es club</th>
+                                    <th class="py-2 pr-4">{{ tr('Es club', 'Is club') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -472,10 +473,10 @@ onMounted(() => {
                                     <td class="py-2 pr-4">{{ dept.name }}</td>
                                     <td class="py-2 pr-4">{{ dept.user_name }}</td>
                                     <td class="py-2 pr-4">{{ dept.color }}</td>
-                                    <td class="py-2 pr-4">{{ dept.is_club ? 'Si' : 'No' }}</td>
+                                    <td class="py-2 pr-4">{{ dept.is_club ? tr('Si', 'Yes') : tr('No', 'No') }}</td>
                                 </tr>
                                 <tr v-if="(catalog.departments || []).length === 0">
-                                    <td colspan="5" class="py-3 text-center text-gray-500">No hay departamentos disponibles.</td>
+                                    <td colspan="5" class="py-3 text-center text-gray-500">{{ tr('No hay departamentos disponibles.', 'No departments available.') }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -483,16 +484,16 @@ onMounted(() => {
                 </div>
 
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-800 mb-2">Objetivos</h4>
+                    <h4 class="text-sm font-semibold text-gray-800 mb-2">{{ tr('Objetivos', 'Objectives') }}</h4>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-gray-500">
                                 <tr>
                                     <th class="py-2 pr-4">ID</th>
-                                    <th class="py-2 pr-4">Departamento</th>
-                                    <th class="py-2 pr-4">Nombre</th>
-                                    <th class="py-2 pr-4">Descripcion</th>
-                                    <th class="py-2 pr-4">Metricas</th>
+                                    <th class="py-2 pr-4">{{ tr('Departamento', 'Department') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Nombre', 'Name') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Descripcion', 'Description') }}</th>
+                                    <th class="py-2 pr-4">{{ tr('Metricas', 'Metrics') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -504,7 +505,7 @@ onMounted(() => {
                                     <td class="py-2 pr-4">{{ obj.evaluation_metrics }}</td>
                                 </tr>
                                 <tr v-if="(catalog.objectives || []).length === 0">
-                                    <td colspan="5" class="py-3 text-center text-gray-500">No hay objetivos disponibles.</td>
+                                    <td colspan="5" class="py-3 text-center text-gray-500">{{ tr('No hay objetivos disponibles.', 'No objectives available.') }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -513,7 +514,7 @@ onMounted(() => {
             </div>
 
             <div v-else class="bg-white shadow-sm rounded-lg p-5 border text-sm text-gray-600">
-                Obtiene un catalogo para ver los detalles de integracion.
+                {{ tr('Obtiene un catalogo para ver los detalles de integracion.', 'Retrieve a catalog to see integration details.') }}
             </div>
         </div>
     </PathfinderLayout>

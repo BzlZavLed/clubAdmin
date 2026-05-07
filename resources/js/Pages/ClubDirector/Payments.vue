@@ -13,6 +13,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import { createClubPayment, updateClubPayment, downloadBulkReceipts } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     auth_user: { type: Object, required: true },
@@ -33,6 +34,7 @@ const props = defineProps({
 })
 const inertiaPage = usePage()
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 const parentTransferError = computed(() => inertiaPage.props.errors?.parent_transfer || null)
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin')
 const canEditPayments = computed(() => ['club_director', 'superadmin'].includes(props.auth_user?.profile_type))
@@ -56,14 +58,14 @@ const allowedClubs = computed(() => {
     return filtered.length ? filtered : baseClubs
 })
 const scopeLabel = (sc) => {
-    if (!sc) return 'Sin alcance'
+    if (!sc) return tr('Sin alcance', 'No scope')
     switch (sc.scope_type) {
-        case 'club_wide': return `Todo el club (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'class': return `Clase: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
-        case 'staff_wide': return `Todo el personal (${sc.club?.club_name ?? sc.club_id ?? '—'})`
-        case 'member': return `Miembro: ${sc.member?.applicant_name ?? sc.member_id ?? '—'}`
-        case 'staff': return `Personal: ${sc.staff?.name ?? sc.staff_id ?? '—'}`
-        default: return 'Alcance desconocido'
+        case 'club_wide': return `${tr('Todo el club', 'Whole club')} (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'class': return `${tr('Clase', 'Class')}: ${sc.class?.class_name ?? sc.class_id ?? '—'}`
+        case 'staff_wide': return `${tr('Todo el personal', 'All staff')} (${sc.club?.club_name ?? sc.club_id ?? '—'})`
+        case 'member': return `${tr('Miembro', 'Member')}: ${sc.member?.applicant_name ?? sc.member_id ?? '—'}`
+        case 'staff': return `${tr('Personal', 'Staff')}: ${sc.staff?.name ?? sc.staff_id ?? '—'}`
+        default: return tr('Alcance desconocido', 'Unknown scope')
     }
 }
 
@@ -74,9 +76,9 @@ const formatISODateLocal = (val) => {
     return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }).format(dt)
 }
 const formatDateTimeLocal = (val) => {
-    if (!val) return 'Nunca'
+    if (!val) return tr('Nunca', 'Never')
     const dt = new Date(val)
-    if (Number.isNaN(dt.getTime())) return 'Nunca'
+    if (Number.isNaN(dt.getTime())) return tr('Nunca', 'Never')
     return new Intl.DateTimeFormat(undefined, {
         year: 'numeric',
         month: 'short',
@@ -183,8 +185,8 @@ const prefillStaffId = ref(null)
 const buildPayeeKey = (type, id) => `${type}:${id}`
 const buildCompletedTargetKey = (conceptId, type, id) => `${conceptId}|${type}|${id}`
 const payeeLabelPrefix = {
-    member: 'Miembro',
-    staff: 'Personal',
+    member: tr('Miembro', 'Member'),
+    staff: tr('Personal', 'Staff'),
 }
 const completedPaymentTargetSet = computed(() => new Set(props.completed_payment_targets || []))
 const paymentTotalsMap = computed(() => props.payment_totals || {})
@@ -341,16 +343,16 @@ const selectedRemainingAmount = computed(() => {
     return Math.max(expected - selectedPayeePaymentTotal.value, 0)
 })
 const formMode = computed(() => customConceptMode.value ? 'manual' : 'concept')
-const pageTitle = computed(() => 'Ingresos')
+const pageTitle = computed(() => tr('Ingresos', 'Income'))
 const modeDescription = computed(() => customConceptMode.value
-    ? 'Registra un ingreso manual para una cuenta del club.'
-    : 'Selecciona un concepto y el sistema calcula el pendiente por pagador.'
+    ? tr('Registra un ingreso manual para una cuenta del club.', 'Record manual income for a club account.')
+    : tr('Selecciona un concepto y el sistema calcula el pendiente por pagador.', 'Select a concept and the system calculates the pending amount per payer.')
 )
 const pendingReceiptGroups = computed(() => {
     const groups = new Map()
 
     ;(props.pending_receipts || []).forEach((receipt) => {
-        const payerName = receipt.member_name || receipt.staff_name || 'Sin nombre'
+        const payerName = receipt.member_name || receipt.staff_name || tr('Sin nombre', 'No name')
         const payerType = receipt.member_name ? 'member' : (receipt.staff_name ? 'staff' : 'unknown')
         const key = `${payerType}:${payerName}`
 
@@ -682,7 +684,7 @@ const approveParentTransfer = (transfer) => {
 }
 
 const rejectParentTransfer = (transfer) => {
-    const reviewNotes = window.prompt('Motivo del rechazo (opcional):', '') ?? ''
+    const reviewNotes = window.prompt(tr('Motivo del rechazo (opcional):', 'Rejection reason (optional):'), '') ?? ''
     activeParentTransferAction.value = `reject:${transfer.id}`
     router.post(route('club.director.payments.parent-transfers.reject', { submission: transfer.id }), {
         review_notes: reviewNotes,
@@ -697,37 +699,37 @@ const rejectParentTransfer = (transfer) => {
 const submit = async () => {
     form.clearErrors()
     if (createAmountNumber.value !== null && createAmountNumber.value <= 0) {
-        form.setError('amount_paid', 'No se recomienda registrar pagos en 0.00. Corrige el monto antes de guardar.')
+        form.setError('amount_paid', tr('No se recomienda registrar pagos en 0.00. Corrige el monto antes de guardar.', 'Recording payments at 0.00 is not recommended. Correct the amount before saving.'))
         return
     }
     if (!form.club_id && props.clubs?.length) {
         form.club_id = props.clubs[0].id
     }
     if (!form.club_id) {
-        form.setError('club_id', 'Selecciona un club.')
+        form.setError('club_id', tr('Selecciona un club.', 'Select a club.'))
         return
     }
     if (customConceptMode.value || form.payment_type === 'initial') {
         if (!customConceptText.value) {
-            customConceptText.value = 'Saldo inicial'
+            customConceptText.value = tr('Saldo inicial', 'Opening balance')
         }
         if (form.payment_type !== 'initial') {
             if (!selectedPayee.value) {
-                form.setError('member_id', 'Selecciona un pagador.')
+                form.setError('member_id', tr('Selecciona un pagador.', 'Select a payer.'))
                 return
             }
         }
     } else {
         if (!selectedPayee.value) {
-            form.setError('payment_concept_id', 'Selecciona un pagador valido para este concepto.')
+            form.setError('payment_concept_id', tr('Selecciona un pagador valido para este concepto.', 'Select a valid payer for this concept.'))
             return
         }
         if (selectedEventBundleConcepts.value.length && !selectedEventComponentConcepts.value.length) {
-            form.setError('payment_concept_id', 'Selecciona al menos un componente del evento.')
+            form.setError('payment_concept_id', tr('Selecciona al menos un componente del evento.', 'Select at least one event component.'))
             return
         }
         if (!selectedScopeId.value) {
-            form.setError('payment_concept_id', 'No se encontro un alcance valido para el pagador seleccionado.')
+            form.setError('payment_concept_id', tr('No se encontro un alcance valido para el pagador seleccionado.', 'No valid scope was found for the selected payer.'))
             return
         }
     }
@@ -737,15 +739,15 @@ const submit = async () => {
         const payload = { ...form.data() }
         if (customConceptMode.value || form.payment_type === 'initial') {
             payload.payment_concept_id = null
-            payload.concept_text = customConceptText.value || 'Saldo inicial'
+            payload.concept_text = customConceptText.value || tr('Saldo inicial', 'Opening balance')
             payload.pay_to = customPayTo.value || 'club_budget'
         } else if (selectedEventBundleConcepts.value.length) {
             payload.payment_concept_id = null
-            payload.concept_text = selectedConcept.value?.event_title || selectedConcept.value?.concept || 'Pago de evento'
+            payload.concept_text = selectedConcept.value?.event_title || selectedConcept.value?.concept || tr('Pago de evento', 'Event payment')
             payload.event_concept_ids = selectedEventComponentConcepts.value.map(concept => concept.id)
         }
         await createClubPayment(payload)
-        showToast('Ingreso guardado correctamente.', 'success')
+        showToast(tr('Ingreso guardado correctamente.', 'Income saved successfully.'), 'success')
         form.reset('amount_paid', 'notes', 'check_image', 'zelle_phone')
         if (customConceptMode.value) {
             customConceptText.value = ''
@@ -763,7 +765,7 @@ const submit = async () => {
             }
         } else {
             console.error(err)
-            form.setError('form', 'Error inesperado. Intenta de nuevo.')
+            form.setError('form', tr('Error inesperado. Intenta de nuevo.', 'Unexpected error. Try again.'))
         }
     } finally {
         submitting.value = false
@@ -793,7 +795,7 @@ const submitEditPayment = async () => {
     if (!editingPaymentId.value) return
     editForm.clearErrors()
     if (editAmountNumber.value !== null && editAmountNumber.value <= 0) {
-        editForm.setError('amount_paid', 'No se recomienda registrar pagos en 0.00. Corrige el monto antes de guardar.')
+        editForm.setError('amount_paid', tr('No se recomienda registrar pagos en 0.00. Corrige el monto antes de guardar.', 'Recording payments at 0.00 is not recommended. Correct the amount before saving.'))
         return
     }
 
@@ -813,7 +815,7 @@ const submitEditPayment = async () => {
             }
         } else {
             console.error(err)
-            editForm.setError('form', 'Error inesperado. Intenta de nuevo.')
+            editForm.setError('form', tr('Error inesperado. Intenta de nuevo.', 'Unexpected error. Try again.'))
         }
     }
 }
@@ -876,14 +878,14 @@ const setFormMode = (mode) => {
                 <div class="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div class="space-y-1">
                         <p class="text-sm text-gray-600">
-                            Sesion iniciada como <strong>{{ auth_user?.name }}</strong>
+                            {{ tr('Sesion iniciada como', 'Signed in as') }} <strong>{{ auth_user?.name }}</strong>
                         </p>
                         <p class="text-sm text-gray-700">
-                            Club activo: <strong>{{ currentClubName }}</strong>
+                            {{ tr('Club activo', 'Active club') }}: <strong>{{ currentClubName }}</strong>
                         </p>
                     </div>
                     <div v-if="canSelectClub" class="flex items-center gap-2 text-sm">
-                        <label class="text-gray-700">Cambiar club:</label>
+                        <label class="text-gray-700">{{ tr('Cambiar club', 'Change club') }}:</label>
                         <select v-model="form.club_id"
                             class="rounded border-gray-300 py-1 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="c in allowedClubs" :key="c.id" :value="c.id">{{ c.club_name }}</option>
@@ -897,7 +899,7 @@ const setFormMode = (mode) => {
                     <div class="rounded-2xl border border-gray-200 p-4 shadow-sm sm:p-5">
                         <div class="flex flex-col gap-4 border-b border-gray-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <h2 class="text-base font-semibold text-gray-900">Registrar ingreso</h2>
+                                <h2 class="text-base font-semibold text-gray-900">{{ tr('Registrar ingreso', 'Record Income') }}</h2>
                                 <p class="mt-0.5 text-sm text-gray-600">{{ modeDescription }}</p>
                             </div>
                             <div class="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
@@ -907,7 +909,7 @@ const setFormMode = (mode) => {
                                     :class="formMode === 'concept' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'"
                                     @click="setFormMode('concept')"
                                 >
-                                    Por concepto
+                                    {{ tr('Por concepto', 'By concept') }}
                                 </button>
                                 <button
                                     type="button"
@@ -915,7 +917,7 @@ const setFormMode = (mode) => {
                                     :class="formMode === 'manual' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'"
                                     @click="setFormMode('manual')"
                                 >
-                                    Manual
+                                    {{ tr('Manual', 'Manual') }}
                                 </button>
                             </div>
                         </div>
@@ -924,14 +926,14 @@ const setFormMode = (mode) => {
                             <div class="space-y-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">
-                                        {{ customConceptMode ? 'Descripcion del ingreso' : 'Concepto' }}
+                                        {{ customConceptMode ? tr('Descripcion del ingreso', 'Income description') : tr('Concepto', 'Concept') }}
                                     </label>
                                     <select
                                         v-if="!customConceptMode"
                                         v-model="selectedConceptId"
                                         class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                                     >
-                                        <option :value="null" disabled>Selecciona un concepto…</option>
+                                        <option :value="null" disabled>{{ tr('Selecciona un concepto...', 'Select a concept...') }}</option>
                                         <option v-for="c in selectableConcepts" :key="c.is_event_bundle ? `event-${c.event_id}-${c.club_id}` : c.id" :value="c.id">
                                             {{ c.is_event_bundle ? `● ${c.event_title}` : c.concept }} • {{ Number(c.amount ?? 0).toFixed(2) }}
                                         </option>
@@ -941,7 +943,7 @@ const setFormMode = (mode) => {
                                         v-model="customConceptText"
                                         type="text"
                                         class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        placeholder="Ej. Actividad especial Sunbeams"
+                                        :placeholder="tr('Ej. Actividad especial Sunbeams', 'Ex. Special Sunbeams activity')"
                                     />
                                     <div v-if="form.errors.payment_concept_id" class="mt-1 text-sm text-red-600">
                                         {{ form.errors.payment_concept_id }}
@@ -949,7 +951,7 @@ const setFormMode = (mode) => {
                                     <div v-if="selectedEventBundleConcepts.length && !customConceptMode" class="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
                                         <div class="flex items-center justify-between gap-3">
                                             <div>
-                                                <div class="text-xs font-semibold uppercase tracking-wide text-blue-700">Desglose del evento</div>
+                                                <div class="text-xs font-semibold uppercase tracking-wide text-blue-700">{{ tr('Desglose del evento', 'Event breakdown') }}</div>
                                                 <div class="mt-0.5 text-sm font-medium text-gray-900">{{ selectedConcept.event_title }}</div>
                                             </div>
                                             <div class="flex items-center gap-3">
@@ -958,14 +960,14 @@ const setFormMode = (mode) => {
                                                     class="text-xs font-medium text-blue-700 hover:underline"
                                                     @click="selectedEventComponentIds = defaultSelectedEventComponentIds()"
                                                 >
-                                                    Marcar obligatorio
+                                                    {{ tr('Marcar obligatorio', 'Mark required') }}
                                                 </button>
                                                 <button
                                                     type="button"
                                                     class="text-xs font-medium text-blue-700 hover:underline"
                                                     @click="selectedEventComponentIds = pendingEventConcepts.map(concept => concept.id)"
                                                 >
-                                                    Marcar todo
+                                                    {{ tr('Marcar todo', 'Mark all') }}
                                                 </button>
                                             </div>
                                         </div>
@@ -987,11 +989,11 @@ const setFormMode = (mode) => {
                                                     <span class="flex flex-wrap items-center gap-2 font-medium text-gray-900">
                                                         <span>{{ component.event_fee_component?.label || component.concept }}</span>
                                                         <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="isRequiredEventConcept(component) ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'">
-                                                            {{ isRequiredEventConcept(component) ? 'Obligatorio' : 'Opcional' }}
+                                                            {{ isRequiredEventConcept(component) ? tr('Obligatorio', 'Required') : tr('Opcional', 'Optional') }}
                                                         </span>
                                                     </span>
                                                     <span class="block text-xs text-gray-500">
-                                                        Esperado ${{ conceptAmount(component).toFixed(2) }} · Pagado ${{ paymentTotalForConcept(component).toFixed(2) }} · Pendiente ${{ remainingForEventConcept(component).toFixed(2) }}
+                                                        {{ tr('Esperado', 'Expected') }} ${{ conceptAmount(component).toFixed(2) }} · {{ tr('Pagado', 'Paid') }} ${{ paymentTotalForConcept(component).toFixed(2) }} · {{ tr('Pendiente', 'Pending') }} ${{ remainingForEventConcept(component).toFixed(2) }}
                                                     </span>
                                                 </span>
                                             </label>
@@ -1000,7 +1002,7 @@ const setFormMode = (mode) => {
                                 </div>
 
                                 <div v-if="customConceptMode">
-                                    <label class="block text-sm font-medium text-gray-700">Cuenta</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ tr('Cuenta', 'Account') }}</label>
                                     <select
                                         v-model="customPayTo"
                                         class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -1010,9 +1012,9 @@ const setFormMode = (mode) => {
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Pagador</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ tr('Pagador', 'Payer') }}</label>
                                     <div v-if="form.payment_type === 'initial'" class="mt-1 text-xs text-gray-500">
-                                        Saldo inicial no requiere pagador.
+                                        {{ tr('Saldo inicial no requiere pagador.', 'Opening balance does not require a payer.') }}
                                     </div>
                                     <template v-else>
                                         <select
@@ -1020,16 +1022,16 @@ const setFormMode = (mode) => {
                                             :disabled="!payeeOptions.length"
                                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50"
                                         >
-                                            <option :value="null" disabled>Selecciona un pagador…</option>
+                                            <option :value="null" disabled>{{ tr('Selecciona un pagador...', 'Select a payer...') }}</option>
                                             <option v-for="option in payeeOptions" :key="option.key" :value="option.key">
                                                 {{ option.label }}
                                             </option>
                                         </select>
                                         <div v-if="selectedScope && !customConceptMode" class="mt-1 text-xs text-gray-500">
-                                            Alcance aplicado: {{ scopeLabel(selectedScope) }}
+                                            {{ tr('Alcance aplicado', 'Applied scope') }}: {{ scopeLabel(selectedScope) }}
                                         </div>
                                         <div v-else-if="!payeeOptions.length" class="mt-1 text-xs text-amber-700">
-                                            No hay pagadores disponibles para este concepto.
+                                            {{ tr('No hay pagadores disponibles para este concepto.', 'No payers are available for this concept.') }}
                                         </div>
                                         <div v-if="form.errors.member_id" class="mt-1 text-sm text-red-600">
                                             {{ form.errors.member_id }}
@@ -1041,11 +1043,11 @@ const setFormMode = (mode) => {
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Tipo de pago</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ tr('Tipo de pago', 'Payment type') }}</label>
                                     <div class="mt-2 flex flex-wrap items-center gap-2">
                                         <label v-for="t in payment_types" :key="t" class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2">
                                             <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t" v-model="form.payment_type" />
-                                            <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? 'Saldo inicial' : t }}</span>
+                                            <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? tr('Saldo inicial', 'Opening balance') : t }}</span>
                                         </label>
                                     </div>
                                     <div v-if="form.errors.payment_type" class="mt-1 text-sm text-red-600">
@@ -1055,7 +1057,7 @@ const setFormMode = (mode) => {
 
                                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700">Importe</label>
+                                        <label class="block text-sm font-medium text-gray-700">{{ tr('Importe', 'Amount') }}</label>
                                         <div class="mt-1 relative">
                                             <input
                                                 v-model="form.amount_paid"
@@ -1069,14 +1071,14 @@ const setFormMode = (mode) => {
                                             <CurrencyDollarIcon class="pointer-events-none absolute left-2 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                                         </div>
                                         <div v-if="showCreateZeroWarning" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                                            Registrar pagos en 0.00 no es recomendable. Verifica el importe antes de guardar.
+                                            {{ tr('Registrar pagos en 0.00 no es recomendable. Verifica el importe antes de guardar.', 'Recording payments at 0.00 is not recommended. Verify the amount before saving.') }}
                                         </div>
                                         <div v-if="selectedConceptIsReusable && !customConceptMode && form.payment_type !== 'initial'" class="mt-2">
                                             <span
                                                 class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800"
-                                                title="Cada registro debe cobrarse por el importe completo del concepto."
+                                                :title="tr('Cada registro debe cobrarse por el importe completo del concepto.', 'Each record must be charged for the full concept amount.')"
                                             >
-                                                Concepto reutilizable
+                                                {{ tr('Concepto reutilizable', 'Reusable concept') }}
                                             </span>
                                         </div>
                                         <div v-if="form.errors.amount_paid" class="mt-1 text-sm text-red-600">
@@ -1085,7 +1087,7 @@ const setFormMode = (mode) => {
                                     </div>
 
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700">Fecha</label>
+                                        <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                                         <div class="mt-1 relative">
                                             <input
                                                 v-model="form.payment_date"
@@ -1101,53 +1103,53 @@ const setFormMode = (mode) => {
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Notas</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ tr('Notas', 'Notes') }}</label>
                                     <textarea
                                         v-model="form.notes"
                                         rows="3"
                                         class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        placeholder="Observaciones sobre este ingreso…"
+                                        :placeholder="tr('Observaciones sobre este ingreso...', 'Notes about this income...')"
                                     ></textarea>
                                 </div>
                             </div>
 
                             <div class="space-y-4">
                                 <div class="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                                    <div class="text-xs font-semibold uppercase tracking-wide text-blue-700">Resumen</div>
+                                    <div class="text-xs font-semibold uppercase tracking-wide text-blue-700">{{ tr('Resumen', 'Summary') }}</div>
                                     <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                                         <div>
-                                            <div class="text-xs text-blue-700">Modo</div>
-                                            <div class="text-sm font-medium text-gray-900">{{ formMode === 'manual' ? 'Ingreso manual' : 'Por concepto' }}</div>
+                                            <div class="text-xs text-blue-700">{{ tr('Modo', 'Mode') }}</div>
+                                            <div class="text-sm font-medium text-gray-900">{{ formMode === 'manual' ? tr('Ingreso manual', 'Manual income') : tr('Por concepto', 'By concept') }}</div>
                                         </div>
                                         <div>
-                                            <div class="text-xs text-blue-700">Club</div>
+                                            <div class="text-xs text-blue-700">{{ tr('Club', 'Club') }}</div>
                                             <div class="text-sm font-medium text-gray-900">{{ currentClubName }}</div>
                                         </div>
                                         <div v-if="selectedConcept && !customConceptMode">
-                                            <div class="text-xs text-blue-700">Esperado</div>
+                                            <div class="text-xs text-blue-700">{{ tr('Esperado', 'Expected') }}</div>
                                             <div class="text-sm font-medium text-gray-900">{{ selectedConceptExpected || '—' }}</div>
                                         </div>
                                         <div v-if="selectedConcept && !customConceptMode">
-                                            <div class="text-xs text-blue-700">Reusar</div>
-                                            <div class="text-sm font-medium text-gray-900">{{ selectedConceptIsReusable ? 'Si' : 'No' }}</div>
+                                            <div class="text-xs text-blue-700">{{ tr('Reusar', 'Reusable') }}</div>
+                                            <div class="text-sm font-medium text-gray-900">{{ selectedConceptIsReusable ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
                                         </div>
                                         <div v-if="selectedRemainingAmount !== null">
-                                            <div class="text-xs text-blue-700">Pendiente</div>
+                                            <div class="text-xs text-blue-700">{{ tr('Pendiente', 'Pending') }}</div>
                                             <div class="text-sm font-medium text-gray-900">${{ Number(selectedRemainingAmount).toFixed(2) }}</div>
                                         </div>
                                         <div v-if="selectedConcept && !customConceptMode">
-                                            <div class="text-xs text-blue-700">Vence</div>
+                                            <div class="text-xs text-blue-700">{{ tr('Vence', 'Due') }}</div>
                                             <div class="text-sm font-medium text-gray-900">{{ formatISODateLocal(selectedConcept.payment_expected_by) }}</div>
                                         </div>
                                         <div v-if="selectedPayee && !customConceptMode">
-                                            <div class="text-xs text-blue-700">Pagado acumulado</div>
+                                            <div class="text-xs text-blue-700">{{ tr('Pagado acumulado', 'Total paid') }}</div>
                                             <div class="text-sm font-medium text-gray-900">${{ Number(selectedPayeePaymentTotal).toFixed(2) }}</div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <div v-if="form.payment_type === 'zelle'">
-                                    <label class="block text-sm font-medium text-gray-700">Teléfono Zelle del remitente</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ tr('Teléfono Zelle del remitente', 'Sender Zelle phone') }}</label>
                                     <input
                                         v-model="form.zelle_phone"
                                         type="text"
@@ -1156,7 +1158,7 @@ const setFormMode = (mode) => {
                                         placeholder="(555) 555-5555"
                                     />
                                     <div class="mt-1 text-xs text-gray-500">
-                                        La cuenta bancaria del club define el número receptor; aquí guarda el número desde donde se envió el dinero.
+                                        {{ tr('La cuenta bancaria del club define el número receptor; aquí guarda el número desde donde se envió el dinero.', 'The club bank account defines the receiving number; store here the number where the money was sent from.') }}
                                     </div>
                                     <div v-if="form.errors.zelle_phone" class="mt-1 text-sm text-red-600">
                                         {{ form.errors.zelle_phone }}
@@ -1164,7 +1166,7 @@ const setFormMode = (mode) => {
                                 </div>
 
                                 <div v-if="form.payment_type === 'check'">
-                                    <label class="block text-sm font-medium text-gray-700">Foto del cheque</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ tr('Foto del cheque', 'Check photo') }}</label>
                                     <div class="mt-1 flex items-center gap-3">
                                         <input
                                             type="file"
@@ -1187,7 +1189,7 @@ const setFormMode = (mode) => {
                                 class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
                             >
                                 <ArrowPathIcon v-if="submitting" class="h-4 w-4 animate-spin" />
-                                <span>{{ submitting ? 'Guardando…' : 'Guardar ingreso' }}</span>
+                                <span>{{ submitting ? tr('Guardando...', 'Saving...') : tr('Guardar ingreso', 'Save income') }}</span>
                             </button>
                         </div>
 
@@ -1200,28 +1202,28 @@ const setFormMode = (mode) => {
 
                     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <div class="rounded-2xl border border-gray-200 p-4 shadow-sm">
-                            <h3 class="text-sm font-semibold text-gray-900">Guia rapida</h3>
+                            <h3 class="text-sm font-semibold text-gray-900">{{ tr('Guia rapida', 'Quick Guide') }}</h3>
                             <ul class="mt-3 space-y-2 text-sm text-gray-600">
-                                <li>Usa <strong>Por concepto</strong> para cuotas o cobros ya definidos.</li>
-                                <li>Usa <strong>Manual</strong> para ingresos extraordinarios.</li>
-                                <li>Si el concepto ya fue cubierto por completo, ese pagador desaparece de la lista.</li>
-                                <li>En pagos parciales puedes registrar menos del pendiente, pero no mas.</li>
+                                <li>{{ tr('Usa', 'Use') }} <strong>{{ tr('Por concepto', 'By concept') }}</strong> {{ tr('para cuotas o cobros ya definidos.', 'for fees or charges already defined.') }}</li>
+                                <li>{{ tr('Usa', 'Use') }} <strong>{{ tr('Manual', 'Manual') }}</strong> {{ tr('para ingresos extraordinarios.', 'for extraordinary income.') }}</li>
+                                <li>{{ tr('Si el concepto ya fue cubierto por completo, ese pagador desaparece de la lista.', 'If the concept is fully covered, that payer disappears from the list.') }}</li>
+                                <li>{{ tr('En pagos parciales puedes registrar menos del pendiente, pero no mas.', 'For partial payments you can record less than the pending amount, but not more.') }}</li>
                             </ul>
                         </div>
 
                         <div class="rounded-2xl border border-gray-200 p-4 shadow-sm">
-                            <h3 class="text-sm font-semibold text-gray-900">Estado actual</h3>
+                            <h3 class="text-sm font-semibold text-gray-900">{{ tr('Estado actual', 'Current Status') }}</h3>
                             <dl class="mt-3 space-y-3 text-sm">
                                 <div class="flex items-center justify-between gap-3">
-                                    <dt class="text-gray-500">Conceptos activos</dt>
+                                    <dt class="text-gray-500">{{ tr('Conceptos activos', 'Active concepts') }}</dt>
                                     <dd class="font-medium text-gray-900">{{ filteredConcepts.length }}</dd>
                                 </div>
                                 <div class="flex items-center justify-between gap-3">
-                                    <dt class="text-gray-500">Pagadores disponibles</dt>
+                                    <dt class="text-gray-500">{{ tr('Pagadores disponibles', 'Available payers') }}</dt>
                                     <dd class="font-medium text-gray-900">{{ payeeOptions.length }}</dd>
                                 </div>
                                 <div class="flex items-center justify-between gap-3">
-                                    <dt class="text-gray-500">Ingresos en esta vista</dt>
+                                    <dt class="text-gray-500">{{ tr('Ingresos en esta vista', 'Income in this view') }}</dt>
                                     <dd class="font-medium text-gray-900">{{ filteredPayments.length }}</dd>
                                 </div>
                             </dl>
@@ -1236,21 +1238,21 @@ const setFormMode = (mode) => {
                         @click="showPendingParentTransfers = !showPendingParentTransfers"
                     >
                         <div>
-                            <h3 class="text-sm font-semibold text-gray-900">Transferencias pendientes de padres</h3>
-                            <p class="mt-1 text-xs text-gray-600">Comprobantes enviados desde el portal de padres para validar fondos y generar el recibo.</p>
+                            <h3 class="text-sm font-semibold text-gray-900">{{ tr('Transferencias pendientes de padres', 'Pending Parent Transfers') }}</h3>
+                            <p class="mt-1 text-xs text-gray-600">{{ tr('Comprobantes enviados desde el portal de padres para validar fondos y generar el recibo.', 'Receipts sent from the parent portal to validate funds and generate the receipt.') }}</p>
                         </div>
                         <div class="flex items-center gap-3">
                             <div class="text-xs font-medium text-blue-800">
-                                {{ props.pending_parent_transfers.length }} pendientes
+                                {{ props.pending_parent_transfers.length }} {{ tr('pendientes', 'pending') }}
                             </div>
                             <span class="text-xs font-semibold text-blue-900">
-                                {{ showPendingParentTransfers ? 'Ocultar' : 'Mostrar' }}
+                                {{ showPendingParentTransfers ? tr('Ocultar', 'Hide') : tr('Mostrar', 'Show') }}
                             </span>
                         </div>
                     </button>
 
                     <div v-if="!props.pending_parent_transfers.length" class="mt-3 text-sm text-gray-600">
-                        No hay transferencias pendientes de validar.
+                        {{ tr('No hay transferencias pendientes de validar.', 'There are no pending transfers to validate.') }}
                     </div>
 
                     <div v-if="parentTransferError" class="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1261,12 +1263,12 @@ const setFormMode = (mode) => {
                         <table class="min-w-full text-sm text-gray-700">
                             <thead class="bg-blue-50/70">
                                 <tr>
-                                    <th class="px-3 py-2 text-left font-semibold">Menor / padre</th>
-                                    <th class="px-3 py-2 text-left font-semibold">Concepto</th>
-                                    <th class="px-3 py-2 text-left font-semibold">Monto</th>
-                                    <th class="px-3 py-2 text-left font-semibold">Fecha</th>
-                                    <th class="px-3 py-2 text-left font-semibold">Comprobante</th>
-                                    <th class="px-3 py-2 text-left font-semibold">Acciones</th>
+                                    <th class="px-3 py-2 text-left font-semibold">{{ tr('Menor / padre', 'Child / parent') }}</th>
+                                    <th class="px-3 py-2 text-left font-semibold">{{ tr('Concepto', 'Concept') }}</th>
+                                    <th class="px-3 py-2 text-left font-semibold">{{ tr('Monto', 'Amount') }}</th>
+                                    <th class="px-3 py-2 text-left font-semibold">{{ tr('Fecha', 'Date') }}</th>
+                                    <th class="px-3 py-2 text-left font-semibold">{{ tr('Comprobante', 'Proof') }}</th>
+                                    <th class="px-3 py-2 text-left font-semibold">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1283,7 +1285,7 @@ const setFormMode = (mode) => {
                                     <td class="px-3 py-2">
                                         <div class="font-medium text-gray-900">${{ Number(transfer.amount || 0).toFixed(2) }}</div>
                                         <div v-if="transfer.expected_amount !== null && transfer.expected_amount !== undefined" class="text-xs text-gray-500">
-                                            Esperado: ${{ Number(transfer.expected_amount || 0).toFixed(2) }}
+                                            {{ tr('Esperado', 'Expected') }}: ${{ Number(transfer.expected_amount || 0).toFixed(2) }}
                                         </div>
                                     </td>
                                     <td class="px-3 py-2">
@@ -1292,7 +1294,7 @@ const setFormMode = (mode) => {
                                     </td>
                                     <td class="px-3 py-2">
                                         <a v-if="transfer.receipt_image_url" :href="transfer.receipt_image_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
-                                            Ver imagen
+                                            {{ tr('Ver imagen', 'View image') }}
                                         </a>
                                         <div v-if="transfer.notes" class="mt-1 text-xs text-gray-500">{{ transfer.notes }}</div>
                                     </td>
@@ -1304,7 +1306,7 @@ const setFormMode = (mode) => {
                                                 :disabled="activeParentTransferAction === `approve:${transfer.id}` || activeParentTransferAction === `reject:${transfer.id}`"
                                                 @click="approveParentTransfer(transfer)"
                                             >
-                                                {{ activeParentTransferAction === `approve:${transfer.id}` ? 'Aprobando...' : 'Aprobar' }}
+                                                {{ activeParentTransferAction === `approve:${transfer.id}` ? tr('Aprobando...', 'Approving...') : tr('Aprobar', 'Approve') }}
                                             </button>
                                             <button
                                                 type="button"
@@ -1312,7 +1314,7 @@ const setFormMode = (mode) => {
                                                 :disabled="activeParentTransferAction === `approve:${transfer.id}` || activeParentTransferAction === `reject:${transfer.id}`"
                                                 @click="rejectParentTransfer(transfer)"
                                             >
-                                                {{ activeParentTransferAction === `reject:${transfer.id}` ? 'Rechazando...' : 'Rechazar' }}
+                                                {{ activeParentTransferAction === `reject:${transfer.id}` ? tr('Rechazando...', 'Rejecting...') : tr('Rechazar', 'Reject') }}
                                             </button>
                                         </div>
                                     </td>
@@ -1322,7 +1324,7 @@ const setFormMode = (mode) => {
                     </div>
 
                     <div v-else-if="props.pending_parent_transfers.length" class="mt-3 text-sm text-blue-900">
-                        La lista de transferencias pendientes esta colapsada.
+                        {{ tr('La lista de transferencias pendientes esta colapsada.', 'The pending transfers list is collapsed.') }}
                     </div>
                 </section>
 
@@ -1333,21 +1335,21 @@ const setFormMode = (mode) => {
                         @click="showPendingReceipts = !showPendingReceipts"
                     >
                         <div>
-                            <h3 class="text-sm font-semibold text-gray-900">Recibos pendientes de enviar</h3>
-                            <p class="mt-1 text-xs text-gray-600">Recibos que requieren seguimiento manual por miembro o falta de correo.</p>
+                            <h3 class="text-sm font-semibold text-gray-900">{{ tr('Recibos pendientes de enviar', 'Receipts Pending Send') }}</h3>
+                            <p class="mt-1 text-xs text-gray-600">{{ tr('Recibos que requieren seguimiento manual por miembro o falta de correo.', 'Receipts that require manual follow-up by member or missing email.') }}</p>
                         </div>
                         <div class="flex items-center gap-3">
                             <div class="text-xs font-medium text-amber-800">
-                                {{ props.pending_receipts.length }} pendientes
+                                {{ props.pending_receipts.length }} {{ tr('pendientes', 'pending') }}
                             </div>
                             <span class="text-xs font-semibold text-amber-900">
-                                {{ showPendingReceipts ? 'Ocultar' : 'Mostrar' }}
+                                {{ showPendingReceipts ? tr('Ocultar', 'Hide') : tr('Mostrar', 'Show') }}
                             </span>
                         </div>
                     </button>
 
                     <div v-if="!props.pending_receipts.length" class="mt-3 text-sm text-gray-600">
-                        No hay recibos pendientes de envio manual.
+                        {{ tr('No hay recibos pendientes de envio manual.', 'There are no receipts pending manual send.') }}
                     </div>
 
                     <div v-else-if="showPendingReceipts" class="mt-4 space-y-4">
@@ -1369,7 +1371,7 @@ const setFormMode = (mode) => {
                                     :disabled="bulkDownloadKey === group.key"
                                     @click="downloadReceiptGroup(group)"
                                 >
-                                    {{ bulkDownloadKey === group.key ? 'Preparando ZIP...' : 'Descargar todos' }}
+                                    {{ bulkDownloadKey === group.key ? tr('Preparando ZIP...', 'Preparing ZIP...') : tr('Descargar todos', 'Download all') }}
                                 </button>
                             </div>
 
@@ -1377,12 +1379,12 @@ const setFormMode = (mode) => {
                                 <table class="min-w-full text-sm text-gray-700">
                                     <thead class="bg-amber-50/60">
                                         <tr>
-                                            <th class="px-3 py-2 text-left font-semibold">Recibo</th>
-                                            <th class="px-3 py-2 text-left font-semibold">Concepto</th>
-                                            <th class="px-3 py-2 text-left font-semibold">Correo</th>
-                                            <th class="px-3 py-2 text-left font-semibold">Motivo</th>
-                                            <th class="px-3 py-2 text-left font-semibold">Ultima descarga</th>
-                                            <th class="px-3 py-2 text-left font-semibold">Accion</th>
+                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Recibo', 'Receipt') }}</th>
+                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Concepto', 'Concept') }}</th>
+                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Correo', 'Email') }}</th>
+                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Motivo', 'Reason') }}</th>
+                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Ultima descarga', 'Last download') }}</th>
+                                            <th class="px-3 py-2 text-left font-semibold">{{ tr('Accion', 'Action') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1396,7 +1398,7 @@ const setFormMode = (mode) => {
                                                 <div class="text-xs text-gray-500">${{ Number(receipt.amount_paid || 0).toFixed(2) }}</div>
                                             </td>
                                             <td class="px-3 py-2">
-                                                {{ receipt.issued_to_email || 'Sin correo' }}
+                                                {{ receipt.issued_to_email || tr('Sin correo', 'No email') }}
                                             </td>
                                             <td class="px-3 py-2">
                                                 <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -1408,7 +1410,7 @@ const setFormMode = (mode) => {
                                             </td>
                                             <td class="px-3 py-2">
                                                 <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
-                                                    Descargar
+                                                    {{ tr('Descargar', 'Download') }}
                                                 </a>
                                             </td>
                                         </tr>
@@ -1419,7 +1421,7 @@ const setFormMode = (mode) => {
                     </div>
 
                     <div v-else class="mt-3 text-sm text-amber-900">
-                        La lista de recibos pendientes esta colapsada.
+                        {{ tr('La lista de recibos pendientes esta colapsada.', 'The pending receipts list is collapsed.') }}
                     </div>
                 </section>
 
@@ -1427,11 +1429,11 @@ const setFormMode = (mode) => {
                     <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
                             <UserGroupIcon class="h-5 w-5 text-gray-500" />
-                            <h3 class="text-sm font-semibold text-gray-900">Ingresos recientes</h3>
+                            <h3 class="text-sm font-semibold text-gray-900">{{ tr('Ingresos recientes', 'Recent Income') }}</h3>
                         </div>
 
                         <div class="relative w-64">
-                            <input v-model="searchTerm" type="text" placeholder="Buscar por nombre o concepto"
+                            <input v-model="searchTerm" type="text" :placeholder="tr('Buscar por nombre o concepto', 'Search by name or concept')"
                                 class="w-full rounded-lg border border-gray-300 py-1.5 pl-3 pr-8 text-sm focus:border-blue-500 focus:ring-blue-500" />
                             <svg class="pointer-events-none absolute right-2 top-2.5 h-4 w-4 text-gray-400" fill="none"
                                 viewBox="0 0 24 24" stroke="currentColor">
@@ -1443,11 +1445,11 @@ const setFormMode = (mode) => {
 
                     <div v-if="(props.payments || []).length"
                         class="mt-2 flex items-center justify-between text-xs text-gray-600">
-                        <div>Mostrando {{ filteredPayments.length ? startIdx + 1 : 0 }}–{{ endIdx }} de {{ filteredPayments.length }}</div>
-                        <div>10 por pagina</div>
+                        <div>{{ tr('Mostrando', 'Showing') }} {{ filteredPayments.length ? startIdx + 1 : 0 }}-{{ endIdx }} {{ tr('de', 'of') }} {{ filteredPayments.length }}</div>
+                        <div>10 {{ tr('por pagina', 'per page') }}</div>
                     </div>
 
-                    <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">No hay ingresos aun.</div>
+                    <div v-if="!props.payments?.length" class="mt-2 text-sm text-gray-500">{{ tr('No hay ingresos aun.', 'There is no income yet.') }}</div>
 
                     <ul v-else class="mt-2 divide-y divide-gray-200 rounded-2xl border border-gray-200">
                         <li v-for="p in pagedPayments" :key="p.id" class="p-3 sm:p-4">
@@ -1473,25 +1475,25 @@ const setFormMode = (mode) => {
 
                                         <span v-if="p.concept?.reusable"
                                             class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-800">
-                                            Reutilizable
+                                            {{ tr('Reutilizable', 'Reusable') }}
                                         </span>
                                         <span v-else-if="Number(p.balance_due_after ?? 0) > 0"
                                             class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                                            title="Saldo restante despues de este pago">
-                                            Pendiente ${{ Number(p.balance_due_after).toFixed(2) }}
+                                            :title="tr('Saldo restante despues de este pago', 'Remaining balance after this payment')">
+                                            {{ tr('Pendiente', 'Pending') }} ${{ Number(p.balance_due_after).toFixed(2) }}
                                         </span>
                                         <span v-else
                                             class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                                            Pagado completo
+                                            {{ tr('Pagado completo', 'Paid in full') }}
                                         </span>
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
                                         <b>{{ paymentConceptLabel(p) }}</b>
-                                        • Esperado: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
-                                        <span v-if="p.pay_to || p.account_label"> • Cuenta: {{ p.account_label ?? p.pay_to }}</span>
-                                        • Pagado: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
-                                        • Fecha: {{ formatISODateLocal(p.payment_date) }}
+                                        • {{ tr('Esperado', 'Expected') }}: {{ p.expected_amount ?? p.concept?.amount ?? '—' }}
+                                        <span v-if="p.pay_to || p.account_label"> • {{ tr('Cuenta', 'Account') }}: {{ p.account_label ?? p.pay_to }}</span>
+                                        • {{ tr('Pagado', 'Paid') }}: ${{ Number(p.amount_paid ?? 0).toFixed(2) }}
+                                        • {{ tr('Fecha', 'Date') }}: {{ formatISODateLocal(p.payment_date) }}
                                     </div>
                                     <div v-if="p.allocations?.length" class="mt-2 grid gap-1 text-xs text-gray-600 sm:grid-cols-2">
                                         <div
@@ -1504,13 +1506,13 @@ const setFormMode = (mode) => {
                                     </div>
 
                                     <div class="mt-0.5 text-xs text-gray-600">
-                                        Recibido por: {{ p.received_by?.name ?? '—' }}
-	                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • Zelle remitente: {{ p.zelle_phone }}</span>
+                                        {{ tr('Recibido por', 'Received by') }}: {{ p.received_by?.name ?? '—' }}
+	                                        <span v-if="p.payment_type === 'zelle' && p.zelle_phone"> • {{ tr('Zelle remitente', 'Sender Zelle') }}: {{ p.zelle_phone }}</span>
                                     </div>
 
                                     <div v-if="p.payment_type === 'check' && p.check_image_path" class="mt-2">
-                                        <a :href="`/storage/${p.check_image_path}`" target="_blank" rel="noopener" class="inline-block" title="Abrir imagen del cheque">
-                                            <img :src="`/storage/${p.check_image_path}`" alt="Imagen del cheque"
+                                        <a :href="`/storage/${p.check_image_path}`" target="_blank" rel="noopener" class="inline-block" :title="tr('Abrir imagen del cheque', 'Open check image')">
+                                            <img :src="`/storage/${p.check_image_path}`" :alt="tr('Imagen del cheque', 'Check image')"
                                                 class="h-24 w-auto rounded border object-cover" />
                                         </a>
                                     </div>
@@ -1530,7 +1532,7 @@ const setFormMode = (mode) => {
                                             class="text-xs font-medium text-emerald-700 hover:underline"
                                             @click="downloadReceipt(p)"
                                         >
-                                            Recibo
+                                            {{ tr('Recibo', 'Receipt') }}
                                         </button>
                                         <button
                                             v-if="canEditPayments"
@@ -1538,14 +1540,14 @@ const setFormMode = (mode) => {
                                             class="text-xs font-medium text-blue-600 hover:underline"
                                             @click="startEditPayment(p)"
                                         >
-                                            Editar
+                                            {{ tr('Editar', 'Edit') }}
                                         </button>
                                     </div>
                                     <div v-if="p.receipt?.id" class="mt-1 text-[11px] text-gray-500">
-                                        Ultima descarga: {{ formatDateTimeLocal(p.receipt.last_downloaded_at) }}
+                                        {{ tr('Ultima descarga', 'Last download') }}: {{ formatDateTimeLocal(p.receipt.last_downloaded_at) }}
                                     </div>
                                     <div v-if="props.auth_user?.profile_type === 'club_director'" class="mt-1 text-[11px] text-gray-500">
-                                        Correcciones: usa el modulo de correcciones contables para revertir ingresos.
+                                        {{ tr('Correcciones: usa el modulo de correcciones contables para revertir ingresos.', 'Corrections: use the accounting corrections module to reverse income.') }}
                                     </div>
                                 </div>
                             </div>
@@ -1556,14 +1558,14 @@ const setFormMode = (mode) => {
                     <div v-if="filteredPayments.length > pageSize" class="mt-3 flex items-center justify-between">
                         <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="page <= 1" @click="go(page - 1)">
-                            Anterior
+                            {{ tr('Anterior', 'Previous') }}
                         </button>
 
-                        <div class="text-xs text-gray-600">Pagina {{ page }} de {{ totalPages }}</div>
+                        <div class="text-xs text-gray-600">{{ tr('Pagina', 'Page') }} {{ page }} {{ tr('de', 'of') }} {{ totalPages }}</div>
 
                         <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             :disabled="page >= totalPages" @click="go(page + 1)">
-                            Siguiente
+                            {{ tr('Siguiente', 'Next') }}
                         </button>
                     </div>
                 </section>
@@ -1573,20 +1575,20 @@ const setFormMode = (mode) => {
                 <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
                     <div class="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
                         <div>
-                            <h3 class="text-base font-semibold text-gray-900">Editar ingreso</h3>
+                            <h3 class="text-base font-semibold text-gray-900">{{ tr('Editar ingreso', 'Edit Income') }}</h3>
                             <p class="mt-1 text-sm text-gray-600">
                                 {{ editingPayment.member_display_name ?? editingPayment.staff_display_name ?? '—' }}
                                 • {{ editingPayment.concept?.concept ?? editingPayment.concept_text ?? '—' }}
                             </p>
                         </div>
                         <button type="button" class="text-sm text-gray-500 hover:text-gray-800" @click="cancelEditPayment">
-                            Cerrar
+                            {{ tr('Cerrar', 'Close') }}
                         </button>
                     </div>
 
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Importe</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Importe', 'Amount') }}</label>
                             <input
                                 v-model="editForm.amount_paid"
                                 type="number"
@@ -1595,14 +1597,14 @@ const setFormMode = (mode) => {
                                 class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                             />
                             <div v-if="showEditZeroWarning" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                                Registrar pagos en 0.00 no es recomendable. Corrige el importe antes de guardar.
+                                {{ tr('Registrar pagos en 0.00 no es recomendable. Corrige el importe antes de guardar.', 'Recording payments at 0.00 is not recommended. Correct the amount before saving.') }}
                             </div>
                             <div v-if="editForm.errors.amount_paid" class="mt-1 text-sm text-red-600">
                                 {{ editForm.errors.amount_paid }}
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Fecha</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                             <input
                                 v-model="editForm.payment_date"
                                 type="date"
@@ -1615,11 +1617,11 @@ const setFormMode = (mode) => {
                     </div>
 
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Tipo de pago</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Tipo de pago', 'Payment type') }}</label>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                             <label v-for="t in payment_types" :key="`edit-modal-${t}`" class="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2">
                                 <input type="radio" class="text-blue-600 focus:ring-blue-500" :value="t" v-model="editForm.payment_type" />
-                                <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? 'Saldo inicial' : t }}</span>
+                                <span class="capitalize text-sm text-gray-700">{{ t === 'initial' ? tr('Saldo inicial', 'Opening balance') : t }}</span>
                             </label>
                         </div>
                         <div v-if="editForm.errors.payment_type" class="mt-1 text-sm text-red-600">
@@ -1628,7 +1630,7 @@ const setFormMode = (mode) => {
                     </div>
 
                     <div v-if="editForm.payment_type === 'zelle'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Teléfono Zelle del remitente</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Teléfono Zelle del remitente', 'Sender Zelle phone') }}</label>
                         <input
                             v-model="editForm.zelle_phone"
                             type="text"
@@ -1637,7 +1639,7 @@ const setFormMode = (mode) => {
                             placeholder="(555) 555-5555"
                         />
                         <div class="mt-1 text-xs text-gray-500">
-                            La cuenta bancaria del club define el número receptor; aquí guarda el número desde donde se envió el dinero.
+                            {{ tr('La cuenta bancaria del club define el número receptor; aquí guarda el número desde donde se envió el dinero.', 'The club bank account defines the receiving number; store here the number where the money was sent from.') }}
                         </div>
                         <div v-if="editForm.errors.zelle_phone" class="mt-1 text-sm text-red-600">
                             {{ editForm.errors.zelle_phone }}
@@ -1645,7 +1647,7 @@ const setFormMode = (mode) => {
                     </div>
 
                     <div v-if="editForm.payment_type === 'check'" class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Foto del cheque</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Foto del cheque', 'Check photo') }}</label>
                         <div class="mt-1 flex items-center gap-3">
                             <input
                                 type="file"
@@ -1654,17 +1656,17 @@ const setFormMode = (mode) => {
                                 class="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-50"
                             />
                             <PhotoIcon v-if="!editCheckPreviewUrl" class="h-6 w-6 text-gray-400" />
-                            <img v-if="editCheckPreviewUrl" :src="editCheckPreviewUrl" alt="Check preview" class="h-10 w-auto rounded border" />
+                            <img v-if="editCheckPreviewUrl" :src="editCheckPreviewUrl" :alt="tr('Vista previa del cheque', 'Check preview')" class="h-10 w-auto rounded border" />
                         </div>
                     </div>
 
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700">Notas</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Notas', 'Notes') }}</label>
                         <textarea
                             v-model="editForm.notes"
                             rows="3"
                             class="mt-1 w-full rounded-lg border-gray-300 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="Observaciones sobre este ingreso…"
+                            :placeholder="tr('Observaciones sobre este ingreso...', 'Notes about this income...')"
                         ></textarea>
                     </div>
 
@@ -1678,14 +1680,14 @@ const setFormMode = (mode) => {
                             class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-white"
                             @click="cancelEditPayment"
                         >
-                            Cancelar
+                            {{ tr('Cancelar', 'Cancel') }}
                         </button>
                         <button
                             type="button"
                             class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                             @click="submitEditPayment"
                         >
-                            Guardar cambios
+                            {{ tr('Guardar cambios', 'Save changes') }}
                         </button>
                     </div>
                 </div>
