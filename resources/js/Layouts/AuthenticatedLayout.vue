@@ -6,8 +6,11 @@ import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link } from '@inertiajs/vue3';
+import LocaleSwitcher from '@/Components/LocaleSwitcher.vue';
+import { useLocale } from '@/Composables/useLocale';
 
 const showingNavigationDropdown = ref(false);
+const { t } = useLocale();
 const hasDashboardRoute = computed(() => Boolean(window?.Ziggy?.routes?.dashboard));
 const dashboardHref = computed(() => (hasDashboardRoute.value ? route('dashboard') : '/dashboard'));
 const dashboardActive = computed(() =>
@@ -42,7 +45,7 @@ const dashboardActive = computed(() =>
                                     :href="dashboardHref"
                                     :active="dashboardActive"
                                 >
-                                    Panel
+                                    {{ t('dashboard') }}
                                 </NavLink>
                             </div>
                         </div>
@@ -81,12 +84,15 @@ const dashboardActive = computed(() =>
                                         >
                                             Profile
                                         </DropdownLink> -->
+                                        <div class="px-3 py-2">
+                                            <LocaleSwitcher :compact="true" />
+                                        </div>
                                         <DropdownLink
                                             :href="route('logout')"
                                             method="post"
                                             as="button"
                                         >
-                                            Cerrar sesión
+                                            {{ t('logout') }}
                                         </DropdownLink>
                                     </template>
                                 </Dropdown>
@@ -149,7 +155,7 @@ const dashboardActive = computed(() =>
                             :href="dashboardHref"
                             :active="dashboardActive"
                         >
-                            Panel
+                            {{ t('dashboard') }}
                         </ResponsiveNavLink>
                     </div>
 
@@ -177,7 +183,7 @@ const dashboardActive = computed(() =>
                                 method="post"
                                 as="button"
                             >
-                                Cerrar sesión
+                                {{ t('logout') }}
                             </ResponsiveNavLink>
                         </div>
                     </div>

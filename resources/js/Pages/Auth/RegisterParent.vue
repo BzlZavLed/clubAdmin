@@ -1,5 +1,7 @@
 <script setup>
 import axios from 'axios'
+import LocaleSwitcher from '@/Components/LocaleSwitcher.vue'
+import { useLocale } from '@/Composables/useLocale'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import { ref } from 'vue'
 import { useToast } from 'vue-toastification'
@@ -9,6 +11,7 @@ const clubs = ref([])
 const resolvedChurch = ref(null)
 const resolvingInvite = ref(false)
 const inviteResolved = ref(false)
+const { tr } = useLocale()
 
 const form = useForm({
     name: '',
@@ -31,7 +34,7 @@ const resolveInvite = async () => {
     form.club_id = ''
 
     if (!form.invite_code) {
-        form.setError('invite_code', 'Ingresa el código de invitación de tu iglesia.')
+        form.setError('invite_code', tr('Ingresa el código de invitación de tu iglesia.', 'Enter your church invitation code.'))
         return
     }
 
@@ -48,10 +51,10 @@ const resolveInvite = async () => {
         inviteResolved.value = true
 
         if (!clubs.value.length) {
-            toast.error('La iglesia fue encontrada, pero no tiene clubes activos disponibles.')
+            toast.error(tr('La iglesia fue encontrada, pero no tiene clubes activos disponibles.', 'The church was found, but it has no active clubs available.'))
         }
     } catch (error) {
-        const message = error.response?.data?.message || 'Código inválido o expirado.'
+        const message = error.response?.data?.message || tr('Código inválido o expirado.', 'Invalid or expired code.')
         form.setError('invite_code', message)
         toast.error(message)
     } finally {
@@ -67,15 +70,18 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="Registro de padres" />
+    <Head :title="tr('Registro de padres', 'Parent registration')" />
 
     <div class="min-h-screen flex items-center justify-center bg-gray-100 px-4">
         <div class="max-w-md w-full bg-white p-6 rounded shadow">
-            <h1 class="text-2xl font-bold mb-4 text-center">Registro de padres</h1>
+            <h1 class="text-2xl font-bold mb-4 text-center">{{ tr('Registro de padres', 'Parent registration') }}</h1>
+            <div class="mb-4">
+                <LocaleSwitcher :compact="true" />
+            </div>
 
             <form @submit.prevent="submit" class="space-y-4">
                 <div class="rounded border border-amber-200 bg-amber-50 p-3">
-                    <label for="invite_code" class="block text-sm font-medium text-gray-700">Código de invitación de la iglesia</label>
+                    <label for="invite_code" class="block text-sm font-medium text-gray-700">{{ tr('Código de invitación de la iglesia', 'Church invitation code') }}</label>
                     <div class="mt-1 flex gap-2">
                         <input
                             v-model="form.invite_code"
@@ -83,7 +89,7 @@ const submit = () => {
                             id="invite_code"
                             required
                             class="w-full p-2 border rounded uppercase"
-                            placeholder="Ej. ABC123"
+                            :placeholder="tr('Ej. ABC123', 'Ex. ABC123')"
                         />
                         <button
                             type="button"
@@ -91,50 +97,50 @@ const submit = () => {
                             :disabled="resolvingInvite"
                             @click="resolveInvite"
                         >
-                            {{ resolvingInvite ? 'Validando...' : 'Validar' }}
+                            {{ resolvingInvite ? tr('Validando...', 'Validating...') : tr('Validar', 'Validate') }}
                         </button>
                     </div>
-                    <p class="mt-1 text-xs text-gray-600">Este código vincula tu cuenta con la iglesia correcta y limita la lista de clubes disponibles.</p>
+                    <p class="mt-1 text-xs text-gray-600">{{ tr('Este código vincula tu cuenta con la iglesia correcta y limita la lista de clubes disponibles.', 'This code links your account to the correct church and limits the available club list.') }}</p>
                     <p v-if="form.errors.invite_code" class="text-sm text-red-600 mt-1">{{ form.errors.invite_code }}</p>
                 </div>
 
                 <div v-if="resolvedChurch" class="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm">
                     <div class="font-semibold text-emerald-900">{{ resolvedChurch.church_name }}</div>
                     <div class="text-emerald-800">
-                        {{ resolvedChurch.district_name || 'Distrito no definido' }}
+                        {{ resolvedChurch.district_name || tr('Distrito no definido', 'District not defined') }}
                         <span v-if="resolvedChurch.association_name"> • {{ resolvedChurch.association_name }}</span>
                         <span v-if="resolvedChurch.union_name"> • {{ resolvedChurch.union_name }}</span>
                     </div>
                     <div class="text-xs text-emerald-700">
-                        Sistema: {{ resolvedChurch.evaluation_system === 'carpetas' ? 'Carpetas' : 'Honores' }}
+                        {{ tr('Sistema', 'System') }}: {{ resolvedChurch.evaluation_system === 'carpetas' ? tr('Carpetas', 'Folders') : tr('Honores', 'Honors') }}
                     </div>
                 </div>
 
                 <div>
-                    <label for="name" class="block text-sm font-medium text-gray-700">Nombre completo</label>
+                    <label for="name" class="block text-sm font-medium text-gray-700">{{ tr('Nombre completo', 'Full name') }}</label>
                     <input v-model="form.name" type="text" id="name" required class="w-full mt-1 p-2 border rounded" />
                     <p v-if="form.errors.name" class="text-sm text-red-600 mt-1">{{ form.errors.name }}</p>
                 </div>
 
                 <div>
-                    <label for="email" class="block text-sm font-medium text-gray-700">Correo electrónico</label>
+                    <label for="email" class="block text-sm font-medium text-gray-700">{{ tr('Correo electrónico', 'Email') }}</label>
                     <input v-model="form.email" type="email" id="email" required class="w-full mt-1 p-2 border rounded" />
                     <p v-if="form.errors.email" class="text-sm text-red-600 mt-1">{{ form.errors.email }}</p>
                 </div>
 
                 <div>
-                    <label for="password" class="block text-sm font-medium text-gray-700">Contraseña</label>
+                    <label for="password" class="block text-sm font-medium text-gray-700">{{ tr('Contraseña', 'Password') }}</label>
                     <input v-model="form.password" type="password" id="password" required class="w-full mt-1 p-2 border rounded" />
                     <p v-if="form.errors.password" class="text-sm text-red-600 mt-1">{{ form.errors.password }}</p>
                 </div>
 
                 <div>
-                    <label for="password_confirmation" class="block text-sm font-medium text-gray-700">Confirmar contraseña</label>
+                    <label for="password_confirmation" class="block text-sm font-medium text-gray-700">{{ tr('Confirmar contraseña', 'Confirm password') }}</label>
                     <input v-model="form.password_confirmation" type="password" id="password_confirmation" required class="w-full mt-1 p-2 border rounded" />
                 </div>
 
                 <div class="mb-4">
-                    <label for="club_id" class="block text-sm font-medium text-gray-700">Seleccionar club</label>
+                    <label for="club_id" class="block text-sm font-medium text-gray-700">{{ tr('Seleccionar club', 'Select club') }}</label>
                     <select
                         v-model="form.club_id"
                         id="club_id"
@@ -142,9 +148,9 @@ const submit = () => {
                         required
                         :disabled="!inviteResolved || !clubs.length"
                     >
-                        <option disabled value="">-- Selecciona un club --</option>
+                        <option disabled value="">-- {{ tr('Selecciona un club', 'Select a club') }} --</option>
                         <option v-for="club in clubs" :key="club.id" :value="club.id">
-                            {{ club.club_name }} ({{ club.club_type }}) - {{ club.evaluation_system === 'carpetas' ? 'Carpetas' : 'Honores' }}
+                            {{ club.club_name }} ({{ club.club_type }}) - {{ club.evaluation_system === 'carpetas' ? tr('Carpetas', 'Folders') : tr('Honores', 'Honors') }}
                         </option>
                     </select>
                     <span v-if="form.errors.club_id" class="text-red-500 text-sm">{{ form.errors.club_id }}</span>
@@ -155,13 +161,13 @@ const submit = () => {
                     class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded disabled:opacity-60"
                     :disabled="form.processing || !inviteResolved || !form.club_id"
                 >
-                    Registrarse
+                    {{ tr('Registrarse', 'Register') }}
                 </button>
             </form>
 
             <p class="mt-4 text-center text-sm text-gray-600">
-                ¿Ya tienes una cuenta?
-                <Link href="/login" class="text-blue-600 hover:underline">Iniciar sesión</Link>
+                {{ tr('¿Ya tienes una cuenta?', 'Already have an account?') }}
+                <Link href="/login" class="text-blue-600 hover:underline">{{ tr('Iniciar sesión', 'Log in') }}</Link>
             </p>
         </div>
     </div>

@@ -4,6 +4,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { useLocale } from '@/Composables/useLocale';
 import { Head, useForm } from '@inertiajs/vue3';
 
 defineProps({
@@ -15,6 +16,7 @@ defineProps({
 const form = useForm({
     email: '',
 });
+const { tr } = useLocale();
 
 const submit = () => {
     form.post(route('password.email'));
@@ -23,12 +25,10 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Olvidé mi contraseña" />
+        <Head :title="tr('Olvidé mi contraseña', 'Forgot password')" />
 
         <div class="mb-4 text-sm text-gray-600">
-            ¿Olvidaste tu contraseña? No hay problema. Indícanos tu correo
-            electrónico y te enviaremos un enlace para restablecerla y elegir
-            una nueva.
+            {{ tr('¿Olvidaste tu contraseña? No hay problema. Indícanos tu correo electrónico y te enviaremos un enlace para restablecerla y elegir una nueva.', 'Forgot your password? No problem. Enter your email and we will send you a reset link so you can choose a new one.') }}
         </div>
 
         <div
@@ -40,7 +40,7 @@ const submit = () => {
 
         <form @submit.prevent="submit">
             <div>
-                <InputLabel for="email" value="Correo electrónico" />
+                <InputLabel for="email" :value="tr('Correo electrónico', 'Email')" />
 
                 <TextInput
                     id="email"
@@ -60,7 +60,7 @@ const submit = () => {
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Enviar enlace de restablecimiento
+                    {{ tr('Enviar enlace de restablecimiento', 'Send reset link') }}
                 </PrimaryButton>
             </div>
         </form>

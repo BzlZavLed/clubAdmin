@@ -1,5 +1,6 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import { useLocale } from '@/Composables/useLocale'
 import { router } from '@inertiajs/vue3'
 import { ref, computed } from 'vue'
 
@@ -16,14 +17,15 @@ const props = defineProps({
     grandparent_entity:  { type: Object, default: null },
     requirements_report: { type: Array, default: () => [] },
 })
+const { tr } = useLocale()
 
 // ── Club type filter ──────────────────────────────────────────
-const clubTypes = [
-    { value: null,           label: 'Todos' },
-    { value: 'pathfinders',  label: 'Conquistadores' },
-    { value: 'adventurers',  label: 'Aventureros' },
-    { value: 'master_guide', label: 'Guías Mayores' },
-]
+const clubTypes = computed(() => [
+    { value: null,           label: tr('Todos', 'All') },
+    { value: 'pathfinders',  label: tr('Conquistadores', 'Pathfinders') },
+    { value: 'adventurers',  label: tr('Aventureros', 'Adventurers') },
+    { value: 'master_guide', label: tr('Guías Mayores', 'Master Guides') },
+])
 
 const selectedType = ref(props.club_type_filter ?? null)
 const openSections = ref({
@@ -107,7 +109,11 @@ const downloadCsv = () => {
 }
 
 // ── Display helpers ────────────────────────────────────────────
-const clubTypeLabel = (t) => ({ adventurers: 'Aventureros', pathfinders: 'Conquistadores', master_guide: 'Guía Mayor' })[t] ?? t
+const clubTypeLabel = (t) => ({
+    adventurers: tr('Aventureros', 'Adventurers'),
+    pathfinders: tr('Conquistadores', 'Pathfinders'),
+    master_guide: tr('Guía Mayor', 'Master Guide'),
+})[t] ?? t
 
 const progressBarColor = (pct) => {
     if (pct === null || pct === undefined) return '#e5e7eb'
@@ -124,7 +130,16 @@ const progressTextColor = (pct) => {
 }
 
 const levelLabel = computed(() => ({
-    union: 'Asociaciones', association: 'Distritos', district: 'Clubes', club: 'Miembros',
+    union: tr('Asociaciones', 'Associations'),
+    association: tr('Distritos', 'Districts'),
+    district: tr('Clubes', 'Clubs'),
+    club: tr('Miembros', 'Members'),
+})[props.level] ?? '')
+
+const levelEntityLabel = computed(() => ({
+    union: tr('Asociación', 'Association'),
+    association: tr('Distrito', 'District'),
+    district: tr('Club', 'Club'),
 })[props.level] ?? '')
 
 const memberSearch = ref('')
@@ -164,14 +179,14 @@ const reqGrouped = computed(() => {
 })
 
 const requirementsReportTitle = computed(() => {
-    if (props.level === 'club') return 'Progreso de miembros'
-    return `Progreso por ${levelLabel.value.toLowerCase()}`
+    if (props.level === 'club') return tr('Progreso de miembros', 'Member progress')
+    return tr('Progreso por', 'Progress by') + ` ${levelLabel.value.toLowerCase()}`
 })
 </script>
 
 <template>
     <PathfinderLayout>
-        <template #title>Reportes de requisitos</template>
+        <template #title>{{ tr('Reportes de requisitos', 'Requirements reports') }}</template>
 
         <div class="space-y-5">
 
@@ -181,11 +196,11 @@ const requirementsReportTitle = computed(() => {
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
                         <p class="mt-0.5 text-sm text-gray-500">
-                            Reportes de requisitos de carpeta de investidura
+                            {{ tr('Reportes de requisitos de carpeta de investidura', 'Investiture folder requirements reports') }}
                             <span v-if="carpeta_year" class="font-medium text-gray-700"> · {{ carpeta_year.year }}</span>
                         </p>
                         <div v-if="!carpeta_year" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                            No hay un ciclo de carpeta publicado. Publique un ciclo anual para ver el progreso.
+                            {{ tr('No hay un ciclo de carpeta publicado. Publique un ciclo anual para ver el progreso.', 'There is no published folder cycle. Publish an annual cycle to view progress.') }}
                         </div>
                     </div>
                     <button
@@ -194,7 +209,7 @@ const requirementsReportTitle = computed(() => {
                         class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
                         @click="downloadCsv"
                     >
-                        ↓ Descargar CSV
+                        ↓ {{ tr('Descargar CSV', 'Download CSV') }}
                     </button>
                 </div>
 
@@ -248,7 +263,7 @@ const requirementsReportTitle = computed(() => {
                         <div>
                             <p class="text-sm font-semibold text-gray-800">{{ requirementsReportTitle }}</p>
                             <p class="text-xs text-gray-400">
-                                {{ level === 'club' ? `${members.length} miembros con clase asignada` : `${rows.length} registros disponibles` }}
+                                {{ level === 'club' ? `${members.length} ${tr('miembros con clase asignada', 'members with assigned class')}` : `${rows.length} ${tr('registros disponibles', 'available records')}` }}
                             </p>
                         </div>
                         <span class="text-lg leading-none text-gray-400">{{ isSectionOpen('progress') ? '−' : '+' }}</span>
@@ -262,13 +277,13 @@ const requirementsReportTitle = computed(() => {
                                 <input
                                     v-model="rowSearch"
                                     type="search"
-                                    placeholder="Buscar…"
+                                    :placeholder="tr('Buscar…', 'Search...')"
                                     class="w-48 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 />
                             </div>
 
                             <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
-                                Sin datos.
+                                {{ tr('Sin datos.', 'No data.') }}
                             </div>
 
                             <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
@@ -276,12 +291,12 @@ const requirementsReportTitle = computed(() => {
                                     <thead class="bg-gray-50">
                                         <tr>
                                             <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                {{ level === 'district' ? 'Club' : (level === 'association' ? 'Distrito' : 'Asociación') }}
+                                                {{ levelEntityLabel }}
                                             </th>
-                                            <th v-if="level === 'district'" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Tipo</th>
-                                            <th v-if="level !== 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Clubes</th>
-                                            <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Miembros</th>
-                                            <th class="min-w-[180px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Progreso</th>
+                                            <th v-if="level === 'district'" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Tipo', 'Type') }}</th>
+                                            <th v-if="level !== 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Clubes', 'Clubs') }}</th>
+                                            <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Miembros', 'Members') }}</th>
+                                            <th class="min-w-[180px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Progreso', 'Progress') }}</th>
                                             <th class="px-4 py-3" />
                                         </tr>
                                     </thead>
@@ -322,7 +337,7 @@ const requirementsReportTitle = computed(() => {
                                                     v-if="rowIsDrillable"
                                                     class="select-none text-xs text-blue-500 opacity-0 transition-opacity group-hover:opacity-100"
                                                 >
-                                                    Ver detalle →
+                                                    {{ tr('Ver detalle', 'View details') }} →
                                                 </span>
                                             </td>
                                         </tr>
@@ -341,29 +356,29 @@ const requirementsReportTitle = computed(() => {
                                             {{ clubTypeLabel(current_entity.club_type) }}
                                         </span>
                                     </p>
-                                    <p class="text-xs text-gray-400">{{ members.length }} miembros con clase asignada</p>
+                                    <p class="text-xs text-gray-400">{{ members.length }} {{ tr('miembros con clase asignada', 'members with assigned class') }}</p>
                                 </div>
                                 <input
                                     v-model="memberSearch"
                                     type="search"
-                                    placeholder="Buscar miembro…"
+                                    :placeholder="tr('Buscar miembro…', 'Search member...')"
                                     class="w-48 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 />
                             </div>
 
                             <div v-if="!filteredMembers.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
-                                Sin miembros con clase asignada.
+                                {{ tr('Sin miembros con clase asignada.', 'No members with assigned class.') }}
                             </div>
 
                             <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                                 <table class="min-w-full divide-y divide-gray-100">
                                     <thead class="bg-gray-50">
                                         <tr>
-                                            <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Miembro</th>
-                                            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Clase</th>
-                                            <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Completados</th>
+                                            <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Miembro', 'Member') }}</th>
+                                            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Clase', 'Class') }}</th>
+                                            <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Completados', 'Completed') }}</th>
                                             <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Total</th>
-                                            <th class="min-w-[180px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Progreso</th>
+                                            <th class="min-w-[180px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Progreso', 'Progress') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
@@ -401,8 +416,8 @@ const requirementsReportTitle = computed(() => {
                         @click="toggleSection('requirements')"
                     >
                         <div>
-                            <p class="text-sm font-semibold text-gray-800">Efectividad de requisitos</p>
-                            <p class="text-xs text-gray-400">Cuántos miembros han completado cada requisito</p>
+                            <p class="text-sm font-semibold text-gray-800">{{ tr('Efectividad de requisitos', 'Requirement effectiveness') }}</p>
+                            <p class="text-xs text-gray-400">{{ tr('Cuántos miembros han completado cada requisito', 'How many members have completed each requirement') }}</p>
                         </div>
                         <span class="text-lg leading-none text-gray-400">{{ isSectionOpen('requirements') ? '−' : '+' }}</span>
                     </button>
@@ -412,7 +427,7 @@ const requirementsReportTitle = computed(() => {
                             <input
                                 v-model="reqSearch"
                                 type="search"
-                                placeholder="Buscar requisito…"
+                                :placeholder="tr('Buscar requisito…', 'Search requirement...')"
                                 class="w-52 rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             />
                         </div>
@@ -436,10 +451,10 @@ const requirementsReportTitle = computed(() => {
                                 <table class="min-w-full divide-y divide-gray-100">
                                     <thead class="bg-gray-50/50">
                                         <tr>
-                                            <th class="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Requisito</th>
-                                            <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Completaron</th>
+                                            <th class="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Requisito', 'Requirement') }}</th>
+                                            <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Completaron', 'Completed') }}</th>
                                             <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Total</th>
-                                            <th class="min-w-[160px] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Adopción</th>
+                                            <th class="min-w-[160px] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Adopción', 'Adoption') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">

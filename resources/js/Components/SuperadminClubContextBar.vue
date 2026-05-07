@@ -2,6 +2,7 @@
 import axios from 'axios'
 import { computed, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     compact: {
@@ -15,6 +16,7 @@ const props = defineProps({
 })
 
 const page = usePage()
+const { t } = useLocale()
 const user = computed(() => page.props.auth?.user ?? null)
 const superadminContext = computed(() => page.props.auth?.superadmin_context ?? null)
 const userContext = computed(() => page.props.auth?.club_context ?? null)
@@ -109,7 +111,7 @@ const selectedClub = computed(() =>
 
 const selectedLabel = computed(() => {
     if (!isSuperadmin.value) {
-        return selectedClub.value?.club_name || 'Selecciona un club'
+        return selectedClub.value?.club_name || t('select_club')
     }
 
     return (
@@ -117,7 +119,7 @@ const selectedLabel = computed(() => {
         || filteredDistricts.value.find((district) => String(district.id) === String(selectedDistrictId.value))?.name
         || filteredAssociations.value.find((association) => String(association.id) === String(selectedAssociationId.value))?.name
         || unions.value.find((union) => String(union.id) === String(selectedUnionId.value))?.name
-        || 'Superadmin'
+        || t('superadmin')
     )
 })
 
@@ -161,7 +163,7 @@ const saveContext = async () => {
             },
         })
     } catch (err) {
-        error.value = err?.response?.data?.message || 'No se pudo cambiar el contexto activo.'
+        error.value = err?.response?.data?.message || t('unable_change_active_context')
     } finally {
         saving.value = false
     }
@@ -177,7 +179,7 @@ const saveContext = async () => {
             <div v-if="!props.collapsed" class="space-y-3">
                 <div class="min-w-0">
                     <p class="text-xs font-semibold uppercase tracking-wide text-blue-900">
-                        {{ isSuperadmin ? 'Contexto' : 'Club activo' }}
+                        {{ isSuperadmin ? t('context') : t('active_club') }}
                     </p>
                     <p class="mt-1 text-xs text-blue-800 truncate">
                         {{ selectedLabel }}
@@ -189,28 +191,28 @@ const saveContext = async () => {
 
                 <div v-if="isSuperadmin" class="space-y-2">
                     <select v-model="selectedUnionId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800">
-                        <option value="">Union</option>
+                        <option value="">{{ t('union') }}</option>
                         <option v-for="union in unions" :key="union.id" :value="String(union.id)">
                             {{ union.name }}
                         </option>
                     </select>
 
                     <select v-model="selectedAssociationId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedUnionId">
-                        <option value="">Asociacion</option>
+                        <option value="">{{ t('association') }}</option>
                         <option v-for="association in filteredAssociations" :key="association.id" :value="String(association.id)">
                             {{ association.name }}
                         </option>
                     </select>
 
                     <select v-model="selectedDistrictId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedAssociationId">
-                        <option value="">Distrito</option>
+                        <option value="">{{ t('district') }}</option>
                         <option v-for="district in filteredDistricts" :key="district.id" :value="String(district.id)">
                             {{ district.name }}
                         </option>
                     </select>
 
                     <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
-                        <option value="">Club</option>
+                        <option value="">{{ t('club') }}</option>
                         <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                             {{ club.club_name }}
                         </option>
@@ -222,7 +224,7 @@ const saveContext = async () => {
                         v-model="selectedClubId"
                         class="w-full rounded border border-blue-300 bg-white px-2 py-2 text-sm text-gray-800"
                     >
-                        <option value="">Selecciona un club</option>
+                        <option value="">{{ t('select_club') }}</option>
                         <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                             {{ club.club_name }}
                         </option>
@@ -235,7 +237,7 @@ const saveContext = async () => {
                     :disabled="saving"
                     @click="saveContext"
                 >
-                    {{ saving ? 'Guardando...' : (isSuperadmin ? 'Entrar' : 'Cambiar') }}
+                    {{ saving ? t('saving') : (isSuperadmin ? t('enter') : t('change')) }}
                 </button>
 
                 <p v-if="error" class="text-xs text-red-600">{{ error }}</p>
@@ -246,7 +248,7 @@ const saveContext = async () => {
             <div class="flex flex-col gap-3">
                 <div class="min-w-0">
                     <p class="text-sm font-semibold text-blue-900">
-                        {{ isSuperadmin ? 'Contexto de superadministrador' : 'Club activo' }}
+                        {{ isSuperadmin ? t('superadmin_context') : t('active_club') }}
                     </p>
                     <p class="text-xs text-blue-800">
                         <span>{{ selectedLabel }}</span>
@@ -256,28 +258,28 @@ const saveContext = async () => {
 
                 <div v-if="isSuperadmin" class="grid grid-cols-1 md:grid-cols-4 gap-2">
                     <select v-model="selectedUnionId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800">
-                        <option value="">Union</option>
+                        <option value="">{{ t('union') }}</option>
                         <option v-for="union in unions" :key="union.id" :value="String(union.id)">
                             {{ union.name }}
                         </option>
                     </select>
 
                     <select v-model="selectedAssociationId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedUnionId">
-                        <option value="">Asociacion</option>
+                        <option value="">{{ t('association') }}</option>
                         <option v-for="association in filteredAssociations" :key="association.id" :value="String(association.id)">
                             {{ association.name }}
                         </option>
                     </select>
 
                     <select v-model="selectedDistrictId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedAssociationId">
-                        <option value="">Distrito</option>
+                        <option value="">{{ t('district') }}</option>
                         <option v-for="district in filteredDistricts" :key="district.id" :value="String(district.id)">
                             {{ district.name }}
                         </option>
                     </select>
 
                     <select v-model="selectedClubId" class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800" :disabled="!selectedDistrictId">
-                        <option value="">Club</option>
+                        <option value="">{{ t('club') }}</option>
                         <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                             {{ club.club_name }}
                         </option>
@@ -286,12 +288,12 @@ const saveContext = async () => {
 
                 <div v-else class="flex flex-col gap-2 sm:flex-row sm:items-end">
                     <div class="min-w-[280px]">
-                        <label class="mb-1 block text-xs font-medium text-blue-900">Club activo</label>
+                        <label class="mb-1 block text-xs font-medium text-blue-900">{{ t('active_club') }}</label>
                         <select
                             v-model="selectedClubId"
                             class="w-full rounded border border-blue-300 bg-white px-3 py-2 text-sm text-gray-800"
                         >
-                            <option value="">Selecciona un club</option>
+                            <option value="">{{ t('select_club') }}</option>
                             <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                                 {{ club.club_name }} ({{ club.club_type }})
                             </option>
@@ -306,7 +308,7 @@ const saveContext = async () => {
                         :disabled="saving"
                         @click="saveContext"
                     >
-                        {{ saving ? 'Guardando...' : (isSuperadmin ? 'Guardar y entrar' : 'Cambiar club') }}
+                        {{ saving ? t('saving') : (isSuperadmin ? t('save_enter') : t('change_club')) }}
                     </button>
                 </div>
             </div>

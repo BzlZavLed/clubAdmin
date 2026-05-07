@@ -3,6 +3,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { computed, ref } from 'vue'
 import { router, useForm } from '@inertiajs/vue3'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     district: { type: Object, required: true },
@@ -12,6 +13,7 @@ const props = defineProps({
 })
 
 const { showToast } = useGeneral()
+const { tr } = useLocale()
 const search = ref('')
 const statusFilter = ref('all')
 const expandedRows = ref(new Set())
@@ -94,8 +96,8 @@ const saveMember = (member) => {
 
     form.patch(route('district.pastoral-care.update', member.id), {
         preserveScroll: true,
-        onSuccess: () => showToast('Seguimiento pastoral actualizado.', 'success'),
-        onError: (errors) => showToast(Object.values(errors || {})[0] || 'No se pudo actualizar el seguimiento.', 'error'),
+        onSuccess: () => showToast(tr('Seguimiento pastoral actualizado.', 'Pastoral follow-up updated.'), 'success'),
+        onError: (errors) => showToast(Object.values(errors || {})[0] || tr('No se pudo actualizar el seguimiento.', 'Could not update the follow-up.'), 'error'),
     })
 }
 
@@ -107,19 +109,19 @@ const addNote = (member) => {
         onSuccess: () => {
             form.reset()
             form.color = 'yellow'
-            showToast('Nota agregada.', 'success')
+            showToast(tr('Nota agregada.', 'Note added.'), 'success')
         },
-        onError: (errors) => showToast(Object.values(errors || {})[0] || 'No se pudo agregar la nota.', 'error'),
+        onError: (errors) => showToast(Object.values(errors || {})[0] || tr('No se pudo agregar la nota.', 'Could not add the note.'), 'error'),
     })
 }
 
 const deleteNote = (note) => {
-    if (!confirm('Eliminar esta nota?')) return
+    if (!confirm(tr('¿Eliminar esta nota?', 'Delete this note?'))) return
 
     router.delete(route('district.pastoral-care.notes.destroy', note.id), {
         preserveScroll: true,
-        onSuccess: () => showToast('Nota eliminada.', 'success'),
-        onError: () => showToast('No se pudo eliminar la nota.', 'error'),
+        onSuccess: () => showToast(tr('Nota eliminada.', 'Note deleted.'), 'success'),
+        onError: () => showToast(tr('No se pudo eliminar la nota.', 'Could not delete the note.'), 'error'),
     })
 }
 
@@ -148,12 +150,17 @@ const noteClass = (color) => ({
 }[color] || 'border-yellow-200 bg-yellow-50 text-yellow-950')
 
 const noteColorLabel = (color) => ({
-    yellow: 'Amarillo',
-    blue: 'Azul',
-    green: 'Verde',
-    rose: 'Rojo',
-    slate: 'Gris',
-}[color] || 'Sin color')
+    yellow: tr('Amarillo', 'Yellow'),
+    blue: tr('Azul', 'Blue'),
+    green: tr('Verde', 'Green'),
+    rose: tr('Rojo', 'Red'),
+    slate: tr('Gris', 'Gray'),
+}[color] || tr('Sin color', 'No color'))
+
+const statusLabel = (statusKey, fallback) => ({
+    non_sda: tr('No SDA', 'Non-SDA'),
+    new_believer: tr('Nuevo creyente', 'New believer'),
+}[statusKey] || fallback)
 
 const sortedNotes = (member) => [...(member.notes || [])]
     .sort((a, b) => noteTimestamp(b) - noteTimestamp(a) || Number(b.id || 0) - Number(a.id || 0))
@@ -197,7 +204,7 @@ const loadMoreNotes = (member) => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Cuidado pastoral</template>
+        <template #title>{{ tr('Cuidado pastoral', 'Pastoral care') }}</template>
 
         <div class="space-y-6">
             <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -205,11 +212,11 @@ const loadMoreNotes = (member) => {
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ district.name }}</h2>
                         <p class="mt-1 text-sm text-gray-500">
-                            Asociación: {{ association?.name || '—' }}
-                            <span v-if="district.pastor_name"> · Pastor: {{ district.pastor_name }}</span>
+                            {{ tr('Asociación', 'Association') }}: {{ association?.name || '—' }}
+                            <span v-if="district.pastor_name"> · {{ tr('Pastor', 'Pastor') }}: {{ district.pastor_name }}</span>
                         </p>
                         <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                            Este módulo muestra miembros de clubes del distrito que no son SDA y nuevos creyentes que siguen en sus primeros 18 meses después del bautismo.
+                            {{ tr('Este módulo muestra miembros de clubes del distrito que no son SDA y nuevos creyentes que siguen en sus primeros 18 meses después del bautismo.', 'This module shows district club members who are not SDA and new believers who are still within their first 18 months after baptism.') }}
                         </p>
                     </div>
                 </div>
@@ -217,19 +224,19 @@ const loadMoreNotes = (member) => {
 
             <section class="grid gap-4 md:grid-cols-4">
                 <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Total en seguimiento</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Total en seguimiento', 'Total in follow-up') }}</p>
                     <p class="mt-2 text-2xl font-bold text-gray-900">{{ summary.total || 0 }}</p>
                 </div>
                 <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">No SDA</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('No SDA', 'Non-SDA') }}</p>
                     <p class="mt-2 text-2xl font-bold text-rose-700">{{ summary.non_sda || 0 }}</p>
                 </div>
                 <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Nuevos creyentes</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Nuevos creyentes', 'New believers') }}</p>
                     <p class="mt-2 text-2xl font-bold text-emerald-700">{{ summary.new_believers || 0 }}</p>
                 </div>
                 <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Con estudio bíblico</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Con estudio bíblico', 'With Bible study') }}</p>
                     <p class="mt-2 text-2xl font-bold text-blue-700">{{ summary.bible_studies || 0 }}</p>
                 </div>
             </section>
@@ -237,20 +244,20 @@ const loadMoreNotes = (member) => {
             <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="grid gap-4 md:grid-cols-[1fr_220px]">
                     <div>
-                        <label class="mb-1 block text-sm font-medium text-gray-700">Buscar</label>
+                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Buscar', 'Search') }}</label>
                         <input
                             v-model="search"
                             type="search"
                             class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            placeholder="Nombre, club, iglesia, contacto"
+                            :placeholder="tr('Nombre, club, iglesia, contacto', 'Name, club, church, contact')"
                         />
                     </div>
                     <div>
-                        <label class="mb-1 block text-sm font-medium text-gray-700">Estado</label>
+                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Estado', 'Status') }}</label>
                         <select v-model="statusFilter" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="all">Todos</option>
-                            <option value="non_sda">No SDA</option>
-                            <option value="new_believer">Nuevos creyentes</option>
+                            <option value="all">{{ tr('Todos', 'All') }}</option>
+                            <option value="non_sda">{{ tr('No SDA', 'Non-SDA') }}</option>
+                            <option value="new_believer">{{ tr('Nuevos creyentes', 'New believers') }}</option>
                         </select>
                     </div>
                 </div>
@@ -258,17 +265,17 @@ const loadMoreNotes = (member) => {
 
             <section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                 <div v-if="!filteredMembers.length" class="p-8 text-center text-sm text-gray-500">
-                    No hay miembros en seguimiento con estos filtros.
+                    {{ tr('No hay miembros en seguimiento con estos filtros.', 'There are no members in follow-up with these filters.') }}
                 </div>
 
                 <table v-else class="w-full text-sm">
                     <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                         <tr>
-                            <th class="px-4 py-3">Miembro</th>
-                            <th class="px-4 py-3">Club</th>
-                            <th class="px-4 py-3">Contacto</th>
-                            <th class="px-4 py-3">Estado</th>
-                            <th class="px-4 py-3 text-right">Acción</th>
+                            <th class="px-4 py-3">{{ tr('Miembro', 'Member') }}</th>
+                            <th class="px-4 py-3">{{ tr('Club', 'Club') }}</th>
+                            <th class="px-4 py-3">{{ tr('Contacto', 'Contact') }}</th>
+                            <th class="px-4 py-3">{{ tr('Estado', 'Status') }}</th>
+                            <th class="px-4 py-3 text-right">{{ tr('Acción', 'Action') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -277,7 +284,7 @@ const loadMoreNotes = (member) => {
                                 <td class="px-4 py-3">
                                     <p class="font-semibold text-gray-900">{{ member.name }}</p>
                                     <p class="text-xs text-gray-500">
-                                        {{ member.member_type }} · {{ member.class_name || 'Sin clase' }}
+                                        {{ member.member_type }} · {{ member.class_name || tr('Sin clase', 'No class') }}
                                     </p>
                                 </td>
                                 <td class="px-4 py-3">
@@ -290,15 +297,15 @@ const loadMoreNotes = (member) => {
                                 </td>
                                 <td class="px-4 py-3">
                                     <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="statusClass(member.status_key)">
-                                        {{ member.status_label }}
+                                        {{ statusLabel(member.status_key, member.status_label) }}
                                     </span>
                                     <p v-if="member.pastoral_care?.new_believer_until" class="mt-1 text-xs text-gray-500">
-                                        Hasta {{ formatDate(member.pastoral_care.new_believer_until) }}
+                                        {{ tr('Hasta', 'Until') }} {{ formatDate(member.pastoral_care.new_believer_until) }}
                                     </p>
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     <button type="button" class="text-sm font-medium text-blue-600 hover:underline" @click="toggleExpanded(member.id)">
-                                        {{ expandedRows.has(member.id) ? 'Cerrar' : 'Ver seguimiento' }}
+                                        {{ expandedRows.has(member.id) ? tr('Cerrar', 'Close') : tr('Ver seguimiento', 'View follow-up') }}
                                     </button>
                                 </td>
                             </tr>
@@ -306,38 +313,38 @@ const loadMoreNotes = (member) => {
                                 <td colspan="5" class="px-4 py-5">
                                     <div class="grid gap-5 lg:grid-cols-[1fr_1fr]">
                                         <div class="rounded-lg border border-gray-200 bg-white p-4">
-                                            <h3 class="mb-3 text-sm font-semibold text-gray-900">Datos del miembro</h3>
+                                            <h3 class="mb-3 text-sm font-semibold text-gray-900">{{ tr('Datos del miembro', 'Member data') }}</h3>
                                             <div class="grid gap-3 text-sm text-gray-700 sm:grid-cols-2">
-                                                <p><span class="font-medium text-gray-900">Nacimiento:</span> {{ formatDate(member.birthdate) }}</p>
-                                                <p><span class="font-medium text-gray-900">Edad:</span> {{ member.age ?? '—' }}</p>
-                                                <p><span class="font-medium text-gray-900">Grado:</span> {{ member.grade || '—' }}</p>
-                                                <p><span class="font-medium text-gray-900">Dirección:</span> {{ member.address || '—' }}</p>
-                                                <p><span class="font-medium text-gray-900">Padre/Madre:</span> {{ member.parent_name || '—' }}</p>
-                                                <p><span class="font-medium text-gray-900">Tel. padre:</span> {{ member.parent_phone || '—' }}</p>
-                                                <p class="sm:col-span-2"><span class="font-medium text-gray-900">Emergencia:</span> {{ member.emergency_contact || '—' }}</p>
-                                                <p class="sm:col-span-2"><span class="font-medium text-gray-900">Salud:</span> {{ member.health_notes || '—' }}</p>
+                                                <p><span class="font-medium text-gray-900">{{ tr('Nacimiento:', 'Birthdate:') }}</span> {{ formatDate(member.birthdate) }}</p>
+                                                <p><span class="font-medium text-gray-900">{{ tr('Edad:', 'Age:') }}</span> {{ member.age ?? '—' }}</p>
+                                                <p><span class="font-medium text-gray-900">{{ tr('Grado:', 'Grade:') }}</span> {{ member.grade || '—' }}</p>
+                                                <p><span class="font-medium text-gray-900">{{ tr('Dirección:', 'Address:') }}</span> {{ member.address || '—' }}</p>
+                                                <p><span class="font-medium text-gray-900">{{ tr('Padre/Madre:', 'Parent:') }}</span> {{ member.parent_name || '—' }}</p>
+                                                <p><span class="font-medium text-gray-900">{{ tr('Tel. padre:', 'Parent phone:') }}</span> {{ member.parent_phone || '—' }}</p>
+                                                <p class="sm:col-span-2"><span class="font-medium text-gray-900">{{ tr('Emergencia:', 'Emergency:') }}</span> {{ member.emergency_contact || '—' }}</p>
+                                                <p class="sm:col-span-2"><span class="font-medium text-gray-900">{{ tr('Salud:', 'Health:') }}</span> {{ member.health_notes || '—' }}</p>
                                             </div>
                                         </div>
 
                                         <form class="space-y-4 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="saveMember(member)">
-                                            <h3 class="text-sm font-semibold text-gray-900">Seguimiento pastoral</h3>
+                                            <h3 class="text-sm font-semibold text-gray-900">{{ tr('Seguimiento pastoral', 'Pastoral follow-up') }}</h3>
 
                                             <label class="flex items-start gap-3 rounded border border-gray-200 px-3 py-2 text-sm">
                                                 <input v-model="getForm(member).bible_study_active" type="checkbox" class="mt-1 h-4 w-4 accent-blue-600" />
                                                 <span>
-                                                    <span class="block font-medium text-gray-900">Tiene estudios bíblicos</span>
-                                                    <span class="text-gray-500">Permite registrar responsable y fecha de inicio.</span>
+                                                    <span class="block font-medium text-gray-900">{{ tr('Tiene estudios bíblicos', 'Has Bible studies') }}</span>
+                                                    <span class="text-gray-500">{{ tr('Permite registrar responsable y fecha de inicio.', 'Allows recording the responsible person and start date.') }}</span>
                                                 </span>
                                             </label>
 
                                             <div v-if="getForm(member).bible_study_active" class="grid gap-3 rounded-md border border-blue-100 bg-blue-50 p-3 sm:grid-cols-2">
                                                 <div>
-                                                    <label class="mb-1 block text-sm font-medium text-gray-700">Quién da el estudio</label>
+                                                    <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Quién da el estudio', 'Who gives the study') }}</label>
                                                     <input v-model="getForm(member).bible_study_teacher" type="text" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                                     <p v-if="getForm(member).errors.bible_study_teacher" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.bible_study_teacher }}</p>
                                                 </div>
                                                 <div>
-                                                    <label class="mb-1 block text-sm font-medium text-gray-700">Inicio del estudio</label>
+                                                    <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Inicio del estudio', 'Study start') }}</label>
                                                     <input v-model="getForm(member).bible_study_started_at" type="date" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                                     <p v-if="getForm(member).errors.bible_study_started_at" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.bible_study_started_at }}</p>
                                                 </div>
@@ -345,19 +352,19 @@ const loadMoreNotes = (member) => {
 
                                             <div class="grid gap-3 sm:grid-cols-2">
                                                 <div>
-                                                    <label class="mb-1 block text-sm font-medium text-gray-700">Fecha de bautismo</label>
+                                                    <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha de bautismo', 'Baptism date') }}</label>
                                                     <input v-model="getForm(member).baptism_date" type="date" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                                     <p v-if="getForm(member).errors.baptism_date" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.baptism_date }}</p>
                                                 </div>
                                                 <div>
-                                                    <label class="mb-1 block text-sm font-medium text-gray-700">Mentor SDA del club</label>
+                                                    <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Mentor SDA del club', 'SDA mentor from the club') }}</label>
                                                     <select v-model="getForm(member).mentor_member_id" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                                        <option value="">Sin mentor asignado</option>
+                                                        <option value="">{{ tr('Sin mentor asignado', 'No mentor assigned') }}</option>
                                                         <option v-for="mentor in member.mentor_options" :key="mentor.id" :value="mentor.id">
                                                             {{ mentor.name }}
                                                         </option>
                                                     </select>
-                                                    <p v-if="!member.mentor_options.length" class="mt-1 text-xs text-amber-700">Este club no tiene miembros SDA disponibles como mentor.</p>
+                                                    <p v-if="!member.mentor_options.length" class="mt-1 text-xs text-amber-700">{{ tr('Este club no tiene miembros SDA disponibles como mentor.', 'This club has no SDA members available as mentors.') }}</p>
                                                     <p v-if="getForm(member).errors.mentor_member_id" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.mentor_member_id }}</p>
                                                 </div>
                                             </div>
@@ -368,41 +375,41 @@ const loadMoreNotes = (member) => {
                                                     :disabled="getForm(member).processing"
                                                     class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                                                 >
-                                                    Guardar seguimiento
+                                                    {{ tr('Guardar seguimiento', 'Save follow-up') }}
                                                     </button>
                                                 </div>
                                             </form>
 
                                             <div class="space-y-3 lg:col-span-2">
                                                 <div class="flex items-center justify-between">
-                                                    <h3 class="text-sm font-semibold text-gray-900">Notas del miembro</h3>
-                                                    <span class="text-xs text-gray-500">{{ filteredNotes(member).length }} de {{ member.notes?.length || 0 }} notas</span>
+                                                    <h3 class="text-sm font-semibold text-gray-900">{{ tr('Notas del miembro', 'Member notes') }}</h3>
+                                                    <span class="text-xs text-gray-500">{{ filteredNotes(member).length }} {{ tr('de', 'of') }} {{ member.notes?.length || 0 }} {{ tr('notas', 'notes') }}</span>
                                                 </div>
 
                                                 <div class="grid gap-3 sm:grid-cols-[1fr_150px]">
                                                     <div>
-                                                        <label class="mb-1 block text-sm font-medium text-gray-700">Buscar notas</label>
+                                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Buscar notas', 'Search notes') }}</label>
                                                         <input
                                                             v-model="noteSearches[member.id]"
                                                             type="search"
                                                             class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                                            placeholder="Asunto o nota"
+                                                            :placeholder="tr('Asunto o nota', 'Subject or note')"
                                                             @input="resetVisibleNotes(member)"
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label class="mb-1 block text-sm font-medium text-gray-700">Color</label>
+                                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Color', 'Color') }}</label>
                                                         <select
                                                             v-model="noteColorFilters[member.id]"
                                                             class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                                             @change="resetVisibleNotes(member)"
                                                         >
-                                                            <option value="">Todos</option>
-                                                            <option value="yellow">Amarillo</option>
-                                                            <option value="blue">Azul</option>
-                                                            <option value="green">Verde</option>
-                                                            <option value="rose">Rojo</option>
-                                                            <option value="slate">Gris</option>
+                                                            <option value="">{{ tr('Todos', 'All') }}</option>
+                                                            <option value="yellow">{{ tr('Amarillo', 'Yellow') }}</option>
+                                                            <option value="blue">{{ tr('Azul', 'Blue') }}</option>
+                                                            <option value="green">{{ tr('Verde', 'Green') }}</option>
+                                                            <option value="rose">{{ tr('Rojo', 'Red') }}</option>
+                                                            <option value="slate">{{ tr('Gris', 'Gray') }}</option>
                                                         </select>
                                                     </div>
                                                 </div>
@@ -416,9 +423,9 @@ const loadMoreNotes = (member) => {
                                                     >
                                                         <div class="mb-2 flex items-start justify-between gap-3">
                                                             <div>
-                                                                <h4 class="text-sm font-semibold">{{ note.subject || 'Nota' }}</h4>
+                                                                <h4 class="text-sm font-semibold">{{ note.subject || tr('Nota', 'Note') }}</h4>
                                                                 <p class="text-[11px] opacity-70">
-                                                                    {{ note.author_name || 'Distrito' }} · {{ formatDate(note.created_at?.slice(0, 10)) }} · {{ noteColorLabel(note.color) }}
+                                                                    {{ note.author_name || tr('Distrito', 'District') }} · {{ formatDate(note.created_at?.slice(0, 10)) }} · {{ noteColorLabel(note.color) }}
                                                                 </p>
                                                             </div>
                                                             <button type="button" class="text-xs font-semibold opacity-70 hover:opacity-100" @click="deleteNote(note)">
@@ -429,35 +436,35 @@ const loadMoreNotes = (member) => {
                                                     </article>
                                                 </div>
                                                 <div v-if="filteredNotes(member).length > visibleNotes(member).length" class="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
-                                                    <span>Mostrando {{ visibleNotes(member).length }} de {{ filteredNotes(member).length }}</span>
+                                                    <span>{{ tr('Mostrando', 'Showing') }} {{ visibleNotes(member).length }} {{ tr('de', 'of') }} {{ filteredNotes(member).length }}</span>
                                                     <button type="button" class="font-semibold text-blue-600 hover:underline" @click="loadMoreNotes(member)">
-                                                        Cargar más notas
+                                                        {{ tr('Cargar más notas', 'Load more notes') }}
                                                     </button>
                                                 </div>
                                                 <div v-if="!filteredNotes(member).length" class="rounded-md border border-dashed border-gray-200 bg-white p-4 text-sm text-gray-500">
-                                                    {{ member.notes?.length ? 'No hay notas que coincidan con la búsqueda o color.' : 'No hay notas registradas para este miembro.' }}
+                                                    {{ member.notes?.length ? tr('No hay notas que coincidan con la búsqueda o color.', 'No notes match the search or color.') : tr('No hay notas registradas para este miembro.', 'There are no notes registered for this member.') }}
                                                 </div>
 
                                                 <form class="grid gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addNote(member)">
                                                     <div class="grid gap-3 sm:grid-cols-[1fr_150px]">
                                                         <div>
-                                                            <label class="mb-1 block text-sm font-medium text-gray-700">Asunto</label>
-                                                            <input v-model="getNoteForm(member).subject" type="text" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Ej. Visita familiar" />
+                                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Asunto', 'Subject') }}</label>
+                                                            <input v-model="getNoteForm(member).subject" type="text" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" :placeholder="tr('Ej. Visita familiar', 'Ex. Family visit')" />
                                                             <p v-if="getNoteForm(member).errors.subject" class="mt-1 text-xs text-red-600">{{ getNoteForm(member).errors.subject }}</p>
                                                         </div>
                                                         <div>
-                                                            <label class="mb-1 block text-sm font-medium text-gray-700">Color</label>
+                                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Color', 'Color') }}</label>
                                                             <select v-model="getNoteForm(member).color" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                                                <option value="yellow">Amarillo</option>
-                                                                <option value="blue">Azul</option>
-                                                                <option value="green">Verde</option>
-                                                                <option value="rose">Rojo</option>
-                                                                <option value="slate">Gris</option>
+                                                                <option value="yellow">{{ tr('Amarillo', 'Yellow') }}</option>
+                                                                <option value="blue">{{ tr('Azul', 'Blue') }}</option>
+                                                                <option value="green">{{ tr('Verde', 'Green') }}</option>
+                                                                <option value="rose">{{ tr('Rojo', 'Red') }}</option>
+                                                                <option value="slate">{{ tr('Gris', 'Gray') }}</option>
                                                             </select>
                                                         </div>
                                                     </div>
                                                     <div>
-                                                        <label class="mb-1 block text-sm font-medium text-gray-700">Nota</label>
+                                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Nota', 'Note') }}</label>
                                                         <textarea v-model="getNoteForm(member).body" rows="3" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
                                                         <p v-if="getNoteForm(member).errors.body" class="mt-1 text-xs text-red-600">{{ getNoteForm(member).errors.body }}</p>
                                                     </div>
@@ -467,7 +474,7 @@ const loadMoreNotes = (member) => {
                                                             :disabled="getNoteForm(member).processing"
                                                             class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                                                         >
-                                                            Agregar nota
+                                                            {{ tr('Agregar nota', 'Add note') }}
                                                         </button>
                                                     </div>
                                                 </form>

@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import DeleteUserForm from './Partials/DeleteUserForm.vue';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm.vue';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm.vue';
+import { useLocale } from '@/Composables/useLocale';
 import { Head } from '@inertiajs/vue3';
 
 defineProps({
@@ -13,17 +14,18 @@ defineProps({
         type: String,
     },
 });
+const { tr } = useLocale();
 </script>
 
 <template>
-    <Head title="Profile" />
+    <Head :title="tr('Perfil', 'Profile')" />
 
     <AuthenticatedLayout>
         <template #header>
             <h2
                 class="text-xl font-semibold leading-tight text-gray-800"
             >
-                Profile
+                {{ tr('Perfil', 'Profile') }}
             </h2>
         </template>
 

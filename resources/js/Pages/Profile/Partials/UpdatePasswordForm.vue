@@ -3,6 +3,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { useLocale } from '@/Composables/useLocale';
 import { useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -14,6 +15,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 });
+const { tr } = useLocale();
 
 const updatePassword = () => {
     form.put(route('password.update'), {
@@ -37,18 +39,17 @@ const updatePassword = () => {
     <section>
         <header>
             <h2 class="text-lg font-medium text-gray-900">
-                Update Password
+                {{ tr('Actualizar contraseña', 'Update password') }}
             </h2>
 
             <p class="mt-1 text-sm text-gray-600">
-                Ensure your account is using a long, random password to stay
-                secure.
+                {{ tr('Asegúrate de que tu cuenta use una contraseña larga y segura.', 'Ensure your account is using a long, random password to stay secure.') }}
             </p>
         </header>
 
         <form @submit.prevent="updatePassword" class="mt-6 space-y-6">
             <div>
-                <InputLabel for="current_password" value="Current Password" />
+                <InputLabel for="current_password" :value="tr('Contraseña actual', 'Current password')" />
 
                 <TextInput
                     id="current_password"
@@ -66,7 +67,7 @@ const updatePassword = () => {
             </div>
 
             <div>
-                <InputLabel for="password" value="New Password" />
+                <InputLabel for="password" :value="tr('Nueva contraseña', 'New password')" />
 
                 <TextInput
                     id="password"
@@ -83,7 +84,7 @@ const updatePassword = () => {
             <div>
                 <InputLabel
                     for="password_confirmation"
-                    value="Confirm Password"
+                    :value="tr('Confirmar contraseña', 'Confirm password')"
                 />
 
                 <TextInput
@@ -101,7 +102,7 @@ const updatePassword = () => {
             </div>
 
             <div class="flex items-center gap-4">
-                <PrimaryButton :disabled="form.processing">Save</PrimaryButton>
+                <PrimaryButton :disabled="form.processing">{{ tr('Guardar', 'Save') }}</PrimaryButton>
 
                 <Transition
                     enter-active-class="transition ease-in-out"
@@ -113,7 +114,7 @@ const updatePassword = () => {
                         v-if="form.recentlySuccessful"
                         class="text-sm text-gray-600"
                     >
-                        Saved.
+                        {{ tr('Guardado.', 'Saved.') }}
                     </p>
                 </Transition>
             </div>

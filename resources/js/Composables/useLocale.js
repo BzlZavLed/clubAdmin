@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { generalTranslations } from '@/i18n/general'
 
 const STORAGE_KEY = 'club_portal_locale'
 const locale = ref('es')
@@ -38,12 +39,23 @@ export function useLocale() {
     initLocale()
 
     const tr = (esText, enText) => (locale.value === 'en' ? enText : esText)
+    const t = (key, replacements = {}) => {
+        const entry = generalTranslations[key]
+        let value = entry?.[locale.value] || entry?.es || key
+
+        Object.entries(replacements).forEach(([placeholder, replacement]) => {
+            value = value.replaceAll(`:${placeholder}`, replacement ?? '')
+        })
+
+        return value
+    }
     const toggleLocale = () => setLocale(locale.value === 'en' ? 'es' : 'en')
 
     return {
         locale,
         setLocale,
         toggleLocale,
+        t,
         tr,
     }
 }

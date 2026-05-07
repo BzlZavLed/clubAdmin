@@ -1,5 +1,6 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import { useLocale } from '@/Composables/useLocale'
 import { Link } from '@inertiajs/vue3'
 
 defineProps({
@@ -8,15 +9,16 @@ defineProps({
     union: { type: Object, default: null },
     requests: { type: Array, default: () => [] },
 })
+const { tr } = useLocale()
 
-const statusLabels = {
-    assigned: 'Asignada',
-    in_review: 'En revisión',
-    completed: 'Completada',
-    authorized: 'Autorizada por asociación',
-    date_change_requested: 'Nueva fecha solicitada',
-    returned: 'Devuelta',
-}
+const statusLabel = (status) => ({
+    assigned: tr('Asignada', 'Assigned'),
+    in_review: tr('En revisión', 'In review'),
+    completed: tr('Completada', 'Completed'),
+    authorized: tr('Autorizada por asociación', 'Authorized by association'),
+    date_change_requested: tr('Nueva fecha solicitada', 'New date requested'),
+    returned: tr('Devuelta', 'Returned'),
+}[status] || status)
 
 const statusClass = (status) => ({
     assigned: 'bg-blue-50 text-blue-800 ring-blue-200',
@@ -28,28 +30,31 @@ const statusClass = (status) => ({
 }[status] || 'bg-gray-50 text-gray-700 ring-gray-200')
 
 const progressText = (request) => {
-    if (!request.requirements_count) return 'Sin requisitos registrados'
-    return `${request.completed_requirements_count || 0}/${request.requirements_count} requisitos cargados`
+    if (!request.requirements_count) return tr('Sin requisitos registrados', 'No requirements registered')
+    return tr(
+        `${request.completed_requirements_count || 0}/${request.requirements_count} requisitos cargados`,
+        `${request.completed_requirements_count || 0}/${request.requirements_count} requirements loaded`,
+    )
 }
 </script>
 
 <template>
     <PathfinderLayout>
-        <template #title>Evaluaciones de investidura</template>
+        <template #title>{{ tr('Evaluaciones de investidura', 'Investiture evaluations') }}</template>
 
         <div class="space-y-6">
             <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div>
-                        <p class="text-sm font-semibold uppercase tracking-wide text-gray-400">Distrito</p>
+                        <p class="text-sm font-semibold uppercase tracking-wide text-gray-400">{{ tr('Distrito', 'District') }}</p>
                         <h1 class="mt-1 text-2xl font-semibold text-gray-900">{{ district.name }}</h1>
                         <p class="mt-2 text-sm text-gray-600">
-                            Aquí solo aparecen solicitudes que la asociación ya asignó formalmente al pastor distrital.
+                            {{ tr('Aquí solo aparecen solicitudes que la asociación ya asignó formalmente al pastor distrital.', 'Only requests formally assigned by the association to the district pastor appear here.') }}
                         </p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                        <p class="font-semibold text-gray-900">{{ district.pastor_name || 'Pastor distrital' }}</p>
-                        <p>{{ district.pastor_email || 'Sin correo configurado' }}</p>
+                        <p class="font-semibold text-gray-900">{{ district.pastor_name || tr('Pastor distrital', 'District pastor') }}</p>
+                        <p>{{ district.pastor_email || tr('Sin correo configurado', 'No email configured') }}</p>
                     </div>
                 </div>
             </section>
@@ -63,41 +68,41 @@ const progressText = (request) => {
                     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <div class="flex flex-wrap items-center gap-2">
-                                <h2 class="text-base font-semibold text-gray-900">Solicitud #{{ request.id }}</h2>
+                                <h2 class="text-base font-semibold text-gray-900">{{ tr('Solicitud', 'Request') }} #{{ request.id }}</h2>
                                 <span class="rounded-full px-2.5 py-1 text-xs font-semibold ring-1" :class="statusClass(request.status)">
-                                    {{ statusLabels[request.status] || request.status }}
+                                    {{ statusLabel(request.status) }}
                                 </span>
                             </div>
-                            <p class="mt-1 text-sm text-gray-600">{{ request.club?.club_name || 'Club' }} · {{ request.club?.church_name || 'Iglesia' }}</p>
+                            <p class="mt-1 text-sm text-gray-600">{{ request.club?.club_name || tr('Club', 'Club') }} · {{ request.club?.church_name || tr('Iglesia', 'Church') }}</p>
                             <p class="mt-1 text-sm text-gray-600">
-                                Fecha tentativa: {{ request.tentative_investiture_date || '—' }}
+                                {{ tr('Fecha tentativa', 'Tentative date') }}: {{ request.tentative_investiture_date || '—' }}
                                 <template v-if="request.approved_investiture_date">
-                                    · Fecha autorizada: {{ request.approved_investiture_date }}
+                                    · {{ tr('Fecha autorizada', 'Authorized date') }}: {{ request.approved_investiture_date }}
                                 </template>
                             </p>
                             <p class="mt-2 text-xs uppercase tracking-wide text-gray-400">
-                                Año {{ request.carpeta_year }} · {{ request.club_type }} · {{ request.members_count }} miembros
+                                {{ tr('Año', 'Year') }} {{ request.carpeta_year }} · {{ request.club_type }} · {{ request.members_count }} {{ tr('miembros', 'members') }}
                             </p>
                         </div>
-                        <p class="text-sm text-gray-500">Asignada: {{ request.assigned_at || '—' }}</p>
+                        <p class="text-sm text-gray-500">{{ tr('Asignada', 'Assigned') }}: {{ request.assigned_at || '—' }}</p>
                     </div>
 
                     <div class="mt-4 grid gap-3 sm:grid-cols-2">
                         <div class="rounded-xl border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
-                            <p class="font-semibold text-gray-900">Progreso cargado</p>
+                            <p class="font-semibold text-gray-900">{{ tr('Progreso cargado', 'Loaded progress') }}</p>
                             <p class="mt-1">{{ progressText(request) }}</p>
                         </div>
                         <div class="rounded-xl border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
-                            <p class="font-semibold text-gray-900">{{ request.status === 'authorized' ? 'Autorización' : 'Siguiente paso' }}</p>
+                            <p class="font-semibold text-gray-900">{{ request.status === 'authorized' ? tr('Autorización', 'Authorization') : tr('Siguiente paso', 'Next step') }}</p>
                             <p v-if="request.status === 'authorized'" class="mt-1 text-green-800">
-                                La asociación autorizó esta investidura.
+                                {{ tr('La asociación autorizó esta investidura.', 'The association authorized this investiture.') }}
                                 <span v-if="request.ceremony_representative_name">
-                                    Representante: {{ request.ceremony_representative_name }}.
+                                    {{ tr('Representante', 'Representative') }}: {{ request.ceremony_representative_name }}.
                                     <template v-if="request.ceremony_representative_email"> {{ request.ceremony_representative_email }}.</template>
                                     <template v-if="request.ceremony_representative_phone"> {{ request.ceremony_representative_phone }}.</template>
                                 </span>
                             </p>
-                            <p v-else class="mt-1">Revise la carpeta requisito por requisito.</p>
+                            <p v-else class="mt-1">{{ tr('Revise la carpeta requisito por requisito.', 'Review the folder requirement by requirement.') }}</p>
                         </div>
                     </div>
 
@@ -106,13 +111,13 @@ const progressText = (request) => {
                             :href="route('district.investiture-requests.show', request.id)"
                             class="inline-flex rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
                         >
-                            Evaluar carpeta
+                            {{ tr('Evaluar carpeta', 'Evaluate folder') }}
                         </Link>
                     </div>
                 </article>
 
                 <p v-if="!requests.length" class="rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-8 text-sm text-gray-500">
-                    No hay solicitudes de investidura asignadas a este distrito.
+                    {{ tr('No hay solicitudes de investidura asignadas a este distrito.', 'There are no investiture requests assigned to this district.') }}
                 </p>
             </section>
         </div>

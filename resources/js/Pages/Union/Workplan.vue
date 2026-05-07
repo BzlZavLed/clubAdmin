@@ -3,6 +3,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import Modal from '@/Components/Modal.vue'
 import { router, useForm } from '@inertiajs/vue3'
 import { ref, computed } from 'vue'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     union:  { type: Object, required: true },
@@ -12,6 +13,8 @@ const props = defineProps({
     publication: { type: Object, default: null },
     requiresRepublish: { type: Boolean, default: false },
 })
+
+const { locale, tr } = useLocale()
 
 // ── Year navigation ───────────────────────────────────────────
 const currentYear = new Date().getFullYear()
@@ -127,9 +130,9 @@ const runConfirmation = async () => {
 
 const deleteEvent = (ev) => {
     openConfirmationModal({
-        title: 'Eliminar evento',
-        message: `¿Eliminar "${ev.title}"?`,
-        confirmLabel: 'Eliminar',
+        title: tr('Eliminar evento', 'Delete event'),
+        message: tr(`¿Eliminar "${ev.title}"?`, `Delete "${ev.title}"?`),
+        confirmLabel: tr('Eliminar', 'Delete'),
         tone: 'danger',
         onConfirm: () => new Promise((resolve) => {
             router.delete(route('union.workplan.events.destroy', ev.id), {
@@ -142,9 +145,12 @@ const deleteEvent = (ev) => {
 
 const publishCalendar = () => {
     openConfirmationModal({
-        title: needsRepublish.value ? 'Republicar calendario' : 'Publicar calendario',
-        message: `¿Publicar el calendario ${props.year} a todas las asociaciones de la unión?`,
-        confirmLabel: needsRepublish.value ? 'Republicar cambios' : 'Publicar calendario',
+        title: needsRepublish.value ? tr('Republicar calendario', 'Republish calendar') : tr('Publicar calendario', 'Publish calendar'),
+        message: tr(
+            `¿Publicar el calendario ${props.year} a todas las asociaciones de la unión?`,
+            `Publish the ${props.year} calendar to every association in the union?`,
+        ),
+        confirmLabel: needsRepublish.value ? tr('Republicar cambios', 'Republish changes') : tr('Publicar calendario', 'Publish calendar'),
         onConfirm: () => new Promise((resolve) => {
             publishing.value = true
             router.post(route('union.workplan.publish'), { year: props.year }, {
@@ -160,9 +166,12 @@ const publishCalendar = () => {
 
 const syncMissingCalendar = () => {
     openConfirmationModal({
-        title: 'Sincronizar eventos faltantes',
-        message: `¿Buscar eventos nuevos del calendario ${props.year} y agregarlos a las asociaciones y clubes donde todavia no existan?`,
-        confirmLabel: 'Sincronizar faltantes',
+        title: tr('Sincronizar eventos faltantes', 'Sync missing events'),
+        message: tr(
+            `¿Buscar eventos nuevos del calendario ${props.year} y agregarlos a las asociaciones y clubes donde todavia no existan?`,
+            `Find new events from the ${props.year} calendar and add them to associations and clubs where they do not exist yet?`,
+        ),
+        confirmLabel: tr('Sincronizar faltantes', 'Sync missing'),
         onConfirm: () => new Promise((resolve) => {
             syncing.value = true
             router.post(route('union.workplan.sync-missing'), { year: props.year }, {
@@ -178,9 +187,12 @@ const syncMissingCalendar = () => {
 
 const unpublishCalendar = () => {
     openConfirmationModal({
-        title: 'Despublicar calendario',
-        message: `¿Despublicar el calendario ${props.year}? Esto removerá los eventos propagados hacia asociaciones y clubes.`,
-        confirmLabel: 'Despublicar',
+        title: tr('Despublicar calendario', 'Unpublish calendar'),
+        message: tr(
+            `¿Despublicar el calendario ${props.year}? Esto removerá los eventos propagados hacia asociaciones y clubes.`,
+            `Unpublish the ${props.year} calendar? This will remove the events propagated to associations and clubs.`,
+        ),
+        confirmLabel: tr('Despublicar', 'Unpublish'),
         tone: 'danger',
         onConfirm: () => new Promise((resolve) => {
             publishing.value = true
@@ -196,7 +208,10 @@ const unpublishCalendar = () => {
 }
 
 // ── Display helpers ───────────────────────────────────────────
-const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+const months = computed(() => locale.value === 'en'
+    ? ['January','February','March','April','May','June','July','August','September','October','November','December']
+    : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+)
 
 const clubTypeOptions = computed(() => props.clubTypeOptions ?? [])
 const clubTypeLabels = computed(() =>
@@ -217,7 +232,7 @@ const eventsByMonth = computed(() => {
 const formatDate = (d) => {
     if (!d) return ''
     const dt = new Date(dateOnly(d) + 'T12:00:00')
-    return dt.toLocaleDateString('es', { day: 'numeric', month: 'short' })
+    return dt.toLocaleDateString(locale.value === 'en' ? 'en-US' : 'es', { day: 'numeric', month: 'short' })
 }
 
 const formatDateRange = (ev) => {
@@ -231,7 +246,7 @@ const typeStyle = (type) => type === 'program'
     ? 'bg-amber-100 text-amber-800'
     : 'bg-blue-100 text-blue-700'
 
-const typeLabel = (type) => type === 'program' ? 'Programa' : 'General'
+const typeLabel = (type) => type === 'program' ? tr('Programa', 'Program') : tr('General', 'General')
 
 const toggleClubType = (val) => {
     const idx = form.target_club_types.indexOf(val)
@@ -246,7 +261,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
 
 <template>
     <PathfinderLayout>
-        <template #title>Plan de trabajo</template>
+        <template #title>{{ tr('Plan de trabajo', 'Workplan') }}</template>
 
         <div class="space-y-6">
 
@@ -255,12 +270,12 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
-                        <p class="mt-0.5 text-sm text-gray-500">Calendario general de actividades para la unión</p>
+                        <p class="mt-0.5 text-sm text-gray-500">{{ tr('Calendario general de actividades para la unión', 'General activity calendar for the union') }}</p>
                         <p class="mt-1 text-xs" :class="isPublished ? 'text-green-700' : 'text-gray-400'">
-                            {{ isPublished ? `Publicado · ${publication?.published_at || ''}` : 'No publicado a asociaciones' }}
+                            {{ isPublished ? `${tr('Publicado', 'Published')} · ${publication?.published_at || ''}` : tr('No publicado a asociaciones', 'Not published to associations') }}
                         </p>
                         <p v-if="needsRepublish" class="mt-1 text-xs font-medium text-amber-700">
-                            Hay cambios posteriores a la ultima publicacion. Usa republicar para aplicar ediciones y eliminaciones; usa sincronizar faltantes si solo agregaste eventos nuevos.
+                            {{ tr('Hay cambios posteriores a la ultima publicacion. Usa republicar para aplicar ediciones y eliminaciones; usa sincronizar faltantes si solo agregaste eventos nuevos.', 'There are changes after the last publication. Use republish to apply edits and deletions; use sync missing if you only added new events.') }}
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
@@ -282,7 +297,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             rel="noopener"
                             class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
                         >
-                            Imprimir PDF
+                            {{ tr('Imprimir PDF', 'Print PDF') }}
                         </a>
                         <button
                             v-if="!isPublished"
@@ -291,7 +306,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
                             @click="publishCalendar"
                         >
-                            Publicar calendario
+                            {{ tr('Publicar calendario', 'Publish calendar') }}
                         </button>
                         <button
                             v-else-if="needsRepublish"
@@ -300,7 +315,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
                             @click="publishCalendar"
                         >
-                            Republicar cambios
+                            {{ tr('Republicar cambios', 'Republish changes') }}
                         </button>
                         <button
                             v-if="isPublished"
@@ -309,7 +324,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             class="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50"
                             @click="syncMissingCalendar"
                         >
-                            Sincronizar faltantes
+                            {{ tr('Sincronizar faltantes', 'Sync missing') }}
                         </button>
                         <button
                             v-if="isPublished"
@@ -318,14 +333,14 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
                             @click="unpublishCalendar"
                         >
-                            Despublicar
+                            {{ tr('Despublicar', 'Unpublish') }}
                         </button>
                         <button
                             type="button"
                             class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 transition-colors"
                             @click="openCreate"
                         >
-                            + Agregar evento
+                            + {{ tr('Agregar evento', 'Add event') }}
                         </button>
                     </div>
                 </div>
@@ -334,27 +349,27 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                 <div class="mt-4 flex flex-wrap gap-3 text-xs">
                     <span class="flex items-center gap-1.5">
                         <span class="inline-block w-2.5 h-2.5 rounded-full bg-blue-400" />
-                        <span class="text-gray-500">General — informativo para toda la unión</span>
+                        <span class="text-gray-500">{{ tr('General - informativo para toda la unión', 'General - informational for the whole union') }}</span>
                     </span>
                     <span class="flex items-center gap-1.5">
                         <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400" />
-                        <span class="text-gray-500">Programa — actividad que los clubes deben preparar o realizar</span>
+                        <span class="text-gray-500">{{ tr('Programa - actividad que los clubes deben preparar o realizar', 'Program - activity clubs must prepare or complete') }}</span>
                     </span>
                     <span class="flex items-center gap-1.5">
                         <span class="inline-block w-2 h-2 rounded-sm border-2 border-red-600" />
-                        <span class="text-gray-500">Obligatorio</span>
+                        <span class="text-gray-500">{{ tr('Obligatorio', 'Required') }}</span>
                     </span>
                 </div>
             </div>
 
             <div v-if="needsRepublish" class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
-                Las asociaciones consultan el calendario de union y los clubes reciben copias publicadas a traves de cada asociacion. Si editaste o eliminaste eventos existentes, usa <strong>Republicar cambios</strong>. Si solo agregaste eventos nuevos, usa <strong>Sincronizar faltantes</strong>.
+                {{ tr('Las asociaciones consultan el calendario de union y los clubes reciben copias publicadas a traves de cada asociacion. Si editaste o eliminaste eventos existentes, usa', 'Associations review the union calendar and clubs receive published copies through each association. If you edited or deleted existing events, use') }} <strong>{{ tr('Republicar cambios', 'Republish changes') }}</strong>. {{ tr('Si solo agregaste eventos nuevos, usa', 'If you only added new events, use') }} <strong>{{ tr('Sincronizar faltantes', 'Sync missing') }}</strong>.
             </div>
 
             <!-- Empty state -->
             <div v-if="!events.length" class="rounded-2xl border border-dashed border-gray-200 p-12 text-center">
-                <p class="text-sm font-medium text-gray-500">Sin eventos para {{ year }}</p>
-                <p class="mt-1 text-xs text-gray-400">Haz clic en "Agregar evento" para comenzar el plan de trabajo.</p>
+                <p class="text-sm font-medium text-gray-500">{{ tr('Sin eventos para', 'No events for') }} {{ year }}</p>
+                <p class="mt-1 text-xs text-gray-400">{{ tr('Haz clic en "Agregar evento" para comenzar el plan de trabajo.', 'Click "Add event" to start the workplan.') }}</p>
             </div>
 
             <!-- Monthly timeline -->
@@ -363,7 +378,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                     <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                         <!-- Month header -->
                         <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 px-6 py-3">
-                            <span class="text-sm font-semibold text-gray-700">{{ MONTHS[monthNum - 1] }}</span>
+                            <span class="text-sm font-semibold text-gray-700">{{ months[monthNum - 1] }}</span>
                             <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">{{ monthEvents.length }}</span>
                         </div>
 
@@ -380,10 +395,10 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                         {{ new Date(dateOnly(ev.date) + 'T12:00:00').getDate() }}
                                     </p>
                                     <p class="text-[10px] uppercase text-gray-400 tracking-wide">
-                                        {{ MONTHS[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}
+                                        {{ months[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}
                                     </p>
                                     <p v-if="ev.end_date && dateOnly(ev.end_date) !== dateOnly(ev.date)" class="mt-0.5 text-[10px] text-gray-400">
-                                        al {{ formatDate(ev.end_date) }}
+                                        {{ tr('al', 'to') }} {{ formatDate(ev.end_date) }}
                                     </p>
                                 </div>
 
@@ -394,7 +409,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                             {{ typeLabel(ev.event_type) }}
                                         </span>
                                         <span v-if="ev.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">
-                                            Obligatorio
+                                            {{ tr('Obligatorio', 'Required') }}
                                         </span>
                                         <template v-if="ev.target_club_types?.length">
                                             <span
@@ -405,7 +420,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                                 {{ clubTypeLabels[ct] ?? ct }}
                                             </span>
                                         </template>
-                                        <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-400">Todos los clubes</span>
+                                        <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-400">{{ tr('Todos los clubes', 'All clubs') }}</span>
                                     </div>
 
                                     <p class="text-sm font-semibold text-gray-900 truncate">{{ ev.title }}</p>
@@ -430,14 +445,14 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                         class="rounded-md px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 transition-colors"
                                         @click="openEdit(ev)"
                                     >
-                                        Editar
+                                        {{ tr('Editar', 'Edit') }}
                                     </button>
                                     <button
                                         type="button"
                                         class="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 transition-colors"
                                         @click="deleteEvent(ev)"
                                     >
-                                        Eliminar
+                                        {{ tr('Eliminar', 'Delete') }}
                                     </button>
                                 </div>
                             </li>
@@ -466,7 +481,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                         <!-- Modal header -->
                         <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
                             <h3 class="text-sm font-semibold text-gray-900">
-                                {{ editingEvent ? 'Editar evento' : 'Nuevo evento' }}
+                                {{ editingEvent ? tr('Editar evento', 'Edit event') : tr('Nuevo evento', 'New event') }}
                             </h3>
                             <button type="button" class="text-gray-400 hover:text-gray-600" @click="closeModal">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -480,11 +495,11 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
 
                             <!-- Title -->
                             <div>
-                                <label class="block text-xs font-medium text-gray-700 mb-1">Título <span class="text-red-500">*</span></label>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Título', 'Title') }} <span class="text-red-500">*</span></label>
                                 <input
                                     v-model="form.title"
                                     type="text"
-                                    placeholder="Nombre del evento"
+                                    :placeholder="tr('Nombre del evento', 'Event name')"
                                     class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 />
                                 <p v-if="form.errors.title" class="mt-1 text-xs text-red-500">{{ form.errors.title }}</p>
@@ -493,16 +508,16 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             <!-- Type + Mandatory -->
                             <div class="flex gap-3">
                                 <div class="flex-1">
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Tipo <span class="text-red-500">*</span></label>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Tipo', 'Type') }} <span class="text-red-500">*</span></label>
                                     <select v-model="form.event_type" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                        <option value="general">General</option>
-                                        <option value="program">Programa</option>
+                                        <option value="general">{{ tr('General', 'General') }}</option>
+                                        <option value="program">{{ tr('Programa', 'Program') }}</option>
                                     </select>
                                 </div>
                                 <div class="flex items-end pb-0.5">
                                     <label class="flex items-center gap-2 cursor-pointer">
                                         <input type="checkbox" v-model="form.is_mandatory" class="rounded border-gray-300 text-red-600 focus:ring-red-500" />
-                                        <span class="text-xs font-medium text-gray-700">Obligatorio</span>
+                                        <span class="text-xs font-medium text-gray-700">{{ tr('Obligatorio', 'Required') }}</span>
                                     </label>
                                 </div>
                             </div>
@@ -510,12 +525,12 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             <!-- Dates -->
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Fecha <span class="text-red-500">*</span></label>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Fecha', 'Date') }} <span class="text-red-500">*</span></label>
                                     <input v-model="form.date" type="date" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                     <p v-if="form.errors.date" class="mt-1 text-xs text-red-500">{{ form.errors.date }}</p>
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Fecha fin</label>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Fecha fin', 'End date') }}</label>
                                     <input v-model="form.end_date" type="date" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                 </div>
                             </div>
@@ -523,29 +538,29 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             <!-- Times -->
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Hora inicio</label>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Hora inicio', 'Start time') }}</label>
                                     <input v-model="form.start_time" type="time" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Hora fin</label>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Hora fin', 'End time') }}</label>
                                     <input v-model="form.end_time" type="time" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
                                 </div>
                             </div>
 
                             <!-- Location -->
                             <div>
-                                <label class="block text-xs font-medium text-gray-700 mb-1">Lugar</label>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Lugar', 'Location') }}</label>
                                 <input
                                     v-model="form.location"
                                     type="text"
-                                    placeholder="Ciudad, sede, etc."
+                                    :placeholder="tr('Ciudad, sede, etc.', 'City, venue, etc.')"
                                     class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 />
                             </div>
 
                             <!-- Target club types -->
                             <div>
-                                <label class="block text-xs font-medium text-gray-700 mb-2">Aplica a</label>
+                                <label class="block text-xs font-medium text-gray-700 mb-2">{{ tr('Aplica a', 'Applies to') }}</label>
                                 <div class="flex flex-wrap gap-2">
                                     <button
                                         v-for="ct in clubTypeOptions" :key="ct.value"
@@ -561,16 +576,16 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                         {{ ct.label }}
                                     </button>
                                 </div>
-                                <p class="mt-1.5 text-xs text-gray-400">Sin selección = todos los clubes</p>
+                                <p class="mt-1.5 text-xs text-gray-400">{{ tr('Sin selección = todos los clubes', 'No selection = all clubs') }}</p>
                             </div>
 
                             <!-- Description -->
                             <div>
-                                <label class="block text-xs font-medium text-gray-700 mb-1">Descripción</label>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">{{ tr('Descripción', 'Description') }}</label>
                                 <textarea
                                     v-model="form.description"
                                     rows="3"
-                                    placeholder="Detalles, instrucciones o notas para los clubes..."
+                                    :placeholder="tr('Detalles, instrucciones o notas para los clubes...', 'Details, instructions, or notes for clubs...')"
                                     class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 />
                             </div>
@@ -584,7 +599,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                                 @click="closeModal"
                             >
-                                Cancelar
+                                {{ tr('Cancelar', 'Cancel') }}
                             </button>
                             <button
                                 type="button"
@@ -592,7 +607,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                                 class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60 transition-colors"
                                 @click="submit"
                             >
-                                {{ editingEvent ? 'Guardar cambios' : 'Crear evento' }}
+                                {{ editingEvent ? tr('Guardar cambios', 'Save changes') : tr('Crear evento', 'Create event') }}
                             </button>
                         </div>
                     </div>
@@ -612,7 +627,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                         :disabled="confirmationBusy"
                         @click="closeConfirmationModal"
                     >
-                        Cancelar
+                        {{ tr('Cancelar', 'Cancel') }}
                     </button>
                     <button
                         type="button"
@@ -621,7 +636,7 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                         :disabled="confirmationBusy"
                         @click="runConfirmation"
                     >
-                        {{ confirmationBusy ? 'Procesando...' : confirmationConfirmLabel }}
+                        {{ confirmationBusy ? tr('Procesando...', 'Processing...') : confirmationConfirmLabel }}
                     </button>
                 </div>
             </div>

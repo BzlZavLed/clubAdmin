@@ -1,7 +1,7 @@
 <script setup>
 import { useLocale } from '@/Composables/useLocale'
 
-const { locale, setLocale, tr } = useLocale()
+const { locale, setLocale, t } = useLocale()
 
 defineProps({
     compact: {
@@ -14,7 +14,7 @@ defineProps({
 <template>
     <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
-            {{ tr('Idioma', 'Language') }}
+            {{ t('language') }}
         </label>
         <select
             :value="locale"

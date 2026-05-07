@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useForm, usePage } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import InputError from '@/Components/InputError.vue'
+import { useLocale } from '@/Composables/useLocale'
 import { CreditCardIcon, ArrowUpTrayIcon, ClockIcon, CheckCircleIcon } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -13,6 +14,7 @@ const props = defineProps({
 })
 
 const page = usePage()
+const { tr, locale } = useLocale()
 const selectedCharge = ref(null)
 const previewUrl = ref(null)
 
@@ -34,14 +36,14 @@ const formatDate = (value) => {
     if (!value) return '—'
     const dt = new Date(`${String(value).slice(0, 10)}T00:00:00`)
     if (Number.isNaN(dt.getTime())) return String(value)
-    return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }).format(dt)
+    return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'es-ES', { year: 'numeric', month: 'short', day: '2-digit' }).format(dt)
 }
 
 const formatDateTime = (value) => {
     if (!value) return '—'
     const dt = new Date(value)
     if (Number.isNaN(dt.getTime())) return String(value)
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'es-ES', {
         year: 'numeric',
         month: 'short',
         day: '2-digit',
@@ -52,12 +54,12 @@ const formatDateTime = (value) => {
 
 const statusLabel = (status) => {
     switch (status) {
-        case 'paid': return 'Pagado'
-        case 'pending_review': return 'En revision'
-        case 'approved': return 'Aprobado'
-        case 'rejected': return 'Rechazado'
-        case 'optional': return 'Opcional'
-        default: return 'Pendiente'
+        case 'paid': return tr('Pagado', 'Paid')
+        case 'pending_review': return tr('En revisión', 'In review')
+        case 'approved': return tr('Aprobado', 'Approved')
+        case 'rejected': return tr('Rechazado', 'Rejected')
+        case 'optional': return tr('Opcional', 'Optional')
+        default: return tr('Pendiente', 'Pending')
     }
 }
 
@@ -81,13 +83,13 @@ const statusClass = (status) => {
 const depositAccountLines = (account) => {
     if (!account) return []
     return [
-        account.bank_name ? `Banco: ${account.bank_name}` : null,
-        account.account_holder ? `Titular: ${account.account_holder}` : null,
-        account.account_type ? `Tipo: ${account.account_type}` : null,
-        account.account_number ? `Cuenta: ${account.account_number}` : null,
+        account.bank_name ? `${tr('Banco', 'Bank')}: ${account.bank_name}` : null,
+        account.account_holder ? `${tr('Titular', 'Account holder')}: ${account.account_holder}` : null,
+        account.account_type ? `${tr('Tipo', 'Type')}: ${account.account_type}` : null,
+        account.account_number ? `${tr('Cuenta', 'Account')}: ${account.account_number}` : null,
         account.routing_number ? `Routing: ${account.routing_number}` : null,
         account.zelle_email ? `Zelle: ${account.zelle_email}` : null,
-        account.zelle_phone ? `Zelle tel: ${account.zelle_phone}` : null,
+        account.zelle_phone ? `${tr('Zelle tel', 'Zelle phone')}: ${account.zelle_phone}` : null,
     ].filter(Boolean)
 }
 
@@ -135,7 +137,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
 
 <template>
     <PathfinderLayout>
-        <template #title>Pagos</template>
+        <template #title>{{ tr('Pagos', 'Payments') }}</template>
 
         <div class="space-y-6">
             <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -143,19 +145,19 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                     <div>
                         <div class="flex items-center gap-2">
                             <CreditCardIcon class="h-6 w-6 text-gray-600" />
-                            <h1 class="text-xl font-semibold text-gray-900">Pagos del club</h1>
+                            <h1 class="text-xl font-semibold text-gray-900">{{ tr('Pagos del club', 'Club payments') }}</h1>
                         </div>
                         <p class="mt-2 text-sm text-gray-600">
-                            Revisa cargos esperados para tus hijos, envia comprobantes de transferencia y descarga recibos aprobados.
+                            {{ tr('Revisa cargos esperados para tus hijos, envía comprobantes de transferencia y descarga recibos aprobados.', 'Review expected charges for your children, submit transfer receipts, and download approved receipts.') }}
                         </p>
                     </div>
                     <div class="grid grid-cols-2 gap-3 text-sm md:min-w-[280px]">
                         <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                            <div class="text-gray-500">Cargos visibles</div>
+                            <div class="text-gray-500">{{ tr('Cargos visibles', 'Visible charges') }}</div>
                             <div class="mt-1 text-lg font-semibold text-gray-900">{{ expected_payments.length }}</div>
                         </div>
                         <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                            <div class="text-amber-700">En revision</div>
+                            <div class="text-amber-700">{{ tr('En revisión', 'In review') }}</div>
                             <div class="mt-1 text-lg font-semibold text-amber-900">{{ pendingCount }}</div>
                         </div>
                     </div>
@@ -169,13 +171,13 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
             <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="flex items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Pagos esperados</h2>
-                        <p class="mt-1 text-sm text-gray-600">Cargos que aplican segun club, clase, menor o participacion en evento.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Pagos esperados', 'Expected payments') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">{{ tr('Cargos que aplican según club, clase, menor o participación en evento.', 'Charges that apply by club, class, child, or event participation.') }}</p>
                     </div>
                 </div>
 
                 <div v-if="!expected_payments.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
-                    No hay cargos visibles para tus hijos en este momento.
+                    {{ tr('No hay cargos visibles para tus hijos en este momento.', 'There are no visible charges for your children right now.') }}
                 </div>
 
                 <div v-else class="mt-4 space-y-4">
@@ -204,11 +206,11 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                 <div class="text-xs text-gray-500">
                                     {{ charge.scope_label }}
                                     <template v-if="charge.due_date">
-                                        <span class="mx-1">•</span> Vence {{ formatDate(charge.due_date) }}
+                                        <span class="mx-1">•</span> {{ tr('Vence', 'Due') }} {{ formatDate(charge.due_date) }}
                                     </template>
                                 </div>
                                 <div v-if="charge.deposit_account" class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-                                    <div class="font-medium">{{ charge.deposit_account.label || charge.deposit_account_label || 'Cuenta de depósito' }}</div>
+                                    <div class="font-medium">{{ charge.deposit_account.label || charge.deposit_account_label || tr('Cuenta de depósito', 'Deposit account') }}</div>
                                     <div class="mt-1 grid gap-1 md:grid-cols-2">
                                         <div v-for="line in depositAccountLines(charge.deposit_account)" :key="`${charge.row_key}-${line}`">{{ line }}</div>
                                     </div>
@@ -217,29 +219,29 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                     </div>
                                 </div>
                                 <div v-else-if="charge.can_submit_transfer" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                                    El club todavia no publico datos de deposito para {{ charge.deposit_account_label || charge.pay_to || 'esta cuenta' }}.
+                                    {{ tr('El club todavía no publicó datos de depósito para', 'The club has not published deposit information for') }} {{ charge.deposit_account_label || charge.pay_to || tr('esta cuenta', 'this account') }}.
                                 </div>
                             </div>
 
                             <div class="grid gap-2 text-sm lg:min-w-[320px]">
                                 <div class="grid grid-cols-3 gap-2">
                                     <div class="rounded-xl bg-gray-50 px-3 py-2">
-                                        <div class="text-xs text-gray-500">Esperado</div>
+                                        <div class="text-xs text-gray-500">{{ tr('Esperado', 'Expected') }}</div>
                                         <div class="font-semibold text-gray-900">${{ formatMoney(charge.expected_amount) }}</div>
                                     </div>
                                     <div class="rounded-xl bg-gray-50 px-3 py-2">
-                                        <div class="text-xs text-gray-500">Pagado</div>
+                                        <div class="text-xs text-gray-500">{{ tr('Pagado', 'Paid') }}</div>
                                         <div class="font-semibold text-gray-900">${{ formatMoney(charge.paid_amount) }}</div>
                                     </div>
                                     <div class="rounded-xl bg-gray-50 px-3 py-2">
-                                        <div class="text-xs text-gray-500">Pendiente</div>
+                                        <div class="text-xs text-gray-500">{{ tr('Pendiente', 'Pending') }}</div>
                                         <div class="font-semibold text-gray-900">
                                             ${{ formatMoney(charge.reusable ? charge.expected_amount : charge.remaining_amount) }}
                                         </div>
                                     </div>
                                 </div>
                                 <div v-if="charge.pending_amount > 0" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                    Ya hay ${{ formatMoney(charge.pending_amount) }} enviado para revision en este cargo.
+                                    {{ tr('Ya hay', 'There is already') }} ${{ formatMoney(charge.pending_amount) }} {{ tr('enviado para revisión en este cargo.', 'submitted for review on this charge.') }}
                                 </div>
                                 <div v-if="charge.transfer_blocked_reason" class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
                                     {{ charge.transfer_blocked_reason }}
@@ -252,7 +254,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                         @click="openTransferModal(charge)"
                                     >
                                         <ArrowUpTrayIcon class="h-4 w-4" />
-                                        Enviar comprobante
+                                        {{ tr('Enviar comprobante', 'Submit receipt') }}
                                     </button>
                                 </div>
                             </div>
@@ -265,13 +267,13 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                 <div class="flex items-center gap-2">
                     <ClockIcon class="h-5 w-5 text-amber-600" />
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Transferencias enviadas</h2>
-                        <p class="mt-1 text-sm text-gray-600">Historial de comprobantes enviados desde el portal de padres.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Transferencias enviadas', 'Submitted transfers') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">{{ tr('Historial de comprobantes enviados desde el portal de padres.', 'History of receipts submitted from the parent portal.') }}</p>
                     </div>
                 </div>
 
                 <div v-if="!transfer_submissions.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
-                    Aun no has enviado comprobantes de transferencia.
+                    {{ tr('Aún no has enviado comprobantes de transferencia.', 'You have not submitted transfer receipts yet.') }}
                 </div>
 
                 <div v-else class="mt-4 space-y-3">
@@ -291,7 +293,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                     </template>
                                 </div>
                                 <div class="text-xs text-gray-500">
-                                    Enviado {{ formatDateTime(submission.payment_date) }}
+                                    {{ tr('Enviado', 'Submitted') }} {{ formatDateTime(submission.payment_date) }}
                                     <template v-if="submission.reference">
                                         <span class="mx-1">•</span> Ref. {{ submission.reference }}
                                     </template>
@@ -306,7 +308,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
 
                             <div class="space-y-2 text-sm lg:min-w-[280px]">
                                 <div class="rounded-xl bg-gray-50 px-3 py-2">
-                                    <div class="text-xs text-gray-500">Monto enviado</div>
+                                    <div class="text-xs text-gray-500">{{ tr('Monto enviado', 'Submitted amount') }}</div>
                                     <div class="font-semibold text-gray-900">${{ formatMoney(submission.amount) }}</div>
                                 </div>
                                 <div class="flex flex-wrap gap-3">
@@ -317,7 +319,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                         rel="noopener"
                                         class="text-sm font-medium text-blue-600 hover:underline"
                                     >
-                                        Ver comprobante
+                                        {{ tr('Ver comprobante', 'View receipt') }}
                                     </a>
                                     <a
                                         v-if="submission.approved_receipt_url"
@@ -326,7 +328,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                         rel="noopener"
                                         class="text-sm font-medium text-emerald-600 hover:underline"
                                     >
-                                        Descargar recibo
+                                        {{ tr('Descargar recibo', 'Download receipt') }}
                                     </a>
                                 </div>
                             </div>
@@ -339,13 +341,13 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                 <div class="flex items-center gap-2">
                     <CheckCircleIcon class="h-5 w-5 text-emerald-600" />
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Recibos emitidos</h2>
-                        <p class="mt-1 text-sm text-gray-600">Recibos generados por pagos aprobados o registrados directamente por el club.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Recibos emitidos', 'Issued receipts') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">{{ tr('Recibos generados por pagos aprobados o registrados directamente por el club.', 'Receipts generated from approved payments or payments registered directly by the club.') }}</p>
                     </div>
                 </div>
 
                 <div v-if="!receipts.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
-                    No hay recibos disponibles todavia.
+                    {{ tr('No hay recibos disponibles todavía.', 'There are no receipts available yet.') }}
                 </div>
 
                 <div v-else class="mt-4 space-y-3">
@@ -360,11 +362,11 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                             </div>
                             <div class="flex items-center gap-4">
                                 <div class="text-right text-sm">
-                                    <div class="text-xs text-gray-500">Monto</div>
+                                    <div class="text-xs text-gray-500">{{ tr('Monto', 'Amount') }}</div>
                                     <div class="font-semibold text-gray-900">${{ formatMoney(receipt.amount_paid) }}</div>
                                 </div>
                                 <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
-                                    Descargar
+                                    {{ tr('Descargar', 'Download') }}
                                 </a>
                             </div>
                         </div>
@@ -377,7 +379,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
             <div class="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h3 class="text-lg font-semibold text-gray-900">Enviar comprobante</h3>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ tr('Enviar comprobante', 'Submit receipt') }}</h3>
                         <p class="mt-1 text-sm text-gray-600">
                             {{ selectedCharge.member_name }} • {{ selectedCharge.concept_name }}
                         </p>
@@ -387,7 +389,7 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
 
                 <form class="mt-5 space-y-4" @submit.prevent="submitTransfer">
                     <div v-if="selectedCharge.deposit_account" class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm text-blue-900">
-                        <div class="font-medium">{{ selectedCharge.deposit_account.label || selectedCharge.deposit_account_label || 'Cuenta de depósito' }}</div>
+                        <div class="font-medium">{{ selectedCharge.deposit_account.label || selectedCharge.deposit_account_label || tr('Cuenta de depósito', 'Deposit account') }}</div>
                         <div class="mt-1 grid gap-1 md:grid-cols-2">
                             <div v-for="line in depositAccountLines(selectedCharge.deposit_account)" :key="`modal-${line}`">{{ line }}</div>
                         </div>
@@ -398,44 +400,44 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
 
                     <div class="grid gap-4 md:grid-cols-2">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Monto</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Monto', 'Amount') }}</label>
                             <input v-model="transferForm.amount" type="number" min="0.01" step="0.01" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                             <InputError class="mt-1" :message="transferForm.errors.amount" />
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Fecha de transferencia</label>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha de transferencia', 'Transfer date') }}</label>
                             <input v-model="transferForm.payment_date" type="date" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                             <InputError class="mt-1" :message="transferForm.errors.payment_date" />
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Referencia</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Referencia', 'Reference') }}</label>
                         <input v-model="transferForm.reference" type="text" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                         <InputError class="mt-1" :message="transferForm.errors.reference" />
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Comprobante</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Comprobante', 'Receipt') }}</label>
                         <input type="file" accept="image/*" class="mt-1 block w-full text-sm" @change="onFileChange" />
                         <InputError class="mt-1" :message="transferForm.errors.receipt_image" />
                         <a v-if="previewUrl" :href="previewUrl" target="_blank" rel="noopener" class="mt-2 inline-block text-sm text-blue-600 hover:underline">
-                            Ver imagen seleccionada
+                            {{ tr('Ver imagen seleccionada', 'View selected image') }}
                         </a>
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Notas</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ tr('Notas', 'Notes') }}</label>
                         <textarea v-model="transferForm.notes" rows="3" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"></textarea>
                         <InputError class="mt-1" :message="transferForm.errors.notes" />
                     </div>
 
                     <div class="flex justify-end gap-3">
                         <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="closeTransferModal">
-                            Cancelar
+                            {{ tr('Cancelar', 'Cancel') }}
                         </button>
                         <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" :disabled="transferForm.processing">
-                            {{ transferForm.processing ? 'Enviando...' : 'Enviar comprobante' }}
+                            {{ transferForm.processing ? tr('Enviando...', 'Submitting...') : tr('Enviar comprobante', 'Submit receipt') }}
                         </button>
                     </div>
                 </form>

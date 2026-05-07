@@ -1,5 +1,6 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import { useLocale } from '@/Composables/useLocale'
 import { router } from '@inertiajs/vue3'
 import { reactive, watch } from 'vue'
 
@@ -22,6 +23,7 @@ const filterForm = reactive({
     status: props.filters?.status || '',
     source: props.filters?.source || '',
 })
+const { tr } = useLocale()
 
 watch(
     () => [filterForm.status, filterForm.source],
@@ -40,24 +42,24 @@ watch(
 
 <template>
     <PathfinderLayout>
-        <template #title>Logs de AI</template>
+        <template #title>{{ tr('Logs de AI', 'AI logs') }}</template>
 
         <div class="space-y-4">
             <div class="rounded-lg border bg-white p-4 shadow-sm">
                 <div class="flex flex-col gap-4 md:flex-row md:items-end">
                     <div>
-                        <label class="mb-1 block text-xs font-medium text-gray-600">Estado</label>
+                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Estado', 'Status') }}</label>
                         <select v-model="filterForm.status" class="rounded border px-3 py-2 text-sm">
-                            <option value="">Todos</option>
-                            <option value="success">Success</option>
+                            <option value="">{{ tr('Todos', 'All') }}</option>
+                            <option value="success">{{ tr('Exitoso', 'Success') }}</option>
                             <option value="error">Error</option>
-                            <option value="pending">Pending</option>
+                            <option value="pending">{{ tr('Pendiente', 'Pending') }}</option>
                         </select>
                     </div>
                     <div>
                         <label class="mb-1 block text-xs font-medium text-gray-600">Source</label>
                         <select v-model="filterForm.source" class="rounded border px-3 py-2 text-sm">
-                            <option value="">Todos</option>
+                            <option value="">{{ tr('Todos', 'All') }}</option>
                             <option v-for="source in sources" :key="source" :value="source">{{ source }}</option>
                         </select>
                     </div>
@@ -69,12 +71,12 @@ watch(
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50">
                             <tr class="text-left text-gray-600">
-                                <th class="px-4 py-3 font-medium">Fecha</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Fecha', 'Date') }}</th>
                                 <th class="px-4 py-3 font-medium">Source</th>
                                 <th class="px-4 py-3 font-medium">Event</th>
                                 <th class="px-4 py-3 font-medium">Club</th>
                                 <th class="px-4 py-3 font-medium">Model</th>
-                                <th class="px-4 py-3 font-medium">Estado</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Estado', 'Status') }}</th>
                                 <th class="px-4 py-3 font-medium">Tokens</th>
                             </tr>
                         </thead>
@@ -110,7 +112,7 @@ watch(
                                     </div>
                                 </td>
                                 <td class="px-4 py-3 text-gray-700">
-                                    <div>Total: {{ log.total_tokens ?? '—' }}</div>
+                                    <div>{{ tr('Total', 'Total') }}: {{ log.total_tokens ?? '—' }}</div>
                                     <div class="text-xs text-gray-500">
                                         In: {{ log.input_tokens ?? '—' }} / Out: {{ log.output_tokens ?? '—' }}
                                     </div>
@@ -119,7 +121,7 @@ watch(
                             <tr v-for="log in logs.data" :key="`detail-${log.id}`" class="border-t bg-gray-50">
                                 <td colspan="7" class="px-4 py-3">
                                     <details>
-                                        <summary class="cursor-pointer text-sm font-medium text-blue-700">Ver prompt y respuesta</summary>
+                                        <summary class="cursor-pointer text-sm font-medium text-blue-700">{{ tr('Ver prompt y respuesta', 'View prompt and response') }}</summary>
                                         <div class="mt-3 grid gap-4 lg:grid-cols-2">
                                             <div>
                                                 <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Prompt</p>
@@ -134,7 +136,7 @@ watch(
                                 </td>
                             </tr>
                             <tr v-if="!logs.data.length">
-                                <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">No hay logs de AI.</td>
+                                <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">{{ tr('No hay logs de AI.', 'There are no AI logs.') }}</td>
                             </tr>
                         </tbody>
                     </table>

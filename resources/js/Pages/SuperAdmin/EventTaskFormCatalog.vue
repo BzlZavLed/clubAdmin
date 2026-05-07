@@ -2,6 +2,7 @@
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { router, useForm } from '@inertiajs/vue3'
 import { computed, reactive, ref, watch } from 'vue'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     schemas: { type: Array, default: () => [] },
@@ -17,6 +18,8 @@ const props = defineProps({
     taskKeys: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({ search: '', club_id: '', event_type: '' }) },
 })
+
+const { tr } = useLocale()
 
 const filters = reactive({
     search: props.filters?.search || '',
@@ -89,10 +92,10 @@ const taskForm = useForm({
 })
 
 const modalTitle = computed(() => {
-    if (editingType.value === 'schema_create') return 'Crear formulario global'
-    if (editingType.value === 'schema') return 'Editar formulario global'
-    if (editingType.value === 'template') return 'Editar plantilla de tarea'
-    if (editingType.value === 'task') return 'Editar formulario activo'
+    if (editingType.value === 'schema_create') return tr('Crear formulario global', 'Create global form')
+    if (editingType.value === 'schema') return tr('Editar formulario global', 'Edit global form')
+    if (editingType.value === 'template') return tr('Editar plantilla de tarea', 'Edit task template')
+    if (editingType.value === 'task') return tr('Editar formulario activo', 'Edit active form')
     return ''
 })
 
@@ -149,15 +152,15 @@ const templateMatchScore = (option) => {
 
     if (taskKey && optionKey && taskKey === optionKey) {
         score += 70
-        reasons.push('mismo task_key')
+        reasons.push(tr('mismo task_key', 'same task_key'))
     }
 
     if (taskTitle && optionTitle && taskTitle === optionTitle) {
         score += 100
-        reasons.push('mismo nombre')
+        reasons.push(tr('mismo nombre', 'same name'))
     } else if (taskTitle && optionTitle && (taskTitle.includes(optionTitle) || optionTitle.includes(taskTitle))) {
         score += 55
-        reasons.push('nombre parecido')
+        reasons.push(tr('nombre parecido', 'similar name'))
     }
 
     const taskTokens = titleTokens(taskTitle)
@@ -168,18 +171,18 @@ const templateMatchScore = (option) => {
         const overlap = commonCount / Math.max(Math.min(taskTokens.length, optionTokens.length), 1)
         if (overlap >= 0.5) {
             score += Math.round(overlap * 40)
-            reasons.push('palabras parecidas')
+            reasons.push(tr('palabras parecidas', 'similar words'))
         }
     }
 
     if (taskEventType && optionEventType && taskEventType === optionEventType) {
         score += 10
-        reasons.push('mismo tipo de evento')
+        reasons.push(tr('mismo tipo de evento', 'same event type'))
     }
 
     if (taskClubId && optionClubId && taskClubId === optionClubId) {
         score += 8
-        reasons.push('mismo club')
+        reasons.push(tr('mismo club', 'same club'))
     }
 
     return { score, reasons: [...new Set(reasons)] }
@@ -210,8 +213,8 @@ const visibleTemplateFormOptions = computed(() => {
 })
 
 const templateOptgroupLabel = computed(() => {
-    if (!hasTemplateSuggestions.value) return 'Plantillas guardadas'
-    return showAllTemplateOptions.value ? 'Todas las plantillas guardadas' : 'Plantillas sugeridas'
+    if (!hasTemplateSuggestions.value) return tr('Plantillas guardadas', 'Saved templates')
+    return showAllTemplateOptions.value ? tr('Todas las plantillas guardadas', 'All saved templates') : tr('Plantillas sugeridas', 'Suggested templates')
 })
 
 const templateOptionLabel = (option) => {
@@ -232,16 +235,16 @@ const parseJson = (allowBlank = false) => {
     try {
         const parsed = JSON.parse(raw)
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            jsonError.value = 'El JSON debe ser un objeto.'
+            jsonError.value = tr('El JSON debe ser un objeto.', 'JSON must be an object.')
             return undefined
         }
         if (!Array.isArray(parsed.fields)) {
-            jsonError.value = 'El JSON debe incluir fields como arreglo.'
+            jsonError.value = tr('El JSON debe incluir fields como arreglo.', 'JSON must include fields as an array.')
             return undefined
         }
         return parsed
     } catch (error) {
-        jsonError.value = error?.message || 'JSON inválido.'
+        jsonError.value = error?.message || tr('JSON inválido.', 'Invalid JSON.')
         return undefined
     }
 }
@@ -396,14 +399,14 @@ const schemaFromBuilder = () => {
         .filter((field) => field.key && field.label)
 
     if (!normalized.length) {
-        jsonError.value = 'Agrega al menos un campo valido.'
+        jsonError.value = tr('Agrega al menos un campo valido.', 'Add at least one valid field.')
         return null
     }
 
     const keys = new Set()
     for (const field of normalized) {
         if (keys.has(field.key)) {
-            jsonError.value = `Key duplicado: ${field.key}`
+            jsonError.value = tr(`Key duplicado: ${field.key}`, `Duplicate key: ${field.key}`)
             return null
         }
         keys.add(field.key)
@@ -530,33 +533,33 @@ const visitLink = (link) => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Formularios de tareas</template>
+        <template #title>{{ tr('Formularios de tareas', 'Task Forms') }}</template>
 
         <div class="space-y-5">
             <div class="rounded-lg border bg-white p-4 shadow-sm">
                 <div class="grid gap-3 lg:grid-cols-[1fr_220px_220px]">
                     <div>
-                        <label class="mb-1 block text-xs font-medium text-gray-600">Buscar</label>
+                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Buscar', 'Search') }}</label>
                         <input
                             v-model="filters.search"
                             type="search"
                             class="w-full rounded border px-3 py-2 text-sm"
-                            placeholder="Tarea, evento, key o descripción"
+                            :placeholder="tr('Tarea, evento, key o descripción', 'Task, event, key, or description')"
                         >
                     </div>
                     <div>
-                        <label class="mb-1 block text-xs font-medium text-gray-600">Club</label>
+                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Club', 'Club') }}</label>
                         <select v-model="filters.club_id" class="w-full rounded border px-3 py-2 text-sm">
-                            <option value="">Todos</option>
+                            <option value="">{{ tr('Todos', 'All') }}</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">
-                                {{ club.club_name }}{{ club.status !== 'active' ? ' (inactivo)' : '' }}
+                                {{ club.club_name }}{{ club.status !== 'active' ? ` (${tr('inactivo', 'inactive')})` : '' }}
                             </option>
                         </select>
                     </div>
                     <div>
-                        <label class="mb-1 block text-xs font-medium text-gray-600">Tipo de evento</label>
+                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Tipo de evento', 'Event type') }}</label>
                         <select v-model="filters.event_type" class="w-full rounded border px-3 py-2 text-sm">
-                            <option value="">Todos</option>
+                            <option value="">{{ tr('Todos', 'All') }}</option>
                             <option v-for="type in eventTypes" :key="type" :value="type">{{ type }}</option>
                         </select>
                     </div>
@@ -566,54 +569,54 @@ const visitLink = (link) => {
             <section class="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                        <h2 class="text-sm font-semibold text-blue-950">Uso rápido</h2>
+                        <h2 class="text-sm font-semibold text-blue-950">{{ tr('Uso rápido', 'Quick Use') }}</h2>
                         <p class="mt-1 max-w-3xl text-xs text-blue-800">
-                            Usa esta pantalla para revisar qué acción abrirá cada tarea de evento. Los handlers fijos son redirects o módulos del sistema; los formularios globales son schemas reutilizables que abren el modal de formulario.
+                            {{ tr('Usa esta pantalla para revisar qué acción abrirá cada tarea de evento. Los handlers fijos son redirects o módulos del sistema; los formularios globales son schemas reutilizables que abren el modal de formulario.', 'Use this screen to review which action each event task will open. Fixed handlers are redirects or system modules; global forms are reusable schemas that open the form modal.') }}
                         </p>
                     </div>
                     <div class="inline-flex w-fit rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
-                        Custom form tiene prioridad
+                        {{ tr('Custom form tiene prioridad', 'Custom form has priority') }}
                     </div>
                 </div>
 
                 <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <div class="rounded border border-blue-100 bg-white/70 p-3">
-                        <div class="font-semibold text-blue-950">Handlers fijos</div>
+                        <div class="font-semibold text-blue-950">{{ tr('Handlers fijos', 'Fixed handlers') }}</div>
                         <p class="mt-1 text-xs text-blue-800">
-                            Participantes, documentos y transporte abren pantallas existentes. No se editan como JSON.
+                            {{ tr('Participantes, documentos y transporte abren pantallas existentes. No se editan como JSON.', 'Participants, documents, and transportation open existing screens. They are not edited as JSON.') }}
                         </p>
                     </div>
                     <div class="rounded border border-blue-100 bg-white/70 p-3">
-                        <div class="font-semibold text-blue-950">Formularios globales</div>
+                        <div class="font-semibold text-blue-950">{{ tr('Formularios globales', 'Global forms') }}</div>
                         <p class="mt-1 text-xs text-blue-800">
-                            Edita schemas reutilizables por <span class="font-mono">task_key</span>, como emergency_contacts o camp_reservation.
+                            {{ tr('Edita schemas reutilizables por', 'Edit reusable schemas by') }} <span class="font-mono">task_key</span>, {{ tr('como emergency_contacts o camp_reservation.', 'such as emergency_contacts or camp_reservation.') }}
                         </p>
                     </div>
                     <div class="rounded border border-blue-100 bg-white/70 p-3">
-                        <div class="font-semibold text-blue-950">Plantillas guardadas</div>
+                        <div class="font-semibold text-blue-950">{{ tr('Plantillas guardadas', 'Saved templates') }}</div>
                         <p class="mt-1 text-xs text-blue-800">
-                            Cambia el catálogo que se copia a nuevos eventos según club y tipo de evento.
+                            {{ tr('Cambia el catálogo que se copia a nuevos eventos según club y tipo de evento.', 'Change the catalog copied into new events by club and event type.') }}
                         </p>
                     </div>
                     <div class="rounded border border-blue-100 bg-white/70 p-3">
-                        <div class="font-semibold text-blue-950">Tareas de eventos</div>
+                        <div class="font-semibold text-blue-950">{{ tr('Tareas de eventos', 'Event tasks') }}</div>
                         <p class="mt-1 text-xs text-blue-800">
-                            Revisa el handler activo de una tarea real. Si aparece Documents tab pero debe abrir formulario, agrega o corrige el schema custom.
+                            {{ tr('Revisa el handler activo de una tarea real. Si aparece Documents tab pero debe abrir formulario, agrega o corrige el schema custom.', 'Review the active handler for a real task. If Documents tab appears but it should open a form, add or correct the custom schema.') }}
                         </p>
                     </div>
                 </div>
 
                 <ol class="mt-4 grid gap-2 text-xs text-blue-800 md:grid-cols-3">
-                    <li><span class="font-semibold text-blue-950">1.</span> Filtra por club, tipo de evento o título de tarea.</li>
-                    <li><span class="font-semibold text-blue-950">2.</span> Abre Editar en la fila que necesitas corregir.</li>
-                    <li><span class="font-semibold text-blue-950">3.</span> Usa handlers fijos para módulos existentes; usa formularios globales o custom cuando necesitas capturar datos nuevos.</li>
+                    <li><span class="font-semibold text-blue-950">1.</span> {{ tr('Filtra por club, tipo de evento o título de tarea.', 'Filter by club, event type, or task title.') }}</li>
+                    <li><span class="font-semibold text-blue-950">2.</span> {{ tr('Abre Editar en la fila que necesitas corregir.', 'Open Edit on the row you need to correct.') }}</li>
+                    <li><span class="font-semibold text-blue-950">3.</span> {{ tr('Usa handlers fijos para módulos existentes; usa formularios globales o custom cuando necesitas capturar datos nuevos.', 'Use fixed handlers for existing modules; use global or custom forms when you need to capture new data.') }}</li>
                 </ol>
             </section>
 
             <section class="rounded-lg border bg-white shadow-sm">
                 <div class="border-b px-4 py-3">
-                    <h2 class="text-sm font-semibold text-gray-900">Handlers fijos</h2>
-                    <p class="text-xs text-gray-500">Acciones del sistema que no usan schema_json. Sirven para tareas que deben abrir una pantalla existente.</p>
+                    <h2 class="text-sm font-semibold text-gray-900">{{ tr('Handlers fijos', 'Fixed handlers') }}</h2>
+                    <p class="text-xs text-gray-500">{{ tr('Acciones del sistema que no usan schema_json. Sirven para tareas que deben abrir una pantalla existente.', 'System actions that do not use schema_json. They are used for tasks that must open an existing screen.') }}</p>
                 </div>
                 <div class="grid gap-3 p-4 md:grid-cols-3">
                     <div
@@ -626,16 +629,16 @@ const visitLink = (link) => {
                                 <div class="text-sm font-semibold text-gray-900">{{ handler.target }}</div>
                                 <div class="mt-1 font-mono text-[11px] text-gray-500">{{ handler.label }}</div>
                             </div>
-                            <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">Fijo</span>
+                            <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">{{ tr('Fijo', 'Fixed') }}</span>
                         </div>
                         <p class="mt-2 text-xs text-gray-600">{{ handler.description }}</p>
                         <div class="mt-3 space-y-2 text-xs text-gray-600">
                             <div>
-                                <span class="font-semibold text-gray-800">Task keys:</span>
+                                <span class="font-semibold text-gray-800">{{ tr('Task keys:', 'Task keys:') }}</span>
                                 <span class="font-mono">{{ handler.task_keys?.length ? handler.task_keys.join(', ') : 'keywords' }}</span>
                             </div>
                             <div>
-                                <span class="font-semibold text-gray-800">Keywords:</span>
+                                <span class="font-semibold text-gray-800">{{ tr('Keywords:', 'Keywords:') }}</span>
                                 <span>{{ handler.keywords?.join(', ') }}</span>
                             </div>
                             <div class="text-gray-500">{{ handler.priority }}</div>
@@ -647,25 +650,25 @@ const visitLink = (link) => {
             <section class="rounded-lg border bg-white shadow-sm">
                 <div class="flex items-center justify-between border-b px-4 py-3">
                     <div>
-                        <h2 class="text-sm font-semibold text-gray-900">Formularios globales reutilizables</h2>
-                        <p class="text-xs text-gray-500">Schemas reutilizables por task_key. No son redirects a tabs existentes.</p>
+                        <h2 class="text-sm font-semibold text-gray-900">{{ tr('Formularios globales reutilizables', 'Reusable global forms') }}</h2>
+                        <p class="text-xs text-gray-500">{{ tr('Schemas reutilizables por task_key. No son redirects a tabs existentes.', 'Reusable schemas by task_key. They are not redirects to existing tabs.') }}</p>
                     </div>
                     <button
                         type="button"
                         class="rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
                         @click="openCreateSchema"
                     >
-                        Nuevo formulario global
+                        {{ tr('Nuevo formulario global', 'New global form') }}
                     </button>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
-                                <th class="px-4 py-3 font-medium">Key</th>
-                                <th class="px-4 py-3 font-medium">Nombre</th>
-                                <th class="px-4 py-3 font-medium">Campos</th>
-                                <th class="px-4 py-3 font-medium">Actualizado</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Key', 'Key') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Nombre', 'Name') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Campos', 'Fields') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Actualizado', 'Updated') }}</th>
                                 <th class="px-4 py-3 font-medium"></th>
                             </tr>
                         </thead>
@@ -677,26 +680,26 @@ const visitLink = (link) => {
                                         v-if="schema.is_shadowed_by_fixed_handler"
                                         class="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
                                     >
-                                        Lo cubre {{ schema.fixed_handler?.target }}
+                                        {{ tr('Lo cubre', 'Covered by') }} {{ schema.fixed_handler?.target }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-3">
                                     <div class="font-medium text-gray-900">{{ schema.name }}</div>
                                     <div class="max-w-xl text-xs text-gray-500">{{ schema.description || '—' }}</div>
                                     <div v-if="schema.is_shadowed_by_fixed_handler" class="mt-1 max-w-xl text-xs text-amber-700">
-                                        Esta key abre un handler fijo, por eso no aparece en "Asignar formulario existente".
+                                        {{ tr('Esta key abre un handler fijo, por eso no aparece en "Asignar formulario existente".', 'This key opens a fixed handler, so it does not appear in "Assign existing form".') }}
                                     </div>
                                 </td>
                                 <td class="px-4 py-3 text-gray-700">{{ schema.field_count }} / {{ schema.mode || 'single' }}</td>
                                 <td class="px-4 py-3 text-gray-500">{{ schema.updated_at || '—' }}</td>
                                 <td class="px-4 py-3 text-right">
                                     <button type="button" class="rounded border px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50" @click="editSchema(schema)">
-                                        Editar
+                                        {{ tr('Editar', 'Edit') }}
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="!schemas.length">
-                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">No hay formularios globales creados.</td>
+                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">{{ tr('No hay formularios globales creados.', 'No global forms have been created.') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -706,18 +709,18 @@ const visitLink = (link) => {
             <section class="rounded-lg border bg-white shadow-sm">
                 <div class="flex items-center justify-between border-b px-4 py-3">
                     <div>
-                        <h2 class="text-sm font-semibold text-gray-900">Plantillas guardadas</h2>
-                        <p class="text-xs text-gray-500">Catálogo que se reutiliza cuando se crean tareas para eventos.</p>
+                        <h2 class="text-sm font-semibold text-gray-900">{{ tr('Plantillas guardadas', 'Saved templates') }}</h2>
+                        <p class="text-xs text-gray-500">{{ tr('Catálogo que se reutiliza cuando se crean tareas para eventos.', 'Catalog reused when event tasks are created.') }}</p>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
-                                <th class="px-4 py-3 font-medium">Tarea</th>
-                                <th class="px-4 py-3 font-medium">Club / evento</th>
-                                <th class="px-4 py-3 font-medium">Form</th>
-                                <th class="px-4 py-3 font-medium">Estado</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Tarea', 'Task') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Club / evento', 'Club / event') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Form', 'Form') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Estado', 'Status') }}</th>
                                 <th class="px-4 py-3 font-medium"></th>
                             </tr>
                         </thead>
@@ -733,23 +736,23 @@ const visitLink = (link) => {
                                     <div class="text-xs text-gray-500">{{ template.event_type }}</div>
                                 </td>
                                 <td class="px-4 py-3 text-gray-700">
-                                    <div>{{ template.field_count }} campos</div>
-                                    <div class="text-xs text-gray-500">{{ template.form_mode || 'sin schema custom' }}</div>
+                                    <div>{{ template.field_count }} {{ tr('campos', 'fields') }}</div>
+                                    <div class="text-xs text-gray-500">{{ template.form_mode || tr('sin schema custom', 'no custom schema') }}</div>
                                 </td>
                                 <td class="px-4 py-3">
                                     <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold" :class="template.is_active ? handlerClass('green') : handlerClass('red')">
-                                        {{ template.is_active ? 'Activa' : 'Inactiva' }}
+                                        {{ template.is_active ? tr('Activa', 'Active') : tr('Inactiva', 'Inactive') }}
                                     </span>
-                                    <div class="mt-1 text-xs text-gray-500">{{ template.is_custom ? 'Custom' : 'Inferida' }}</div>
+                                    <div class="mt-1 text-xs text-gray-500">{{ template.is_custom ? tr('Custom', 'Custom') : tr('Inferida', 'Inferred') }}</div>
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     <button type="button" class="rounded border px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50" @click="editTemplate(template)">
-                                        Editar
+                                        {{ tr('Editar', 'Edit') }}
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="!templates.data.length">
-                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">No hay plantillas con estos filtros.</td>
+                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">{{ tr('No hay plantillas con estos filtros.', 'No templates match these filters.') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -771,18 +774,18 @@ const visitLink = (link) => {
             <section class="rounded-lg border bg-white shadow-sm">
                 <div class="flex items-center justify-between border-b px-4 py-3">
                     <div>
-                        <h2 class="text-sm font-semibold text-gray-900">Tareas de eventos</h2>
-                        <p class="text-xs text-gray-500">Handler activo para cada tarea real. Custom form tiene prioridad sobre handlers fijos.</p>
+                        <h2 class="text-sm font-semibold text-gray-900">{{ tr('Tareas de eventos', 'Event tasks') }}</h2>
+                        <p class="text-xs text-gray-500">{{ tr('Handler activo para cada tarea real. Custom form tiene prioridad sobre handlers fijos.', 'Active handler for each real task. Custom form has priority over fixed handlers.') }}</p>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
-                                <th class="px-4 py-3 font-medium">Tarea</th>
-                                <th class="px-4 py-3 font-medium">Evento</th>
-                                <th class="px-4 py-3 font-medium">Activo</th>
-                                <th class="px-4 py-3 font-medium">Schema custom</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Tarea', 'Task') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Evento', 'Event') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Activo', 'Active') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ tr('Schema custom', 'Custom schema') }}</th>
                                 <th class="px-4 py-3 font-medium"></th>
                             </tr>
                         </thead>
@@ -805,20 +808,20 @@ const visitLink = (link) => {
                                     <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold" :class="handlerClass(task.active_handler_tone)">
                                         {{ task.active_handler_label }}
                                     </span>
-                                    <div class="mt-1 text-xs text-gray-500">{{ task.assignments_count }} asignaciones</div>
+                                    <div class="mt-1 text-xs text-gray-500">{{ task.assignments_count }} {{ tr('asignaciones', 'assignments') }}</div>
                                 </td>
                                 <td class="px-4 py-3 text-gray-700">
-                                    <div>{{ task.custom_field_count }} campos</div>
-                                    <div class="text-xs text-gray-500">{{ task.custom_form_mode || 'sin custom form' }}</div>
+                                    <div>{{ task.custom_field_count }} {{ tr('campos', 'fields') }}</div>
+                                    <div class="text-xs text-gray-500">{{ task.custom_form_mode || tr('sin custom form', 'no custom form') }}</div>
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     <button type="button" class="rounded border px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50" @click="editTask(task)">
-                                        Editar
+                                        {{ tr('Editar', 'Edit') }}
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="!tasks.data.length">
-                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">No hay tareas con estos filtros.</td>
+                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">{{ tr('No hay tareas con estos filtros.', 'No tasks match these filters.') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -845,19 +848,19 @@ const visitLink = (link) => {
                         <h2 class="text-base font-semibold text-gray-900">{{ modalTitle }}</h2>
                         <p class="text-xs text-gray-500">{{ editingRecord?.title || editingRecord?.name || editingRecord?.key }}</p>
                     </div>
-                    <button type="button" class="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100" @click="closeEditor">Cerrar</button>
+                    <button type="button" class="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100" @click="closeEditor">{{ tr('Cerrar', 'Close') }}</button>
                 </div>
 
                 <div class="space-y-4 px-5 py-4">
                     <template v-if="editingType === 'schema' || editingType === 'schema_create'">
                         <div class="grid gap-3 md:grid-cols-2">
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-600">Nombre</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Nombre', 'Name') }}</label>
                                 <input v-model="schemaForm.name" class="w-full rounded border px-3 py-2 text-sm">
                                 <p v-if="schemaForm.errors.name" class="mt-1 text-xs text-red-600">{{ schemaForm.errors.name }}</p>
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-600">Key</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Key', 'Key') }}</label>
                                 <input
                                     v-if="editingType === 'schema_create'"
                                     v-model="schemaForm.key"
@@ -866,13 +869,13 @@ const visitLink = (link) => {
                                 >
                                 <input v-else :value="editingRecord?.key" disabled class="w-full rounded border bg-gray-50 px-3 py-2 font-mono text-sm text-gray-500">
                                 <p v-if="editingType === 'schema_create'" class="mt-1 text-xs text-gray-500">
-                                    No uses keys reservadas por handlers fijos como permission_slips, transportation_plan o finalize_attendee_list.
+                                    {{ tr('No uses keys reservadas por handlers fijos como permission_slips, transportation_plan o finalize_attendee_list.', 'Do not use keys reserved by fixed handlers such as permission_slips, transportation_plan, or finalize_attendee_list.') }}
                                 </p>
                                 <p v-if="schemaForm.errors.key" class="mt-1 text-xs text-red-600">{{ schemaForm.errors.key }}</p>
                             </div>
                         </div>
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-gray-600">Descripción</label>
+                            <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Descripción', 'Description') }}</label>
                             <textarea v-model="schemaForm.description" rows="2" class="w-full rounded border px-3 py-2 text-sm"></textarea>
                             <p v-if="schemaForm.errors.description" class="mt-1 text-xs text-red-600">{{ schemaForm.errors.description }}</p>
                         </div>
@@ -881,31 +884,31 @@ const visitLink = (link) => {
                     <template v-else-if="editingType === 'template'">
                         <div class="grid gap-3 md:grid-cols-2">
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-600">Título</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Título', 'Title') }}</label>
                                 <input v-model="templateForm.title" class="w-full rounded border px-3 py-2 text-sm">
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-600">Event type</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Event type', 'Event type') }}</label>
                                 <input v-model="templateForm.event_type" class="w-full rounded border px-3 py-2 text-sm">
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-600">Task key</label>
-                                <input v-model="templateForm.task_key" list="task-key-options" class="w-full rounded border px-3 py-2 text-sm" placeholder="custom or built-in key">
+                                <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Task key', 'Task key') }}</label>
+                                <input v-model="templateForm.task_key" list="task-key-options" class="w-full rounded border px-3 py-2 text-sm" :placeholder="tr('custom or built-in key', 'custom or built-in key')">
                             </div>
                             <label class="flex items-end gap-2 pb-2 text-sm text-gray-700">
                                 <input v-model="templateForm.is_active" type="checkbox" class="rounded border-gray-300">
-                                Activa para nuevos eventos
+                                {{ tr('Activa para nuevos eventos', 'Active for new events') }}
                             </label>
                         </div>
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-gray-600">Descripción</label>
+                            <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Descripción', 'Description') }}</label>
                             <textarea v-model="templateForm.description" rows="2" class="w-full rounded border px-3 py-2 text-sm"></textarea>
                         </div>
                         <label class="flex items-start gap-2 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
                             <input v-model="templateUsesCustomSchema" type="checkbox" class="mt-0.5 rounded border-gray-300">
                             <span>
-                                <span class="block font-semibold">Usar formulario custom en esta plantilla</span>
-                                <span class="block text-xs text-blue-700">Si esta activo, nuevos eventos copiaran este schema a la tarea. Si esta apagado, la tarea dependera de su task_key o handler.</span>
+                                <span class="block font-semibold">{{ tr('Usar formulario custom en esta plantilla', 'Use custom form in this template') }}</span>
+                                <span class="block text-xs text-blue-700">{{ tr('Si esta activo, nuevos eventos copiaran este schema a la tarea. Si esta apagado, la tarea dependera de su task_key o handler.', 'If enabled, new events will copy this schema to the task. If disabled, the task will depend on its task_key or handler.') }}</span>
                             </span>
                         </label>
                     </template>
@@ -914,10 +917,10 @@ const visitLink = (link) => {
                         <div class="rounded border border-emerald-100 bg-emerald-50 p-3">
                             <div class="flex flex-col gap-3 lg:flex-row lg:items-end">
                                 <div class="flex-1">
-                                    <label class="mb-1 block text-xs font-medium text-emerald-900">Asignar formulario existente</label>
+                                    <label class="mb-1 block text-xs font-medium text-emerald-900">{{ tr('Asignar formulario existente', 'Assign existing form') }}</label>
                                     <select v-model="selectedExistingForm" class="w-full rounded border px-3 py-2 text-sm">
-                                        <option value="">Seleccionar formulario guardado...</option>
-                                        <optgroup label="Formularios globales">
+                                        <option value="">{{ tr('Seleccionar formulario guardado...', 'Select saved form...') }}</option>
+                                        <optgroup :label="tr('Formularios globales', 'Global forms')">
                                             <option v-for="option in globalFormOptions" :key="option.id" :value="option.id">
                                                 {{ option.label }} / {{ option.detail }}
                                             </option>
@@ -930,14 +933,14 @@ const visitLink = (link) => {
                                     </select>
                                     <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-emerald-800">
                                         <span v-if="hasTemplateSuggestions">
-                                            {{ suggestedTemplateFormOptions.length }} plantillas sugeridas por nombre, task_key o contexto.
+                                            {{ suggestedTemplateFormOptions.length }} {{ tr('plantillas sugeridas por nombre, task_key o contexto.', 'templates suggested by name, task_key, or context.') }}
                                         </span>
                                         <span v-else>
-                                            No se encontraron plantillas parecidas; se muestran todas.
+                                            {{ tr('No se encontraron plantillas parecidas; se muestran todas.', 'No similar templates were found; showing all.') }}
                                         </span>
                                         <label v-if="hasTemplateSuggestions && templateFormOptions.length > suggestedTemplateFormOptions.length" class="inline-flex items-center gap-1">
                                             <input v-model="showAllTemplateOptions" type="checkbox" class="rounded border-emerald-300">
-                                            Mostrar todas
+                                            {{ tr('Mostrar todas', 'Show all') }}
                                         </label>
                                     </div>
                                 </div>
@@ -947,25 +950,25 @@ const visitLink = (link) => {
                                     :disabled="!selectedExistingForm"
                                     @click="applySelectedExistingForm"
                                 >
-                                    Asignar
+                                    {{ tr('Asignar', 'Assign') }}
                                 </button>
                             </div>
                             <p class="mt-2 text-xs text-emerald-800">
-                                Formularios globales asignan el task_key y quitan el custom schema. Los handlers fijos no aparecen aqui porque abren tabs o modales del sistema. Plantillas guardadas copian su schema como formulario custom de esta tarea.
+                                {{ tr('Formularios globales asignan el task_key y quitan el custom schema. Los handlers fijos no aparecen aqui porque abren tabs o modales del sistema. Plantillas guardadas copian su schema como formulario custom de esta tarea.', 'Global forms assign the task_key and remove the custom schema. Fixed handlers do not appear here because they open system tabs or modals. Saved templates copy their schema as this task custom form.') }}
                             </p>
                         </div>
 
                         <div class="grid gap-3 md:grid-cols-2">
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-600">Task key</label>
-                                <input v-model="taskForm.task_key" list="task-key-options" class="w-full rounded border px-3 py-2 text-sm" placeholder="blank for none">
+                                <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Task key', 'Task key') }}</label>
+                                <input v-model="taskForm.task_key" list="task-key-options" class="w-full rounded border px-3 py-2 text-sm" :placeholder="tr('blank for none', 'blank for none')">
                             </div>
                         </div>
                         <label class="flex items-start gap-2 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
                             <input v-model="taskUsesCustomSchema" type="checkbox" class="mt-0.5 rounded border-gray-300">
                             <span>
-                                <span class="block font-semibold">Usar formulario custom en esta tarea</span>
-                                <span class="block text-xs text-blue-700">Si esta apagado, al guardar se quitara el schema custom y la tarea usara el task_key o handler activo.</span>
+                                <span class="block font-semibold">{{ tr('Usar formulario custom en esta tarea', 'Use custom form in this task') }}</span>
+                                <span class="block text-xs text-blue-700">{{ tr('Si esta apagado, al guardar se quitara el schema custom y la tarea usara el task_key o handler activo.', 'If disabled, saving will remove the custom schema and the task will use the task_key or active handler.') }}</span>
                             </span>
                         </label>
                     </template>
@@ -977,8 +980,8 @@ const visitLink = (link) => {
                     <div v-if="shouldShowSchemaBuilder" class="rounded border border-gray-200 bg-gray-50 p-3">
                         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div>
-                                <div class="text-sm font-semibold text-gray-900">Constructor de campos</div>
-                                <p class="text-xs text-gray-500">Define el modo y los campos del formulario sin editar JSON.</p>
+                                <div class="text-sm font-semibold text-gray-900">{{ tr('Constructor de campos', 'Field builder') }}</div>
+                                <p class="text-xs text-gray-500">{{ tr('Define el modo y los campos del formulario sin editar JSON.', 'Define the form mode and fields without editing JSON.') }}</p>
                             </div>
                             <div class="inline-flex rounded border bg-white p-1">
                                 <button
@@ -987,7 +990,7 @@ const visitLink = (link) => {
                                     :class="schemaMode === 'single' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'"
                                     @click="schemaMode = 'single'"
                                 >
-                                    Un solo registro
+                                    {{ tr('Un solo registro', 'Single record') }}
                                 </button>
                                 <button
                                     type="button"
@@ -995,7 +998,7 @@ const visitLink = (link) => {
                                     :class="schemaMode === 'registry' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'"
                                     @click="schemaMode = 'registry'"
                                 >
-                                    Lista repetible
+                                    {{ tr('Lista repetible', 'Repeatable list') }}
                                 </button>
                             </div>
                         </div>
@@ -1008,45 +1011,45 @@ const visitLink = (link) => {
                             >
                                 <div class="grid gap-3 md:grid-cols-[1fr_1fr_150px_auto]">
                                     <div>
-                                        <label class="mb-1 block text-xs font-medium text-gray-600">Etiqueta</label>
-                                        <input v-model="field.label" class="w-full rounded border px-3 py-2 text-sm" placeholder="Medical forms uploaded">
+                                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Etiqueta', 'Label') }}</label>
+                                        <input v-model="field.label" class="w-full rounded border px-3 py-2 text-sm" :placeholder="tr('Medical forms uploaded', 'Medical forms uploaded')">
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-xs font-medium text-gray-600">Key</label>
-                                        <input v-model="field.key" class="w-full rounded border px-3 py-2 font-mono text-sm" placeholder="medical_forms_uploaded">
+                                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Key', 'Key') }}</label>
+                                        <input v-model="field.key" class="w-full rounded border px-3 py-2 font-mono text-sm" :placeholder="tr('medical_forms_uploaded', 'medical_forms_uploaded')">
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-xs font-medium text-gray-600">Tipo</label>
+                                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Tipo', 'Type') }}</label>
                                         <select v-model="field.type" class="w-full rounded border px-3 py-2 text-sm">
                                             <option v-for="type in fieldTypes" :key="type" :value="type">{{ type }}</option>
                                         </select>
                                     </div>
                                     <label class="flex items-end gap-2 pb-2 text-sm text-gray-700">
                                         <input v-model="field.required" type="checkbox" class="rounded border-gray-300">
-                                        Requerido
+                                        {{ tr('Requerido', 'Required') }}
                                     </label>
                                 </div>
 
                                 <div class="mt-3 grid gap-3 md:grid-cols-2">
                                     <div>
-                                        <label class="mb-1 block text-xs font-medium text-gray-600">Ayuda</label>
-                                        <input v-model="field.help" class="w-full rounded border px-3 py-2 text-sm" placeholder="Texto breve para el usuario">
+                                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Ayuda', 'Help') }}</label>
+                                        <input v-model="field.help" class="w-full rounded border px-3 py-2 text-sm" :placeholder="tr('Texto breve para el usuario', 'Short text for the user')">
                                     </div>
                                     <div v-if="field.type === 'select'">
-                                        <label class="mb-1 block text-xs font-medium text-gray-600">Opciones</label>
-                                        <input v-model="field.optionsText" class="w-full rounded border px-3 py-2 text-sm" placeholder="Si, No, Pendiente">
+                                        <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Opciones', 'Options') }}</label>
+                                        <input v-model="field.optionsText" class="w-full rounded border px-3 py-2 text-sm" :placeholder="tr('Si, No, Pendiente', 'Yes, No, Pending')">
                                     </div>
                                 </div>
 
                                 <div class="mt-3 flex flex-wrap justify-end gap-2">
                                     <button type="button" class="rounded border px-2 py-1 text-xs text-gray-600 hover:bg-gray-50" @click="moveSchemaField(index, -1)">
-                                        Subir
+                                        {{ tr('Subir', 'Move up') }}
                                     </button>
                                     <button type="button" class="rounded border px-2 py-1 text-xs text-gray-600 hover:bg-gray-50" @click="moveSchemaField(index, 1)">
-                                        Bajar
+                                        {{ tr('Bajar', 'Move down') }}
                                     </button>
                                     <button type="button" class="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50" @click="removeSchemaField(index)">
-                                        Quitar
+                                        {{ tr('Quitar', 'Remove') }}
                                     </button>
                                 </div>
                             </div>
@@ -1054,21 +1057,21 @@ const visitLink = (link) => {
 
                         <div class="mt-3 flex justify-between gap-3">
                             <button type="button" class="rounded border px-3 py-2 text-xs font-medium text-gray-700 hover:bg-white" @click="addSchemaField">
-                                Agregar campo
+                                {{ tr('Agregar campo', 'Add field') }}
                             </button>
-                            <p class="text-xs text-gray-500">El key se normaliza a snake_case al guardar.</p>
+                            <p class="text-xs text-gray-500">{{ tr('El key se normaliza a snake_case al guardar.', 'The key is normalized to snake_case when saved.') }}</p>
                         </div>
                     </div>
 
                     <details v-if="shouldShowSchemaBuilder" class="rounded border border-gray-200 bg-white p-3" :open="showRawJson" @toggle="showRawJson = $event.target.open">
-                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">JSON avanzado</summary>
+                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">{{ tr('JSON avanzado', 'Advanced JSON') }}</summary>
                         <div class="mt-3 space-y-3">
                             <div class="flex flex-wrap gap-2">
                                 <button type="button" class="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50" @click="syncJsonFromBuilder">
-                                    Generar JSON desde constructor
+                                    {{ tr('Generar JSON desde constructor', 'Generate JSON from builder') }}
                                 </button>
                                 <button type="button" class="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50" @click="loadBuilderFromJson">
-                                    Aplicar JSON al constructor
+                                    {{ tr('Aplicar JSON al constructor', 'Apply JSON to builder') }}
                                 </button>
                             </div>
                             <label class="block text-xs font-medium text-gray-600">{{ currentSchemaJsonLabel }}</label>
@@ -1079,14 +1082,14 @@ const visitLink = (link) => {
                                 placeholder='{"mode":"single","fields":[{"key":"field_key","label":"Field label","type":"text"}]}'
                             ></textarea>
                             <p v-if="jsonError" class="text-sm text-red-600">{{ jsonError }}</p>
-                            <p v-else class="text-xs text-gray-500">Los cambios directos en JSON deben aplicarse al constructor antes de guardar.</p>
+                            <p v-else class="text-xs text-gray-500">{{ tr('Los cambios directos en JSON deben aplicarse al constructor antes de guardar.', 'Direct JSON changes must be applied to the builder before saving.') }}</p>
                         </div>
                     </details>
                 </div>
 
                 <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
                     <button type="button" class="rounded border px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="closeEditor">
-                        Cancelar
+                        {{ tr('Cancelar', 'Cancel') }}
                     </button>
                     <button
                         type="button"
@@ -1094,7 +1097,7 @@ const visitLink = (link) => {
                         :disabled="schemaForm.processing || templateForm.processing || taskForm.processing"
                         @click="submitEditor"
                     >
-                        Guardar
+                        {{ tr('Guardar', 'Save') }}
                     </button>
                 </div>
             </div>

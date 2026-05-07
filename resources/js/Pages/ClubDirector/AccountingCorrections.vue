@@ -5,6 +5,7 @@ import { ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outlin
 import { fetchAccountingCorrections, reverseAccountingPayment, reverseAccountingExpense, reverseAccountingReimbursement } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useAuth } from '@/Composables/useAuth'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     club_id: { type: Number, default: null },
@@ -16,6 +17,7 @@ const props = defineProps({
 
 const { showToast } = useGeneral()
 const { user } = useAuth()
+const { tr } = useLocale()
 const loading = ref(false)
 const loadError = ref('')
 const payments = ref(Array.isArray(props.payments) ? props.payments : [])
@@ -45,8 +47,8 @@ const fmtDate = (value) => {
     return new Date(`${value}T00:00:00`).toLocaleDateString()
 }
 
-const movementLabel = (payment) => payment.member_display_name || payment.staff_display_name || payment.received_by_name || 'Movimiento'
-const paymentConceptLabel = (payment) => payment.concept_name || payment.concept_text || 'Ingreso'
+const movementLabel = (payment) => payment.member_display_name || payment.staff_display_name || payment.received_by_name || tr('Movimiento', 'Movement')
+const paymentConceptLabel = (payment) => payment.concept_name || payment.concept_text || tr('Ingreso', 'Income')
 
 const hydrateDefaults = () => {
     payments.value.forEach((payment) => {
@@ -73,7 +75,7 @@ const loadData = async (clubId = null) => {
         hydrateDefaults()
     } catch (error) {
         console.error(error)
-        loadError.value = error?.response?.data?.message || 'No se pudieron cargar las correcciones contables.'
+        loadError.value = error?.response?.data?.message || tr('No se pudieron cargar las correcciones contables.', 'Could not load accounting corrections.')
     } finally {
         loading.value = false
     }
@@ -84,7 +86,7 @@ const reverseReimbursement = async (expense) => {
     const correctionDate = reimbursementDates.value[expense.id] || today
 
     if (!reason) {
-        showToast('Escribe el motivo de la correccion antes de revertir el reembolso.', 'error')
+        showToast(tr('Escribe el motivo de la correccion antes de revertir el reembolso.', 'Enter the correction reason before reversing the reimbursement.'), 'error')
         return
     }
 
@@ -94,12 +96,12 @@ const reverseReimbursement = async (expense) => {
             reason,
             correction_date: correctionDate,
         })
-        showToast('Reembolso revertido con sus movimientos relacionados.', 'success')
+        showToast(tr('Reembolso revertido con sus movimientos relacionados.', 'Reimbursement reversed with its related movements.'), 'success')
         reimbursementReasons.value[expense.id] = ''
         await loadData(selectedClubId.value)
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudo revertir el reembolso.', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo revertir el reembolso.', 'Could not reverse the reimbursement.'), 'error')
     } finally {
         reversingReimbursementId.value = null
     }
@@ -110,7 +112,7 @@ const reversePayment = async (payment) => {
     const correctionDate = paymentDates.value[payment.id] || today
 
     if (!reason) {
-        showToast('Escribe el motivo de la correccion antes de revertir el ingreso.', 'error')
+        showToast(tr('Escribe el motivo de la correccion antes de revertir el ingreso.', 'Enter the correction reason before reversing the income.'), 'error')
         return
     }
 
@@ -120,12 +122,12 @@ const reversePayment = async (payment) => {
             reason,
             correction_date: correctionDate,
         })
-        showToast('Ingreso revertido con un movimiento opuesto.', 'success')
+        showToast(tr('Ingreso revertido con un movimiento opuesto.', 'Income reversed with an opposite movement.'), 'success')
         paymentReasons.value[payment.id] = ''
         await loadData(selectedClubId.value)
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudo revertir el ingreso.', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo revertir el ingreso.', 'Could not reverse the income.'), 'error')
     } finally {
         reversingPaymentId.value = null
     }
@@ -136,7 +138,7 @@ const reverseExpense = async (expense) => {
     const correctionDate = expenseDates.value[expense.id] || today
 
     if (!reason) {
-        showToast('Escribe el motivo de la correccion antes de revertir el gasto.', 'error')
+        showToast(tr('Escribe el motivo de la correccion antes de revertir el gasto.', 'Enter the correction reason before reversing the expense.'), 'error')
         return
     }
 
@@ -146,12 +148,12 @@ const reverseExpense = async (expense) => {
             reason,
             correction_date: correctionDate,
         })
-        showToast('Gasto revertido con un movimiento opuesto.', 'success')
+        showToast(tr('Gasto revertido con un movimiento opuesto.', 'Expense reversed with an opposite movement.'), 'success')
         expenseReasons.value[expense.id] = ''
         await loadData(selectedClubId.value)
     } catch (error) {
         console.error(error)
-        showToast(error?.response?.data?.message || 'No se pudo revertir el gasto.', 'error')
+        showToast(error?.response?.data?.message || tr('No se pudo revertir el gasto.', 'Could not reverse the expense.'), 'error')
     } finally {
         reversingExpenseId.value = null
     }
@@ -170,16 +172,16 @@ hydrateDefaults()
 
 <template>
     <PathfinderLayout>
-        <template #title>Correcciones contables</template>
+        <template #title>{{ tr('Correcciones contables', 'Accounting Corrections') }}</template>
 
         <div class="space-y-6">
             <section class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 <div class="flex items-start gap-3">
                     <ExclamationTriangleIcon class="mt-0.5 h-5 w-5 shrink-0" />
                     <div>
-                        <p class="font-semibold">Este modulo no elimina movimientos.</p>
+                        <p class="font-semibold">{{ tr('Este modulo no elimina movimientos.', 'This module does not delete movements.') }}</p>
                         <p class="mt-1">
-                            Cada correccion crea un movimiento opuesto para dejar rastro completo en contabilidad. Los reembolsos pendientes y completados se revierten desde su propia seccion para mantener el paquete contable completo.
+                            {{ tr('Cada correccion crea un movimiento opuesto para dejar rastro completo en contabilidad. Los reembolsos pendientes y completados se revierten desde su propia seccion para mantener el paquete contable completo.', 'Each correction creates an opposite movement to keep a complete accounting trail. Pending and completed reimbursements are reversed from their own section to keep the accounting package complete.') }}
                         </p>
                     </div>
                 </div>
@@ -188,11 +190,11 @@ hydrateDefaults()
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Movimiento a corregir</h2>
-                        <p class="text-sm text-gray-600">Disponible solo para director del club.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Movimiento a corregir', 'Movement to Correct') }}</h2>
+                        <p class="text-sm text-gray-600">{{ tr('Disponible solo para director del club.', 'Available only to the club director.') }}</p>
                     </div>
                     <div v-if="clubs.length" class="w-full md:w-72">
-                        <label class="mb-1 block text-sm font-medium text-gray-700">Club</label>
+                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Club', 'Club') }}</label>
                         <select
                             v-model="selectedClubId"
                             class="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
@@ -213,27 +215,27 @@ hydrateDefaults()
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex items-center justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Ingresos</h2>
-                        <p class="text-sm text-gray-600">Revertir un ingreso crea otro ingreso por el mismo monto en negativo.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Ingresos', 'Income') }}</h2>
+                        <p class="text-sm text-gray-600">{{ tr('Revertir un ingreso crea otro ingreso por el mismo monto en negativo.', 'Reversing income creates another income movement for the same amount in negative.') }}</p>
                     </div>
-                    <div class="text-sm text-gray-500">{{ payments.length }} movimientos</div>
+                    <div class="text-sm text-gray-500">{{ payments.length }} {{ tr('movimientos', 'movements') }}</div>
                 </div>
 
-                <div v-if="loading" class="py-8 text-sm text-gray-500">Cargando ingresos...</div>
-                <div v-else-if="!payments.length" class="py-8 text-sm text-gray-500">No hay ingresos disponibles para correccion.</div>
+                <div v-if="loading" class="py-8 text-sm text-gray-500">{{ tr('Cargando ingresos...', 'Loading income...') }}</div>
+                <div v-else-if="!payments.length" class="py-8 text-sm text-gray-500">{{ tr('No hay ingresos disponibles para correccion.', 'No income movements are available for correction.') }}</div>
                 <div v-else class="space-y-4">
                     <article v-for="payment in payments" :key="payment.id" class="rounded-2xl border border-gray-200 p-4">
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div class="space-y-1">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Ingreso #{{ payment.id }}</span>
+                                    <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{{ tr('Ingreso', 'Income') }} #{{ payment.id }}</span>
                                     <span v-if="payment.reversal" class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                                        Revertido con #{{ payment.reversal.id }}
+                                        {{ tr('Revertido con', 'Reversed with') }} #{{ payment.reversal.id }}
                                     </span>
                                 </div>
                                 <div class="text-base font-semibold text-gray-900">{{ paymentConceptLabel(payment) }}</div>
                                 <div class="text-sm text-gray-600">{{ movementLabel(payment) }}</div>
-                                <div class="text-sm text-gray-600">{{ payment.account_label || payment.pay_to || 'Sin cuenta' }} • {{ fmtDate(payment.payment_date) }}</div>
+                                <div class="text-sm text-gray-600">{{ payment.account_label || payment.pay_to || tr('Sin cuenta', 'No account') }} • {{ fmtDate(payment.payment_date) }}</div>
                                 <div class="text-lg font-semibold text-emerald-700">{{ fmtMoney(payment.amount_paid) }}</div>
                                 <div v-if="payment.notes" class="text-sm text-gray-500">{{ payment.notes }}</div>
                             </div>
@@ -241,7 +243,7 @@ hydrateDefaults()
                             <div class="w-full max-w-xl space-y-3" :class="{ 'opacity-60': !payment.can_reverse }">
                                 <div class="grid gap-3 md:grid-cols-[160px,1fr]">
                                     <div>
-                                        <label class="mb-1 block text-sm font-medium text-gray-700">Fecha</label>
+                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                                         <input
                                             v-model="paymentDates[payment.id]"
                                             type="date"
@@ -250,11 +252,11 @@ hydrateDefaults()
                                         />
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-sm font-medium text-gray-700">Motivo</label>
+                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Motivo', 'Reason') }}</label>
                                         <input
                                             v-model="paymentReasons[payment.id]"
                                             type="text"
-                                            placeholder="Ej. ingreso duplicado, monto mal registrado"
+                                            :placeholder="tr('Ej. ingreso duplicado, monto mal registrado', 'Ex. duplicate income, amount recorded incorrectly')"
                                             class="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                                             :disabled="!payment.can_reverse"
                                         />
@@ -269,7 +271,7 @@ hydrateDefaults()
                                         @click="reversePayment(payment)"
                                     >
                                         <ArrowPathIcon class="h-4 w-4" />
-                                        {{ reversingPaymentId === payment.id ? 'Revirtiendo...' : 'Revertir ingreso' }}
+                                        {{ reversingPaymentId === payment.id ? tr('Revirtiendo...', 'Reversing...') : tr('Revertir ingreso', 'Reverse income') }}
                                     </button>
                                 </div>
                             </div>
@@ -281,42 +283,42 @@ hydrateDefaults()
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex items-center justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Reembolsos</h2>
-                        <p class="text-sm text-gray-600">Un reembolso pendiente revierte la solicitud. Un reembolso completado revierte la solicitud, la liquidacion interna y la salida de fondos.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Reembolsos', 'Reimbursements') }}</h2>
+                        <p class="text-sm text-gray-600">{{ tr('Un reembolso pendiente revierte la solicitud. Un reembolso completado revierte la solicitud, la liquidacion interna y la salida de fondos.', 'A pending reimbursement reverses the request. A completed reimbursement reverses the request, the internal settlement, and the funds outflow.') }}</p>
                     </div>
-                    <div class="text-sm text-gray-500">{{ reimbursements.length }} movimientos</div>
+                    <div class="text-sm text-gray-500">{{ reimbursements.length }} {{ tr('movimientos', 'movements') }}</div>
                 </div>
 
-                <div v-if="loading" class="py-8 text-sm text-gray-500">Cargando reembolsos...</div>
-                <div v-else-if="!reimbursements.length" class="py-8 text-sm text-gray-500">No hay reembolsos disponibles para correccion.</div>
+                <div v-if="loading" class="py-8 text-sm text-gray-500">{{ tr('Cargando reembolsos...', 'Loading reimbursements...') }}</div>
+                <div v-else-if="!reimbursements.length" class="py-8 text-sm text-gray-500">{{ tr('No hay reembolsos disponibles para correccion.', 'No reimbursements are available for correction.') }}</div>
                 <div v-else class="space-y-4">
                     <article v-for="expense in reimbursements" :key="expense.id" class="rounded-2xl border border-gray-200 p-4">
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div class="space-y-1">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">Reembolso #{{ expense.id }}</span>
+                                    <span class="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">{{ tr('Reembolso', 'Reimbursement') }} #{{ expense.id }}</span>
                                     <span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="expense.is_completed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'">
-                                        {{ expense.is_completed ? 'Completado' : 'Pendiente' }}
+                                        {{ expense.is_completed ? tr('Completado', 'Completed') : tr('Pendiente', 'Pending') }}
                                     </span>
                                     <span v-if="expense.reversal" class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                                        Revertido con #{{ expense.reversal.id }}
+                                        {{ tr('Revertido con', 'Reversed with') }} #{{ expense.reversal.id }}
                                     </span>
                                 </div>
-                                <div class="text-base font-semibold text-gray-900">{{ expense.description || 'Reembolso sin descripcion' }}</div>
-                                <div class="text-sm text-gray-600">{{ expense.reimbursed_to || 'Sin beneficiario' }} • {{ fmtDate(expense.expense_date) }}</div>
+                                <div class="text-base font-semibold text-gray-900">{{ expense.description || tr('Reembolso sin descripcion', 'Reimbursement without description') }}</div>
+                                <div class="text-sm text-gray-600">{{ expense.reimbursed_to || tr('Sin beneficiario', 'No beneficiary') }} • {{ fmtDate(expense.expense_date) }}</div>
                                 <div class="text-lg font-semibold text-violet-700">{{ fmtMoney(expense.amount) }}</div>
                                 <div v-if="expense.settlement" class="text-sm text-gray-500">
-                                    Liquidacion contra {{ expense.settlement.pay_to || 'cuenta' }} el {{ fmtDate(expense.settlement.expense_date) }}
+                                    {{ tr('Liquidacion contra', 'Settlement against') }} {{ expense.settlement.pay_to || tr('cuenta', 'account') }} {{ tr('el', 'on') }} {{ fmtDate(expense.settlement.expense_date) }}
                                 </div>
                                 <div v-if="expense.settlement_payment" class="text-sm text-gray-500">
-                                    Credito interno #{{ expense.settlement_payment.id }} el {{ fmtDate(expense.settlement_payment.payment_date) }}
+                                    {{ tr('Credito interno', 'Internal credit') }} #{{ expense.settlement_payment.id }} {{ tr('el', 'on') }} {{ fmtDate(expense.settlement_payment.payment_date) }}
                                 </div>
                             </div>
 
                             <div class="w-full max-w-xl space-y-3" :class="{ 'opacity-60': !expense.can_reverse }">
                                 <div class="grid gap-3 md:grid-cols-[160px,1fr]">
                                     <div>
-                                        <label class="mb-1 block text-sm font-medium text-gray-700">Fecha</label>
+                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                                         <input
                                             v-model="reimbursementDates[expense.id]"
                                             type="date"
@@ -325,11 +327,11 @@ hydrateDefaults()
                                         />
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-sm font-medium text-gray-700">Motivo</label>
+                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Motivo', 'Reason') }}</label>
                                         <input
                                             v-model="reimbursementReasons[expense.id]"
                                             type="text"
-                                            placeholder="Ej. reembolso duplicado, no debio liquidarse"
+                                            :placeholder="tr('Ej. reembolso duplicado, no debio liquidarse', 'Ex. duplicate reimbursement, should not have been settled')"
                                             class="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                                             :disabled="!expense.can_reverse"
                                         />
@@ -344,7 +346,7 @@ hydrateDefaults()
                                         @click="reverseReimbursement(expense)"
                                     >
                                         <ArrowPathIcon class="h-4 w-4" />
-                                        {{ reversingReimbursementId === expense.id ? 'Revirtiendo...' : 'Revertir reembolso' }}
+                                        {{ reversingReimbursementId === expense.id ? tr('Revirtiendo...', 'Reversing...') : tr('Revertir reembolso', 'Reverse reimbursement') }}
                                     </button>
                                 </div>
                             </div>
@@ -356,35 +358,35 @@ hydrateDefaults()
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex items-center justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Gastos</h2>
-                        <p class="text-sm text-gray-600">Revertir un gasto crea otro gasto por el mismo monto en negativo.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Gastos', 'Expenses') }}</h2>
+                        <p class="text-sm text-gray-600">{{ tr('Revertir un gasto crea otro gasto por el mismo monto en negativo.', 'Reversing an expense creates another expense for the same amount in negative.') }}</p>
                     </div>
-                    <div class="text-sm text-gray-500">{{ expenses.length }} movimientos</div>
+                    <div class="text-sm text-gray-500">{{ expenses.length }} {{ tr('movimientos', 'movements') }}</div>
                 </div>
 
-                <div v-if="loading" class="py-8 text-sm text-gray-500">Cargando gastos...</div>
-                <div v-else-if="!expenses.length" class="py-8 text-sm text-gray-500">No hay gastos disponibles para correccion.</div>
+                <div v-if="loading" class="py-8 text-sm text-gray-500">{{ tr('Cargando gastos...', 'Loading expenses...') }}</div>
+                <div v-else-if="!expenses.length" class="py-8 text-sm text-gray-500">{{ tr('No hay gastos disponibles para correccion.', 'No expenses are available for correction.') }}</div>
                 <div v-else class="space-y-4">
                     <article v-for="expense in expenses" :key="expense.id" class="rounded-2xl border border-gray-200 p-4">
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div class="space-y-1">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Gasto #{{ expense.id }}</span>
+                                    <span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">{{ tr('Gasto', 'Expense') }} #{{ expense.id }}</span>
                                     <span v-if="expense.reversal" class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                                        Revertido con #{{ expense.reversal.id }}
+                                        {{ tr('Revertido con', 'Reversed with') }} #{{ expense.reversal.id }}
                                     </span>
                                 </div>
-                                <div class="text-base font-semibold text-gray-900">{{ expense.description || 'Gasto sin descripcion' }}</div>
-                                <div class="text-sm text-gray-600">{{ expense.pay_to || 'Sin cuenta' }} • {{ fmtDate(expense.expense_date) }}</div>
+                                <div class="text-base font-semibold text-gray-900">{{ expense.description || tr('Gasto sin descripcion', 'Expense without description') }}</div>
+                                <div class="text-sm text-gray-600">{{ expense.pay_to || tr('Sin cuenta', 'No account') }} • {{ fmtDate(expense.expense_date) }}</div>
                                 <div class="text-lg font-semibold text-amber-700">{{ fmtMoney(expense.amount) }}</div>
-                                <div v-if="expense.reimbursed_to" class="text-sm text-gray-500">Reembolso a: {{ expense.reimbursed_to }}</div>
-                                <div v-if="expense.created_by_name" class="text-sm text-gray-500">Registrado por: {{ expense.created_by_name }}</div>
+                                <div v-if="expense.reimbursed_to" class="text-sm text-gray-500">{{ tr('Reembolso a:', 'Reimbursement to:') }} {{ expense.reimbursed_to }}</div>
+                                <div v-if="expense.created_by_name" class="text-sm text-gray-500">{{ tr('Registrado por:', 'Registered by:') }} {{ expense.created_by_name }}</div>
                             </div>
 
                             <div class="w-full max-w-xl space-y-3" :class="{ 'opacity-60': !expense.can_reverse }">
                                 <div class="grid gap-3 md:grid-cols-[160px,1fr]">
                                     <div>
-                                        <label class="mb-1 block text-sm font-medium text-gray-700">Fecha</label>
+                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha', 'Date') }}</label>
                                         <input
                                             v-model="expenseDates[expense.id]"
                                             type="date"
@@ -393,11 +395,11 @@ hydrateDefaults()
                                         />
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-sm font-medium text-gray-700">Motivo</label>
+                                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Motivo', 'Reason') }}</label>
                                         <input
                                             v-model="expenseReasons[expense.id]"
                                             type="text"
-                                            placeholder="Ej. gasto duplicado, cuenta incorrecta"
+                                            :placeholder="tr('Ej. gasto duplicado, cuenta incorrecta', 'Ex. duplicate expense, incorrect account')"
                                             class="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                                             :disabled="!expense.can_reverse"
                                         />
@@ -412,7 +414,7 @@ hydrateDefaults()
                                         @click="reverseExpense(expense)"
                                     >
                                         <ArrowPathIcon class="h-4 w-4" />
-                                        {{ reversingExpenseId === expense.id ? 'Revirtiendo...' : 'Revertir gasto' }}
+                                        {{ reversingExpenseId === expense.id ? tr('Revirtiendo...', 'Reversing...') : tr('Revertir gasto', 'Reverse expense') }}
                                     </button>
                                 </div>
                             </div>

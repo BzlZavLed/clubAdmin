@@ -1,3 +1,10 @@
+<script setup>
+import LocaleSwitcher from '@/Components/LocaleSwitcher.vue'
+import { useLocale } from '@/Composables/useLocale'
+
+const { tr } = useLocale()
+</script>
+
 <template>
     <div class="min-h-screen bg-gray-100 flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div class="w-full max-w-md space-y-8 bg-white p-8 rounded-xl shadow-xl border-t-8 border-yellow-500">
@@ -7,9 +14,11 @@
                     <slot name="title" />
                 </h2>
                 <p class="text-sm text-gray-600">
-                    <slot name="subtitle">Preparados. Aptos. Leales. Puros.</slot>
+                    <slot name="subtitle">{{ tr('Preparados. Aptos. Leales. Puros.', 'Ready. Able. Loyal. Pure.') }}</slot>
                 </p>
             </div>
+
+            <LocaleSwitcher :compact="true" />
 
             <!-- Content goes here -->
             <slot />

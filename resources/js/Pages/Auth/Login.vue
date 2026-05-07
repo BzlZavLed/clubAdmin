@@ -5,6 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue'
 import PrimaryButton from '@/Components/PrimaryButton.vue'
 import TextInput from '@/Components/TextInput.vue'
 import PathfinderLayout from '@/Layouts/AuthLayout.vue'
+import { useLocale } from '@/Composables/useLocale'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 
 defineProps({
@@ -21,6 +22,7 @@ const form = useForm({
     password: '',
     remember: false,
 })
+const { tr } = useLocale()
 
 const submit = () => {
     form.post(route('login'), {
@@ -32,9 +34,9 @@ const submit = () => {
 <template>
     <PathfinderLayout>
 
-        <Head title="Iniciar sesión" />
+        <Head :title="tr('Iniciar sesión', 'Log in')" />
 
-        <template #title>Iniciar sesión en el Portal de Clubes</template>
+        <template #title>{{ tr('Iniciar sesión en el Portal de Clubes', 'Log in to the Club Portal') }}</template>
 
         <div v-if="status" class="mb-4 text-sm font-medium text-green-600">
             {{ status }}
@@ -42,7 +44,7 @@ const submit = () => {
 
         <form @submit.prevent="submit" class="space-y-6">
             <div>
-                <InputLabel for="email" value="Correo electrónico" />
+                <InputLabel for="email" :value="tr('Correo electrónico', 'Email')" />
                 <TextInput id="email" type="email"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.email" required autofocus autocomplete="username" />
@@ -50,7 +52,7 @@ const submit = () => {
             </div>
 
             <div>
-                <InputLabel for="password" value="Contraseña" />
+                <InputLabel for="password" :value="tr('Contraseña', 'Password')" />
                 <TextInput id="password" type="password"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
                     v-model="form.password" required autocomplete="current-password" />
@@ -60,30 +62,30 @@ const submit = () => {
             <div class="block">
                 <label class="flex items-center">
                     <Checkbox name="remember" :checked="form.remember" @change="form.remember = $event.target.checked" />
-                    <span class="ms-2 text-sm text-gray-600">Recordarme</span>
+                    <span class="ms-2 text-sm text-gray-600">{{ tr('Recordarme', 'Remember me') }}</span>
                 </label>
             </div>
 
             <div class="flex items-center justify-between pt-2">
                 <Link v-if="canResetPassword" :href="route('password.request')"
                     class="text-sm text-yellow-600 hover:underline">
-                ¿Olvidaste tu contraseña?
+                {{ tr('¿Olvidaste tu contraseña?', 'Forgot your password?') }}
                 </Link>
 
                 <PrimaryButton class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md"
                     :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-                    Iniciar sesión
+                    {{ tr('Iniciar sesión', 'Log in') }}
                 </PrimaryButton>
             </div>
         </form>
 
         <div class="mt-6 text-sm text-gray-700 space-y-1">
             <div>
-                <Link href="/register" class="text-blue-600 hover:underline">Crear una cuenta</Link>
-                <span class="text-gray-500"> (personal/director)</span>
+                <Link href="/register" class="text-blue-600 hover:underline">{{ tr('Crear una cuenta', 'Create an account') }}</Link>
+                <span class="text-gray-500"> {{ tr('(personal/director)', '(staff/director)') }}</span>
             </div>
             <div>
-                <Link href="/register-parent" class="text-blue-600 hover:underline">Registrarse como padre</Link>
+                <Link href="/register-parent" class="text-blue-600 hover:underline">{{ tr('Registrarse como padre', 'Register as a parent') }}</Link>
             </div>
         </div>
     </PathfinderLayout>

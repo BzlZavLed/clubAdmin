@@ -1,6 +1,7 @@
 <script setup>
-import { Link, usePage } from '@inertiajs/vue3'
+import { Link } from '@inertiajs/vue3'
 import { useLocale } from '@/Composables/useLocale'
+import { computed } from 'vue'
 import {
     HomeIcon,
     UserGroupIcon,
@@ -13,15 +14,15 @@ defineProps({
     isCollapsed: Boolean,
 })
 
-const { tr } = useLocale()
+const { t } = useLocale()
 
-const menuItems = [
-    { name: tr('Panel', 'Dashboard'), href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
-    { name: tr('Solicitud', 'Application'), href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
-    { name: tr('Hijos', 'Children'), href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
-    { name: tr('Carpeta de investidura', 'Investiture folder'), href: '/parent/carpeta-investidura', route: 'parent.carpeta-investidura', icon: FolderOpenIcon },
-    { name: tr('Pagos', 'Payments'), href: '/parent/payments', route: 'parent.payments.index', icon: CreditCardIcon },
-]
+const menuItems = computed(() => [
+    { name: t('dashboard'), href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
+    { name: t('application'), href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
+    { name: t('children'), href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
+    { name: t('investiture_folder'), href: '/parent/carpeta-investidura', route: 'parent.carpeta-investidura', icon: FolderOpenIcon },
+    { name: t('payments'), href: '/parent/payments', route: 'parent.payments.index', icon: CreditCardIcon },
+])
 </script>
 
 <template>

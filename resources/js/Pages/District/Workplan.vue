@@ -4,6 +4,7 @@ import Modal from '@/Components/Modal.vue'
 import { router, useForm } from '@inertiajs/vue3'
 import { computed, ref } from 'vue'
 import { useGeneral } from '@/Composables/useGeneral'
+import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     district: { type: Object, required: true },
@@ -18,6 +19,7 @@ const props = defineProps({
 })
 
 const { showToast } = useGeneral()
+const { locale, tr } = useLocale()
 const currentYear = new Date().getFullYear()
 const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - 1 + i)
 const changeYear = (y) => router.get(route('district.workplan'), { year: y }, { preserveScroll: true })
@@ -155,9 +157,9 @@ const runConfirmation = async () => {
 const deleteEvent = (ev) => {
     if (ev.source_level !== 'district') return
     openConfirmationModal({
-        title: 'Eliminar evento distrital',
-        message: `¿Eliminar "${ev.title}"?`,
-        confirmLabel: 'Eliminar',
+        title: tr('Eliminar evento distrital', 'Delete district event'),
+        message: tr(`¿Eliminar "${ev.title}"?`, `Delete "${ev.title}"?`),
+        confirmLabel: tr('Eliminar', 'Delete'),
         tone: 'danger',
         onConfirm: () => new Promise((resolve) => {
             router.delete(route('district.workplan.events.destroy', ev.id), {
@@ -170,9 +172,12 @@ const deleteEvent = (ev) => {
 
 const publishCalendar = () => {
     openConfirmationModal({
-        title: needsRepublish.value ? 'Republicar calendario distrital' : 'Publicar calendario distrital',
-        message: `¿Publicar los eventos distritales ${props.year} a los clubes del distrito?`,
-        confirmLabel: needsRepublish.value ? 'Republicar cambios' : 'Publicar a clubes',
+        title: needsRepublish.value ? tr('Republicar calendario distrital', 'Republish district calendar') : tr('Publicar calendario distrital', 'Publish district calendar'),
+        message: tr(
+            `¿Publicar los eventos distritales ${props.year} a los clubes del distrito?`,
+            `Publish the ${props.year} district events to clubs in the district?`,
+        ),
+        confirmLabel: needsRepublish.value ? tr('Republicar cambios', 'Republish changes') : tr('Publicar a clubes', 'Publish to clubs'),
         onConfirm: () => new Promise((resolve) => {
             publishing.value = true
             router.post(route('district.workplan.publish'), { year: props.year }, {
@@ -188,9 +193,12 @@ const publishCalendar = () => {
 
 const unpublishCalendar = () => {
     openConfirmationModal({
-        title: 'Despublicar calendario distrital',
-        message: `¿Despublicar los eventos distritales ${props.year}? Esto removerá esos eventos de los clubes del distrito.`,
-        confirmLabel: 'Despublicar',
+        title: tr('Despublicar calendario distrital', 'Unpublish district calendar'),
+        message: tr(
+            `¿Despublicar los eventos distritales ${props.year}? Esto removerá esos eventos de los clubes del distrito.`,
+            `Unpublish the ${props.year} district events? This will remove those events from clubs in the district.`,
+        ),
+        confirmLabel: tr('Despublicar', 'Unpublish'),
         tone: 'danger',
         onConfirm: () => new Promise((resolve) => {
             publishing.value = true
@@ -207,9 +215,12 @@ const unpublishCalendar = () => {
 
 const syncMissingCalendar = () => {
     openConfirmationModal({
-        title: 'Sincronizar eventos faltantes',
-        message: `¿Agregar a los clubes del distrito los eventos distritales ${props.year} que todavia no existan en sus planes de trabajo?`,
-        confirmLabel: 'Sincronizar faltantes',
+        title: tr('Sincronizar eventos faltantes', 'Sync missing events'),
+        message: tr(
+            `¿Agregar a los clubes del distrito los eventos distritales ${props.year} que todavia no existan en sus planes de trabajo?`,
+            `Add the ${props.year} district events to district clubs where they do not exist in their workplans yet?`,
+        ),
+        confirmLabel: tr('Sincronizar faltantes', 'Sync missing'),
         onConfirm: () => new Promise((resolve) => {
             syncing.value = true
             router.post(route('district.workplan.sync-missing'), { year: props.year }, {
@@ -223,7 +234,10 @@ const syncMissingCalendar = () => {
     })
 }
 
-const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+const months = computed(() => locale.value === 'en'
+    ? ['January','February','March','April','May','June','July','August','September','October','November','December']
+    : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+)
 const clubTypeOptions = computed(() => props.clubTypeOptions ?? [])
 const clubTypeLabels = computed(() =>
     Object.fromEntries(clubTypeOptions.value.map((option) => [option.value, option.label]))
@@ -250,23 +264,23 @@ const formatTime = (t) => t ? t.slice(0, 5) : ''
 const formatDate = (d) => {
     if (!d) return ''
     const dt = new Date(dateOnly(d) + 'T12:00:00')
-    return dt.toLocaleDateString('es', { day: 'numeric', month: 'short' })
+    return dt.toLocaleDateString(locale.value === 'en' ? 'en-US' : 'es', { day: 'numeric', month: 'short' })
 }
 const formatDateLong = (d) => {
     if (!d) return ''
     const dt = new Date(dateOnly(d) + 'T12:00:00')
-    return dt.toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })
+    return dt.toLocaleDateString(locale.value === 'en' ? 'en-US' : 'es', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 const formatDateRange = (ev) => {
     if (!ev?.end_date || dateOnly(ev.end_date) === dateOnly(ev.date)) return ''
     return `${formatDate(ev.date)} - ${formatDate(ev.end_date)}`
 }
-const typeLabel = (type) => type === 'program' ? 'Programa' : 'General'
+const typeLabel = (type) => type === 'program' ? tr('Programa', 'Program') : tr('General', 'General')
 const typeStyle = (type) => type === 'program' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-700'
 const sourceLabel = (ev) => {
-    if (ev.source_level === 'district') return 'Distrito'
-    if (ev.source_level === 'union') return 'Union'
-    return 'Asociacion'
+    if (ev.source_level === 'district') return tr('Distrito', 'District')
+    if (ev.source_level === 'union') return tr('Unión', 'Union')
+    return tr('Asociación', 'Association')
 }
 const sourcePrefixClass = (ev) => {
     if (ev.source_level === 'district') return 'text-red-700'
@@ -288,7 +302,7 @@ const toggleClubType = (val) => {
 
 <template>
     <PathfinderLayout>
-        <template #title>Plan de trabajo distrital</template>
+        <template #title>{{ tr('Plan de trabajo distrital', 'District Workplan') }}</template>
 
         <div class="space-y-6">
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -296,17 +310,17 @@ const toggleClubType = (val) => {
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ district.name }}</h2>
                         <p class="mt-0.5 text-sm text-gray-500">
-                            Calendario publicado por {{ association?.name || 'la asociación' }}
+                            {{ tr('Calendario publicado por', 'Calendar published by') }} {{ association?.name || tr('la asociación', 'the association') }}
                             <span v-if="union?.name"> · {{ union.name }}</span>
                         </p>
                         <p class="mt-1 text-xs" :class="associationPublication?.status === 'published' ? 'text-green-700' : 'text-gray-400'">
-                            {{ associationPublication?.status === 'published' ? `Asociación publicada · ${associationPublication.published_at || ''}` : 'Mostrando calendario de asociación disponible para este año.' }}
+                            {{ associationPublication?.status === 'published' ? `${tr('Asociación publicada', 'Association published')} · ${associationPublication.published_at || ''}` : tr('Mostrando calendario de asociación disponible para este año.', 'Showing the association calendar available for this year.') }}
                         </p>
                         <p class="mt-1 text-xs" :class="isDistrictPublished ? 'text-green-700' : 'text-gray-400'">
-                            {{ isDistrictPublished ? `Distrito publicado a clubes · ${districtPublication?.published_at || ''}` : 'Eventos distritales no publicados a clubes' }}
+                            {{ isDistrictPublished ? `${tr('Distrito publicado a clubes', 'District published to clubs')} · ${districtPublication?.published_at || ''}` : tr('Eventos distritales no publicados a clubes', 'District events not published to clubs') }}
                         </p>
                         <p v-if="needsRepublish" class="mt-1 text-xs font-medium text-amber-700">
-                            Hay cambios distritales posteriores a la última publicación. Republica para sincronizar los clubes.
+                            {{ tr('Hay cambios distritales posteriores a la última publicación. Republica para sincronizar los clubes.', 'There are district changes after the last publication. Republish to sync clubs.') }}
                         </p>
                     </div>
 
@@ -332,7 +346,7 @@ const toggleClubType = (val) => {
                             class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
                             @click="publishCalendar"
                         >
-                            Publicar distritales
+                            {{ tr('Publicar distritales', 'Publish district events') }}
                         </button>
                         <button
                             v-else-if="needsRepublish"
@@ -341,7 +355,7 @@ const toggleClubType = (val) => {
                             class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
                             @click="publishCalendar"
                         >
-                            Republicar cambios
+                            {{ tr('Republicar cambios', 'Republish changes') }}
                         </button>
                         <button
                             v-if="isDistrictPublished"
@@ -350,7 +364,7 @@ const toggleClubType = (val) => {
                             class="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
                             @click="syncMissingCalendar"
                         >
-                            Sincronizar faltantes
+                            {{ tr('Sincronizar faltantes', 'Sync missing') }}
                         </button>
                         <button
                             v-if="isDistrictPublished"
@@ -359,33 +373,33 @@ const toggleClubType = (val) => {
                             class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                             @click="unpublishCalendar"
                         >
-                            Despublicar distritales
+                            {{ tr('Despublicar distritales', 'Unpublish district events') }}
                         </button>
                         <button
                             type="button"
                             class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
                             @click="openCreate"
                         >
-                            + Evento distrital
+                            + {{ tr('Evento distrital', 'District event') }}
                         </button>
                     </div>
                 </div>
             </div>
 
             <div v-if="needsRepublish" class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
-                Los clubes reciben copias publicadas de los eventos distritales. Si editaste o eliminaste eventos existentes, usa <strong>Republicar cambios</strong>. Si solo agregaste eventos nuevos, usa <strong>Sincronizar faltantes</strong>.
+                {{ tr('Los clubes reciben copias publicadas de los eventos distritales. Si editaste o eliminaste eventos existentes, usa', 'Clubs receive published copies of district events. If you edited or deleted existing events, use') }} <strong>{{ tr('Republicar cambios', 'Republish changes') }}</strong>. {{ tr('Si solo agregaste eventos nuevos, usa', 'If you only added new events, use') }} <strong>{{ tr('Sincronizar faltantes', 'Sync missing') }}</strong>.
             </div>
 
             <div v-if="!events.length" class="rounded-2xl border border-dashed border-gray-200 bg-white p-12 text-center">
-                <p class="text-sm font-medium text-gray-500">Sin eventos para {{ year }}</p>
-                <p class="mt-1 text-xs text-gray-400">Cuando la asociación tenga eventos o el distrito cree eventos, aparecerán aquí.</p>
+                <p class="text-sm font-medium text-gray-500">{{ tr('Sin eventos para', 'No events for') }} {{ year }}</p>
+                <p class="mt-1 text-xs text-gray-400">{{ tr('Cuando la asociación tenga eventos o el distrito cree eventos, aparecerán aquí.', 'When the association has events or the district creates events, they will appear here.') }}</p>
             </div>
 
             <div v-if="events.length" class="space-y-4">
                 <template v-for="[monthNum, monthEvents] in activeMonths" :key="monthNum">
                     <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                         <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 px-6 py-3">
-                            <span class="text-sm font-semibold text-gray-700">{{ MONTHS[monthNum - 1] }}</span>
+                            <span class="text-sm font-semibold text-gray-700">{{ months[monthNum - 1] }}</span>
                             <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">{{ monthEvents.length }}</span>
                         </div>
 
@@ -393,9 +407,9 @@ const toggleClubType = (val) => {
                             <li v-for="ev in monthEvents" :key="`${ev.source_level}-${ev.id}`" class="group flex items-start gap-4 px-6 py-4 hover:bg-gray-50">
                                 <div class="w-14 shrink-0 text-center">
                                     <p class="text-lg font-bold leading-none text-gray-800">{{ new Date(dateOnly(ev.date) + 'T12:00:00').getDate() }}</p>
-                                    <p class="text-[10px] uppercase tracking-wide text-gray-400">{{ MONTHS[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}</p>
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-400">{{ months[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}</p>
                                     <p v-if="ev.end_date && dateOnly(ev.end_date) !== dateOnly(ev.date)" class="mt-0.5 text-[10px] text-gray-400">
-                                        al {{ formatDate(ev.end_date) }}
+                                        {{ tr('al', 'to') }} {{ formatDate(ev.end_date) }}
                                     </p>
                                 </div>
 
@@ -403,13 +417,13 @@ const toggleClubType = (val) => {
                                     <div class="mb-1 flex flex-wrap items-center gap-2">
                                         <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', typeStyle(ev.event_type)]">{{ typeLabel(ev.event_type) }}</span>
                                         <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', sourceBadgeClass(ev)]">{{ sourceLabel(ev) }}</span>
-                                        <span v-if="ev.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">Obligatorio</span>
+                                        <span v-if="ev.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">{{ tr('Obligatorio', 'Required') }}</span>
                                         <template v-if="ev.target_club_types?.length">
                                             <span v-for="ct in ev.target_club_types" :key="ct" class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
                                                 {{ clubTypeLabels[ct] ?? ct }}
                                             </span>
                                         </template>
-                                        <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-400">Todos los clubes</span>
+                                        <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-400">{{ tr('Todos los clubes', 'All clubs') }}</span>
                                     </div>
 
                                     <button type="button" class="block max-w-full text-left" @click="openDetails(ev)">
@@ -427,13 +441,13 @@ const toggleClubType = (val) => {
 
                                 <div class="flex shrink-0 items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                                     <button type="button" class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100" @click="openDetails(ev)">
-                                        Ver
+                                        {{ tr('Ver', 'View') }}
                                     </button>
                                     <button v-if="ev.source_level === 'district'" type="button" class="rounded-md px-2 py-1 text-xs text-blue-600 hover:bg-blue-50" @click="openEdit(ev)">
-                                        Editar
+                                        {{ tr('Editar', 'Edit') }}
                                     </button>
                                     <button v-if="ev.source_level === 'district'" type="button" class="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50" @click="deleteEvent(ev)">
-                                        Eliminar
+                                        {{ tr('Eliminar', 'Delete') }}
                                     </button>
                                 </div>
                             </li>
@@ -449,64 +463,64 @@ const toggleClubType = (val) => {
                 <div class="relative flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-gray-200 bg-white shadow-xl">
                     <div class="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
                         <h3 class="text-sm font-semibold text-gray-900">
-                            {{ editingEvent ? 'Editar evento distrital' : 'Nuevo evento distrital' }}
+                            {{ editingEvent ? tr('Editar evento distrital', 'Edit district event') : tr('Nuevo evento distrital', 'New district event') }}
                         </h3>
                         <button type="button" class="text-gray-400 hover:text-gray-600" @click="closeModal">x</button>
                     </div>
 
                     <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-gray-700">Título <span class="text-red-500">*</span></label>
+                            <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Título', 'Title') }} <span class="text-red-500">*</span></label>
                             <input v-model="form.title" type="text" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                             <p v-if="form.errors.title" class="mt-1 text-xs text-red-500">{{ form.errors.title }}</p>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-700">Fecha <span class="text-red-500">*</span></label>
+                                <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Fecha', 'Date') }} <span class="text-red-500">*</span></label>
                                 <input v-model="form.date" type="date" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                                 <p v-if="form.errors.date" class="mt-1 text-xs text-red-500">{{ form.errors.date }}</p>
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-700">Fecha fin</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Fecha fin', 'End date') }}</label>
                                 <input v-model="form.end_date" type="date" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                             </div>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-700">Hora inicio</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Hora inicio', 'Start time') }}</label>
                                 <input v-model="form.start_time" type="time" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-700">Hora fin</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Hora fin', 'End time') }}</label>
                                 <input v-model="form.end_time" type="time" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                             </div>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-gray-700">Tipo</label>
+                                <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Tipo', 'Type') }}</label>
                                 <select v-model="form.event_type" class="w-full rounded-lg border-gray-300 text-sm shadow-sm">
-                                    <option value="general">General</option>
-                                    <option value="program">Programa</option>
+                                    <option value="general">{{ tr('General', 'General') }}</option>
+                                    <option value="program">{{ tr('Programa', 'Program') }}</option>
                                 </select>
                             </div>
                             <div class="flex items-end pb-0.5">
                                 <label class="flex cursor-pointer items-center gap-2">
                                     <input v-model="form.is_mandatory" type="checkbox" class="rounded border-gray-300 text-red-600" />
-                                    <span class="text-xs font-medium text-gray-700">Obligatorio</span>
+                                    <span class="text-xs font-medium text-gray-700">{{ tr('Obligatorio', 'Required') }}</span>
                                 </label>
                             </div>
                         </div>
 
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-gray-700">Lugar</label>
+                            <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Lugar', 'Location') }}</label>
                             <input v-model="form.location" type="text" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                         </div>
 
                         <div>
-                            <label class="mb-2 block text-xs font-medium text-gray-700">Aplica a</label>
+                            <label class="mb-2 block text-xs font-medium text-gray-700">{{ tr('Aplica a', 'Applies to') }}</label>
                             <div class="flex flex-wrap gap-2">
                                 <button
                                     v-for="ct in clubTypeOptions"
@@ -523,21 +537,21 @@ const toggleClubType = (val) => {
                                     {{ ct.label }}
                                 </button>
                             </div>
-                            <p class="mt-1.5 text-xs text-gray-400">Sin selección = todos los clubes del distrito</p>
+                            <p class="mt-1.5 text-xs text-gray-400">{{ tr('Sin selección = todos los clubes del distrito', 'No selection = all district clubs') }}</p>
                         </div>
 
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-gray-700">Descripción</label>
+                            <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Descripción', 'Description') }}</label>
                             <textarea v-model="form.description" rows="4" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                         </div>
                     </div>
 
                     <div class="flex shrink-0 justify-end gap-3 border-t border-gray-100 px-6 py-4">
                         <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" @click="closeModal">
-                            Cancelar
+                            {{ tr('Cancelar', 'Cancel') }}
                         </button>
                         <button type="button" :disabled="form.processing" class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60" @click="submit">
-                            {{ editingEvent ? 'Guardar cambios' : 'Crear evento' }}
+                            {{ editingEvent ? tr('Guardar cambios', 'Save changes') : tr('Crear evento', 'Create event') }}
                         </button>
                     </div>
                 </div>
@@ -551,7 +565,7 @@ const toggleClubType = (val) => {
                         <div class="mb-2 flex flex-wrap gap-2">
                             <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', typeStyle(detailEvent.event_type)]">{{ typeLabel(detailEvent.event_type) }}</span>
                             <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', sourceBadgeClass(detailEvent)]">{{ sourceLabel(detailEvent) }}</span>
-                            <span v-if="detailEvent.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">Obligatorio</span>
+                            <span v-if="detailEvent.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">{{ tr('Obligatorio', 'Required') }}</span>
                         </div>
                         <h3 class="text-lg font-semibold text-gray-900">
                             <span :class="sourcePrefixClass(detailEvent)">{{ sourceLabel(detailEvent) }} / </span>{{ detailEvent.title }}
@@ -562,7 +576,7 @@ const toggleClubType = (val) => {
 
                 <dl class="mt-5 grid gap-4 text-sm sm:grid-cols-2">
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">Fecha</dt>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ tr('Fecha', 'Date') }}</dt>
                         <dd class="mt-1 text-gray-800">
                             {{ formatDateLong(detailEvent.date) }}
                             <template v-if="detailEvent.end_date && dateOnly(detailEvent.end_date) !== dateOnly(detailEvent.date)">
@@ -571,40 +585,40 @@ const toggleClubType = (val) => {
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">Hora</dt>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ tr('Hora', 'Time') }}</dt>
                         <dd class="mt-1 text-gray-800">
                             <template v-if="detailEvent.start_time">{{ formatTime(detailEvent.start_time) }}<template v-if="detailEvent.end_time"> - {{ formatTime(detailEvent.end_time) }}</template></template>
-                            <template v-else>Sin horario</template>
+                            <template v-else>{{ tr('Sin horario', 'No schedule') }}</template>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">Lugar</dt>
-                        <dd class="mt-1 text-gray-800">{{ detailEvent.location || 'Sin lugar definido' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ tr('Lugar', 'Location') }}</dt>
+                        <dd class="mt-1 text-gray-800">{{ detailEvent.location || tr('Sin lugar definido', 'No location defined') }}</dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">Aplica a</dt>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ tr('Aplica a', 'Applies to') }}</dt>
                         <dd class="mt-1 text-gray-800">
                             <template v-if="detailEvent.target_club_types?.length">
                                 {{ detailEvent.target_club_types.map((ct) => clubTypeLabels[ct] ?? ct).join(', ') }}
                             </template>
-                            <template v-else>Todos los clubes</template>
+                            <template v-else>{{ tr('Todos los clubes', 'All clubs') }}</template>
                         </dd>
                     </div>
                 </dl>
 
                 <div class="mt-5">
-                    <h4 class="text-xs font-medium uppercase tracking-wide text-gray-400">Descripción</h4>
+                    <h4 class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ tr('Descripción', 'Description') }}</h4>
                     <p class="mt-2 whitespace-pre-line text-sm leading-6 text-gray-700">
-                        {{ detailEvent.description || 'Sin descripción.' }}
+                        {{ detailEvent.description || tr('Sin descripción.', 'No description.') }}
                     </p>
                 </div>
 
                 <div class="mt-6 flex justify-end gap-3">
                     <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" @click="closeDetails">
-                        Cerrar
+                        {{ tr('Cerrar', 'Close') }}
                     </button>
                     <button v-if="detailEvent.source_level === 'district'" type="button" class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800" @click="closeDetails(); openEdit(detailEvent)">
-                        Editar
+                        {{ tr('Editar', 'Edit') }}
                     </button>
                 </div>
             </div>
@@ -622,7 +636,7 @@ const toggleClubType = (val) => {
                         :disabled="confirmationBusy"
                         @click="closeConfirmationModal"
                     >
-                        Cancelar
+                        {{ tr('Cancelar', 'Cancel') }}
                     </button>
                     <button
                         type="button"
@@ -631,7 +645,7 @@ const toggleClubType = (val) => {
                         :disabled="confirmationBusy"
                         @click="runConfirmation"
                     >
-                        {{ confirmationBusy ? 'Procesando...' : confirmationConfirmLabel }}
+                        {{ confirmationBusy ? tr('Procesando...', 'Processing...') : confirmationConfirmLabel }}
                     </button>
                 </div>
             </div>

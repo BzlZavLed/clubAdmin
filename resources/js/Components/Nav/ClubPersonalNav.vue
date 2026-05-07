@@ -18,20 +18,20 @@ import {
 } from '@heroicons/vue/24/outline'
 
 const { showToast } = useGeneral()
-const { tr } = useLocale()
+const { t } = useLocale()
 const page = usePage()
 const showDropdown = ref(false)
 
 const menuItems = computed(() => [
-    { name: tr('Panel', 'Dashboard'), href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
-    { name: tr('Eventos', 'Eventos'), href: '/events', route: 'events.index', icon: CalendarDaysIcon, badge: 'WIP' },
+    { name: t('dashboard'), href: '/club-personal/dashboard', route: 'dashboard', icon: HomeIcon },
+    { name: t('events'), href: '/events', route: 'events.index', icon: CalendarDaysIcon, badge: 'WIP' },
 ])
 
 const clubSubItems = computed(() => [
-    { name: tr('Reporte de asistencia', 'Attendance Report'), href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
-    { name: tr('Ingresos', 'Income'), href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
-    { name: tr('Plan de trabajo', 'Workplan'), href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
-    { name: tr('Requisitos de investidura', 'Investiture Requirements'), href: '/club-personal/investiture-requirements', route: 'club.personal.investiture-requirements', icon: ChartBarIcon },
+    { name: t('attendance_report'), href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
+    { name: t('income'), href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
+    { name: t('workplan'), href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
+    { name: t('investiture_requirements'), href: '/club-personal/investiture-requirements', route: 'club.personal.investiture-requirements', icon: ChartBarIcon },
 ])
 
 const props = defineProps({
@@ -70,7 +70,7 @@ watch(
             <button @click="showDropdown = !showDropdown"
                 class="flex items-center w-full px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100">
                 <UserGroupIcon class="w-5 h-5" />
-                <span v-if="!isCollapsed" class="ml-2">{{ tr('Mi clase', 'My class') }}</span>
+                <span v-if="!isCollapsed" class="ml-2">{{ t('my_class') }}</span>
                 <span class="ml-auto" v-if="!isCollapsed">
                     <component :is="showDropdown ? ChevronDownIcon : ChevronRightIcon" class="w-4 h-4" />
                 </span>

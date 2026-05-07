@@ -4,6 +4,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { useLocale } from '@/Composables/useLocale';
 import { Head, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -23,6 +24,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 });
+const { tr } = useLocale();
 
 const submit = () => {
     form.post(route('password.store'), {
@@ -33,11 +35,11 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Restablecer contraseña" />
+        <Head :title="tr('Restablecer contraseña', 'Reset password')" />
 
         <form @submit.prevent="submit">
             <div>
-                <InputLabel for="email" value="Correo electrónico" />
+                <InputLabel for="email" :value="tr('Correo electrónico', 'Email')" />
 
                 <TextInput
                     id="email"
@@ -53,7 +55,7 @@ const submit = () => {
             </div>
 
             <div class="mt-4">
-                <InputLabel for="password" value="Contraseña" />
+                <InputLabel for="password" :value="tr('Contraseña', 'Password')" />
 
                 <TextInput
                     id="password"
@@ -70,7 +72,7 @@ const submit = () => {
             <div class="mt-4">
                 <InputLabel
                     for="password_confirmation"
-                    value="Confirmar contraseña"
+                    :value="tr('Confirmar contraseña', 'Confirm password')"
                 />
 
                 <TextInput
@@ -93,7 +95,7 @@ const submit = () => {
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Restablecer contraseña
+                    {{ tr('Restablecer contraseña', 'Reset password') }}
                 </PrimaryButton>
             </div>
         </form>

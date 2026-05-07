@@ -1,5 +1,6 @@
 <script setup>
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import { useLocale } from '@/Composables/useLocale'
 import { router } from '@inertiajs/vue3'
 import { ref, computed } from 'vue'
 
@@ -16,12 +17,13 @@ const props = defineProps({
     grandparent_entity: { type: Object, default: null },
 })
 
-const months = [
-    { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' },
-    { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' },
-    { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' },
-    { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' },
-]
+const { tr } = useLocale()
+const months = computed(() => [
+    { value: 1, label: tr('Enero', 'January') }, { value: 2, label: tr('Febrero', 'February') }, { value: 3, label: tr('Marzo', 'March') },
+    { value: 4, label: tr('Abril', 'April') }, { value: 5, label: tr('Mayo', 'May') }, { value: 6, label: tr('Junio', 'June') },
+    { value: 7, label: tr('Julio', 'July') }, { value: 8, label: tr('Agosto', 'August') }, { value: 9, label: tr('Septiembre', 'September') },
+    { value: 10, label: tr('Octubre', 'October') }, { value: 11, label: tr('Noviembre', 'November') }, { value: 12, label: tr('Diciembre', 'December') },
+])
 
 const currentYear = new Date().getFullYear()
 const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i)
@@ -87,7 +89,11 @@ const downloadCsv = () => {
 }
 
 // ── Display helpers ───────────────────────────────────────────
-const clubTypeLabel = (t) => ({ adventurers: 'Aventureros', pathfinders: 'Conquistadores', master_guide: 'Guía Mayor' })[t] ?? t
+const clubTypeLabel = (t) => ({
+    adventurers: tr('Aventureros', 'Adventurers'),
+    pathfinders: tr('Conquistadores', 'Pathfinders'),
+    master_guide: tr('Guía Mayor', 'Master Guide'),
+})[t] ?? t
 
 const attendanceColor = (pct) => {
     if (pct === null || pct === undefined) return '#e5e7eb'
@@ -104,7 +110,16 @@ const attendanceTextColor = (pct) => {
 }
 
 const levelLabel = computed(() => ({
-    union: 'Asociaciones', association: 'Distritos', district: 'Clubes', club: 'Sesiones',
+    union: tr('Asociaciones', 'Associations'),
+    association: tr('Distritos', 'Districts'),
+    district: tr('Clubes', 'Clubs'),
+    club: tr('Sesiones', 'Sessions'),
+})[props.level] ?? '')
+
+const levelEntityLabel = computed(() => ({
+    union: tr('Asociación', 'Association'),
+    association: tr('Distrito', 'District'),
+    district: tr('Club', 'Club'),
 })[props.level] ?? '')
 
 const rowIsDrillable = computed(() => props.level !== 'club')
@@ -118,12 +133,12 @@ const filteredRows = computed(() => {
     return props.rows.filter(r => r.name?.toLowerCase().includes(q) || r.club_name?.toLowerCase().includes(q))
 })
 
-const monthLabel = computed(() => months.find(m => m.value === props.month)?.label ?? '')
+const monthLabel = computed(() => months.value.find(m => m.value === props.month)?.label ?? '')
 </script>
 
 <template>
     <PathfinderLayout>
-        <template #title>Reporte de asistencia</template>
+        <template #title>{{ tr('Reporte de asistencia', 'Attendance report') }}</template>
 
         <div class="space-y-5">
 
@@ -133,7 +148,7 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ union.name }}</h2>
                         <p class="mt-0.5 text-sm text-gray-500">
-                            Asistencia mensual promedio por club ·
+                            {{ tr('Asistencia mensual promedio por club', 'Average monthly attendance by club') }} ·
                             <span class="font-medium text-gray-700">{{ monthLabel }} {{ year }}</span>
                         </p>
                     </div>
@@ -142,14 +157,14 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                         class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
                         @click="downloadCsv"
                     >
-                        ↓ Descargar CSV
+                        ↓ {{ tr('Descargar CSV', 'Download CSV') }}
                     </button>
                 </div>
 
                 <!-- Month / Year filter -->
                 <div class="mt-4 flex flex-wrap items-end gap-3">
                     <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Mes</label>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">{{ tr('Mes', 'Month') }}</label>
                         <select
                             v-model="selectedMonth"
                             class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -158,7 +173,7 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Año</label>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">{{ tr('Año', 'Year') }}</label>
                         <select
                             v-model="selectedYear"
                             class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -171,7 +186,7 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                         class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
                         @click="applyFilter"
                     >
-                        Consultar
+                        {{ tr('Consultar', 'Search') }}
                     </button>
                 </div>
 
@@ -203,13 +218,13 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                     <input
                         v-model="rowSearch"
                         type="search"
-                        placeholder="Buscar…"
+                        :placeholder="tr('Buscar…', 'Search...')"
                         class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 w-48"
                     />
                 </div>
 
                 <div v-if="!filteredRows.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
-                    Sin datos para el período seleccionado.
+                    {{ tr('Sin datos para el período seleccionado.', 'No data for the selected period.') }}
                 </div>
 
                 <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -217,13 +232,13 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                    {{ level === 'district' ? 'Club' : (level === 'association' ? 'Distrito' : 'Asociación') }}
+                                    {{ levelEntityLabel }}
                                 </th>
-                                <th v-if="level === 'district'" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Tipo</th>
-                                <th v-if="level !== 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Clubes</th>
+                                <th v-if="level === 'district'" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Tipo', 'Type') }}</th>
+                                <th v-if="level !== 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Clubes', 'Clubs') }}</th>
                                 <th v-if="level !== 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
                                     <span class="inline-flex items-center justify-end gap-1">
-                                        Con reporte
+                                        {{ tr('Con reporte', 'With report') }}
                                         <button type="button" class="text-gray-400 hover:text-blue-600 transition-colors" @click.stop="showConReporteModal = true">
                                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                                                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
@@ -231,9 +246,9 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                                         </button>
                                     </span>
                                 </th>
-                                <th v-if="level === 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Inscritos</th>
-                                <th v-if="level === 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Sesiones</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 min-w-[180px]">Asistencia promedio</th>
+                                <th v-if="level === 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Inscritos', 'Enrolled') }}</th>
+                                <th v-if="level === 'district'" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Sesiones', 'Sessions') }}</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 min-w-[180px]">{{ tr('Asistencia promedio', 'Average attendance') }}</th>
                                 <th class="px-4 py-3" />
                             </tr>
                         </thead>
@@ -273,7 +288,7 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                                         v-if="rowIsDrillable"
                                         class="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity select-none"
                                     >
-                                        Ver detalle →
+                                        {{ tr('Ver detalle', 'View details') }} →
                                     </span>
                                 </td>
                             </tr>
@@ -292,22 +307,22 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                                 {{ clubTypeLabel(current_entity.club_type) }}
                             </span>
                         </p>
-                        <p class="text-xs text-gray-400">{{ sessions.length }} sesiones en {{ monthLabel }} {{ year }}</p>
+                        <p class="text-xs text-gray-400">{{ sessions.length }} {{ tr('sesiones en', 'sessions in') }} {{ monthLabel }} {{ year }}</p>
                     </div>
                 </div>
 
                 <div v-if="!sessions.length" class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
-                    Sin sesiones registradas para este período.
+                    {{ tr('Sin sesiones registradas para este período.', 'No sessions registered for this period.') }}
                 </div>
 
                 <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     <table class="min-w-full divide-y divide-gray-100">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Fecha</th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Inscritos</th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Presentes</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 min-w-[180px]">Asistencia</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Fecha', 'Date') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Inscritos', 'Enrolled') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Presentes', 'Present') }}</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 min-w-[180px]">{{ tr('Asistencia', 'Attendance') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -332,7 +347,7 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                         </tbody>
                         <tfoot class="bg-gray-50 border-t border-gray-200">
                             <tr>
-                                <td class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Promedio</td>
+                                <td class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">{{ tr('Promedio', 'Average') }}</td>
                                 <td class="px-4 py-3 text-right text-sm text-gray-600">{{ sessions[0]?.enrolled ?? '—' }}</td>
                                 <td class="px-4 py-3 text-right text-sm font-semibold text-gray-700">
                                     {{ sessions.length ? Math.round(sessions.reduce((s, r) => s + r.present, 0) / sessions.length) : '—' }}
@@ -372,7 +387,7 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                                         <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
                                     </svg>
                                 </div>
-                                <h3 class="text-sm font-semibold text-gray-900">¿Qué es "Con reporte"?</h3>
+                                <h3 class="text-sm font-semibold text-gray-900">{{ tr('¿Qué es "Con reporte"?', 'What does "With report" mean?') }}</h3>
                             </div>
                             <button type="button" class="text-gray-400 hover:text-gray-600 transition-colors" @click="showConReporteModal = false">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -381,16 +396,16 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                             </button>
                         </div>
                         <p class="text-sm text-gray-600 leading-relaxed">
-                            Indica cuántos clubes registraron al menos una sesión de asistencia durante el mes seleccionado.
+                            {{ tr('Indica cuántos clubes registraron al menos una sesión de asistencia durante el mes seleccionado.', 'It shows how many clubs registered at least one attendance session during the selected month.') }}
                         </p>
                         <ul class="mt-3 space-y-2 text-sm text-gray-500">
                             <li class="flex items-start gap-2">
                                 <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0 mt-1.5" />
-                                Un promedio bajo puede significar mala asistencia <em>o</em> simplemente que pocos clubes enviaron su reporte.
+                                {{ tr('Un promedio bajo puede significar mala asistencia', 'A low average can mean poor attendance') }} <em>{{ tr('o', 'or') }}</em> {{ tr('simplemente que pocos clubes enviaron su reporte.', 'simply that few clubs submitted their report.') }}
                             </li>
                             <li class="flex items-start gap-2">
                                 <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0 mt-1.5" />
-                                Compare este número con el total de clubes para evaluar la cobertura del reporte.
+                                {{ tr('Compare este número con el total de clubes para evaluar la cobertura del reporte.', 'Compare this number with the total clubs to evaluate report coverage.') }}
                             </li>
                         </ul>
                         <div class="mt-5 text-right">
@@ -399,7 +414,7 @@ const monthLabel = computed(() => months.find(m => m.value === props.month)?.lab
                                 class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
                                 @click="showConReporteModal = false"
                             >
-                                Entendido
+                                {{ tr('Entendido', 'Got it') }}
                             </button>
                         </div>
                     </div>

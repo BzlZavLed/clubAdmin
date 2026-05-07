@@ -4,11 +4,13 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { useLocale } from '@/Composables/useLocale';
 import { Head, useForm } from '@inertiajs/vue3';
 
 const form = useForm({
     password: '',
 });
+const { tr } = useLocale();
 
 const submit = () => {
     form.post(route('password.confirm'), {
@@ -19,16 +21,15 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Confirmar contraseña" />
+        <Head :title="tr('Confirmar contraseña', 'Confirm password')" />
 
         <div class="mb-4 text-sm text-gray-600">
-            Esta es un área segura de la aplicación. Por favor confirma tu
-            contraseña antes de continuar.
+            {{ tr('Esta es un área segura de la aplicación. Por favor confirma tu contraseña antes de continuar.', 'This is a secure area of the application. Please confirm your password before continuing.') }}
         </div>
 
         <form @submit.prevent="submit">
             <div>
-                <InputLabel for="password" value="Contraseña" />
+                <InputLabel for="password" :value="tr('Contraseña', 'Password')" />
                 <TextInput
                     id="password"
                     type="password"
@@ -47,7 +48,7 @@ const submit = () => {
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Confirmar
+                    {{ tr('Confirmar', 'Confirm') }}
                 </PrimaryButton>
             </div>
         </form>

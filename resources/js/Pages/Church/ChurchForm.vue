@@ -1,77 +1,77 @@
 <template>
     <PathfinderLayout>
-        <template #title>Crear iglesia</template>
+        <template #title>{{ tr('Crear iglesia', 'Create church') }}</template>
 
         <div class="p-4 max-w-lg mx-auto">
             <form @submit.prevent="submitChurch">
                 <div class="mb-4">
-                    <label class="block mb-1">Distrito</label>
+                    <label class="block mb-1">{{ tr('Distrito', 'District') }}</label>
                     <select v-model="form.district_id" class="border p-2 w-full">
-                        <option value="">Sin distrito</option>
+                        <option value="">{{ tr('Sin distrito', 'No district') }}</option>
                         <option v-for="district in districts" :key="district.id" :value="district.id">
                             {{ districtLabel(district) }}
                         </option>
                     </select>
                 </div>
                 <div class="mb-4">
-                    <label class="block mb-1">Nombre de la iglesia *</label>
+                    <label class="block mb-1">{{ tr('Nombre de la iglesia *', 'Church name *') }}</label>
                     <input v-model="form.church_name" type="text" class="border p-2 w-full" required />
                 </div>
                 <div class="mb-4">
-                    <label class="block mb-1">Dirección</label>
+                    <label class="block mb-1">{{ tr('Dirección', 'Address') }}</label>
                     <input v-model="form.address" type="text" class="border p-2 w-full" />
                 </div>
                 <div class="mb-4">
-                    <label class="block mb-1">Etnia</label>
+                    <label class="block mb-1">{{ tr('Etnia', 'Ethnicity') }}</label>
                     <input v-model="form.ethnicity" type="text" class="border p-2 w-full" />
                 </div>
                 <div class="mb-4">
-                    <label class="block mb-1">Teléfono</label>
+                    <label class="block mb-1">{{ tr('Teléfono', 'Phone') }}</label>
                     <input v-model="form.phone_number" type="text" class="border p-2 w-full" />
                 </div>
                 <div class="mb-4">
-                    <label class="block mb-1">Correo electrónico</label>
+                    <label class="block mb-1">{{ tr('Correo electrónico', 'Email') }}</label>
                     <input v-model="form.email" type="email" class="border p-2 w-full" />
                 </div>
                 <div class="mb-4">
-                    <label class="block mb-1">Nombre del pastor</label>
+                    <label class="block mb-1">{{ tr('Nombre del pastor', 'Pastor name') }}</label>
                     <input v-model="form.pastor_name" type="text" class="border p-2 w-full" />
                 </div>
                 <div class="mb-4">
-                    <label class="block mb-1">Correo del pastor</label>
+                    <label class="block mb-1">{{ tr('Correo del pastor', 'Pastor email') }}</label>
                     <input v-model="form.pastor_email" type="email" class="border p-2 w-full" />
                 </div>
                 <Link :href="route('register')" class="text-sm text-yellow-600 hover:underline">
-                Registrar personal
+                {{ tr('Registrar personal', 'Register staff') }}
                 </Link><br>
 
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Guardar</button>
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">{{ tr('Guardar', 'Save') }}</button>
 
             </form>
         </div>
 
         <div class="p-4 max-w-5xl mx-auto">
-            <h2 class="text-lg font-semibold text-gray-800 mb-3">Iglesias registradas</h2>
+            <h2 class="text-lg font-semibold text-gray-800 mb-3">{{ tr('Iglesias registradas', 'Registered churches') }}</h2>
             <div class="overflow-x-auto bg-white border rounded-lg shadow-sm">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50 text-gray-700">
                         <tr>
-                            <th class="text-left px-4 py-2">Nombre</th>
-                            <th class="text-left px-4 py-2">Distrito</th>
-                            <th class="text-left px-4 py-2">Asociación</th>
-                            <th class="text-left px-4 py-2">Unión</th>
-                            <th class="text-left px-4 py-2">Correo</th>
-                            <th class="text-left px-4 py-2">Teléfono</th>
-                            <th class="text-left px-4 py-2">Código de invitación</th>
-                            <th class="text-right px-4 py-2">Acciones</th>
+                            <th class="text-left px-4 py-2">{{ tr('Nombre', 'Name') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Distrito', 'District') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Asociación', 'Association') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Unión', 'Union') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Correo', 'Email') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Teléfono', 'Phone') }}</th>
+                            <th class="text-left px-4 py-2">{{ tr('Código de invitación', 'Invitation code') }}</th>
+                            <th class="text-right px-4 py-2">{{ tr('Acciones', 'Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="loadingChurches">
-                            <td colspan="9" class="px-4 py-3 text-gray-500">Cargando iglesias...</td>
+                            <td colspan="9" class="px-4 py-3 text-gray-500">{{ tr('Cargando iglesias...', 'Loading churches...') }}</td>
                         </tr>
                         <tr v-else-if="churches.length === 0">
-                            <td colspan="9" class="px-4 py-3 text-gray-500">No se encontraron iglesias.</td>
+                            <td colspan="9" class="px-4 py-3 text-gray-500">{{ tr('No se encontraron iglesias.', 'No churches found.') }}</td>
                         </tr>
                         <tr v-for="church in churches" :key="church.id" class="border-t">
                             <td class="px-4 py-2">
@@ -81,7 +81,7 @@
                             </td>
                             <td class="px-4 py-2">
                                 <select v-if="editingId === church.id" v-model="editForm.district_id" class="border p-1 w-full">
-                                    <option value="">Sin distrito</option>
+                                    <option value="">{{ tr('Sin distrito', 'No district') }}</option>
                                     <option v-for="district in districts" :key="district.id" :value="district.id">
                                         {{ districtLabel(district) }}
                                     </option>
@@ -104,28 +104,28 @@
                                 <span v-if="church.invite_code" class="font-mono text-xs">
                                     {{ church.invite_code }}
                                 </span>
-                                <span v-else class="text-gray-400 text-xs">Sin código</span>
+                                <span v-else class="text-gray-400 text-xs">{{ tr('Sin código', 'No code') }}</span>
                             </td>
                             <td class="px-4 py-2 text-right space-x-2">
                                 <button type="button" class="text-indigo-600 hover:underline"
                                     @click="regenerateInviteCode(church.id)">
-                                    {{ church.invite_code ? 'Regenerar' : 'Generar' }}
+                                    {{ church.invite_code ? tr('Regenerar', 'Regenerate') : tr('Generar', 'Generate') }}
                                 </button>
                                 <button v-if="editingId !== church.id" type="button"
                                     class="text-blue-600 hover:underline" @click="startEdit(church)">
-                                    Editar
+                                    {{ tr('Editar', 'Edit') }}
                                 </button>
                                 <button v-if="editingId === church.id" type="button"
                                     class="text-green-600 hover:underline" @click="saveEdit(church.id)">
-                                    Guardar
+                                    {{ tr('Guardar', 'Save') }}
                                 </button>
                                 <button v-if="editingId === church.id" type="button"
                                     class="text-gray-600 hover:underline" @click="cancelEdit">
-                                    Cancelar
+                                    {{ tr('Cancelar', 'Cancel') }}
                                 </button>
                                 <button type="button" class="text-red-600 hover:underline"
                                     @click="deleteChurch(church.id)">
-                                    Eliminar
+                                    {{ tr('Eliminar', 'Delete') }}
                                 </button>
                             </td>
                         </tr>
@@ -140,8 +140,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { Link, usePage } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import { useLocale } from '@/Composables/useLocale'
 
 const page = usePage()
+const { tr } = useLocale()
 const currentUser = computed(() => page.props.auth?.user ?? null)
 const isSuperAdmin = computed(() => currentUser.value?.profile_type === 'superadmin')
 const districts = computed(() => page.props.districts ?? [])
@@ -200,7 +202,7 @@ const submitChurch = async () => {
             ...form,
             district_id: form.district_id || null,
         })
-        alert('Iglesia creada correctamente.')
+        alert(tr('Iglesia creada correctamente.', 'Church created successfully.'))
 
         // Reset form fields
         form.district_id = ''
@@ -213,7 +215,7 @@ const submitChurch = async () => {
         form.pastor_email = ''
         await fetchChurches()
     } catch (err) {
-        alert('Error al crear la iglesia. Revisa el formulario.')
+        alert(tr('Error al crear la iglesia. Revisa el formulario.', 'Error creating the church. Check the form.'))
         console.error(err)
     }
 }
@@ -248,23 +250,23 @@ const saveEdit = async (churchId) => {
         })
         editingId.value = null
         await fetchChurches()
-        alert('Iglesia actualizada correctamente.')
+        alert(tr('Iglesia actualizada correctamente.', 'Church updated successfully.'))
     } catch (err) {
-        alert('Error al actualizar la iglesia. Revisa el formulario.')
+        alert(tr('Error al actualizar la iglesia. Revisa el formulario.', 'Error updating the church. Check the form.'))
         console.error(err)
     }
 }
 
 const deleteChurch = async (churchId) => {
-    if (!confirm('¿Seguro que deseas eliminar esta iglesia?')) {
+    if (!confirm(tr('¿Seguro que deseas eliminar esta iglesia?', 'Are you sure you want to delete this church?'))) {
         return
     }
     try {
         await axios.delete(`/churches/${churchId}`)
         await fetchChurches()
-        alert('Iglesia eliminada correctamente.')
+        alert(tr('Iglesia eliminada correctamente.', 'Church deleted successfully.'))
     } catch (err) {
-        alert('Error al eliminar la iglesia.')
+        alert(tr('Error al eliminar la iglesia.', 'Error deleting the church.'))
         console.error(err)
     }
 }
@@ -280,9 +282,9 @@ const regenerateInviteCode = async (churchId) => {
         if (idx !== -1) {
             churches.value[idx].invite_code = updated
         }
-        alert('Código de invitación actualizado.')
+        alert(tr('Código de invitación actualizado.', 'Invitation code updated.'))
     } catch (err) {
-        alert('Error al generar el código de invitación.')
+        alert(tr('Error al generar el código de invitación.', 'Error generating the invitation code.'))
         console.error(err)
     }
 }
