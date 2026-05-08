@@ -77,16 +77,18 @@ class ClubController extends Controller
         ];
     }
 
-    protected function buildClubHierarchyFields(Church $church, District $district): array
+    protected function buildClubHierarchyFields(Church $church, ?District $district, ?string $fallbackEvaluationSystem = null): array
     {
-        $hierarchy = $this->resolveDistrictHierarchy($district);
+        $hierarchy = $district
+            ? $this->resolveDistrictHierarchy($district)
+            : ['district' => null, 'association' => null, 'union' => null];
 
         return [
             'church_name' => $church->church_name,
             'pastor_name' => $church->pastor_name,
-            'conference_name' => $hierarchy['association']?->name,
-            'evaluation_system' => $hierarchy['union']?->evaluation_system ?: 'honors',
-            'district_id' => $district->id,
+            'conference_name' => $hierarchy['association']?->name ?: $church->conference,
+            'evaluation_system' => $hierarchy['union']?->evaluation_system ?: ($fallbackEvaluationSystem ?: 'honors'),
+            'district_id' => $district?->id,
             'church_id' => $church->id,
         ];
     }
@@ -277,7 +279,7 @@ class ClubController extends Controller
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
             'church_id' => 'required|exists:churches,id',
-            'district_id' => 'required|exists:districts,id',
+            'district_id' => 'nullable|exists:districts,id',
             'director_user_id' => 'nullable|exists:users,id',
             'status' => 'required|in:active,inactive',
             'creation_date' => 'nullable|date',
@@ -290,11 +292,13 @@ class ClubController extends Controller
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
-        $district = District::findOrFail($validated['district_id']);
+        $district = !empty($validated['district_id'])
+            ? District::findOrFail($validated['district_id'])
+            : $church->district;
         $director = !empty($validated['director_user_id'])
             ? User::findOrFail($validated['director_user_id'])
             : null;
-        $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
+        $hierarchyFields = $this->buildClubHierarchyFields($church, $district, $validated['evaluation_system'] ?? 'honors');
 
         $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type']);
 
@@ -302,6 +306,12 @@ class ClubController extends Controller
             return back()->withErrors([
                 'director_user_id' => 'Selected user must have club_director profile.',
             ]);
+        }
+
+        if (($hierarchyFields['evaluation_system'] ?? 'honors') === 'carpetas' && !$district) {
+            return back()->withErrors([
+                'district_id' => 'A carpetas club must belong to a district.',
+            ])->withInput();
         }
 
         if ($validated['status'] === 'active' && !$director) {
@@ -369,7 +379,7 @@ class ClubController extends Controller
         $validated = $request->validate([
             'club_name' => 'required|string|max:255',
             'church_id' => 'required|exists:churches,id',
-            'district_id' => 'required|exists:districts,id',
+            'district_id' => 'nullable|exists:districts,id',
             'director_user_id' => 'nullable|exists:users,id',
             'status' => 'required|in:active,inactive',
             'creation_date' => 'nullable|date',
@@ -382,11 +392,13 @@ class ClubController extends Controller
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
-        $district = District::findOrFail($validated['district_id']);
+        $district = !empty($validated['district_id'])
+            ? District::findOrFail($validated['district_id'])
+            : $church->district;
         $director = !empty($validated['director_user_id'])
             ? User::findOrFail($validated['director_user_id'])
             : null;
-        $hierarchyFields = $this->buildClubHierarchyFields($church, $district);
+        $hierarchyFields = $this->buildClubHierarchyFields($church, $district, $validated['evaluation_system'] ?? 'honors');
 
         $this->enforceChurchClubTypeRule((int) $church->id, $validated['club_type'], (int) $club->id);
 
@@ -394,6 +406,12 @@ class ClubController extends Controller
             return back()->withErrors([
                 'director_user_id' => 'Selected user must have club_director profile.',
             ]);
+        }
+
+        if (($hierarchyFields['evaluation_system'] ?? 'honors') === 'carpetas' && !$district) {
+            return back()->withErrors([
+                'district_id' => 'A carpetas club must belong to a district.',
+            ])->withInput();
         }
 
         if ($validated['status'] === 'active' && !$director) {

@@ -83,6 +83,29 @@ const settlementSummary = (entry) => {
     const base = `${tr('Liquidado con', 'Settled with')} ${entry.settlement_account_label}`
     return entry?.settlement_date ? `${base} ${tr('el', 'on')} ${formatDateMDY(entry.settlement_date)}` : base
 }
+const entryPersonLabel = (entry) => {
+    if (entry?.entry_type === 'payment') {
+        return entry.payer_name || entry.member || entry.staff || entry.received_by_name || '—'
+    }
+
+    if (entry?.entry_type === 'expense') {
+        return entry.payee_name || entry.staff || '—'
+    }
+
+    return entry?.staff || entry?.member || '—'
+}
+const entryRecordLabel = (entry, id = null) => `${entryTypeLabel(entry)} #${id ?? entry?.id ?? '—'}`
+const cancellationSummary = (entry) => {
+    if (entry?.is_cancelled && entry?.related_canceled_movement_id) {
+        return `${entryRecordLabel(entry)} ${tr('cancelado por', 'cancelled by')} ${entryRecordLabel(entry, entry.related_canceled_movement_id)}`
+    }
+
+    if (entry?.canceling_id) {
+        return `${entryRecordLabel(entry)} ${tr('cancela', 'cancels')} ${entryRecordLabel(entry, entry.canceling_id)}`
+    }
+
+    return null
+}
 
 const selectedConcept = computed(() =>
     (concepts.value || []).find(c => c.id === selectedConceptId.value) || null
@@ -489,14 +512,17 @@ watch(selectedClubId, async (id, old) => {
 	                            <div class="mt-1 text-xs text-gray-600">
 	                                <span class="font-medium text-gray-700">{{ tr('Ubicación:', 'Location:') }}</span> {{ entryLocationLabel(e) }}
 	                            </div>
-	                            <div v-if="acc.pay_to === 'reimbursement_to'" class="mt-1 text-xs text-gray-600">
-                                <span class="font-medium text-gray-700">{{ tr('Miembro/Personal:', 'Member/Staff:') }}</span> {{ e.member ?? e.staff ?? '—' }}
+	                            <div class="mt-1 text-xs text-gray-600">
+                                <span class="font-medium text-gray-700">{{ tr('Persona:', 'Person:') }}</span> {{ entryPersonLabel(e) }}
                             </div>
                             <div v-if="acc.pay_to === 'reimbursement_to' && settlementSummary(e)" class="mt-1 text-xs text-gray-600">
                                 <span class="font-medium text-gray-700">{{ tr('Liquidacion:', 'Settlement:') }}</span> {{ settlementSummary(e) }}
                             </div>
                             <div v-if="e.receipt_ref" class="mt-1 text-xs text-gray-600">
-                                <span class="font-medium text-gray-700">Ref:</span> {{ e.receipt_ref }}
+                                <span class="font-medium text-gray-700">{{ tr('Recibo/comprobante:', 'Receipt/proof:') }}</span> {{ e.receipt_ref }}
+                            </div>
+                            <div v-if="cancellationSummary(e)" class="mt-1 text-xs text-red-700">
+                                <span class="font-medium">{{ tr('Corrección:', 'Correction:') }}</span> {{ cancellationSummary(e) }}
                             </div>
 	                            <div class="mt-2 text-sm">
 	                                <span v-if="e.entry_type === 'expense'" class="font-semibold text-amber-700">-{{ fmtMoney(e.amount) }}</span>
@@ -538,10 +564,11 @@ watch(selectedClubId, async (id, old) => {
 	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Fecha', 'Date') }}</th>
 	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Tipo', 'Type') }}</th>
 	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Ubicación', 'Location') }}</th>
-	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">{{ tr('Miembro/Personal', 'Member/Staff') }}</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Persona', 'Person') }}</th>
 	                                    <th v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2 text-left font-semibold">{{ tr('Liquidacion', 'Settlement') }}</th>
 	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Concepto', 'Concept') }}</th>
-	                                    <th class="px-4 py-2 text-left font-semibold">Ref.</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Recibo/comprobante', 'Receipt/proof') }}</th>
+	                                    <th class="px-4 py-2 text-left font-semibold">{{ tr('Corrección', 'Correction') }}</th>
 	                                    <th class="px-4 py-2 text-right font-semibold">{{ tr('Movimientos', 'Movements') }}</th>
 	                                    <th class="px-4 py-2 text-right font-semibold">{{ tr('Cargos', 'Charges') }}</th>
 	                                    <th class="px-4 py-2 text-right font-semibold">{{ tr('Abonos', 'Credits') }}</th>
@@ -563,10 +590,16 @@ watch(selectedClubId, async (id, old) => {
 	                                        </span>
 	                                    </td>
 	                                    <td class="px-4 py-2">{{ entryLocationLabel(e) }}</td>
-	                                    <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ e.member ?? e.staff ?? '—' }}</td>
+	                                    <td class="px-4 py-2">{{ entryPersonLabel(e) }}</td>
                                     <td v-if="acc.pay_to === 'reimbursement_to'" class="px-4 py-2">{{ settlementSummary(e) ?? '—' }}</td>
 	                                    <td class="px-4 py-2">{{ e.concept }}</td>
 	                                    <td class="px-4 py-2">{{ e.receipt_ref ?? '—' }}</td>
+	                                    <td class="px-4 py-2">
+	                                        <span v-if="cancellationSummary(e)" class="text-xs font-medium text-red-700">
+	                                            {{ cancellationSummary(e) }}
+	                                        </span>
+	                                        <span v-else class="text-gray-400">—</span>
+	                                    </td>
 	                                    <td class="px-4 py-2 text-right">
 	                                        <span v-if="e.entry_type === 'treasury_movement'" class="text-blue-700">{{ fmtMoney(e.amount) }}</span>
 	                                        <span v-else class="text-gray-400">—</span>
@@ -583,13 +616,13 @@ watch(selectedClubId, async (id, old) => {
                             </tbody>
 	                            <tfoot>
 	                                <tr class="border-t bg-gray-50 font-semibold">
-	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">{{ tr('Totales', 'Totals') }}</td>
+	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 8 : 7">{{ tr('Totales', 'Totals') }}</td>
 	                                    <td class="px-4 py-2 text-right text-blue-700">{{ fmtMoney(acc.totals.movements) }}</td>
 	                                    <td class="px-4 py-2 text-right text-amber-700">-{{ fmtMoney(acc.totals.spent) }}</td>
 	                                    <td class="px-4 py-2 text-right text-emerald-700">{{ fmtMoney(acc.totals.paid) }}</td>
 	                                </tr>
 	                                <tr class="border-t bg-white font-semibold">
-	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 7 : 5">{{ tr('Saldo de la cuenta', 'Account balance') }}</td>
+	                                    <td class="px-4 py-2" :colspan="acc.pay_to === 'reimbursement_to' ? 8 : 7">{{ tr('Saldo de la cuenta', 'Account balance') }}</td>
 	                                    <td class="px-4 py-2 text-right" :colspan="3">{{ fmtMoney(acc.totals.net) }}</td>
 	                                </tr>
                             </tfoot>

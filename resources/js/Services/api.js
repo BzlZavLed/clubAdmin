@@ -108,9 +108,11 @@ export const fetchClubClasses = async (clubId) => {
     return response.data;
 };
 
-export const deleteMemberById = async (memberId, notes) => {
+export const deleteMemberById = async (memberId, notes, options = {}) => {
     return await axios.post(route("members.destroy", memberId), {
         notes_deleted: notes,
+        member_type: options.member_type,
+        member_record_id: options.member_record_id,
         _method: "DELETE",
     });
 };

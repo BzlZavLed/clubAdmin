@@ -25,7 +25,6 @@ import {
     assignMemberToClass,
     undoClassAssignment,
     deleteMemberById,
-    bulkDeleteMembers,
     downloadMemberZip,
     uploadPathfinderInsuranceCard,
 } from '@/Services/api'
@@ -180,7 +179,10 @@ const onInsuranceCardSelected = async (event) => {
 
 const handleMemberDelete = async ({ id, notes }) => {
     try {
-        await deleteMemberById(id, notes)
+        await deleteMemberById(id, notes, {
+            member_type: deletingMember.value?.member_type || 'adventurers',
+            member_record_id: deletingMember.value?.member_id || null,
+        })
         await fetchMembers(selectedClub.value.id)
         showToast(tr('Miembro eliminado correctamente.', 'Member deleted successfully.'), 'success')
         showDeleteModal.value = false
@@ -205,7 +207,13 @@ const handleBulkAction = async (action, type = null) => {
         if (!confirmed) return
 
         try {
-            await bulkDeleteMembers(ids)
+            const selectedMembers = members.value.filter(member => selectedMemberIds.value.has(member.id))
+            for (const member of selectedMembers) {
+                await deleteMemberById(member.id, 'Bulk deleted', {
+                    member_type: member.member_type || 'adventurers',
+                    member_record_id: member.member_id || null,
+                })
+            }
             await fetchMembers(selectedClub.value.id)
             selectedMemberIds.value.clear()
             selectAll.value = false

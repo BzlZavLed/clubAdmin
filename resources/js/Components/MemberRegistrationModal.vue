@@ -246,7 +246,7 @@ function onParentCellNumberInput(event) {
                     </span>
                 </label>
                 <div v-if="form.is_sda" class="mt-3">
-                    <label class="mb-1 block text-sm font-medium text-gray-700">Fecha de bautismo *</label>
+                    <label class="mb-1 block text-sm font-medium text-gray-700">Fecha de bautismo (opcional)</label>
                     <input v-model="form.baptism_date" type="date" class="w-full rounded border p-2 text-sm" />
                 </div>
             </section>

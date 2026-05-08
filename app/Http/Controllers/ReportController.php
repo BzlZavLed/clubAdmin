@@ -1357,10 +1357,17 @@ class ReportController extends Controller
                         'location' => $entry['location'] ?? null,
                         'from_location' => $entry['from_location'] ?? null,
                         'to_location' => $entry['to_location'] ?? null,
-                        'receipt_ref' => $entry['receipt_ref'] ?? null,
-                        'concept' => $entry['concept'] ?? null,
-                        'amount' => $entry['amount'] ?? null,
-                    ])->all(),
+	                        'receipt_ref' => $entry['receipt_ref'] ?? null,
+	                        'concept' => $entry['concept'] ?? null,
+	                        'amount' => $entry['amount'] ?? null,
+	                        'payer_name' => $entry['payer_name'] ?? null,
+	                        'payee_name' => $entry['payee_name'] ?? null,
+	                        'payment_receipt_id' => $entry['payment_receipt_id'] ?? null,
+	                        'payment_receipt_number' => $entry['payment_receipt_number'] ?? null,
+	                        'is_cancelled' => $entry['is_cancelled'] ?? false,
+	                        'related_canceled_movement_id' => $entry['related_canceled_movement_id'] ?? null,
+	                        'canceling_id' => $entry['canceling_id'] ?? null,
+	                    ])->all(),
                 ])->all(),
             ],
             metadata: [
@@ -1461,6 +1468,8 @@ class ReportController extends Controller
                 'concept:id,concept,amount',
                 'account:id,club_id,pay_to,label',
                 'receivedBy:id,name',
+                'reversalPayment:id,reversed_payment_id',
+                'receipt:id,payment_id,receipt_number',
             ]);
 
         if ($payTo) {
@@ -1514,7 +1523,7 @@ class ReportController extends Controller
         }
 
 	        $expenses = $expensesQ
-	            ->with(['settlementExpense:id,pay_to,expense_date'])
+	            ->with(['settlementExpense:id,pay_to,expense_date', 'reversalExpense:id,reversed_expense_id'])
 	            ->get([
 	                'id',
 	                'pay_to',
@@ -1524,11 +1533,15 @@ class ReportController extends Controller
 	                'description',
 	                'status',
 	                'reimbursed_to',
-	                'receipt_path',
-	                'reimbursement_receipt_path',
-	                'settles_expense_id',
-	                'created_at',
-	            ]);
+		                'receipt_path',
+		                'reimbursement_receipt_path',
+		                'settles_expense_id',
+		                'reversed_expense_id',
+		                'is_cancelled',
+		                'related_canceled_movement_id',
+		                'canceling_id',
+		                'created_at',
+		            ]);
 
 	        $accountLabels = Account::query()
 	            ->where('club_id', $club->id)
@@ -1543,12 +1556,18 @@ class ReportController extends Controller
 
 	        foreach ($payments as $p) {
 	            $key = $p->pay_to ?? $p->account?->pay_to ?? 'unassigned';
-            $receiptRef = !empty($p->check_image_path)
+            $paymentProofRef = !empty($p->check_image_path)
                 ? $this->receiptReference('payment', $p->id)
                 : null;
-            if ($includeReceipts && $receiptRef) {
-                $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $p->check_image_path, $p->id, 'Payment'));
+            $generatedReceiptRef = $p->receipt
+                ? trim("Recibo #{$p->receipt->id} - {$p->receipt->receipt_number}")
+                : null;
+            if ($includeReceipts && $paymentProofRef) {
+                $receiptAnnexes->push($this->buildReceiptAnnex($paymentProofRef, $p->check_image_path, $p->id, 'Payment'));
             }
+            $memberName = is_array($p->member) ? ($p->member['applicant_name'] ?? null) : ($p->member?->applicant_name ?? null);
+            $staffName = is_array($p->staff) ? ($p->staff['name'] ?? null) : ($p->staff?->name ?? null);
+            $payerName = $memberName ?: $staffName ?: $p->receivedBy?->name;
             $entriesByAccount[$key][] = [
                 'entry_type' => 'payment',
                 'id' => $p->id,
@@ -1560,12 +1579,20 @@ class ReportController extends Controller
 	                'from_location' => null,
 	                'to_location' => null,
 	                'concept' => $p->concept?->concept ?? $p->concept_text ?? '—',
-                'member' => $p->member?->applicant_name ?? null,
-                'staff' => $p->staff?->name ?? null,
-                'receipt_ref' => $receiptRef,
-	                'receipt_refs' => $receiptRef ? [$receiptRef] : [],
-	            ];
-	        }
+                'member' => $memberName,
+                'staff' => $staffName,
+                'payer_name' => $payerName,
+                'received_by_name' => $p->receivedBy?->name,
+                'payment_receipt_id' => $p->receipt?->id,
+                'payment_receipt_number' => $p->receipt?->receipt_number,
+                'payment_proof_ref' => $paymentProofRef,
+                'receipt_ref' => $generatedReceiptRef ?: $paymentProofRef,
+		                'receipt_refs' => collect([$generatedReceiptRef, $paymentProofRef])->filter()->values()->all(),
+                'is_cancelled' => (bool) $p->is_cancelled,
+                'related_canceled_movement_id' => $p->related_canceled_movement_id ?: $p->reversalPayment?->id,
+                'canceling_id' => $p->canceling_id ?: $p->reversed_payment_id,
+		            ];
+		        }
 
 	        if (!$conceptId) {
 	            $movementsQ = TreasuryMovement::query()
@@ -1610,10 +1637,13 @@ class ReportController extends Controller
 	                    'settlement_account' => null,
 	                    'settlement_account_label' => null,
 	                    'settlement_date' => null,
-	                    'receipt_ref' => $receiptRef ?: $movement->reference,
-	                    'receipt_refs' => $receiptRef ? [$receiptRef] : [],
-	                ];
-	            }
+		                    'receipt_ref' => $receiptRef ?: $movement->reference,
+		                    'receipt_refs' => $receiptRef ? [$receiptRef] : [],
+		                    'is_cancelled' => (bool) $movement->is_cancelled,
+		                    'related_canceled_movement_id' => $movement->related_canceled_movement_id,
+		                    'canceling_id' => $movement->canceling_id,
+		                ];
+		            }
 	        }
 
 	        foreach ($expenses as $e) {
@@ -1623,14 +1653,14 @@ class ReportController extends Controller
 	            $receiptRefs = [];
             if (!empty($e->receipt_path)) {
                 $receiptRef = $this->receiptReference('expense', $e->id);
-                $receiptRefs[] = $receiptRef;
+                $receiptRefs[] = $receiptRef . ' - ' . basename($e->receipt_path);
                 if ($includeReceipts) {
                     $receiptAnnexes->push($this->buildReceiptAnnex($receiptRef, $e->receipt_path, $e->id, 'Expense'));
                 }
             }
             if (!empty($e->reimbursement_receipt_path)) {
                 $reimbursementRef = $this->receiptReference('reimbursement', $e->id);
-                $receiptRefs[] = $reimbursementRef;
+                $receiptRefs[] = $reimbursementRef . ' - ' . basename($e->reimbursement_receipt_path);
                 if ($includeReceipts) {
                     $receiptAnnexes->push($this->buildReceiptAnnex($reimbursementRef, $e->reimbursement_receipt_path, $e->id, 'Reimbursement'));
                 }
@@ -1645,9 +1675,11 @@ class ReportController extends Controller
 	                'location' => $expenseLocation,
 	                'from_location' => null,
 	                'to_location' => null,
-	                'concept' => $e->description ?? '—',
+                'concept' => $e->description ?? '—',
                 'member' => null,
                 'staff' => $e->reimbursed_to,
+                'payer_name' => null,
+                'payee_name' => $e->reimbursed_to,
                 'status' => $e->status,
                 'settlement_account' => $e->settlementExpense?->pay_to,
                 'settlement_account_label' => $e->settlementExpense?->pay_to
@@ -1656,6 +1688,9 @@ class ReportController extends Controller
                 'settlement_date' => $e->settlementExpense?->expense_date,
                 'receipt_ref' => count($receiptRefs) ? implode(', ', $receiptRefs) : null,
                 'receipt_refs' => $receiptRefs,
+                'is_cancelled' => (bool) $e->is_cancelled,
+                'related_canceled_movement_id' => $e->related_canceled_movement_id ?: $e->reversalExpense?->id,
+                'canceling_id' => $e->canceling_id ?: $e->reversed_expense_id,
             ];
         }
 
@@ -1823,18 +1858,24 @@ class ReportController extends Controller
                     'payment_date' => $payment['payment_date'] ?? null,
                     'amount_paid' => $payment['amount_paid'] ?? null,
                     'receipt_ref' => $payment['receipt_ref'] ?? null,
-                    'account' => $payment['account'] ?? null,
-                    'location' => $payment['location'] ?? null,
-                    'zelle_phone' => $payment['zelle_phone'] ?? null,
-                ])->all(),
+	                    'account' => $payment['account'] ?? null,
+	                    'location' => $payment['location'] ?? null,
+	                    'zelle_phone' => $payment['zelle_phone'] ?? null,
+	                    'is_cancelled' => $payment['is_cancelled'] ?? false,
+	                    'related_canceled_movement_id' => $payment['related_canceled_movement_id'] ?? null,
+	                    'canceling_id' => $payment['canceling_id'] ?? null,
+	                ])->all(),
                 'expenses' => collect($data['expenses'])->map(fn ($expense) => [
                     'id' => $expense['id'] ?? null,
                     'expense_date' => $expense['expense_date'] ?? null,
                     'amount' => $expense['amount'] ?? null,
-                    'receipt_ref' => $expense['receipt_ref'] ?? null,
-                    'pay_to' => $expense['pay_to'] ?? null,
-                    'location' => $expense['location'] ?? null,
-                ])->all(),
+	                    'receipt_ref' => $expense['receipt_ref'] ?? null,
+	                    'pay_to' => $expense['pay_to'] ?? null,
+	                    'location' => $expense['location'] ?? null,
+	                    'is_cancelled' => $expense['is_cancelled'] ?? false,
+	                    'related_canceled_movement_id' => $expense['related_canceled_movement_id'] ?? null,
+	                    'canceling_id' => $expense['canceling_id'] ?? null,
+	                ])->all(),
             ],
             metadata: [
                 'Club' => $club->club_name,
@@ -1960,9 +2001,13 @@ class ReportController extends Controller
                 'payments.member_id',
                 'payments.staff_id',
                 'payments.payment_concept_id',
-                'payments.check_image_path',
-                'payments.concept_text',
-                DB::raw('COALESCE(payments.pay_to, acc.pay_to) as account'),
+	                'payments.check_image_path',
+	                'payments.concept_text',
+	                'payments.is_cancelled',
+	                'payments.related_canceled_movement_id',
+	                'payments.canceling_id',
+	                'payments.reversed_payment_id',
+	                DB::raw('COALESCE(payments.pay_to, acc.pay_to) as account'),
                 'acc.label as account_label',
                 'payment_concepts.concept as concept_name',
             ])
@@ -1985,11 +2030,14 @@ class ReportController extends Controller
                     'concept' => $p->concept_name ?? $p->concept_text ?? '—',
                     'member' => $p->member ? ['id' => $p->member->id, 'applicant_name' => (ClubHelper::memberDetail($p->member)['name'] ?? '—')] : null,
                     'staff' => $p->staff ? ['id' => $p->staff->id, 'name' => (ClubHelper::staffDetail($p->staff)['name'] ?? ($p->staff->user?->name ?? '—'))] : null,
-                    'receipt_path' => $p->check_image_path,
-                    'receipt_ref' => $ref,
-                    'receipt_url' => $url,
-                ];
-            })
+	                    'receipt_path' => $p->check_image_path,
+	                    'receipt_ref' => $ref,
+	                    'receipt_url' => $url,
+	                    'is_cancelled' => (bool) $p->is_cancelled,
+	                    'related_canceled_movement_id' => $p->related_canceled_movement_id,
+	                    'canceling_id' => $p->canceling_id ?: $p->reversed_payment_id,
+	                ];
+	            })
             ->values();
 
         $expenses = Expense::query()
@@ -1997,7 +2045,7 @@ class ReportController extends Controller
             ->with('event:id,title')
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
-            ->get(['id', 'event_id', 'pay_to', 'funds_location', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path', 'reimbursement_receipt_path'])
+	            ->get(['id', 'event_id', 'pay_to', 'funds_location', 'amount', 'expense_date', 'description', 'reimbursed_to', 'status', 'receipt_path', 'reimbursement_receipt_path', 'is_cancelled', 'related_canceled_movement_id', 'canceling_id', 'reversed_expense_id'])
             ->values();
 
         // Assign receipt references and map to DTOs
@@ -2026,11 +2074,14 @@ class ReportController extends Controller
                 'receipt_path' => $e->receipt_path,
                 'receipt_ref' => $ref,
                 'receipt_url' => $e->receipt_url ?? null,
-                'reimbursement_receipt_path' => $e->reimbursement_receipt_path,
-                'reimbursement_receipt_ref' => $reimburseRef,
-                'reimbursement_receipt_url' => $e->reimbursement_receipt_url ?? null,
-            ];
-        });
+	                'reimbursement_receipt_path' => $e->reimbursement_receipt_path,
+	                'reimbursement_receipt_ref' => $reimburseRef,
+	                'reimbursement_receipt_url' => $e->reimbursement_receipt_url ?? null,
+	                'is_cancelled' => (bool) $e->is_cancelled,
+	                'related_canceled_movement_id' => $e->related_canceled_movement_id,
+	                'canceling_id' => $e->canceling_id ?: $e->reversed_expense_id,
+	            ];
+	        });
 
         $buildAnnex = function ($ref, $path, $id, $labelPrefix) {
             $fullPath = storage_path('app/public/' . ltrim($path, '/'));

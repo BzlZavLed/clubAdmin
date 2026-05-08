@@ -849,7 +849,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
         [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
 
-        Payment::create([
+        $cashPayment = Payment::create([
             'club_id' => $club->id,
             'concept_text' => 'Cash dues',
             'pay_to' => 'club_budget',
@@ -858,6 +858,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             'payment_type' => 'cash',
             'received_by_user_id' => $clubDirector->id,
         ]);
+        $cashReceipt = app(PaymentReceiptService::class)->syncForPayment($cashPayment);
 
         Payment::create([
             'club_id' => $club->id,
@@ -876,6 +877,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             'amount' => 15,
             'expense_date' => '2026-05-01',
             'description' => 'Cash snacks',
+            'receipt_path' => 'receipts/cash-snacks-ticket.jpg',
             'created_by_user_id' => $clubDirector->id,
             'status' => 'completed',
         ]);
@@ -955,6 +957,13 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $this->assertSame(70.0, (float) $ledgerAccount['totals']['bank_balance']);
         $this->assertSame(50.0, (float) $ledgerAccount['totals']['movements']);
         $this->assertContains('treasury_movement', collect($ledgerAccount['entries'])->pluck('entry_type')->all());
+        $cashPaymentEntry = collect($ledgerAccount['entries'])->firstWhere('concept', 'Cash dues');
+        $this->assertSame($clubDirector->name, $cashPaymentEntry['payer_name']);
+        $this->assertSame($cashReceipt->id, $cashPaymentEntry['payment_receipt_id']);
+        $this->assertStringContainsString($cashReceipt->receipt_number, $cashPaymentEntry['receipt_ref']);
+        $cashExpenseEntry = collect($ledgerAccount['entries'])->firstWhere('concept', 'Cash snacks');
+        $this->assertStringContainsString('EXP-', $cashExpenseEntry['receipt_ref']);
+        $this->assertStringContainsString('cash-snacks-ticket.jpg', $cashExpenseEntry['receipt_ref']);
 
         $cashLedger = $this->actingAs($clubDirector)
             ->getJson(route('financial.report', [

@@ -50,11 +50,20 @@ class AccountingCorrectionTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('message', 'Ingreso revertido mediante movimiento opuesto.');
 
+        $reversal = Payment::query()->where('reversed_payment_id', $payment->id)->firstOrFail();
+
         $this->assertDatabaseHas('payments', [
+            'id' => $reversal->id,
             'reversed_payment_id' => $payment->id,
+            'canceling_id' => $payment->id,
             'club_id' => $club->id,
             'amount_paid' => -25.00,
             'payment_type' => 'internal',
+        ]);
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'is_cancelled' => true,
+            'related_canceled_movement_id' => $reversal->id,
         ]);
 
         $this->assertSame('0.00', Account::findOrFail($account->id)->balance);
@@ -89,11 +98,20 @@ class AccountingCorrectionTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('message', 'Gasto revertido mediante movimiento opuesto.');
 
+        $reversal = Expense::query()->where('reversed_expense_id', $expense->id)->firstOrFail();
+
         $this->assertDatabaseHas('expenses', [
+            'id' => $reversal->id,
             'reversed_expense_id' => $expense->id,
+            'canceling_id' => $expense->id,
             'club_id' => $club->id,
             'amount' => -18.50,
             'status' => 'completed',
+        ]);
+        $this->assertDatabaseHas('expenses', [
+            'id' => $expense->id,
+            'is_cancelled' => true,
+            'related_canceled_movement_id' => $reversal->id,
         ]);
 
         $this->assertSame('18.50', Account::findOrFail($account->id)->balance);

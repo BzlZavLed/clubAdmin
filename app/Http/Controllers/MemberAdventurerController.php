@@ -27,7 +27,6 @@ use App\Services\PaymentReceiptService;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule;
 
 use DB;
 use Auth;
@@ -100,7 +99,7 @@ class MemberAdventurerController extends Controller
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
                 'is_sda' => 'nullable|boolean',
-                'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
+                'baptism_date' => ['nullable', 'date'],
             ]);
             $validated = $this->memberDetailPayload($validated);
 
@@ -161,7 +160,7 @@ class MemberAdventurerController extends Controller
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
                 'is_sda' => 'nullable|boolean',
-                'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
+                'baptism_date' => ['nullable', 'date'],
             ]);
             $validated = $this->memberDetailPayload($validated);
 
@@ -325,11 +324,51 @@ class MemberAdventurerController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        $member = MemberAdventurer::findOrFail($id);
+        $validated = $request->validate([
+            'notes_deleted' => ['nullable', 'string', 'max:2000'],
+            'member_type' => ['nullable', 'string', 'in:adventurers,pathfinders,temp_pathfinder'],
+            'member_record_id' => ['nullable', 'integer', 'exists:members,id'],
+        ]);
+
+        $memberRecord = !empty($validated['member_record_id'])
+            ? Member::find($validated['member_record_id'])
+            : null;
+        $memberType = $validated['member_type'] ?? $memberRecord?->type ?? 'adventurers';
+
+        if (in_array($memberType, ['pathfinders', 'temp_pathfinder'], true)) {
+            $pathfinder = MemberPathfinder::findOrFail($memberRecord?->id_data ?? $id);
+            $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
+            if (!in_array((int) $pathfinder->club_id, $allowedClubIds, true)) {
+                abort(403, 'Unauthorized');
+            }
+
+            $pathfinder->update(['status' => 'deleted']);
+
+            Member::query()
+                ->whereIn('type', ['pathfinders', 'temp_pathfinder'])
+                ->where('club_id', $pathfinder->club_id)
+                ->where('id_data', $pathfinder->id)
+                ->update(['status' => 'deleted']);
+
+            return response()->json(['message' => 'Member deleted.']);
+        }
+
+        $member = MemberAdventurer::findOrFail($memberRecord?->id_data ?? $id);
+        $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
+        if (!in_array((int) $member->club_id, $allowedClubIds, true)) {
+            abort(403, 'Unauthorized');
+        }
+
         $member->update([
             'status' => 'deleted',
-            'notes_deleted' => $request['notes_deleted'],
+            'notes_deleted' => $validated['notes_deleted'] ?? null,
         ]);
+
+        Member::query()
+            ->where('type', 'adventurers')
+            ->where('club_id', $member->club_id)
+            ->where('id_data', $member->id)
+            ->update(['status' => 'deleted']);
 
         return response()->json(['message' => 'Member deleted.']);
     }
@@ -392,7 +431,7 @@ class MemberAdventurerController extends Controller
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
                 'is_sda' => 'nullable|boolean',
-                'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
+                'baptism_date' => ['nullable', 'date'],
             ]);
             $validated = $this->memberDetailPayload($validated);
 
@@ -450,7 +489,7 @@ class MemberAdventurerController extends Controller
             'mark_insurance_paid' => 'nullable|boolean',
             'mark_enrollment_paid' => 'nullable|boolean',
             'is_sda' => 'nullable|boolean',
-            'baptism_date' => ['nullable', 'date', Rule::requiredIf(fn () => $request->boolean('is_sda', true))],
+            'baptism_date' => ['nullable', 'date'],
         ]);
         $validated = $this->memberDetailPayload($validated);
 
@@ -954,6 +993,7 @@ class MemberAdventurerController extends Controller
     {
         $memberRows = \App\Models\Member::where('club_id', $clubId)
             ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->where('status', 'active')
             ->get();
 
         $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->all();

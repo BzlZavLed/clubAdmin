@@ -98,6 +98,17 @@ const refreshBalances = async (clubId = null) => {
 
 const fmtMoney = (n) => `$${Number(n ?? 0).toFixed(2)}`
 const locationLabel = (value) => value === 'bank' ? tr('Banco', 'Bank') : value === 'cash' ? tr('Efectivo', 'Cash') : value === 'internal' ? tr('Interno', 'Internal') : '—'
+const cancellationSummary = (entry) => {
+    if (entry?.is_cancelled && entry?.related_canceled_movement_id) {
+        return `${tr('Cancelado por movimiento', 'Cancelled by movement')} #${entry.related_canceled_movement_id}`
+    }
+
+    if (entry?.canceling_id) {
+        return `${tr('Cancela movimiento', 'Cancels movement')} #${entry.canceling_id}`
+    }
+
+    return null
+}
 const fmtBytes = (bytes) => {
     if (!Number.isFinite(bytes)) return '—'
     const mb = bytes / (1024 * 1024)
@@ -296,6 +307,7 @@ watch(selectedClubId, async (id, old) => {
                                 <div><span class="font-medium text-gray-700">{{ tr('Concepto:', 'Concept:') }}</span> {{ p.concept }}</div>
                                 <div><span class="font-medium text-gray-700">{{ tr('Pagador:', 'Payer:') }}</span> {{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</div>
                                 <div v-if="p.payment_type === 'zelle' && p.zelle_phone"><span class="font-medium text-gray-700">{{ tr('Zelle remitente:', 'Zelle sender:') }}</span> {{ p.zelle_phone }}</div>
+                                <div v-if="cancellationSummary(p)" class="font-medium text-red-600">{{ cancellationSummary(p) }}</div>
                             </div>
                             <div class="mt-3">
                                 <a v-if="p.receipt_url"
@@ -330,7 +342,10 @@ watch(selectedClubId, async (id, old) => {
                             <tr v-for="p in accountPayments" :key="p.id" class="border-t">
                                 <td class="px-4 py-2">{{ new Date(p.payment_date).toLocaleDateString() }}</td>
                                 <td class="px-4 py-2">{{ p.account_label || payToLabel(p.account) }}</td>
-                                <td class="px-4 py-2">{{ p.concept }}</td>
+                                <td class="px-4 py-2">
+                                    <div>{{ p.concept }}</div>
+                                    <div v-if="cancellationSummary(p)" class="mt-1 text-xs font-medium text-red-600">{{ cancellationSummary(p) }}</div>
+                                </td>
                                 <td class="px-4 py-2">{{ p.member?.applicant_name ?? p.staff?.name ?? '—' }}</td>
                                 <td class="px-4 py-2">{{ fmtMoney(p.amount_paid) }}</td>
                                 <td class="px-4 py-2 capitalize">
@@ -389,6 +404,7 @@ watch(selectedClubId, async (id, old) => {
                                 <div v-if="e.is_event_related"><span class="font-medium text-gray-700">{{ tr('Origen:', 'Source:') }}</span> {{ tr('Evento', 'Event') }}{{ e.event_title ? ` · ${e.event_title}` : '' }}</div>
                                 <div><span class="font-medium text-gray-700">{{ tr('Reembolsado a:', 'Reimbursed to:') }}</span> {{ e.reimbursed_to || '—' }}</div>
                                 <div><span class="font-medium text-gray-700">{{ tr('Descripcion:', 'Description:') }}</span> {{ e.description || '—' }}</div>
+                                <div v-if="cancellationSummary(e)" class="font-medium text-red-600">{{ cancellationSummary(e) }}</div>
                             </div>
                             <div class="mt-3">
                                 <div class="flex flex-wrap items-center gap-2">
@@ -487,6 +503,9 @@ watch(selectedClubId, async (id, old) => {
                                 <td class="px-4 py-2">{{ e.reimbursed_to || '—' }}</td>
                                 <td class="px-4 py-2">
                                     <div>{{ e.description || '—' }}</div>
+                                    <div v-if="cancellationSummary(e)" class="mt-1 text-xs font-medium text-red-600">
+                                        {{ cancellationSummary(e) }}
+                                    </div>
                                     <div v-if="e.is_event_related" class="mt-1 text-xs text-blue-600">
                                         {{ tr('Evento', 'Event') }}{{ e.event_title ? ` · ${e.event_title}` : '' }}
                                     </div>

@@ -62,7 +62,10 @@ class AccountingCorrectionController extends Controller
                     'payment_type' => $payment->payment_type,
                     'notes' => $payment->notes,
                     'received_by_name' => $payment->receivedBy?->name,
-                    'can_reverse' => $reversal === null,
+                    'is_cancelled' => (bool) $payment->is_cancelled,
+                    'related_canceled_movement_id' => $payment->related_canceled_movement_id,
+                    'canceling_id' => $payment->canceling_id,
+                    'can_reverse' => $reversal === null && !$payment->is_cancelled && !$payment->related_canceled_movement_id,
                     'reversal' => $reversal ? [
                         'id' => $reversal->id,
                         'amount_paid' => (float) $reversal->amount_paid,
@@ -80,7 +83,7 @@ class AccountingCorrectionController extends Controller
             ->whereNull('settles_expense_id')
             ->with([
                 'createdBy:id,name',
-                'settlementExpense:id,club_id,pay_to,amount,expense_date,created_at,settles_expense_id,reversed_expense_id',
+                'settlementExpense:id,club_id,pay_to,amount,expense_date,created_at,settles_expense_id,reversed_expense_id,is_cancelled,related_canceled_movement_id,canceling_id',
                 'settlementExpense.reversalExpense:id,reversed_expense_id,amount,expense_date,created_at,status',
                 'reversalExpense:id,reversed_expense_id,amount,expense_date,created_at,status',
             ])
@@ -92,8 +95,16 @@ class AccountingCorrectionController extends Controller
                 $settlementPayment = $this->findSettlementPaymentForExpense($expense, $settlementExpense);
                 $reversal = $expense->reversalExpense;
                 $canReverse = $reversal === null
-                    && (!$settlementExpense || $settlementExpense->reversalExpense === null)
-                    && (!$settlementPayment || $settlementPayment->reversalPayment === null);
+                    && (!$settlementExpense || (
+                        $settlementExpense->reversalExpense === null
+                        && !$settlementExpense->is_cancelled
+                        && !$settlementExpense->related_canceled_movement_id
+                    ))
+                    && (!$settlementPayment || (
+                        $settlementPayment->reversalPayment === null
+                        && !$settlementPayment->is_cancelled
+                        && !$settlementPayment->related_canceled_movement_id
+                    ));
 
                 return [
                     'id' => $expense->id,
@@ -104,20 +115,27 @@ class AccountingCorrectionController extends Controller
                     'status' => $expense->status,
                     'reimbursed_to' => $expense->reimbursed_to,
                     'created_by_name' => $expense->createdBy?->name,
-                    'can_reverse' => $canReverse,
+                    'is_cancelled' => (bool) $expense->is_cancelled,
+                    'related_canceled_movement_id' => $expense->related_canceled_movement_id,
+                    'canceling_id' => $expense->canceling_id,
+                    'can_reverse' => $canReverse && !$expense->is_cancelled && !$expense->related_canceled_movement_id,
                     'is_completed' => $expense->status === 'completed' && $settlementExpense !== null,
                     'settlement' => $settlementExpense ? [
                         'expense_id' => $settlementExpense->id,
                         'pay_to' => $settlementExpense->pay_to,
                         'amount' => (float) $settlementExpense->amount,
                         'expense_date' => optional($settlementExpense->expense_date)->toDateString(),
-                        'reversed' => $settlementExpense->reversalExpense !== null,
+                        'reversed' => $settlementExpense->reversalExpense !== null
+                            || (bool) $settlementExpense->is_cancelled
+                            || (bool) $settlementExpense->related_canceled_movement_id,
                     ] : null,
                     'settlement_payment' => $settlementPayment ? [
                         'id' => $settlementPayment->id,
                         'amount_paid' => (float) $settlementPayment->amount_paid,
                         'payment_date' => optional($settlementPayment->payment_date)->toDateString(),
-                        'reversed' => $settlementPayment->reversalPayment !== null,
+                        'reversed' => $settlementPayment->reversalPayment !== null
+                            || (bool) $settlementPayment->is_cancelled
+                            || (bool) $settlementPayment->related_canceled_movement_id,
                     ] : null,
                     'reversal' => $reversal ? [
                         'id' => $reversal->id,
@@ -155,7 +173,10 @@ class AccountingCorrectionController extends Controller
                     'status' => $expense->status,
                     'reimbursed_to' => $expense->reimbursed_to,
                     'created_by_name' => $expense->createdBy?->name,
-                    'can_reverse' => $reversal === null,
+                    'is_cancelled' => (bool) $expense->is_cancelled,
+                    'related_canceled_movement_id' => $expense->related_canceled_movement_id,
+                    'canceling_id' => $expense->canceling_id,
+                    'can_reverse' => $reversal === null && !$expense->is_cancelled && !$expense->related_canceled_movement_id,
                     'reversal' => $reversal ? [
                         'id' => $reversal->id,
                         'amount' => (float) $reversal->amount,
@@ -196,11 +217,11 @@ class AccountingCorrectionController extends Controller
             return response()->json(['message' => 'Los movimientos internos no se corrigen desde este modulo.'], 422);
         }
 
-        if ($payment->reversed_payment_id) {
+        if ($payment->reversed_payment_id || $payment->canceling_id) {
             return response()->json(['message' => 'Este movimiento ya es una reversa y no puede revertirse de nuevo.'], 422);
         }
 
-        if ($payment->reversalPayment()->exists()) {
+        if ($payment->is_cancelled || $payment->related_canceled_movement_id || $payment->reversalPayment()->exists()) {
             return response()->json(['message' => 'Este ingreso ya fue revertido previamente.'], 422);
         }
 
@@ -227,6 +248,12 @@ class AccountingCorrectionController extends Controller
                 'received_by_user_id' => $user->id,
                 'notes' => trim("Correccion contable. Reversa del ingreso #{$payment->id}. Motivo: {$validated['reason']}"),
                 'reversed_payment_id' => $payment->id,
+                'canceling_id' => $payment->id,
+            ]);
+
+            $payment->update([
+                'is_cancelled' => true,
+                'related_canceled_movement_id' => $reversal->id,
             ]);
 
             $account->decrement('balance', $amount);
@@ -251,7 +278,7 @@ class AccountingCorrectionController extends Controller
             'reason' => ['required', 'string', 'max:1000'],
         ]);
 
-        if ($expense->reversed_expense_id) {
+        if ($expense->reversed_expense_id || $expense->canceling_id) {
             return response()->json(['message' => 'Este movimiento ya es una reversa y no puede revertirse de nuevo.'], 422);
         }
 
@@ -259,7 +286,7 @@ class AccountingCorrectionController extends Controller
             return response()->json(['message' => 'Los movimientos ligados a reembolsos se corrigen desde su flujo de reembolso.'], 422);
         }
 
-        if ($expense->reversalExpense()->exists()) {
+        if ($expense->is_cancelled || $expense->related_canceled_movement_id || $expense->reversalExpense()->exists()) {
             return response()->json(['message' => 'Este gasto ya fue revertido previamente.'], 422);
         }
 
@@ -285,6 +312,12 @@ class AccountingCorrectionController extends Controller
                 'reimbursement_receipt_path' => null,
                 'settles_expense_id' => null,
                 'reversed_expense_id' => $expense->id,
+                'canceling_id' => $expense->id,
+            ]);
+
+            $expense->update([
+                'is_cancelled' => true,
+                'related_canceled_movement_id' => $reversal->id,
             ]);
 
             $account->increment('balance', $amount);
@@ -313,18 +346,18 @@ class AccountingCorrectionController extends Controller
             return response()->json(['message' => 'Selecciona el movimiento principal del reembolso.'], 422);
         }
 
-        if ($expense->reversed_expense_id || $expense->reversalExpense()->exists()) {
+        if ($expense->reversed_expense_id || $expense->canceling_id || $expense->is_cancelled || $expense->related_canceled_movement_id || $expense->reversalExpense()->exists()) {
             return response()->json(['message' => 'Este reembolso ya fue revertido previamente.'], 422);
         }
 
         $settlementExpense = $expense->settlementExpense()->with('reversalExpense')->first();
         $settlementPayment = $this->findSettlementPaymentForExpense($expense, $settlementExpense);
 
-        if ($settlementExpense && $settlementExpense->reversalExpense) {
+        if ($settlementExpense && ($settlementExpense->is_cancelled || $settlementExpense->related_canceled_movement_id || $settlementExpense->reversalExpense)) {
             return response()->json(['message' => 'La salida de fondos de este reembolso ya fue revertida.'], 422);
         }
 
-        if ($settlementPayment && $settlementPayment->reversalPayment()->exists()) {
+        if ($settlementPayment && ($settlementPayment->is_cancelled || $settlementPayment->related_canceled_movement_id || $settlementPayment->reversalPayment()->exists())) {
             return response()->json(['message' => 'La entrada interna de este reembolso ya fue revertida.'], 422);
         }
 
@@ -333,7 +366,7 @@ class AccountingCorrectionController extends Controller
 
         DB::transaction(function () use ($expense, $validated, $user, $amount, $reimbursementAccount, $settlementExpense, $settlementPayment) {
             // Reverse the original reimbursement request so the clearing account is restored.
-            Expense::create([
+            $reimbursementReversal = Expense::create([
                 'club_id' => $expense->club_id,
                 'event_id' => $expense->event_id,
                 'pay_to' => 'reimbursement_to',
@@ -350,12 +383,18 @@ class AccountingCorrectionController extends Controller
                 'reimbursement_receipt_path' => null,
                 'settles_expense_id' => null,
                 'reversed_expense_id' => $expense->id,
+                'canceling_id' => $expense->id,
+            ]);
+
+            $expense->update([
+                'is_cancelled' => true,
+                'related_canceled_movement_id' => $reimbursementReversal->id,
             ]);
 
             $reimbursementAccount->increment('balance', $amount);
 
             if ($settlementPayment) {
-                Payment::create([
+                $settlementPaymentReversal = Payment::create([
                     'club_id' => $settlementPayment->club_id,
                     'payment_concept_id' => $settlementPayment->payment_concept_id,
                     'concept_text' => $settlementPayment->concept_text ?: 'Correccion contable de liquidacion de reembolso',
@@ -374,6 +413,12 @@ class AccountingCorrectionController extends Controller
                     'notes' => trim("Correccion contable. Reversa de liquidacion de reembolso #{$expense->id}. Motivo: {$validated['reason']}"),
                     'reversed_payment_id' => $settlementPayment->id,
                     'settles_expense_id' => $expense->id,
+                    'canceling_id' => $settlementPayment->id,
+                ]);
+
+                $settlementPayment->update([
+                    'is_cancelled' => true,
+                    'related_canceled_movement_id' => $settlementPaymentReversal->id,
                 ]);
 
                 $reimbursementAccount->decrement('balance', $amount);
@@ -382,7 +427,7 @@ class AccountingCorrectionController extends Controller
             if ($settlementExpense) {
                 $fundingAccount = $this->resolveAccount($settlementExpense->club_id, $settlementExpense->pay_to);
 
-                Expense::create([
+                $settlementExpenseReversal = Expense::create([
                     'club_id' => $settlementExpense->club_id,
                     'event_id' => $settlementExpense->event_id,
                     'pay_to' => $settlementExpense->pay_to,
@@ -399,6 +444,12 @@ class AccountingCorrectionController extends Controller
                     'reimbursement_receipt_path' => null,
                     'settles_expense_id' => $expense->id,
                     'reversed_expense_id' => $settlementExpense->id,
+                    'canceling_id' => $settlementExpense->id,
+                ]);
+
+                $settlementExpense->update([
+                    'is_cancelled' => true,
+                    'related_canceled_movement_id' => $settlementExpenseReversal->id,
                 ]);
 
                 $fundingAccount->increment('balance', abs((float) $settlementExpense->amount));

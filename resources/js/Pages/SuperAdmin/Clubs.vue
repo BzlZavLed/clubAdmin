@@ -167,8 +167,15 @@ const deleteClub = (club) => {
                                 {{ church.church_name }}{{ church.union_name ? ` - ${church.union_name}` : '' }}
                             </option>
                         </select>
-                        <p v-if="selectedChurch" class="mt-1 text-xs text-gray-500">
+                        <p v-if="selectedChurch?.district_id" class="mt-1 text-xs text-gray-500">
                             {{ tr('Distrito detectado:', 'Detected district:') }} {{ selectedChurch.district_id ?? '—' }}
+                        </p>
+                        <p v-else-if="selectedChurch" class="mt-1 text-xs" :class="selectedChurch.evaluation_system === 'carpetas' ? 'text-amber-700' : 'text-gray-500'">
+                            {{
+                                selectedChurch.evaluation_system === 'carpetas'
+                                    ? tr('Esta iglesia no tiene distrito asignado. Carpetas requiere distrito.', 'This church has no district assigned. Carpetas requires a district.')
+                                    : tr('Esta iglesia no tiene distrito asignado. Honores permite asignar director sin distrito.', 'This church has no district assigned. Honors allows assigning a director without a district.')
+                            }}
                         </p>
                         <InputError class="mt-2" :message="form.errors.church_id" />
                         <InputError class="mt-2" :message="form.errors.district_id" />

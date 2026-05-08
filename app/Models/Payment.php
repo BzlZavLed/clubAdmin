@@ -28,12 +28,16 @@ class Payment extends Model
         'notes',
         'reversed_payment_id',
         'settles_expense_id',
+        'is_cancelled',
+        'related_canceled_movement_id',
+        'canceling_id',
     ];
 
     protected $casts = [
         'payment_date' => 'date',
         'amount_paid' => 'decimal:2',
         'expected_amount' => 'decimal:2',
+        'is_cancelled' => 'boolean',
     ];
 
     // Relations
@@ -82,6 +86,16 @@ class Payment extends Model
     public function reversalPayment()
     {
         return $this->hasOne(self::class, 'reversed_payment_id');
+    }
+
+    public function relatedCanceledMovement()
+    {
+        return $this->belongsTo(self::class, 'related_canceled_movement_id');
+    }
+
+    public function cancelingMovement()
+    {
+        return $this->belongsTo(self::class, 'canceling_id');
     }
 
     public function settledExpense()

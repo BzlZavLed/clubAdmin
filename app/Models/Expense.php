@@ -26,11 +26,15 @@ class Expense extends Model
         'reimbursement_receipt_path',
         'settles_expense_id',
         'reversed_expense_id',
+        'is_cancelled',
+        'related_canceled_movement_id',
+        'canceling_id',
     ];
 
     protected $casts = [
         'expense_date' => 'date',
         'amount' => 'decimal:2',
+        'is_cancelled' => 'boolean',
     ];
 
     protected $appends = ['receipt_url', 'reimbursement_receipt_url'];
@@ -68,6 +72,16 @@ class Expense extends Model
     public function reversalExpense()
     {
         return $this->hasOne(self::class, 'reversed_expense_id');
+    }
+
+    public function relatedCanceledMovement()
+    {
+        return $this->belongsTo(self::class, 'related_canceled_movement_id');
+    }
+
+    public function cancelingMovement()
+    {
+        return $this->belongsTo(self::class, 'canceling_id');
     }
 
     public function getReceiptUrlAttribute(): ?string

@@ -108,7 +108,14 @@
                     <tr>
                         <td>{{ optional($p['payment_date'])->format('Y-m-d') ?? $p['payment_date'] }}</td>
                         <td>{{ $p['account_label'] ?? $p['account'] }}</td>
-                        <td>{{ $p['concept'] }}</td>
+                        <td>
+                            {{ $p['concept'] }}
+                            @if(!empty($p['is_cancelled']) && !empty($p['related_canceled_movement_id']))
+                                <br><span style="color:#b91c1c; font-weight:700;">Cancelado por movimiento #{{ $p['related_canceled_movement_id'] }}</span>
+                            @elseif(!empty($p['canceling_id']))
+                                <br><span style="color:#b91c1c; font-weight:700;">Cancela movimiento #{{ $p['canceling_id'] }}</span>
+                            @endif
+                        </td>
                         <td>{{ $p['member']['applicant_name'] ?? $p['staff']['name'] ?? '—' }}</td>
                         <td>${{ number_format($p['amount_paid'] ?? 0, 2) }}</td>
                         <td>
@@ -152,7 +159,14 @@
                         <td>{{ $e['receipt_ref'] ?? '—' }}</td>
                         <td>{{ $e['reimbursement_receipt_ref'] ?? '—' }}</td>
                         <td>{{ $e['reimbursed_to'] ?? '—' }}</td>
-                        <td>{{ $e['description'] ?? '—' }}</td>
+                        <td>
+                            {{ $e['description'] ?? '—' }}
+                            @if(!empty($e['is_cancelled']) && !empty($e['related_canceled_movement_id']))
+                                <br><span style="color:#b91c1c; font-weight:700;">Cancelado por movimiento #{{ $e['related_canceled_movement_id'] }}</span>
+                            @elseif(!empty($e['canceling_id']))
+                                <br><span style="color:#b91c1c; font-weight:700;">Cancela movimiento #{{ $e['canceling_id'] }}</span>
+                            @endif
+                        </td>
                     </tr>
                 @endforeach
             </tbody>

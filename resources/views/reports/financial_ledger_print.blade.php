@@ -363,6 +363,36 @@
 
             return $locationLabels[$entry['location'] ?? ''] ?? '—';
         };
+        $entryPersonLabel = function ($entry) {
+            if (($entry['entry_type'] ?? null) === 'payment') {
+                return $entry['payer_name']
+                    ?? $entry['member']
+                    ?? $entry['staff']
+                    ?? $entry['received_by_name']
+                    ?? '—';
+            }
+
+            if (($entry['entry_type'] ?? null) === 'expense') {
+                return $entry['payee_name'] ?? $entry['staff'] ?? '—';
+            }
+
+            return $entry['staff'] ?? $entry['member'] ?? '—';
+        };
+        $entryRecordLabel = function ($entry, $id = null) use ($entryTypeLabels) {
+            $type = $entryTypeLabels[$entry['entry_type'] ?? ''] ?? 'Movimiento';
+            return $type . ' #' . ($id ?? ($entry['id'] ?? '—'));
+        };
+        $cancellationSummary = function ($entry) use ($entryRecordLabel) {
+            if (!empty($entry['is_cancelled']) && !empty($entry['related_canceled_movement_id'])) {
+                return $entryRecordLabel($entry) . ' cancelado por ' . $entryRecordLabel($entry, $entry['related_canceled_movement_id']);
+            }
+
+            if (!empty($entry['canceling_id'])) {
+                return $entryRecordLabel($entry) . ' cancela ' . $entryRecordLabel($entry, $entry['canceling_id']);
+            }
+
+            return null;
+        };
     @endphp
 
     @if(!empty($qrCodeDataUri) && !empty($validationUrl))
@@ -444,11 +474,13 @@
 	                            <th style="width: 8%" class="nowrap">Fecha</th>
 	                            <th style="width: 8%" class="nowrap">Tipo</th>
 	                            <th style="width: 11%" class="nowrap">Ubicación</th>
-	                            <th style="width: 39%">Concepto</th>
-	                            <th style="width: 8%" class="text-center nowrap">Ref.</th>
-	                            <th style="width: 8%" class="text-right nowrap">Mov.</th>
-	                            <th style="width: 9%" class="text-right nowrap">Gastos</th>
-	                            <th style="width: 9%" class="text-right nowrap">Ingresos</th>
+	                            <th style="width: 13%" class="nowrap">Persona</th>
+	                            <th style="width: 20%">Concepto</th>
+	                            <th style="width: 13%" class="text-center nowrap">Recibo/comprobante</th>
+	                            <th style="width: 11%" class="nowrap">Corrección</th>
+	                            <th style="width: 6%" class="text-right nowrap">Mov.</th>
+	                            <th style="width: 6%" class="text-right nowrap">Gastos</th>
+	                            <th style="width: 6%" class="text-right nowrap">Ingresos</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -457,15 +489,18 @@
 	                                <td class="nowrap">{{ \Illuminate\Support\Carbon::parse($entry['date'])->format('m-d-Y') }}</td>
 	                                <td class="nowrap">{{ $entryTypeLabels[$entry['entry_type'] ?? ''] ?? '—' }}</td>
 	                                <td class="nowrap">{{ $entryLocationLabel($entry) }}</td>
+	                                <td class="wrap">{{ $entryPersonLabel($entry) }}</td>
 	                                <td class="wrap">
                                     {{ $entry['concept'] ?? '—' }}
-                                    @if(!empty($entry['member']) || !empty($entry['staff']))
-                                        <div style="margin-top: 3px; color: #4b5563;">
-                                            {{ $entry['member'] ?? $entry['staff'] }}
-                                        </div>
-                                    @endif
 	                                </td>
 	                                <td class="text-center nowrap">{{ $entry['receipt_ref'] ?? '—' }}</td>
+	                                <td class="wrap">
+	                                    @if($cancellationSummary($entry))
+	                                        <span style="color: #b91c1c; font-weight: 700;">{{ $cancellationSummary($entry) }}</span>
+	                                    @else
+	                                        —
+	                                    @endif
+	                                </td>
 	                                <td class="text-right nowrap">
 	                                    @if(($entry['entry_type'] ?? null) === 'treasury_movement')
 	                                        <span>${{ number_format($entry['amount'] ?? 0, 2) }}</span>
@@ -492,13 +527,13 @@
                     </tbody>
 	                    <tfoot>
 	                        <tr class="totals-row">
-	                            <td colspan="5">Totales</td>
+	                            <td colspan="7">Totales</td>
 	                            <td class="text-right">${{ number_format($acc['totals']['movements'] ?? 0, 2) }}</td>
 	                            <td class="text-right expense">-${{ number_format($acc['totals']['spent'] ?? 0, 2) }}</td>
 	                            <td class="text-right income">${{ number_format($acc['totals']['paid'] ?? 0, 2) }}</td>
 	                        </tr>
 	                        <tr class="balance-row">
-	                            <td colspan="5">Saldo final</td>
+	                            <td colspan="7">Saldo final</td>
 	                            <td colspan="3" class="text-right">${{ number_format($acc['totals']['net'] ?? 0, 2) }}</td>
 	                        </tr>
                     </tfoot>

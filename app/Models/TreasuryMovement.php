@@ -32,11 +32,15 @@ class TreasuryMovement extends Model
         'proof_original_name',
         'event_id',
         'event_club_settlement_id',
+        'is_cancelled',
+        'related_canceled_movement_id',
+        'canceling_id',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'movement_date' => 'date',
+        'is_cancelled' => 'boolean',
     ];
 
     public function club()
@@ -57,5 +61,15 @@ class TreasuryMovement extends Model
     public function eventClubSettlement()
     {
         return $this->belongsTo(EventClubSettlement::class);
+    }
+
+    public function relatedCanceledMovement()
+    {
+        return $this->belongsTo(self::class, 'related_canceled_movement_id');
+    }
+
+    public function cancelingMovement()
+    {
+        return $this->belongsTo(self::class, 'canceling_id');
     }
 }
