@@ -7,6 +7,10 @@ export const generalTranslations = {
         es: 'Correcciones contables',
         en: 'Accounting corrections',
     },
+    account_setup: {
+        es: 'Configuración de cuentas',
+        en: 'Account setup',
+    },
     accounts_concepts: {
         es: 'Cuentas y conceptos',
         en: 'Accounts and concepts',
@@ -54,6 +58,30 @@ export const generalTranslations = {
     catalogs: {
         es: 'Catálogos',
         en: 'Catalogs',
+    },
+    balances_transfers: {
+        es: 'Balances y transferencias',
+        en: 'Balances and transfers',
+    },
+    balances_transfers_description: {
+        es: 'Saldos por cuenta, efectivo, banco y transferencias locales o hacia el organizador.',
+        en: 'Account balances, cash, bank funds, and local or organizer transfers.',
+    },
+    cashbox: {
+        es: 'Caja',
+        en: 'Cashbox',
+    },
+    cashbox_description: {
+        es: 'Registro diario de ingresos y gastos del club.',
+        en: 'Daily club income and expense recording.',
+    },
+    cashbox_expenses: {
+        es: 'Gastos de caja',
+        en: 'Cashbox expenses',
+    },
+    cashbox_income: {
+        es: 'Ingresos de caja',
+        en: 'Cashbox income',
     },
     children: {
         es: 'Hijos',
@@ -123,6 +151,10 @@ export const generalTranslations = {
         es: 'Reportes financieros',
         en: 'Financial reports',
     },
+    financial_reports_description: {
+        es: 'Reportes por cuenta, concepto, rango de fechas y trazabilidad contable.',
+        en: 'Reports by account, concept, date range, and accounting traceability.',
+    },
     folder_requirements: {
         es: 'Requisitos de carpeta',
         en: 'Folder requirements',
@@ -134,6 +166,10 @@ export const generalTranslations = {
     income: {
         es: 'Ingresos',
         en: 'Income',
+    },
+    general_financial_report: {
+        es: 'Reporte general',
+        en: 'General report',
     },
     investiture_evaluations: {
         es: 'Evaluaciones de investidura',
@@ -195,6 +231,10 @@ export const generalTranslations = {
         es: 'Reportes',
         en: 'Reports',
     },
+    corrections_audit: {
+        es: 'Correcciones y auditoría',
+        en: 'Corrections and audit',
+    },
     requirements_reports: {
         es: 'Reportes de requisitos',
         en: 'Requirements reports',
@@ -234,6 +274,14 @@ export const generalTranslations = {
     treasury: {
         es: 'Tesorería',
         en: 'Treasury',
+    },
+    treasury_transfers: {
+        es: 'Tesorería y transferencias',
+        en: 'Treasury and transfers',
+    },
+    movement_report: {
+        es: 'Reporte de movimientos',
+        en: 'Movement report',
     },
     unions: {
         es: 'Uniones',

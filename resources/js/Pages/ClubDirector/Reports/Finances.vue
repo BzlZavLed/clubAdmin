@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { FunnelIcon, ArrowPathIcon } from '@heroicons/vue/24/outline'
 import axios from 'axios'
 import { fetchFinancialReportBootstrap } from '@/Services/api'
@@ -386,6 +387,8 @@ watch(selectedClubId, async (id, old) => {
                     {{ tr('Club:', 'Club:') }} <strong>{{ clubs.find(c => String(c.id) === String(selectedClubId))?.club_name || '—' }}</strong>
                 </div>
             </header>
+
+            <FinanceWorkflowNav class="mb-6" />
 
             <!-- FILTER BAR -->
             <section class="rounded-2xl border border-gray-200 p-4 shadow-sm">

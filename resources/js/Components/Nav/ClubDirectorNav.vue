@@ -11,6 +11,7 @@ import {
     CurrencyDollarIcon,
     BanknotesIcon,
     CalendarDaysIcon,
+    BuildingLibraryIcon,
     ArrowPathIcon
 } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
@@ -34,41 +35,6 @@ const menuItems = computed(() => [
                 icon: DocumentTextIcon
             },
             {
-                id: 'accounts_concepts',
-                name: t('accounts_concepts'),
-                href: '/club-director/my-club-finances',
-                route: 'club.my-club-finances',
-                icon: CurrencyDollarIcon
-            },
-            {
-                id: 'income',
-                name: t('income'),
-                href: '/club-director/payments',
-                route: 'club.director.payments',
-                icon: BanknotesIcon
-            },
-            {
-                id: 'treasury',
-                name: t('treasury'),
-                href: '/club-director/treasury',
-                route: 'club.director.treasury',
-                icon: BanknotesIcon
-            },
-            {
-                id: 'expenses',
-                name: t('expenses'),
-                href: '/club-director/expenses',
-                route: 'club.director.expenses',
-                icon: CurrencyDollarIcon
-            },
-            {
-                id: 'accounting_corrections',
-                name: t('accounting_corrections'),
-                href: '/club-director/accounting-corrections',
-                route: 'club.director.accounting-corrections',
-                icon: ArrowPathIcon
-            },
-            {
                 id: 'workplan',
                 name: t('workplan'),
                 href: '/club-director/workplan',
@@ -84,8 +50,78 @@ const menuItems = computed(() => [
             }
         ]
     },
+    {
+        id: 'cashbox',
+        name: t('cashbox'),
+        icon: BanknotesIcon,
+        children: [
+            {
+                id: 'cashbox_income',
+                name: t('cashbox_income'),
+                href: '/club-director/payments',
+                route: 'club.director.payments',
+                icon: BanknotesIcon
+            },
+            {
+                id: 'cashbox_expenses',
+                name: t('cashbox_expenses'),
+                href: '/club-director/expenses',
+                route: 'club.director.expenses',
+                icon: CurrencyDollarIcon
+            },
+            {
+                id: 'corrections_audit',
+                name: t('corrections_audit'),
+                href: '/club-director/accounting-corrections',
+                route: 'club.director.accounting-corrections',
+                icon: ArrowPathIcon
+            }
+        ]
+    },
+    {
+        id: 'balances_transfers',
+        name: t('balances_transfers'),
+        icon: BuildingLibraryIcon,
+        children: [
+            {
+                id: 'accounts_concepts',
+                name: t('accounts_concepts'),
+                href: '/club-director/my-club-finances',
+                route: 'club.my-club-finances',
+                icon: CurrencyDollarIcon
+            },
+            {
+                id: 'treasury_transfers',
+                name: t('treasury_transfers'),
+                href: '/club-director/treasury',
+                route: 'club.director.treasury',
+                icon: BanknotesIcon
+            }
+        ]
+    },
     { id: 'members', name: t('members'), href: '/club-director/members', route: 'club.members', icon: UserGroupIcon },
     { id: 'staff_accounts', name: t('staff_accounts'), href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
+    {
+        id: 'financial_reports',
+        name: t('financial_reports'),
+        icon: ChartBarIcon,
+        children: [
+            {
+                id: 'general_financial_report',
+                name: t('general_financial_report'),
+                href: '/club-director/reports/finances',
+                route: 'club.reports.finances',
+                icon: BanknotesIcon
+            },
+            {
+                id: 'movement_report',
+                name: t('movement_report'),
+                href: '/club-director/reports/accounts',
+                route: 'club.reports.accounts',
+                icon: CurrencyDollarIcon
+            }
+        ]
+    },
     {
         id: 'reports',
         name: t('reports'),
@@ -97,20 +133,6 @@ const menuItems = computed(() => [
                 href: '/club-director/reports/assistance',
                 route: 'club.reports.assistance',
                 icon: DocumentTextIcon
-            },
-            {
-                id: 'financial_reports',
-                name: t('financial_reports'),
-                href: '/club-director/reports/finances',
-                route: 'club.reports.finances',
-                icon: BanknotesIcon
-            },
-            {
-                id: 'account_balances',
-                name: t('account_balances'),
-                href: '/club-director/reports/accounts',
-                route: 'club.reports.accounts',
-                icon: CurrencyDollarIcon
             },
             {
                 id: 'honors_requirements',
@@ -155,7 +177,7 @@ function toggleDropdown(itemId) {
             <div v-else>
                 <button @click="toggleDropdown(item.id)"
                     class="flex w-full items-center rounded px-2 py-2.5 text-left text-sm touch-manipulation select-none" :class="[
-                        openDropdown === item.id
+                        openDropdown === item.id || item.children.some(child => route().current(child.route))
                             ? 'bg-yellow-100 text-red-700 font-semibold'
                             : 'text-gray-700 hover:text-red-600'
                     ]">

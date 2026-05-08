@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import { fetchAccountingCorrections, reverseAccountingPayment, reverseAccountingExpense, reverseAccountingReimbursement } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -175,6 +176,8 @@ hydrateDefaults()
         <template #title>{{ tr('Correcciones contables', 'Accounting Corrections') }}</template>
 
         <div class="space-y-6">
+            <FinanceWorkflowNav />
+
             <section class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 <div class="flex items-start gap-3">
                     <ExclamationTriangleIcon class="mt-0.5 h-5 w-5 shrink-0" />

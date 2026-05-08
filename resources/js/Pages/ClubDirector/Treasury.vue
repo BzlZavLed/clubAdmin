@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
 import { createEventClubSettlement, createTreasuryMovement, fetchClubEventSettlements, fetchClubTreasury } from '@/Services/api'
@@ -182,6 +183,8 @@ onMounted(loadData)
         <template #title>{{ tr('Tesorería', 'Treasury') }}</template>
 
         <div class="space-y-6">
+            <FinanceWorkflowNav />
+
             <section class="rounded-lg border bg-white p-5 shadow-sm">
                 <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>

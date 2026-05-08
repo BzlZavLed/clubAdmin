@@ -1,5 +1,6 @@
 <script setup>
 import PathfinderLayout from "@/Layouts/PathfinderLayout.vue";
+import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { ref, computed, watch, nextTick } from 'vue'
 import { useForm, router, usePage } from '@inertiajs/vue3'
 import {
@@ -895,6 +896,8 @@ const setFormMode = (mode) => {
             </header>
 
             <main class="px-4 pb-24 sm:px-6">
+                <FinanceWorkflowNav class="mb-6" />
+
                 <section class="space-y-6">
                     <div class="rounded-2xl border border-gray-200 p-4 shadow-sm sm:p-5">
                         <div class="flex flex-col gap-4 border-b border-gray-200 pb-4 sm:flex-row sm:items-start sm:justify-between">

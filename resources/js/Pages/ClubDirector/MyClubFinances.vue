@@ -1,6 +1,7 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -534,6 +535,8 @@ onMounted(async () => {
 <template>
     <PathfinderLayout>
         <template #title>{{ tr('Finanzas del club', 'Club Finances') }}</template>
+        <FinanceWorkflowNav class="mb-6" />
+
         <section class="border rounded mb-4">
             <div class="bg-gray-100 px-4 py-2 font-semibold">{{ tr('Cuentas (pay_to)', 'Accounts (pay_to)') }}</div>
             <div class="p-4 space-y-4">

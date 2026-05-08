@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { ArrowPathIcon, BanknotesIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import { fetchExpenses, createExpense, uploadExpenseReceipt, removeExpenseReceipt, uploadReimbursementReceipt, removeReimbursementReceipt, markExpenseReimbursed } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -440,6 +441,8 @@ const markReimbursed = async (expense) => {
                     <p class="text-sm text-gray-600">{{ tr('Registra egresos contra cuentas pay_to.', 'Record expenses against pay_to accounts.') }}</p>
                 </div>
             </header>
+
+            <FinanceWorkflowNav class="mb-6" />
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex items-center justify-between gap-3">

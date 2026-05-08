@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import { fetchFinancialReportBootstrap, fetchFinancialAccountBalances, uploadReimbursementReceipt, recalculateAccounts } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -174,6 +175,8 @@ watch(selectedClubId, async (id, old) => {
                     <p class="text-sm text-gray-600">{{ tr('Entradas, gastos y saldo por cuenta (pay_to).', 'Income, expenses, and balance by account (pay_to).') }}</p>
                 </div>
             </header>
+
+            <FinanceWorkflowNav class="mb-6" />
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
