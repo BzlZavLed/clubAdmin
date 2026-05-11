@@ -287,7 +287,50 @@ const removeDoc = async (doc) => {
             </button>
         </div>
 
-        <div class="bg-white rounded-lg border">
+        <div class="space-y-3 sm:hidden">
+            <article
+                v-for="doc in localDocs"
+                :key="doc.id"
+                class="rounded-lg border bg-white p-4 shadow-sm"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="break-words text-sm font-semibold text-gray-900">{{ doc.title }}</div>
+                        <div class="mt-1 text-xs text-gray-500">{{ doc.doc_type || doc.type || '—' }}</div>
+                    </div>
+                    <button @click="removeDoc(doc)" class="shrink-0 text-sm font-medium text-red-600">{{ tr('Eliminar', 'Delete') }}</button>
+                </div>
+                <dl class="mt-4 grid grid-cols-1 gap-2 text-xs text-gray-600">
+                    <div class="flex items-start justify-between gap-3">
+                        <dt class="font-medium text-gray-500">{{ tr('Participante', 'Participant') }}</dt>
+                        <dd class="max-w-[60%] break-words text-right text-gray-800">
+                            <span v-if="docParticipantsLabel(doc)">{{ docParticipantsLabel(doc) }}</span>
+                            <span v-else class="text-gray-400">—</span>
+                        </dd>
+                    </div>
+                    <div class="flex items-start justify-between gap-3">
+                        <dt class="font-medium text-gray-500">{{ tr('Archivo', 'File') }}</dt>
+                        <dd>
+                            <a
+                                v-if="doc.path"
+                                :href="`/storage/${doc.path}`"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="text-blue-600"
+                            >
+                                {{ tr('Abrir', 'Open') }}
+                            </a>
+                            <span v-else class="text-gray-400">—</span>
+                        </dd>
+                    </div>
+                </dl>
+            </article>
+            <div v-if="!localDocs.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                {{ tr('Aún no hay documentos.', 'No documents yet.') }}
+            </div>
+        </div>
+
+        <div class="hidden overflow-x-auto bg-white rounded-lg border sm:block">
             <table class="min-w-full text-sm">
                 <thead class="bg-gray-50 text-gray-600">
                     <tr>

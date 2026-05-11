@@ -87,10 +87,10 @@ const updateStatus = async (card, status) => {
 </script>
 
 <template>
-    <div v-if="cards.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div v-for="(card, idx) in cards" :key="idx" class="bg-white border rounded-lg p-4 space-y-2">
-            <div class="font-semibold text-gray-800">{{ card.name }}</div>
-            <div class="text-sm text-gray-600">{{ card.address || tr('Dirección no disponible', 'Address unavailable') }}</div>
+    <div v-if="cards.length" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div v-for="(card, idx) in cards" :key="idx" class="space-y-2 rounded-lg border bg-white p-4">
+            <div class="break-words font-semibold text-gray-800">{{ card.name }}</div>
+            <div class="break-words text-sm text-gray-600">{{ card.address || tr('Dirección no disponible', 'Address unavailable') }}</div>
             <div class="text-xs text-gray-500">
                 <span v-if="card.rating">{{ tr('Calificación', 'Rating') }}: {{ card.rating }}</span>
                 <span v-if="card.userRatingsTotal"> • {{ card.userRatingsTotal }} {{ tr('reseñas', 'reviews') }}</span>
@@ -103,17 +103,17 @@ const updateStatus = async (card, status) => {
             <a :href="card.mapUrl" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">
                 {{ tr('Ver en Google Maps', 'View on Google Maps') }}
             </a>
-            <div class="pt-2 flex items-center gap-2">
+            <div class="grid gap-2 pt-2 sm:flex sm:flex-wrap sm:items-center">
                 <button v-if="!card.existing || card.existing.status === 'rejected'" @click="markTentative(card)" :disabled="saving"
-                    class="px-2 py-1 rounded text-xs bg-yellow-500 text-white">
+                    class="rounded bg-yellow-500 px-2 py-2 text-xs text-white sm:py-1">
                     {{ tr('Marcar tentativo', 'Mark Tentative') }}
                 </button>
                 <button v-else @click="updateStatus(card, 'confirmed')" :disabled="saving"
-                    class="px-2 py-1 rounded text-xs bg-green-600 text-white">
+                    class="rounded bg-green-600 px-2 py-2 text-xs text-white sm:py-1">
                     {{ tr('Confirmar', 'Confirm') }}
                 </button>
                 <button v-else @click="updateStatus(card, 'rejected')" :disabled="saving"
-                    class="px-2 py-1 rounded text-xs bg-gray-300 text-gray-700">
+                    class="rounded bg-gray-300 px-2 py-2 text-xs text-gray-700 sm:py-1">
                     {{ tr('Rechazar', 'Reject') }}
                 </button>
                 <span v-if="card.existing" class="text-xs text-gray-500">{{ tr('Estado', 'Status') }}: {{ card.existing.status }}</span>

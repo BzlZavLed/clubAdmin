@@ -216,7 +216,7 @@ hydrateDefaults()
             </div>
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div class="mb-4 flex items-center justify-between">
+                <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Ingresos', 'Income') }}</h2>
                         <p class="text-sm text-gray-600">{{ tr('Revertir un ingreso crea otro ingreso por el mismo monto en negativo.', 'Reversing income creates another income movement for the same amount in negative.') }}</p>
@@ -284,7 +284,7 @@ hydrateDefaults()
             </section>
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div class="mb-4 flex items-center justify-between">
+                <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Reembolsos', 'Reimbursements') }}</h2>
                         <p class="text-sm text-gray-600">{{ tr('Un reembolso pendiente revierte la solicitud. Un reembolso completado revierte la solicitud, la liquidacion interna y la salida de fondos.', 'A pending reimbursement reverses the request. A completed reimbursement reverses the request, the internal settlement, and the funds outflow.') }}</p>
@@ -359,7 +359,7 @@ hydrateDefaults()
             </section>
 
             <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div class="mb-4 flex items-center justify-between">
+                <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Gastos', 'Expenses') }}</h2>
                         <p class="text-sm text-gray-600">{{ tr('Revertir un gasto crea otro gasto por el mismo monto en negativo.', 'Reversing an expense creates another expense for the same amount in negative.') }}</p>

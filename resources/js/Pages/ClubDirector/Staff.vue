@@ -495,7 +495,7 @@ watch(
 
 <template>
     <PathfinderLayout>
-        <div class="p-8">
+        <div class="p-4 sm:p-6 lg:p-8">
             <h1 class="text-xl font-bold mb-4">{{ tr('Personal', 'Staff') }}</h1>
             <div v-if="directorCanSelectClub" class="max-w-xl mb-6">
                 <label class="block mb-1 font-medium text-gray-700">{{ tr('Selecciona un club', 'Select a club') }}</label>
@@ -514,9 +514,9 @@ watch(
             <div v-else-if="isSuperadmin" class="mb-6 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 {{ tr('Selecciona un club desde el selector global del superadmin para administrar el personal.', 'Select a club from the superadmin global selector to manage staff.') }}
             </div>
-            <div v-if="selectedClub" class="mb-6 flex items-center gap-3">
+            <div v-if="selectedClub" class="mb-6 grid gap-3 sm:flex sm:items-center">
                 <button
-                    class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                    class="rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700"
                     @click="openStaffForm(user)"
                 >
                     {{ tr('Crear personal', 'Create staff') }}
@@ -527,12 +527,12 @@ watch(
                 <div v-if="filteredPendingStaff.length" class="mb-6 border rounded p-4 bg-amber-50">
                     <h2 class="font-semibold text-amber-800 mb-2">{{ tr('Aprobaciones de personal pendientes', 'Pending Staff Approvals') }}</h2>
                     <div class="space-y-2">
-                        <div v-for="person in filteredPendingStaff" :key="person.id" class="flex items-center justify-between bg-white border rounded px-3 py-2">
+                        <div v-for="person in filteredPendingStaff" :key="person.id" class="flex flex-col gap-3 rounded border bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 <div class="font-medium text-gray-900">{{ person.name || tr('Sin nombre', 'No name') }}</div>
                                 <div class="text-sm text-gray-600">{{ person.email || tr('Sin correo', 'No email') }}</div>
                             </div>
-                            <div class="flex gap-2">
+                            <div class="grid grid-cols-2 gap-2 sm:flex">
                                 <button @click="approvePendingStaff(person)" class="px-3 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700">{{ tr('Aprobar', 'Approve') }}</button>
                                 <button @click="rejectPendingStaff(person)" class="px-3 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700">{{ tr('Rechazar', 'Reject') }}</button>
                             </div>
@@ -540,27 +540,29 @@ watch(
                     </div>
                 </div>
 
-                <div class="mb-4 flex space-x-4 border-b pb-2">
+                <div class="mb-4 flex gap-4 overflow-x-auto border-b pb-2">
                     <button @click="activeStaffTab = 'active'"
+                        class="shrink-0"
                         :class="activeStaffTab === 'active' ? 'font-bold border-b-2 border-blue-600' : 'text-gray-500'">
                         {{ tr('Personal activo', 'Active staff') }}
                     </button>
                     <button
                         v-if="staff.some(person => person.status === 'deleted') && user.profile_type === 'club_director'"
                         @click="activeStaffTab = 'deleted'"
+                        class="shrink-0"
                         :class="activeStaffTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
                         {{ tr('Personal inactivo', 'Inactive staff') }}
                     </button>
                 </div>
-                <div class="flex items-center justify-between mb-4">
-                    <div class="flex items-center gap-4">
+                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                         <label class="inline-flex items-center">
                             <input type="checkbox" v-model="selectAll" @change="toggleSelectAll" class="mr-2" />
                             <span>{{ tr('Seleccionar todo', 'Select all') }}</span>
                         </label>
                         <select v-if="selectedStaffIds.size > 0"
                             @change="e => handleBulkAction(e.target.value, 'staff')"
-                            class="border p-2 px-4 rounded w-60 text-sm">
+                            class="w-full rounded border p-2 px-4 text-sm sm:w-60">
                             <option value="" disabled selected>{{ tr('Acciones masivas', 'Bulk actions') }}</option>
 
                             <option :value="activeStaffTab === 'deleted' ? 'reactivate' : 'delete'">
@@ -573,7 +575,138 @@ watch(
                     <span class="text-sm text-gray-600">{{ selectedStaffIds.size }} {{ tr('seleccionados', 'selected') }}</span>
                 </div>
 
-                <table class="w-full border rounded overflow-hidden text-sm">
+                <div class="space-y-3 sm:hidden">
+                    <article v-for="person in filteredStaff" :key="`mobile-staff-${person.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                        <div class="flex items-start gap-3">
+                            <input
+                                type="checkbox"
+                                :value="person.id"
+                                :checked="selectedStaffIds.has(person.id)"
+                                class="mt-1"
+                                @change="() => toggleSelectStaff(person.id)"
+                            />
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h3 class="break-words text-sm font-semibold text-gray-900">{{ person.name }}</h3>
+                                        <a :href="`mailto:${person.email}`" class="mt-1 block break-all text-xs text-blue-700 hover:underline">
+                                            {{ person.email || '—' }}
+                                        </a>
+                                    </div>
+                                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-700">{{ person.status }}</span>
+                                </div>
+                                <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Nacimiento', 'Birthdate') }}</dt>
+                                        <dd class="font-medium text-gray-900">{{ dobDisplay(person) }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Celular', 'Cell phone') }}</dt>
+                                        <dd class="font-medium text-gray-900">{{ person.cell_phone || '—' }}</dd>
+                                    </div>
+                                    <div class="col-span-2">
+                                        <dt class="text-gray-500">{{ tr('Clases asignadas', 'Assigned classes') }}</dt>
+                                        <dd class="font-medium text-gray-900">{{ classDisplay(person) }}</dd>
+                                    </div>
+                                </dl>
+                                <div class="mt-3 grid grid-cols-5 gap-2">
+                                    <button @click="toggleExpanded(person.id)" class="rounded border px-2 py-2 text-green-700" :title="tr('Ver detalles', 'View details')">
+                                        <component :is="expandedRows.has(person.id) ? MinusIcon : PlusIcon" class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button
+                                        v-if="person.create_user"
+                                        @click="createUser(person)"
+                                        class="rounded border px-2 py-2 text-orange-700"
+                                        :title="tr('Crear usuario', 'Create user')"
+                                    >
+                                        <UserPlusIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button
+                                        v-else-if="person.user_id && !clubUserIds.has(person.user_id)"
+                                        @click="linkToClubUsers(person)"
+                                        class="rounded border px-2 py-2 text-amber-700"
+                                        :title="tr('Vincular acceso al club', 'Link club access')"
+                                    >
+                                        <UserPlusIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <span v-else class="rounded border px-2 py-2 text-gray-300">
+                                        <UserPlusIcon class="mx-auto h-4 w-4" />
+                                    </span>
+                                    <button
+                                        v-if="person.type !== 'pathfinders'"
+                                        @click="downloadWord(person.id)"
+                                        class="rounded border px-2 py-2 text-blue-700"
+                                        :title="tr('Descargar formulario Word', 'Download Word form')"
+                                    >
+                                        <DocumentArrowDownIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <span v-else class="rounded border px-2 py-2 text-gray-300">
+                                        <DocumentArrowDownIcon class="mx-auto h-4 w-4" />
+                                    </span>
+                                    <button
+                                        v-if="person.status === 'active'"
+                                        @click="updateStaffAccount(person, 301)"
+                                        class="rounded border px-2 py-2 text-red-700"
+                                        :title="tr('Eliminar personal', 'Delete staff')"
+                                    >
+                                        <TrashIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button
+                                        v-else
+                                        @click="() => updateStaffAccount(person, 423)"
+                                        class="rounded border px-2 py-2 text-gray-700"
+                                        :title="tr('Reactivar personal', 'Reactivate staff')"
+                                    >
+                                        <ArrowPathIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button
+                                        v-if="person.type !== 'pathfinders'"
+                                        class="rounded border px-2 py-2 text-indigo-700"
+                                        @click="openEditStaffModal(person)"
+                                        :title="tr('Editar', 'Edit')"
+                                    >
+                                        <PencilIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <span v-else class="rounded border px-2 py-2 text-gray-300">
+                                        <PencilIcon class="mx-auto h-4 w-4" />
+                                    </span>
+                                </div>
+                                <div class="mt-3 flex flex-col gap-2">
+                                    <select
+                                        v-model="assignedClassChanges[person.id]"
+                                        class="w-full rounded border p-2 text-xs"
+                                    >
+                                        <option disabled value="">{{ tr('Seleccionar clase', 'Select class') }}</option>
+                                        <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
+                                            {{ cls.class_name }}
+                                        </option>
+                                    </select>
+                                    <button
+                                        @click="() => saveAssignedClass(person)"
+                                        :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
+                                        class="rounded bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {{ isUpdatingClass[person.id] ? tr('Guardando...', 'Saving...') : tr('Guardar clase', 'Save class') }}
+                                    </button>
+                                </div>
+                                <div v-if="expandedRows.has(person.id)" class="mt-3 rounded bg-gray-50 p-3 text-xs text-gray-700">
+                                    <div class="grid gap-2">
+                                        <div><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ person.address || '—' }}</div>
+                                        <div><strong>{{ tr('Ciudad/Estado/Codigo postal', 'City/State/ZIP code') }}:</strong> {{ [person.city, person.state, person.zip].filter(Boolean).join(', ') || '—' }}</div>
+                                        <div><strong>{{ tr('Iglesia', 'Church') }}:</strong> {{ person.church_name || '—' }}</div>
+                                        <div><strong>{{ tr('Sterling Volunteer completado', 'Sterling Volunteer completed') }}:</strong> {{ person.sterling_volunteer_completed ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                    <div v-if="!filteredStaff.length" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                        {{ tr('No hay personal para mostrar.', 'No staff to show.') }}
+                    </div>
+                </div>
+
+                <div class="hidden overflow-x-auto rounded border sm:block">
+                <table class="min-w-[1100px] w-full text-sm">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
@@ -764,31 +897,37 @@ watch(
                         </template>
                     </tbody>
                 </table>
+                </div>
                 <div class="mt-12 max-w-5xl mx-auto">
-                    <div class="mb-4 flex space-x-4 border-b pb-2">
+                    <div class="mb-4 flex gap-4 overflow-x-auto border-b pb-2">
                         <button @click="activeTab = 'active'"
+                            class="shrink-0"
                             :class="activeTab === 'active' ? 'font-bold border-b-2 border-blue-600' : 'text-gray-500'">
                             {{ tr('Cuentas activas', 'Active accounts') }}
                         </button>
                         <button @click="activeTab = 'parents'"
+                            class="shrink-0"
                             :class="activeTab === 'parents' ? 'font-bold border-b-2 border-green-600' : 'text-gray-500'">
                             {{ tr('Cuentas de padres', 'Parent accounts') }}
                         </button>
                         <button
                             v-if="sub_roles.some(user => user.status === 'deleted') && user.profile_type === 'club_director'"
                             @click="activeTab = 'deleted'"
+                            class="shrink-0"
                             :class="activeTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
                             {{ tr('Cuentas inactivas', 'Inactive accounts') }}
                         </button>
                         <button v-if="filteredPendingUsers.length"
                             @click="activeTab = 'pending'"
+                            class="shrink-0"
                             :class="activeTab === 'pending' ? 'font-bold border-b-2 border-amber-600' : 'text-gray-500'">
                             {{ tr('Solicitudes pendientes', 'Pending requests') }}
                         </button>
                     </div>
 
                     <template v-if="activeTab === 'parents'">
-                        <table class="w-full text-sm border rounded overflow-hidden">
+                        <div class="overflow-x-auto rounded border">
+                        <table class="min-w-[720px] w-full text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
                                     <th class="p-2 text-left">{{ tr('Padre/Madre', 'Parent') }}</th>
@@ -823,9 +962,11 @@ watch(
                                 </template>
                             </tbody>
                         </table>
+                        </div>
                     </template>
                     <template v-else-if="activeTab !== 'pending'">
-                        <table class="w-full text-sm border rounded overflow-hidden">
+                        <div class="overflow-x-auto rounded border">
+                        <table class="min-w-[960px] w-full text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
                                     <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
@@ -861,7 +1002,7 @@ watch(
                                     <td class="p-2 text-xs">{{ user.status }}</td>
                                     <td class="p-2 text-xs">
                                         <template v-if="user.status === 'active'">
-                                            <div class="flex items-center space-x-2">
+                                            <div class="flex flex-wrap items-center gap-2">
                                                 <button @click="changePassword(user)"class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
                                                     {{ tr('Cambiar contraseña', 'Change password') }}
                                                 </button>
@@ -891,9 +1032,11 @@ watch(
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                     </template>
                     <template v-else>
-                        <table class="w-full text-sm border rounded overflow-hidden">
+                        <div class="overflow-x-auto rounded border">
+                        <table class="min-w-[680px] w-full text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
                                     <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
@@ -917,6 +1060,7 @@ watch(
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                     </template>
                 </div>
 
@@ -934,8 +1078,8 @@ watch(
             :club-classes="clubClasses" :editing-staff="staffToEdit" @close="closeModal"
             @submitted="fetchStaff(selectedClub.id)" />
 
-        <div v-if="tempStaffModalVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-            <div class="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+        <div v-if="tempStaffModalVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div class="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 shadow-xl sm:p-6">
                 <div class="mb-4 flex items-center justify-between">
                     <h2 class="text-lg font-bold">{{ tr('Crear perfil de staff', 'Create Staff Profile') }}</h2>
                     <button @click="closeTempStaffModal" class="text-xl font-bold text-red-500 hover:text-red-700">
@@ -965,7 +1109,7 @@ watch(
                         <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Teléfono', 'Phone') }}</label>
                         <input v-model="tempStaffForm.staff_phone" type="text" class="w-full rounded border p-2" />
                     </div>
-                    <div class="flex justify-end gap-2">
+                    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button type="button" @click="closeTempStaffModal" class="rounded border px-4 py-2 text-gray-700">
                             {{ tr('Cancelar', 'Cancel') }}
                         </button>

@@ -319,7 +319,7 @@ const handleReceiptSelected = async (item, event) => {
             <div v-if="formSuccess" class="text-xs text-green-600">{{ formSuccess }}</div>
             <button
                 type="button"
-                class="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-60"
+                class="w-full rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60 sm:w-auto sm:py-1"
                 :disabled="saving"
                 @click="addExpense"
             >
@@ -328,7 +328,7 @@ const handleReceiptSelected = async (item, event) => {
             <button
                 v-if="editingItemId"
                 type="button"
-                class="ml-2 px-3 py-1 rounded text-sm bg-gray-100 text-gray-700"
+                class="w-full rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 sm:ml-2 sm:w-auto sm:py-1"
                 @click="cancelEdit"
             >
                 {{ tr('Cancelar', 'Cancel') }}
@@ -336,7 +336,7 @@ const handleReceiptSelected = async (item, event) => {
         </div>
 
         <div v-if="showPaymentsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div class="w-full max-w-4xl rounded-lg border bg-white shadow-xl">
+            <div class="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border bg-white shadow-xl">
                 <div class="flex items-center justify-between border-b px-4 py-3">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-800">{{ tr('Pagos recibidos para el concepto del evento', 'Payments Received for Event Concept') }}</h3>
@@ -346,7 +346,7 @@ const handleReceiptSelected = async (item, event) => {
                     </div>
                     <button type="button" class="text-sm text-gray-500 hover:text-gray-700" @click="showPaymentsModal = false">{{ tr('Cerrar', 'Close') }}</button>
                 </div>
-                <div class="max-h-[70vh] overflow-auto p-4">
+                <div class="overflow-auto p-4">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-600">
                             <tr>
@@ -378,7 +378,69 @@ const handleReceiptSelected = async (item, event) => {
             </div>
         </div>
 
-        <div class="overflow-x-auto bg-white rounded-lg border">
+        <div class="space-y-3 sm:hidden">
+            <article
+                v-for="item in items"
+                :key="item.id"
+                class="rounded-lg border bg-white p-4 shadow-sm"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="break-words text-sm font-semibold text-gray-900">{{ item.category }}</div>
+                        <div class="mt-1 break-words text-xs text-gray-500">{{ item.description }}</div>
+                    </div>
+                    <div class="shrink-0 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(item.total) }}</div>
+                </div>
+                <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div class="rounded bg-gray-50 p-3">
+                        <dt class="text-xs text-gray-500">{{ tr('Fecha', 'Date') }}</dt>
+                        <dd class="mt-1 font-medium text-gray-900">{{ formatDate(item.expense_date) }}</dd>
+                    </div>
+                    <div class="rounded bg-gray-50 p-3">
+                        <dt class="text-xs text-gray-500">{{ tr('Cuenta', 'Account') }}</dt>
+                        <dd class="mt-1 break-words font-medium text-gray-900">{{ fundingOptions.find((option) => option.value === item.funding_source)?.label || item.funding_source || '—' }}</dd>
+                    </div>
+                    <div class="rounded bg-gray-50 p-3">
+                        <dt class="text-xs text-gray-500">{{ tr('Cant.', 'Qty') }}</dt>
+                        <dd class="mt-1 font-medium text-gray-900">{{ item.qty }}</dd>
+                    </div>
+                    <div class="rounded bg-gray-50 p-3">
+                        <dt class="text-xs text-gray-500">{{ tr('Costo unitario', 'Unit Cost') }}</dt>
+                        <dd class="mt-1 font-medium text-gray-900">{{ formatCurrency(item.unit_cost) }}</dd>
+                    </div>
+                </dl>
+                <div v-if="item.reimbursement_expense" class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    {{ tr('Reembolso pendiente', 'Pending reimbursement') }}:
+                    {{ formatCurrency(item.reimbursement_expense.amount) }}
+                    <span v-if="item.reimbursement_expense.reimbursed_to"> · {{ item.reimbursement_expense.reimbursed_to }}</span>
+                </div>
+                <div class="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-3 text-sm">
+                    <a v-if="item.receipt_url" :href="item.receipt_url" target="_blank" rel="noopener" class="text-blue-600 hover:underline">
+                        {{ tr('Ver recibo', 'View receipt') }}
+                    </a>
+                    <label class="inline-flex cursor-pointer items-center text-gray-700 hover:text-blue-700">
+                        <input :ref="(el) => setReceiptInput(item.id, el)" type="file" accept="image/*" class="hidden" @change="handleReceiptSelected(item, $event)" />
+                        <span @click.prevent="triggerReceiptUpload(item.id)">
+                            {{ uploadingReceiptId === item.id ? tr('Subiendo...', 'Uploading...') : (item.receipt_url ? tr('Reemplazar recibo', 'Replace receipt') : tr('Subir recibo', 'Upload receipt')) }}
+                        </span>
+                    </label>
+                    <button type="button" class="text-blue-600 hover:underline" @click="startEdit(item)">
+                        {{ tr('Editar', 'Edit') }}
+                    </button>
+                    <button type="button" class="text-red-600 hover:underline" @click="removeExpense(item)">
+                        {{ tr('Eliminar', 'Delete') }}
+                    </button>
+                </div>
+            </article>
+            <div v-if="items.length" class="rounded-lg border bg-gray-50 p-4 text-right text-sm font-semibold text-gray-900">
+                {{ tr('Total', 'Total') }}: {{ formatCurrency(grandTotal) }}
+            </div>
+            <div v-if="!items.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                {{ tr('Aún no hay partidas de presupuesto.', 'No budget items yet.') }}
+            </div>
+        </div>
+
+        <div class="hidden overflow-x-auto bg-white rounded-lg border sm:block">
         <table class="min-w-full text-xs">
             <thead class="bg-gray-50 text-gray-600">
                 <tr>

@@ -178,9 +178,9 @@ const toggleInsurance = (club, member) => {
         <template #title>{{ tr('Clubes del distrito', 'District clubs') }}</template>
 
         <div class="space-y-6">
-            <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div class="flex items-start justify-between gap-4">
-                    <div>
+            <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+                <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div class="min-w-0">
                         <h2 class="text-lg font-semibold text-gray-900">{{ district.name }}</h2>
                         <p class="mt-1 text-sm text-gray-500">
                             {{ tr('Asociación', 'Association') }}: {{ association?.name || '—' }}
@@ -192,7 +192,7 @@ const toggleInsurance = (club, member) => {
                     </div>
                     <button
                         type="button"
-                        class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 md:w-auto md:shrink-0"
                         @click="showAddForm = !showAddForm"
                     >
                         {{ showAddForm ? tr('Cancelar', 'Cancel') : tr('+ Agregar club', '+ Add club') }}
@@ -200,7 +200,7 @@ const toggleInsurance = (club, member) => {
                 </div>
             </section>
 
-            <section v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+            <section v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-6">
                 <h3 class="mb-4 text-sm font-semibold text-blue-900">{{ tr('Nuevo club', 'New club') }}</h3>
                 <form class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" @submit.prevent="submitAdd">
                     <div class="sm:col-span-2 lg:col-span-1">
@@ -304,9 +304,9 @@ const toggleInsurance = (club, member) => {
                     <article
                         v-for="club in filteredClubs"
                         :key="club.id"
-                        class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+                        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5"
                     >
-                        <div class="flex items-start justify-between gap-4">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <h3 class="text-base font-semibold text-gray-900">{{ club.club_name }}</h3>
@@ -337,14 +337,34 @@ const toggleInsurance = (club, member) => {
                             <button
                                 v-if="!club.has_director"
                                 type="button"
-                                class="shrink-0 text-sm text-blue-600 hover:underline"
+                                class="w-full rounded border border-blue-200 px-3 py-2 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 sm:w-auto sm:shrink-0 sm:border-0 sm:p-0 sm:text-left sm:hover:bg-transparent sm:hover:underline"
                                 @click="openDirectorForm(club.id)"
                             >
                                 {{ tr('Asignar director', 'Assign director') }}
                             </button>
                         </div>
 
-                        <div v-if="expandedClubs.has(club.id) && club.members?.length" class="mt-4 overflow-hidden rounded-xl border border-gray-100">
+                        <div v-if="expandedClubs.has(club.id) && club.members?.length" class="mt-4">
+                            <div class="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:hidden">
+                                <div v-for="member in club.members" :key="`mobile-${member.id}`" class="rounded-lg bg-white p-3 text-xs">
+                                    <div class="font-semibold text-gray-900">{{ member.name }}</div>
+                                    <div class="mt-1 text-gray-500">{{ tr('Edad', 'Age') }}: {{ member.age ?? '—' }}</div>
+                                    <div class="break-words text-gray-500">{{ member.email || '—' }}</div>
+                                    <div class="break-words text-gray-500">{{ member.phone || '—' }}</div>
+                                    <button
+                                        type="button"
+                                        :class="[
+                                            'mt-2 rounded-full px-2 py-1 text-xs font-medium transition-colors',
+                                            member.insurance_paid ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
+                                        ]"
+                                        :title="member.insurance_paid ? member.insurance_paid_at : tr('Marcar como pagado', 'Mark as paid')"
+                                        @click="toggleInsurance(club, member)"
+                                    >
+                                        {{ member.insurance_paid ? tr('Pagado', 'Paid') : tr('Pendiente', 'Pending') }}
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="hidden overflow-x-auto rounded-xl border border-gray-100 sm:block">
                             <table class="min-w-full text-xs">
                                 <thead class="bg-gray-50">
                                     <tr>
@@ -380,6 +400,7 @@ const toggleInsurance = (club, member) => {
                                     </tr>
                                 </tbody>
                             </table>
+                            </div>
                         </div>
 
                         <div v-if="assigningDirectorFor === club.id" class="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
@@ -400,7 +421,7 @@ const toggleInsurance = (club, member) => {
                                     <input v-model="getDirectorForm(club.id).password" type="password" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" />
                                     <InputError class="mt-1" :message="getDirectorForm(club.id).errors.password" />
                                 </div>
-                                <div class="sm:col-span-3 flex gap-3">
+                                <div class="flex flex-col gap-3 sm:col-span-3 sm:flex-row sm:items-center">
                                     <PrimaryButton type="submit" :disabled="getDirectorForm(club.id).processing">
                                         {{ tr('Crear y activar club', 'Create & activate club') }}
                                     </PrimaryButton>

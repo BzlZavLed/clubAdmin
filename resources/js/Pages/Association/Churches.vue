@@ -116,8 +116,8 @@ const filteredChurches = computed(() => {
         <div class="space-y-6">
 
             <!-- Header + add toggle -->
-            <div class="flex items-start justify-between rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div>
+            <div class="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6 md:flex-row md:items-start md:justify-between">
+                <div class="min-w-0">
                     <h2 class="text-lg font-semibold text-gray-900">{{ association.name }}</h2>
                     <p class="mt-2 text-sm text-gray-600">
                         {{ tr('Registra y administra las iglesias de cada distrito.', 'Register and manage the churches of each district.') }}
@@ -125,7 +125,7 @@ const filteredChurches = computed(() => {
                 </div>
                 <button
                     type="button"
-                    class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 md:w-auto md:shrink-0"
                     @click="showAddForm = !showAddForm"
                 >
                     {{ showAddForm ? tr('Cancelar', 'Cancel') : tr('+ Agregar iglesia', '+ Add church') }}
@@ -133,7 +133,7 @@ const filteredChurches = computed(() => {
             </div>
 
             <!-- Add church form -->
-            <div v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+            <div v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-6">
                 <h3 class="mb-4 text-sm font-semibold text-blue-900">{{ tr('Nueva iglesia', 'New church') }}</h3>
                 <form class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" @submit.prevent="submitAdd">
                     <div class="sm:col-span-2 lg:col-span-1">
@@ -191,7 +191,7 @@ const filteredChurches = computed(() => {
             </div>
 
             <!-- View tabs -->
-            <div class="flex gap-1 rounded-xl border border-gray-200 bg-gray-100 p-1 w-fit">
+            <div class="grid w-full grid-cols-2 gap-1 rounded-xl border border-gray-200 bg-gray-100 p-1 sm:w-fit">
                 <button
                     type="button"
                     :class="['rounded-lg px-4 py-1.5 text-sm font-medium transition-colors', view === 'district' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700']"
@@ -219,8 +219,8 @@ const filteredChurches = computed(() => {
                     class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
                 >
                     <!-- District header -->
-                    <div class="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-6 py-4">
-                        <div>
+                    <div class="flex flex-col gap-3 border-b border-gray-100 bg-gray-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                        <div class="min-w-0">
                             <h3 class="font-semibold text-gray-900">{{ district.name }}</h3>
                             <p v-if="district.pastor_name" class="mt-0.5 text-xs text-gray-500">
                                 {{ tr('Pastor', 'Pastor') }}: {{ district.pastor_name }}
@@ -241,9 +241,9 @@ const filteredChurches = computed(() => {
                         <div
                             v-for="church in district.churches"
                             :key="church.id"
-                            class="flex items-start justify-between px-6 py-3"
+                            class="flex items-start justify-between gap-3 px-4 py-3 sm:px-6"
                         >
-                            <div>
+                            <div class="min-w-0">
                                 <p class="text-sm font-medium text-gray-900">{{ church.church_name }}</p>
                                 <p v-if="church.pastor_name" class="text-xs text-gray-500">{{ church.pastor_name }}<span v-if="church.pastor_email"> · {{ church.pastor_email }}</span></p>
                                 <p v-if="church.email || church.phone_number" class="text-xs text-gray-400">
@@ -271,7 +271,57 @@ const filteredChurches = computed(() => {
                     {{ tr('Sin resultados.', 'No results.') }}
                 </div>
 
-                <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div v-else class="space-y-3">
+                    <article
+                        v-for="church in filteredChurches"
+                        :key="`mobile-${church.id}`"
+                        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:hidden"
+                    >
+                        <template v-if="editingId !== church.id">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <h3 class="break-words text-sm font-semibold text-gray-900">{{ church.church_name }}</h3>
+                                    <p class="mt-1 text-xs text-gray-500">{{ districtMap[church.district_id]?.name || '—' }}</p>
+                                </div>
+                            </div>
+                            <dl class="mt-3 space-y-2 text-xs text-gray-600">
+                                <div>
+                                    <dt class="font-semibold text-gray-500">{{ tr('Pastor', 'Pastor') }}</dt>
+                                    <dd class="break-words text-gray-800">{{ church.pastor_name || '—' }}</dd>
+                                    <dd v-if="church.pastor_email" class="break-words text-gray-500">{{ church.pastor_email }}</dd>
+                                </div>
+                                <div>
+                                    <dt class="font-semibold text-gray-500">{{ tr('Contacto', 'Contact') }}</dt>
+                                    <dd class="break-words text-gray-800">{{ [church.email, church.phone_number].filter(Boolean).join(' · ') || '—' }}</dd>
+                                </div>
+                            </dl>
+                            <div class="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
+                                <button type="button" class="rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-600" @click="startEdit(church)">{{ tr('Editar', 'Edit') }}</button>
+                                <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-600" @click="deleteChurch(church)">{{ tr('Eliminar', 'Delete') }}</button>
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div class="space-y-3">
+                                <input v-model="editForms[church.id].church_name" type="text" :placeholder="tr('Nombre', 'Name')" class="block w-full rounded-md border-gray-300 text-sm" />
+                                <InputError :message="editForms[church.id].errors.church_name" />
+                                <select v-model="editForms[church.id].district_id" class="block w-full rounded-md border-gray-300 text-sm">
+                                    <option value="">—</option>
+                                    <option v-for="d in districts" :key="d.id" :value="d.id">{{ d.name }}</option>
+                                </select>
+                                <InputError :message="editForms[church.id].errors.district_id" />
+                                <input v-model="editForms[church.id].pastor_name" type="text" :placeholder="tr('Pastor', 'Pastor')" class="block w-full rounded-md border-gray-300 text-sm" />
+                                <input v-model="editForms[church.id].pastor_email" type="email" :placeholder="tr('Correo pastor', 'Pastor email')" class="block w-full rounded-md border-gray-300 text-sm" />
+                                <input v-model="editForms[church.id].email" type="email" :placeholder="tr('Correo', 'Email')" class="block w-full rounded-md border-gray-300 text-sm" />
+                                <input v-model="editForms[church.id].phone_number" type="text" :placeholder="tr('Teléfono', 'Phone')" class="block w-full rounded-md border-gray-300 text-sm" />
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button type="button" class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white" :disabled="editForms[church.id].processing" @click="saveChurch(church)">{{ tr('Guardar', 'Save') }}</button>
+                                    <button type="button" class="rounded border border-gray-300 px-3 py-2 text-sm text-gray-600" @click="cancelEdit(church)">{{ tr('Cancelar', 'Cancel') }}</button>
+                                </div>
+                            </div>
+                        </template>
+                    </article>
+
+                    <div class="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm sm:block">
                     <table class="min-w-full divide-y divide-gray-100">
                         <thead class="bg-gray-50">
                             <tr>
@@ -334,6 +384,7 @@ const filteredChurches = computed(() => {
                             </template>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
 

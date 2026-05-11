@@ -88,10 +88,10 @@ const syncConcept = () => {
     <PathfinderLayout>
         <template #title>{{ tr('Configuración', 'Settings') }}</template>
 
-        <div class="space-y-6 max-w-2xl">
+        <div class="max-w-2xl space-y-6">
 
             <!-- Header -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold text-gray-900">{{ association.name }}</h2>
                 <p class="mt-1 text-sm text-gray-500">{{ tr('Parámetros globales de la asociación.', 'Global association parameters.') }}</p>
             </div>
@@ -102,7 +102,7 @@ const syncConcept = () => {
             </div>
 
             <!-- Insurance settings -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <h3 class="mb-4 text-sm font-semibold text-gray-700 uppercase tracking-wide">
                     {{ tr('Seguro de membresía', 'Membership insurance') }}
                 </h3>
@@ -234,7 +234,7 @@ const syncConcept = () => {
 	                        </div>
                     </div>
 
-                    <div class="flex flex-wrap items-center gap-3">
+                    <div class="grid gap-3 sm:flex sm:flex-wrap sm:items-center">
                         <PrimaryButton type="submit" :disabled="form.processing">
                             {{ tr('Guardar cambios', 'Save changes') }}
                         </PrimaryButton>

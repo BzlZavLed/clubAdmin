@@ -597,7 +597,50 @@ const confirmSelected = async () => {
                 </div>
             </div>
 
-            <div class="overflow-x-auto rounded-lg border bg-white">
+            <div class="space-y-3 sm:hidden">
+                <article
+                    v-for="club in clubSummary"
+                    :key="`club-card-${club.club_id}`"
+                    class="rounded-lg border bg-white p-4 shadow-sm"
+                >
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="break-words text-sm font-semibold text-gray-900">{{ club.club_name }}</div>
+                            <div class="mt-1 break-words text-xs text-gray-500">{{ club.district_name || club.church_name || '—' }}</div>
+                        </div>
+                        <span
+                            class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold"
+                            :class="club.signup_status === 'signed_up' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : (club.signup_status === 'declined' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-gray-200 bg-gray-50 text-gray-600')"
+                        >
+                            {{ club.signup_status || 'targeted' }}
+                        </span>
+                    </div>
+                    <div v-if="club.signed_up_at" class="mt-2 text-xs text-gray-500">{{ club.signed_up_at }}</div>
+                    <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div v-if="showEnrolledMembersColumn" class="rounded bg-gray-50 p-3">
+                            <dt class="text-xs text-gray-500">{{ tr('Miembros inscritos', 'Enrolled members') }}</dt>
+                            <dd class="mt-1 font-semibold text-gray-900">{{ rowEnrolledMemberCount(club) }} <span class="text-gray-400">/ {{ rowMemberCapacity(club) }}</span></dd>
+                        </div>
+                        <div v-if="showConfirmedMembersColumn" class="rounded bg-gray-50 p-3">
+                            <dt class="text-xs text-gray-500">{{ tr('Miembros confirmados', 'Confirmed members') }}</dt>
+                            <dd class="mt-1 font-semibold text-gray-900">{{ rowConfirmedMemberCount(club) }} <span class="text-gray-400">/ {{ rowMemberCapacity(club) }}</span></dd>
+                        </div>
+                        <div v-if="showEnrolledStaffColumn" class="rounded bg-gray-50 p-3">
+                            <dt class="text-xs text-gray-500">{{ tr('Staff inscrito', 'Enrolled staff') }}</dt>
+                            <dd class="mt-1 font-semibold text-gray-900">{{ rowEnrolledStaffCount(club) }} <span class="text-gray-400">/ {{ rowStaffCapacity(club) }}</span></dd>
+                        </div>
+                        <div v-if="showConfirmedStaffColumn" class="rounded bg-gray-50 p-3">
+                            <dt class="text-xs text-gray-500">{{ tr('Staff confirmado', 'Confirmed staff') }}</dt>
+                            <dd class="mt-1 font-semibold text-gray-900">{{ rowConfirmedStaffCount(club) }} <span class="text-gray-400">/ {{ rowStaffCapacity(club) }}</span></dd>
+                        </div>
+                    </dl>
+                </article>
+                <div v-if="!clubSummary.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                    {{ tr('No hay clubes visibles para este evento.', 'No visible clubs for this event.') }}
+                </div>
+            </div>
+
+            <div class="hidden overflow-x-auto rounded-lg border bg-white sm:block">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50 text-left text-gray-600">
                         <tr>
@@ -720,7 +763,68 @@ const confirmSelected = async () => {
                     </div>
 
                     <div class="overflow-auto">
-                        <table class="min-w-full text-sm">
+                        <div class="space-y-3 p-4 md:hidden">
+                            <article
+                                v-for="row in participantRoster"
+                                :key="`roster-card-${row.participant_key || row.member_id || row.staff_id}`"
+                                class="rounded-lg border bg-white p-4 shadow-sm"
+                            >
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="break-words text-sm font-semibold text-gray-900">{{ row.name }}</div>
+                                        <div class="mt-1 text-xs text-gray-500">{{ row.participant_type_label || '—' }}</div>
+                                    </div>
+                                    <div class="shrink-0 text-right text-sm font-semibold text-gray-900">
+                                        {{ formatMoney(row.total_paid) }}
+                                    </div>
+                                </div>
+                                <dl class="mt-4 grid grid-cols-1 gap-2 text-xs text-gray-600">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <dt class="font-medium text-gray-500">{{ tr('Club', 'Club') }}</dt>
+                                        <dd class="max-w-[60%] break-words text-right text-gray-800">{{ row.club_name || '—' }}</dd>
+                                    </div>
+                                    <div class="flex items-start justify-between gap-3">
+                                        <dt class="font-medium text-gray-500">{{ tr('Distrito', 'District') }}</dt>
+                                        <dd class="max-w-[60%] break-words text-right text-gray-800">{{ row.district_name || '—' }}</dd>
+                                    </div>
+                                    <div v-if="showRosterAssociationColumn" class="flex items-start justify-between gap-3">
+                                        <dt class="font-medium text-gray-500">{{ tr('Asociación', 'Association') }}</dt>
+                                        <dd class="max-w-[60%] break-words text-right text-gray-800">{{ row.association_name || '—' }}</dd>
+                                    </div>
+                                </dl>
+                                <div class="mt-3 flex flex-wrap gap-1">
+                                    <span v-if="row.is_enrolled" class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                                        {{ tr('Inscrito', 'Enrolled') }}
+                                    </span>
+                                    <span v-if="row.is_confirmed" class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                        {{ tr('Confirmado', 'Confirmed') }}
+                                    </span>
+                                    <span class="rounded-full border px-2 py-0.5 text-xs font-semibold" :class="optionalStatusClass(row.optional_status)">
+                                        {{ optionalStatusLabel(row.optional_status) }}
+                                    </span>
+                                </div>
+                                <div v-if="row.required_expected > 0" class="mt-2 text-xs text-gray-500">
+                                    {{ tr('Obligatorio', 'Required') }}: {{ formatMoney(row.required_paid) }} / {{ formatMoney(row.required_expected) }}
+                                </div>
+                                <div v-if="row.optional_components?.length" class="mt-3 space-y-1 text-xs text-gray-600">
+                                    <div
+                                        v-for="component in row.optional_components"
+                                        :key="`roster-card-${row.participant_key || row.member_id || row.staff_id}-${component.label}`"
+                                        class="flex items-start justify-between gap-3"
+                                    >
+                                        <span class="break-words">{{ component.label }}</span>
+                                        <span class="whitespace-nowrap" :class="component.is_paid ? 'text-emerald-700' : 'text-gray-500'">
+                                            {{ formatMoney(component.paid_amount) }} / {{ formatMoney(component.expected_amount) }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </article>
+                            <div v-if="!participantRoster.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                                {{ tr('Todavía no hay participantes confirmados o inscritos.', 'There are no confirmed or enrolled participants yet.') }}
+                            </div>
+                        </div>
+
+                        <table class="hidden min-w-full text-sm md:table">
                             <thead class="sticky top-0 bg-gray-50 text-left text-gray-600">
                                 <tr>
                                     <th class="px-4 py-3 font-medium">{{ tr('Participante', 'Participant') }}</th>
@@ -913,7 +1017,79 @@ const confirmSelected = async () => {
             </button>
         </div>
 
-        <div class="overflow-x-auto bg-white rounded-lg border">
+        <div class="space-y-3 sm:hidden">
+            <article
+                v-for="participant in participants"
+                :key="`participant-card-${participant.id}`"
+                class="rounded-lg border bg-white p-4 shadow-sm"
+                :class="highlightIds.has(participant.id) ? 'participant-highlight' : ''"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <label class="flex min-w-0 items-start gap-3">
+                        <input
+                            type="checkbox"
+                            :value="participant.id"
+                            v-model="selectedParticipantIds"
+                            class="mt-1"
+                        />
+                        <span class="min-w-0">
+                            <span class="block break-words text-sm font-semibold text-gray-900">{{ participant.participant_name }}</span>
+                            <span v-if="participant.member_id" class="mt-1 block text-xs text-gray-500">
+                                {{ classNameById.get(memberById.get(participant.member_id)?.class_id) || 'Class —' }}
+                            </span>
+                            <span v-else-if="participant.role === 'parent'" class="mt-1 block text-xs text-gray-500">
+                                {{ (parentByName.get(participant.participant_name)?.children || [])[0]?.name || 'Child —' }}
+                            </span>
+                        </span>
+                    </label>
+                    <span class="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold capitalize text-gray-700">
+                        {{ participant.role }}
+                    </span>
+                </div>
+
+                <div class="mt-4 grid gap-3">
+                    <label class="block">
+                        <span class="text-xs font-medium text-gray-500">{{ tr('Estado', 'Status') }}</span>
+                        <select class="mt-1 w-full rounded border px-2 py-2 text-sm" :value="participant.status" @change="(e) => updateStatus(participant, e.target.value)">
+                            <option value="invited">{{ tr('Invitado', 'Invited') }}</option>
+                            <option value="confirmed">{{ tr('Confirmado', 'Confirmed') }}</option>
+                            <option value="cancelled">{{ tr('Cancelado', 'Cancelled') }}</option>
+                        </select>
+                    </label>
+                    <div class="rounded bg-gray-50 p-3 text-xs">
+                        <div class="font-medium text-gray-500">{{ tr('Pago', 'Payment') }}</div>
+                        <div v-if="participant.role === 'parent'" class="mt-1 text-gray-400">—</div>
+                        <div v-else class="mt-1 flex items-center gap-2">
+                            <span
+                                class="inline-flex h-2.5 w-2.5 items-center justify-center rounded-full"
+                                :class="{
+                                    'bg-emerald-500': paymentStatusFor(participant).status === 'paid',
+                                    'bg-red-500': paymentStatusFor(participant).status === 'unpaid',
+                                    'bg-gray-300': paymentStatusFor(participant).status === 'na',
+                                }"
+                            />
+                            <span v-if="paymentStatusFor(participant).status === 'paid' && participant.member_id" class="text-emerald-600">
+                                {{ tr('Pago registrado', 'Payment submitted') }}
+                            </span>
+                            <Link v-else-if="paymentLinkFor(participant)" :href="paymentLinkFor(participant)" class="text-blue-600 hover:text-blue-700">
+                                {{ tr('Registrar pago', 'Record payment') }}
+                            </Link>
+                            <span v-else class="text-gray-400">—</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 border-t border-gray-100 pt-3 text-right">
+                    <button type="button" class="text-sm font-medium text-red-600" @click="removeParticipant(participant)">
+                        {{ tr('Eliminar', 'Remove') }}
+                    </button>
+                </div>
+            </article>
+            <div v-if="!participants.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                {{ tr('Aún no hay participantes.', 'No participants yet.') }}
+            </div>
+        </div>
+
+        <div class="hidden overflow-x-auto bg-white rounded-lg border sm:block">
         <table class="min-w-full text-sm">
             <thead class="bg-gray-50 text-gray-600">
                 <tr>

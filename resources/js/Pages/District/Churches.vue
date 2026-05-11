@@ -103,9 +103,9 @@ const deleteChurch = (church) => {
         <template #title>{{ tr('Iglesias del distrito', 'District churches') }}</template>
 
         <div class="space-y-6">
-            <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
+                    <div class="min-w-0">
                         <h2 class="text-lg font-semibold text-gray-900">{{ district.name }}</h2>
                         <p class="mt-1 text-sm text-gray-500">
                             {{ tr('Asociación', 'Association') }}: {{ association?.name || '—' }}
@@ -119,7 +119,7 @@ const deleteChurch = (church) => {
                     </div>
                     <button
                         type="button"
-                        class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 md:w-auto md:shrink-0"
                         @click="showAddForm = !showAddForm"
                     >
                         {{ showAddForm ? tr('Cancelar', 'Cancel') : tr('+ Agregar iglesia', '+ Add church') }}
@@ -127,7 +127,7 @@ const deleteChurch = (church) => {
                 </div>
             </section>
 
-            <section v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+            <section v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-6">
                 <h3 class="mb-4 text-sm font-semibold text-blue-900">{{ tr('Nueva iglesia', 'New church') }}</h3>
                 <form class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" @submit.prevent="submitAdd">
                     <div>
@@ -179,11 +179,11 @@ const deleteChurch = (church) => {
                     <article
                         v-for="church in filteredChurches"
                         :key="church.id"
-                        class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+                        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5"
                     >
                         <template v-if="editingId !== church.id">
                             <div class="flex items-start justify-between gap-4">
-                                <div>
+                                <div class="min-w-0">
                                     <h3 class="text-base font-semibold text-gray-900">{{ church.church_name }}</h3>
                                     <p class="mt-1 text-sm text-gray-600">
                                         {{ district.pastor_name || tr('Sin pastor distrital asignado', 'No district pastor assigned') }}
@@ -202,11 +202,11 @@ const deleteChurch = (church) => {
                                 <p><span class="font-medium text-gray-900">{{ tr('Dirección:', 'Address:') }}</span> {{ church.address || '—' }}</p>
                             </div>
 
-                            <div class="mt-4 flex flex-wrap justify-end gap-3">
-                                <button type="button" class="text-sm text-blue-600 hover:underline" @click="startEdit(church)">
+                            <div class="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 sm:flex sm:flex-wrap sm:justify-end sm:gap-3 sm:border-0 sm:pt-0">
+                                <button type="button" class="rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 sm:border-0 sm:p-0 sm:hover:bg-transparent sm:hover:underline" @click="startEdit(church)">
                                     {{ tr('Editar', 'Edit') }}
                                 </button>
-                                <button type="button" class="text-sm text-red-600 hover:underline" @click="deleteChurch(church)">
+                                <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 sm:border-0 sm:p-0 sm:hover:bg-transparent sm:hover:underline" @click="deleteChurch(church)">
                                     {{ tr('Eliminar', 'Delete') }}
                                 </button>
                             </div>
@@ -241,16 +241,16 @@ const deleteChurch = (church) => {
                                 </div>
                             </div>
 
-                            <div class="mt-4 flex flex-wrap justify-end gap-3">
+                            <div class="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end sm:gap-3">
                                 <button
                                     type="button"
-                                    class="text-sm font-medium text-blue-600 hover:underline"
+                                    class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 sm:bg-transparent sm:p-0 sm:text-blue-600 sm:hover:bg-transparent sm:hover:underline"
                                     :disabled="editForms[church.id].processing"
                                     @click="saveChurch(church)"
                                 >
                                     {{ tr('Guardar', 'Save') }}
                                 </button>
-                                <button type="button" class="text-sm text-gray-500 hover:underline" @click="cancelEdit(church)">
+                                <button type="button" class="rounded border border-gray-300 px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 sm:border-0 sm:p-0 sm:hover:bg-transparent sm:hover:underline" @click="cancelEdit(church)">
                                     {{ tr('Cancelar', 'Cancel') }}
                                 </button>
                             </div>

@@ -14,7 +14,7 @@ const { tr } = useLocale()
 <template>
     <PathfinderLayout>
         <div class="space-y-6">
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold text-gray-900">{{ tr('Distrito', 'District') }}</h2>
                 <p class="mt-2 text-sm text-gray-600">
                     {{ tr('Acceso inicial habilitado para roles distritales. La definicion funcional detallada sigue pendiente.', 'Initial access is enabled for district roles. Detailed functional definition is still pending.') }}
@@ -33,14 +33,14 @@ const { tr } = useLocale()
                     <div><span class="font-medium">{{ tr('Clubes accesibles:', 'Accessible clubs:') }}</span> {{ user?.accessible_club_count ?? 0 }}</div>
                 </div>
 
-                <div class="mt-6 flex flex-wrap gap-3">
-                    <a :href="route('district.churches')" class="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                <div class="mt-6 grid gap-3 sm:flex sm:flex-wrap">
+                    <a :href="route('district.churches')" class="inline-flex items-center justify-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
                         {{ tr('Iglesias del distrito', 'District churches') }}
                     </a>
-                    <a :href="route('district.reports.assistance')" class="inline-flex items-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900">
+                    <a :href="route('district.reports.assistance')" class="inline-flex items-center justify-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900">
                         {{ tr('Reporte de asistencia', 'Attendance report') }}
                     </a>
-                    <a :href="route('district.reports.finances')" class="inline-flex items-center rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    <a :href="route('district.reports.finances')" class="inline-flex items-center justify-center rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                         {{ tr('Reporte financiero', 'Financial report') }}
                     </a>
                 </div>

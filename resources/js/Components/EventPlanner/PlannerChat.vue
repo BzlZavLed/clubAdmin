@@ -185,7 +185,7 @@ const send = async () => {
 </script>
 
 <template>
-    <div class="bg-white rounded-lg border p-4 space-y-4">
+    <div class="space-y-4 rounded-lg border bg-white p-3 sm:p-4">
         <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             <div class="font-semibold">{{ tr('Uso mensual de SerpAPI', 'SerpAPI Monthly Usage') }}</div>
             <div class="mt-1">
@@ -220,7 +220,7 @@ const send = async () => {
         <div ref="messagesRef" class="space-y-3 max-h-80 overflow-y-auto">
             <div v-for="(msg, idx) in localMessages" :key="idx" class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
                 <div :class="msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'"
-                    class="px-3 py-2 rounded-lg max-w-[80%] text-sm whitespace-pre-wrap">
+                    class="max-w-[92%] break-words rounded-lg px-3 py-2 text-sm whitespace-pre-wrap sm:max-w-[80%]">
                     <div class="mb-1 flex items-center gap-2 text-xs opacity-70">
                         <span>{{ msg.role }}</span>
                         <span v-if="agentBadge(msg)" class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-gray-700">{{ agentBadge(msg) }}</span>
@@ -310,9 +310,9 @@ const send = async () => {
         <div class="border-t pt-3 space-y-2">
             <textarea ref="inputRef" v-model="input" rows="3" class="w-full border rounded px-3 py-2 text-sm"
                 :placeholder="tr('Pídele al planificador crear tareas, presupuestos o completar pendientes...', 'Ask the planner to build tasks, budgets, or fill in missing items...')"></textarea>
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div class="text-xs text-red-600" v-if="error">{{ error }}</div>
-                <button @click="send" :disabled="sending" class="px-4 py-2 bg-green-600 text-white rounded text-sm">
+                <button @click="send" :disabled="sending" class="w-full rounded bg-green-600 px-4 py-2 text-sm text-white sm:w-auto">
                     {{ sending ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
                 </button>
             </div>

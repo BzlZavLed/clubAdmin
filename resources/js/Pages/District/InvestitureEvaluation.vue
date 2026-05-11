@@ -148,13 +148,13 @@ const toggleMember = (member) => {
         <template #title>{{ tr('Evaluar carpeta de investidura', 'Evaluate investiture folder') }}</template>
 
         <div class="space-y-6">
-            <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
+                    <div class="min-w-0">
                         <Link :href="route('district.investiture-requests')" class="text-sm font-semibold text-blue-700 hover:underline">
                             {{ tr('Volver a solicitudes', 'Back to requests') }}
                         </Link>
-                        <h1 class="mt-2 text-2xl font-semibold text-gray-900">
+                        <h1 class="mt-2 break-words text-2xl font-semibold text-gray-900">
                             {{ request.club?.club_name || tr('Club', 'Club') }}
                         </h1>
                         <p class="mt-1 text-sm text-gray-600">
@@ -172,7 +172,7 @@ const toggleMember = (member) => {
                             <template v-if="request.ceremony_representative_phone"> · {{ request.ceremony_representative_phone }}</template>
                         </p>
                     </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    <div class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 md:w-auto">
                         <p class="font-semibold text-gray-900">{{ tr('Solicitud', 'Request') }} #{{ request.id }}</p>
                         <span class="mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1" :class="statusClass(request.status)">
                             {{ statusLabel(request.status) }}
@@ -211,7 +211,7 @@ const toggleMember = (member) => {
                             :class="expandedMemberId === member.id ? 'bg-blue-50/60' : 'bg-white'"
                             @click="toggleMember(member)"
                         >
-                            <div>
+                            <div class="min-w-0">
                                 <h3 class="text-lg font-semibold text-gray-900">{{ member.member_name }}</h3>
                                 <p class="mt-1 text-sm text-gray-600">{{ member.class_name || tr('Sin clase', 'No class') }}</p>
                                 <p class="mt-2 text-xs uppercase tracking-wide text-gray-400">
@@ -235,7 +235,7 @@ const toggleMember = (member) => {
                                     @click="expandedRequirement = expandedRequirement === item.review_id ? null : item.review_id"
                                 >
                                     <div>
-                                        <h4 class="font-semibold text-gray-900">
+                                        <h4 class="break-words font-semibold text-gray-900">
                                             {{ item.requirement?.sort_order }}. {{ item.requirement?.title || tr('Requisito', 'Requirement') }}
                                         </h4>
                                         <p class="mt-1 text-xs text-gray-500">

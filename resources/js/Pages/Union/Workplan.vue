@@ -387,59 +387,61 @@ const needsRepublish = computed(() => isPublished.value && props.requiresRepubli
                             <li
                                 v-for="ev in monthEvents"
                                 :key="ev.id"
-                                class="group flex items-start gap-3 px-4 py-4 transition-colors hover:bg-gray-50 sm:gap-4 sm:px-6"
+                                class="group flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-gray-50 sm:flex-row sm:items-start sm:gap-4 sm:px-6"
                             >
-                                <!-- Date column -->
-                                <div class="w-14 shrink-0 text-center">
-                                    <p class="text-lg font-bold text-gray-800 leading-none">
-                                        {{ new Date(dateOnly(ev.date) + 'T12:00:00').getDate() }}
-                                    </p>
-                                    <p class="text-[10px] uppercase text-gray-400 tracking-wide">
-                                        {{ months[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}
-                                    </p>
-                                    <p v-if="ev.end_date && dateOnly(ev.end_date) !== dateOnly(ev.date)" class="mt-0.5 text-[10px] text-gray-400">
-                                        {{ tr('al', 'to') }} {{ formatDate(ev.end_date) }}
-                                    </p>
-                                </div>
+                                <div class="flex min-w-0 items-start gap-3 sm:flex-1 sm:gap-4">
+                                    <!-- Date column -->
+                                    <div class="w-14 shrink-0 text-center">
+                                        <p class="text-lg font-bold text-gray-800 leading-none">
+                                            {{ new Date(dateOnly(ev.date) + 'T12:00:00').getDate() }}
+                                        </p>
+                                        <p class="text-[10px] uppercase text-gray-400 tracking-wide">
+                                            {{ months[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}
+                                        </p>
+                                        <p v-if="ev.end_date && dateOnly(ev.end_date) !== dateOnly(ev.date)" class="mt-0.5 text-[10px] text-gray-400">
+                                            {{ tr('al', 'to') }} {{ formatDate(ev.end_date) }}
+                                        </p>
+                                    </div>
 
-                                <!-- Content -->
-                                <div class="flex-1 min-w-0">
-                                    <div class="flex flex-wrap items-center gap-2 mb-1">
-                                        <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', typeStyle(ev.event_type)]">
-                                            {{ typeLabel(ev.event_type) }}
-                                        </span>
-                                        <span v-if="ev.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">
-                                            {{ tr('Obligatorio', 'Required') }}
-                                        </span>
-                                        <template v-if="ev.target_club_types?.length">
-                                            <span
-                                                v-for="ct in ev.target_club_types"
-                                                :key="ct"
-                                                class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500"
-                                            >
-                                                {{ clubTypeLabels[ct] ?? ct }}
+                                    <!-- Content -->
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex flex-wrap items-center gap-2 mb-1">
+                                            <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', typeStyle(ev.event_type)]">
+                                                {{ typeLabel(ev.event_type) }}
                                             </span>
-                                        </template>
-                                        <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-400">{{ tr('Todos los clubes', 'All clubs') }}</span>
+                                            <span v-if="ev.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">
+                                                {{ tr('Obligatorio', 'Required') }}
+                                            </span>
+                                            <template v-if="ev.target_club_types?.length">
+                                                <span
+                                                    v-for="ct in ev.target_club_types"
+                                                    :key="ct"
+                                                    class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500"
+                                                >
+                                                    {{ clubTypeLabels[ct] ?? ct }}
+                                                </span>
+                                            </template>
+                                            <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-400">{{ tr('Todos los clubes', 'All clubs') }}</span>
+                                        </div>
+
+                                        <p class="break-words text-sm font-semibold text-gray-900 sm:truncate">{{ ev.title }}</p>
+
+                                        <div v-if="formatDateRange(ev) || ev.start_time || ev.location" class="mt-0.5 flex flex-wrap gap-3 text-xs text-gray-400">
+                                            <span v-if="formatDateRange(ev)" class="font-medium text-gray-500">
+                                                {{ formatDateRange(ev) }}
+                                            </span>
+                                            <span v-if="ev.start_time">
+                                                {{ formatTime(ev.start_time) }}<template v-if="ev.end_time"> – {{ formatTime(ev.end_time) }}</template>
+                                            </span>
+                                            <span v-if="ev.location" class="break-words">📍 {{ ev.location }}</span>
+                                        </div>
+
+                                        <p v-if="ev.description" class="mt-1 break-words text-xs text-gray-500 line-clamp-2">{{ ev.description }}</p>
                                     </div>
-
-                                    <p class="text-sm font-semibold text-gray-900 truncate">{{ ev.title }}</p>
-
-                                    <div v-if="formatDateRange(ev) || ev.start_time || ev.location" class="mt-0.5 flex flex-wrap gap-3 text-xs text-gray-400">
-                                        <span v-if="formatDateRange(ev)" class="font-medium text-gray-500">
-                                            {{ formatDateRange(ev) }}
-                                        </span>
-                                        <span v-if="ev.start_time">
-                                            {{ formatTime(ev.start_time) }}<template v-if="ev.end_time"> – {{ formatTime(ev.end_time) }}</template>
-                                        </span>
-                                        <span v-if="ev.location">📍 {{ ev.location }}</span>
-                                    </div>
-
-                                    <p v-if="ev.description" class="mt-1 text-xs text-gray-500 line-clamp-2">{{ ev.description }}</p>
                                 </div>
 
                                 <!-- Actions -->
-                                <div class="flex shrink-0 items-center gap-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                                <div class="flex shrink-0 items-center justify-end gap-2 border-t border-gray-100 pt-3 opacity-100 transition-opacity sm:border-t-0 sm:pt-0 sm:opacity-0 sm:group-hover:opacity-100">
                                     <button
                                         type="button"
                                         class="rounded-md px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 transition-colors"

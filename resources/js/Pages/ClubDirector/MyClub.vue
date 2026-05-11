@@ -1114,8 +1114,8 @@ onMounted(fetchClubs);
                     </p>
                 </div>
 
-                <div class="flex items-center space-x-4">
-                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <button type="submit" class="rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700">
                         {{ isEditing ? tr('Actualizar club', 'Update club') : tr('Guardar club', 'Save club') }}
                     </button>
                     <button v-if="isEditing || addClub" type="button" @click="() => {
@@ -1130,7 +1130,8 @@ onMounted(fetchClubs);
         </div>
         <div v-else-if="!clubId && clubs.length > 0" class="space-y-6">
             <p class="text-gray-700">{{ tr('Selecciona un club existente de tu iglesia', 'Select an existing club from your church') }}: {{ church_name || tr('Iglesia desconocida', 'Unknown church') }}</p>
-            <table class="min-w-full border rounded text-sm">
+            <div class="overflow-x-auto rounded border bg-white">
+            <table class="min-w-[560px] w-full text-sm">
                 <thead class="bg-gray-100">
                     <tr>
                         <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
@@ -1148,12 +1149,14 @@ onMounted(fetchClubs);
                     </tr>
                 </tbody>
             </table>
+            </div>
         </div>
         <div v-else class="space-y-4">
             <details open class="border rounded">
                 <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Informacion del club', 'Club Information') }}</summary>
                 <div class="p-4">
-                    <table class="min-w-full border rounded text-sm">
+                    <div class="overflow-x-auto rounded border bg-white">
+                    <table class="min-w-[860px] w-full text-sm">
                         <thead class="bg-gray-100">
                             <tr>
                                 <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
@@ -1188,11 +1191,12 @@ onMounted(fetchClubs);
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                     <div class="mt-4">
                         <button
                             v-if="canCreateAnotherClub && !mustAttachInsteadOfCreate"
                             @click="startCreatingClub"
-                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                            class="w-full rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700 sm:w-auto">
                             + {{ tr('Crear club', 'Create club') }}
                         </button>
                         <p v-else-if="mustAttachInsteadOfCreate" class="text-sm text-amber-700">
@@ -1208,27 +1212,27 @@ onMounted(fetchClubs);
             <details class="border rounded">
                 <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Clases', 'Classes') }}</summary>
                 <div class="p-4">
-                    <div class="flex justify-between items-center mb-4">
+                    <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <h3 class="text-lg font-bold">{{ tr('Clases del club', 'Club Classes') }}</h3>
-                        <div class="flex items-center gap-2">
+                        <div class="grid gap-2 sm:flex sm:items-center">
                             <button
                                 type="button"
                                 @click="exportClassesPdf(false)"
-                                class="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 text-sm"
+                                class="rounded bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-800"
                             >
                                 {{ tr('PDF clases', 'Classes PDF') }}
                             </button>
                             <button
                                 type="button"
                                 @click="exportClassesPdf(true)"
-                                class="px-3 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-800 text-sm"
+                                class="rounded bg-emerald-700 px-3 py-2 text-sm text-white hover:bg-emerald-800"
                             >
                                 {{ tr('PDF clases + requisitos', 'Classes + requirements PDF') }}
                             </button>
                             <button
                                 v-if="!filteredClubs.some(isCarpetaClub)"
                                 @click="openNewClassModal"
-                                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
                                 + {{ tr('Agregar clase', 'Add class') }}
                             </button>
                         </div>
@@ -1251,7 +1255,8 @@ onMounted(fetchClubs);
                             </div>
                         </div>
                     </div>
-                    <table class="min-w-full border rounded text-left border-collapse">
+                    <div class="overflow-x-auto rounded border bg-white">
+                    <table class="min-w-[920px] w-full text-left text-sm">
                         <thead class="bg-gray-100">
                             <tr>
                                 <th class="border-b px-4 py-2">{{ tr('Club', 'Club') }}</th>
@@ -1275,7 +1280,7 @@ onMounted(fetchClubs);
                                         <td class="px-4 py-2">{{ club.club_name }}</td>
                                         <td class="px-4 py-2">{{ isCarpetaClub(club) ? cls.sort_order : cls.class_order }}</td>
                                         <td class="px-4 py-2">
-                                            <div class="flex items-center gap-2">
+                                            <div class="flex flex-wrap items-center gap-2">
                                                 <span>{{ isCarpetaClub(club) ? cls.name : cls.class_name }}</span>
                                                 <span
                                                     v-if="isCarpetaClub(club)"
@@ -1289,7 +1294,8 @@ onMounted(fetchClubs);
                                         <td class="px-4 py-2 text-sm text-gray-700">
                                             {{ getStaffName(cls, isCarpetaClub(club)) }}
                                         </td>
-                                        <td class="p-2 space-x-2">
+                                        <td class="p-2">
+                                            <div class="flex flex-wrap gap-2">
                                             <template v-if="isCarpetaClub(club)">
                                                 <button
                                                     v-if="!cls.is_active"
@@ -1312,6 +1318,7 @@ onMounted(fetchClubs);
                                                 <button @click="deleteCls(cls.id)"
                                                     class="text-red-600 hover:underline">{{ tr('Eliminar', 'Delete') }}</button>
                                             </template>
+                                            </div>
                                         </td>
                                     </tr>
                                     <tr v-if="!isCarpetaClub(club) || cls.is_active">
@@ -1361,7 +1368,7 @@ onMounted(fetchClubs);
                                             </template>
 
                                             <template v-else>
-                                                <div class="flex items-center justify-between mb-2">
+                                                <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                                     <p class="text-sm font-semibold text-gray-800">
                                                         {{ tr('Requisitos de investidura', 'Investiture requirements') }}<span v-if="club.club_type === 'adventurers'"> (Honores/Honors)</span>
                                                     </p>
@@ -1380,8 +1387,8 @@ onMounted(fetchClubs);
                                                         :key="requirement.id"
                                                         class="border rounded p-2 bg-white"
                                                     >
-                                                        <div class="flex items-start justify-between gap-3">
-                                                            <div>
+                                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                            <div class="min-w-0">
                                                                 <p class="text-sm font-medium text-gray-900">
                                                                     {{ requirement.sort_order }}. {{ requirement.title }}
                                                                 </p>
@@ -1389,7 +1396,7 @@ onMounted(fetchClubs);
                                                                     {{ requirement.description }}
                                                                 </p>
                                                             </div>
-                                                            <div class="flex items-center gap-2">
+                                                            <div class="flex shrink-0 items-center gap-2">
                                                                 <button
                                                                     type="button"
                                                                     class="text-xs text-blue-700 hover:underline"
@@ -1431,7 +1438,7 @@ onMounted(fetchClubs);
                                                         class="border rounded px-2 py-1 text-sm"
                                                     />
                                                 </div>
-                                                <div v-if="showRequirementFormByClass[cls.id]" class="mt-2 flex items-center gap-3">
+                                                <div v-if="showRequirementFormByClass[cls.id]" class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                                                     <button
                                                         type="button"
                                                         class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
@@ -1454,20 +1461,22 @@ onMounted(fetchClubs);
                             </template>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </details>
 
             <details class="border rounded">
                 <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Objetivos', 'Objectives') }}</summary>
                 <div class="p-4">
-                    <div class="flex justify-between items-center mb-4">
+                    <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h3 class="text-lg font-bold">{{ tr('Objetivos del club', 'Club Objectives') }}</h3>
                             <p class="text-sm text-gray-600">{{ tr('Estos objetivos son locales y luego pueden usarse en el plan de trabajo aun si no se importaron desde mychurchadmin.', 'These objectives are local and can later be used in the workplan even if they were not imported from mychurchadmin.') }}</p>
                         </div>
                     </div>
 
-                    <table class="min-w-full border rounded text-left border-collapse">
+                    <div class="overflow-x-auto rounded border bg-white">
+                    <table class="min-w-[840px] w-full text-left text-sm">
                         <thead class="bg-gray-100">
                             <tr>
                                 <th class="border-b px-4 py-2">{{ tr('Club', 'Club') }}</th>
@@ -1478,7 +1487,7 @@ onMounted(fetchClubs);
                             <tr v-for="club in filteredClubs" :key="`objectives-${club.id}`" class="border-b align-top">
                                 <td class="px-4 py-3 font-medium text-gray-900">{{ club.club_name }}</td>
                                 <td class="px-4 py-3">
-                                    <div class="flex items-center justify-between mb-3">
+                                    <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                         <div class="text-sm text-gray-600">
                                             {{ getClubObjectives(club).length }} {{ tr('objetivo(s) local(es)', 'local objective(s)') }}
                                         </div>
@@ -1497,9 +1506,9 @@ onMounted(fetchClubs);
                                             :key="objective.id"
                                             class="border rounded p-3 bg-white"
                                         >
-                                            <div class="flex items-start justify-between gap-4">
-                                                <div>
-                                                    <div class="flex items-center gap-2">
+                                            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                <div class="min-w-0">
+                                                    <div class="flex flex-wrap items-center gap-2">
                                                         <p class="text-sm font-medium text-gray-900">{{ objective.name }}</p>
                                                         <span
                                                             v-if="objective.external_objective_id"
@@ -1521,7 +1530,7 @@ onMounted(fetchClubs);
                                                         <span class="font-medium">{{ tr('Metrica anual', 'Annual metric') }}:</span> {{ objective.annual_evaluation_metric }}
                                                     </p>
                                                 </div>
-                                                <div class="flex items-center gap-2">
+                                                <div class="flex shrink-0 items-center gap-2">
                                                     <button
                                                         type="button"
                                                         class="text-xs text-blue-700 hover:underline"
@@ -1590,7 +1599,7 @@ onMounted(fetchClubs);
                                                 class="w-full border rounded px-2 py-2 text-sm"
                                             />
                                         </div>
-                                        <div class="flex items-center gap-3">
+                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
                                             <button
                                                 type="button"
                                                 class="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
@@ -1611,6 +1620,7 @@ onMounted(fetchClubs);
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </details>
         <CreateClassModal v-if="showClassModal" v-model:visible="showClassModal" :clubs="clubs"

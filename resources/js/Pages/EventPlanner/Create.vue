@@ -196,7 +196,7 @@ const submit = () => {
     <PathfinderLayout>
         <template #title>{{ tr('Crear evento', 'Create Event') }}</template>
 
-        <div class="bg-white rounded-lg border p-6 space-y-4">
+        <div class="space-y-4 rounded-lg border bg-white p-4 sm:p-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="text-sm text-gray-600">{{ tr('Nivel del evento', 'Event level') }}</label>
@@ -274,9 +274,9 @@ const submit = () => {
                             <div class="text-sm font-semibold text-gray-800">{{ tr('Clubes involucrados', 'Involved clubs') }}</div>
                             <div class="text-xs text-gray-500">{{ tr('Selecciona los clubes que participan en este evento.', 'Select the clubs involved in this event.') }}</div>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <button type="button" class="px-3 py-1 rounded border text-xs text-gray-700" @click="selectAllTargetClubs">{{ tr('Todos', 'Select all') }}</button>
-                            <button type="button" class="px-3 py-1 rounded border text-xs text-gray-700" @click="clearTargetClubs">{{ tr('Limpiar', 'Clear') }}</button>
+                        <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                            <button type="button" class="rounded border px-3 py-2 text-xs text-gray-700 sm:py-1" @click="selectAllTargetClubs">{{ tr('Todos', 'Select all') }}</button>
+                            <button type="button" class="rounded border px-3 py-2 text-xs text-gray-700 sm:py-1" @click="clearTargetClubs">{{ tr('Limpiar', 'Clear') }}</button>
                         </div>
                     </div>
                     <div v-if="clubTypeOptions.length" class="mt-4 rounded border border-gray-200 p-3 space-y-3">
@@ -330,12 +330,12 @@ const submit = () => {
                     </div>
                 </div>
             </div>
-            <div class="flex items-center gap-6">
-                <label class="text-sm text-gray-600 flex items-center gap-2">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+                <label class="flex items-center gap-2 text-sm text-gray-600">
                     <input type="checkbox" v-model="form.requires_approval" />
                     {{ tr('Requiere aprobación', 'Requires approval') }}
                 </label>
-                <label v-if="!isClubScope" class="text-sm text-gray-600 flex items-center gap-2">
+                <label v-if="!isClubScope" class="flex items-center gap-2 text-sm text-gray-600">
                     <input type="checkbox" v-model="form.is_mandatory" />
                     {{ tr('Evento obligatorio', 'Mandatory event') }}
                 </label>
@@ -397,11 +397,11 @@ const submit = () => {
                         </div>
                     </div>
                 </div>
-                <button type="button" class="rounded border px-3 py-2 text-sm text-gray-700" @click="addFeeComponent">
+                <button type="button" class="w-full rounded border px-3 py-2 text-sm text-gray-700 sm:w-auto" @click="addFeeComponent">
                     {{ tr('Agregar componente', 'Add component') }}
                 </button>
             </div>
-            <button @click="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm" :disabled="form.processing">
+            <button @click="submit" class="w-full rounded bg-blue-600 px-4 py-2 text-sm text-white sm:w-auto" :disabled="form.processing">
                 {{ form.processing ? tr('Guardando...', 'Saving...') : tr('Crear evento', 'Create Event') }}
             </button>
         </div>
