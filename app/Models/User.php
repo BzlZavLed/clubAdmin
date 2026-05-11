@@ -29,7 +29,8 @@ class User extends Authenticatable
         'church_name',
         'church_id',
         'club_id',
-        'status'
+        'status',
+        'must_change_password',
     ];
 
     /**
@@ -52,6 +53,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'must_change_password' => 'boolean',
         ];
     }
     public function clubs()

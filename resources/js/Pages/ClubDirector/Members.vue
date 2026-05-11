@@ -331,6 +331,9 @@ const lastCompletedDisplay = (member) => {
 const progressColumnLabel = computed(() =>
     selectedClub.value?.club_type === 'pathfinders' ? tr('Clase actual', 'Current class') : tr('Ultima completada', 'Last completed')
 )
+const fatherName = (member) => member.father_name || member.father_guardian_name || member.parent_name || '—'
+const parentPortalUrl = (member) => member.father_portal_url || null
+const parentPortalTitle = computed(() => tr('Abrir portal del padre en una nueva pestaña', 'Open parent portal in a new tab'))
 
 const paymentBadgeClass = (paid) => (
     paid
@@ -541,7 +544,23 @@ watch(filteredMembers, () => {
                                         <dd class="font-medium text-gray-900">{{ lastCompletedDisplay(member) }}</dd>
                                     </div>
                                     <div>
-                                        <dt class="text-gray-500">{{ tr('Padre', 'Parent') }}</dt>
+                                        <dt class="text-gray-500">{{ tr('Padre', 'Father') }}</dt>
+                                        <dd class="font-medium text-gray-900">
+                                            <a
+                                                v-if="parentPortalUrl(member)"
+                                                :href="parentPortalUrl(member)"
+                                                target="_blank"
+                                                rel="noopener"
+                                                class="text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-900"
+                                                :title="parentPortalTitle"
+                                            >
+                                                {{ fatherName(member) }}
+                                            </a>
+                                            <span v-else>{{ fatherName(member) }}</span>
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Celular del padre', 'Parent cell') }}</dt>
                                         <dd class="font-medium text-gray-900">{{ member.parent_cell || '—' }}</dd>
                                     </div>
                                     <div>
@@ -598,12 +617,13 @@ watch(filteredMembers, () => {
                     </div>
                 </div>
                 <div class="hidden overflow-x-auto rounded border sm:block">
-                <table class="min-w-[980px] w-full text-sm">
+                <table class="min-w-[1120px] w-full text-sm">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
                             <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
                             <th class="p-2 text-left">SDA</th>
+                            <th class="p-2 text-left">{{ tr('Padre', 'Father') }}</th>
                             <th class="p-2 text-left">{{ tr('Direccion', 'Address') }}</th>
                             <th class="p-2 text-left">{{ progressColumnLabel }}</th>
                             <th class="p-2 text-left">{{ tr('Inscripción', 'Enrollment') }}</th>
@@ -626,6 +646,19 @@ watch(filteredMembers, () => {
                                     <span :class="sdaBadgeClass(member.is_sda !== false)">
                                         {{ member.is_sda !== false ? 'SDA' : tr('Cuidado pastoral', 'Pastoral care') }}
                                     </span>
+                                </td>
+                                <td class="p-2">
+                                    <a
+                                        v-if="parentPortalUrl(member)"
+                                        :href="parentPortalUrl(member)"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="font-medium text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-900"
+                                        :title="parentPortalTitle"
+                                    >
+                                        {{ fatherName(member) }}
+                                    </a>
+                                    <span v-else>{{ fatherName(member) }}</span>
                                 </td>
                                 <td class="p-2">{{ member.home_address }}</td>
                                 <td class="p-2">{{ lastCompletedDisplay(member) }}</td>
@@ -674,7 +707,7 @@ watch(filteredMembers, () => {
 
                             <!-- Expandable Child Row -->
                             <tr v-if="expandedRows.has(member.id)" class="bg-gray-50 border-t">
-                                <td colspan="9" class="p-4">
+                                <td colspan="10" class="p-4">
                                     <div v-if="member.member_type === 'temp_pathfinder'" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
                                         <div><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
                                         <div><strong>{{ tr('Edad', 'Age') }}:</strong> {{ member.age ?? '—' }}</div>
@@ -744,7 +777,7 @@ watch(filteredMembers, () => {
                             </tr>
                         </template>
                         <tr v-if="paginatedMembers.length === 0">
-                            <td colspan="9" class="p-4 text-center text-gray-500">
+                            <td colspan="10" class="p-4 text-center text-gray-500">
                                 {{ tr('No se encontraron miembros con ese criterio.', 'No members matched that criteria.') }}
                             </td>
                         </tr>

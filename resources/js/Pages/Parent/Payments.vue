@@ -8,6 +8,7 @@ import { CreditCardIcon, ArrowUpTrayIcon, ClockIcon, CheckCircleIcon } from '@he
 
 const props = defineProps({
     auth_user: Object,
+    club_deposit_accounts: { type: Array, default: () => [] },
     expected_payments: { type: Array, default: () => [] },
     transfer_submissions: { type: Array, default: () => [] },
     receipts: { type: Array, default: () => [] },
@@ -165,6 +166,54 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
 
                 <div v-if="flashSuccess" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                     {{ flashSuccess }}
+                </div>
+            </section>
+
+            <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900">{{ tr('Cuentas de depósito por club', 'Deposit accounts by club') }}</h2>
+                    <p class="mt-1 text-sm text-gray-600">
+                        {{ tr('Usa esta información para depositar pagos del club, cuotas o eventos de tus hijos.', 'Use this information to deposit club payments, dues, or event payments for your children.') }}
+                    </p>
+                </div>
+
+                <div v-if="!club_deposit_accounts.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                    {{ tr('No hay clubes vinculados a esta cuenta de padre todavía.', 'There are no clubs linked to this parent account yet.') }}
+                </div>
+
+                <div v-else class="mt-4 grid gap-4 lg:grid-cols-2">
+                    <article
+                        v-for="clubAccount in club_deposit_accounts"
+                        :key="clubAccount.club_id"
+                        class="rounded-2xl border border-gray-200 p-4"
+                    >
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <div class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ clubAccount.club_type_label }}</div>
+                                <h3 class="text-base font-semibold text-gray-900">{{ clubAccount.club_name || '—' }}</h3>
+                                <div v-if="clubAccount.members?.length" class="mt-1 text-xs text-gray-500">
+                                    {{ tr('Hijos:', 'Children:') }} {{ clubAccount.members.join(', ') }}
+                                </div>
+                            </div>
+                            <span class="inline-flex w-fit rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                                {{ clubAccount.account_label }}
+                            </span>
+                        </div>
+
+                        <div v-if="clubAccount.deposit_account" class="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm text-blue-900">
+                            <div class="font-medium">{{ clubAccount.deposit_account.label || clubAccount.account_label || tr('Cuenta de depósito', 'Deposit account') }}</div>
+                            <div class="mt-2 grid gap-1">
+                                <div v-for="line in depositAccountLines(clubAccount.deposit_account)" :key="`${clubAccount.club_id}-${line}`">{{ line }}</div>
+                            </div>
+                            <div v-if="clubAccount.deposit_account.deposit_instructions" class="mt-2 text-xs text-blue-800">
+                                {{ clubAccount.deposit_account.deposit_instructions }}
+                            </div>
+                        </div>
+
+                        <div v-else class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+                            {{ tr('Este club todavía no ha publicado datos bancarios para pagos de padres.', 'This club has not published bank information for parent payments yet.') }}
+                        </div>
+                    </article>
                 </div>
             </section>
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Event;
+use App\Models\Account;
 use App\Models\BankInfo;
 use App\Models\Club;
 use App\Models\Member;
@@ -25,6 +26,7 @@ class ParentPaymentController extends Controller
 
         return Inertia::render('Parent/Payments', [
             'auth_user' => $user,
+            'club_deposit_accounts' => $this->clubDepositAccountsForParent($user)->values()->all(),
             'expected_payments' => $this->expectedPaymentsForParent($user)->values()->all(),
             'transfer_submissions' => $this->transferSubmissionsForParent($user)->values()->all(),
             'receipts' => $this->receiptsForParent($user)->values()->all(),
@@ -88,6 +90,81 @@ class ParentPaymentController extends Controller
         return redirect()
             ->route('parent.payments.index')
             ->with('success', 'Comprobante enviado para validación del club.');
+    }
+
+    protected function clubDepositAccountsForParent($user): Collection
+    {
+        $members = Member::query()
+            ->where('parent_id', $user->id)
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->where('status', '!=', 'deleted')
+            ->with(['club:id,club_name,club_type,evaluation_system'])
+            ->get(['id', 'type', 'id_data', 'club_id', 'parent_id', 'status']);
+
+        if ($members->isEmpty()) {
+            return collect();
+        }
+
+        $clubIds = $members->pluck('club_id')->filter()->unique()->values();
+        $accounts = Account::query()
+            ->whereIn('club_id', $clubIds)
+            ->where('pay_to', 'club_budget')
+            ->get(['club_id', 'pay_to', 'label'])
+            ->keyBy(fn (Account $account) => (int) $account->club_id);
+
+        $bankInfos = BankInfo::query()
+            ->where('bankable_type', Club::class)
+            ->whereIn('bankable_id', $clubIds)
+            ->where('is_active', true)
+            ->where('pay_to', 'club_budget')
+            ->get()
+            ->keyBy(fn (BankInfo $bankInfo) => (int) $bankInfo->bankable_id);
+
+        return $members
+            ->groupBy('club_id')
+            ->map(function (Collection $clubMembers, $clubId) use ($accounts, $bankInfos) {
+                $club = $clubMembers->first()?->club;
+                $account = $accounts->get((int) $clubId);
+                $bankInfo = $bankInfos->get((int) $clubId);
+                $bankPayload = BankInfoFormatter::payload($bankInfo);
+
+                if ($bankPayload) {
+                    $bankPayload['label'] = $bankPayload['label'] ?: ($account?->label ?: 'Cuenta bancaria del club');
+                }
+
+                return [
+                    'club_id' => (int) $clubId,
+                    'club_name' => $club?->club_name,
+                    'club_type' => $club?->club_type,
+                    'club_type_label' => $this->clubTypeLabel($club?->club_type),
+                    'evaluation_system' => $club?->evaluation_system,
+                    'account_label' => $bankPayload['label'] ?? $account?->label ?? 'Presupuesto del club',
+                    'deposit_account' => $bankPayload,
+                    'members' => $clubMembers
+                        ->map(fn (Member $member) => ClubHelper::memberDetail($member)['name'] ?? null)
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all(),
+                ];
+            })
+            ->sortBy([
+                ['club_type_label', 'asc'],
+                ['club_name', 'asc'],
+            ])
+            ->values();
+    }
+
+    protected function clubTypeLabel(?string $clubType): string
+    {
+        $normalized = strtolower((string) $clubType);
+
+        return match ($normalized) {
+            'adventurer', 'adventurers' => 'Aventureros',
+            'pathfinder', 'pathfinders' => 'Conquistadores',
+            'guide', 'guides' => 'Guias Mayores',
+            default => $clubType ? ucwords(str_replace(['_', '-'], ' ', $clubType)) : 'Club',
+        };
     }
 
     protected function expectedPaymentsForParent($user): Collection

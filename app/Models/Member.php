@@ -28,6 +28,11 @@ class Member extends Model
         return $this->belongsTo(Club::class);
     }
 
+    public function parentUser()
+    {
+        return $this->belongsTo(User::class, 'parent_id');
+    }
+
     public function class()
     {
         return $this->belongsTo(ClubClass::class, 'class_id');

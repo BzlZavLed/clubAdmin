@@ -16,11 +16,23 @@ const isMobile = ref(false)
 const page = usePage()
 const { t } = useLocale()
 const user = computed(() => page.props.auth?.user ?? null)
-const effectiveRole = computed(() => page.props.auth?.effective_role || user.value?.effective_role || user.value?.role_key || user.value?.profile_type || null)
+const isSuperadminParentPreview = computed(() => Boolean(page.props.is_superadmin_parent_preview))
+const effectiveRole = computed(() => {
+    if (isSuperadminParentPreview.value) return 'parent'
+
+    return page.props.auth?.effective_role || user.value?.effective_role || user.value?.role_key || user.value?.profile_type || null
+})
 const primaryDirectorClub = computed(() => page.props.auth?.primary_director_club ?? null)
 const activeClub = computed(() => page.props.auth?.active_club ?? null)
 const sidebarClubLabel = computed(() => primaryDirectorClub.value?.club_name || activeClub.value?.club_name || null)
 const sidebarClubCaption = computed(() => primaryDirectorClub.value?.club_name ? t('primary_director') : t('active_club'))
+const sessionDisplayName = computed(() => {
+    if (isSuperadminParentPreview.value && page.props.parent_setup?.parent_name) {
+        return page.props.parent_setup.parent_name
+    }
+
+    return user.value?.name
+})
 
 const logout = () => {
     if (!user.value) return
@@ -112,7 +124,7 @@ const mainOffsetClass = computed(() => {
 
         <div v-if="user && !navCollapsed" class="mx-3 mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('session') }}</p>
-            <p class="mt-1 text-sm font-semibold text-gray-900 truncate">{{ user.name }}</p>
+            <p class="mt-1 text-sm font-semibold text-gray-900 truncate">{{ sessionDisplayName }}</p>
             <p v-if="sidebarClubLabel" class="mt-2 text-xs text-gray-500">{{ sidebarClubCaption }}</p>
             <p v-if="sidebarClubLabel" class="text-sm text-gray-800 truncate">{{ sidebarClubLabel }}</p>
         </div>
@@ -121,7 +133,7 @@ const mainOffsetClass = computed(() => {
             <LocaleSwitcher />
         </div>
 
-        <SuperadminClubContextBar :compact="true" :collapsed="navCollapsed" />
+        <SuperadminClubContextBar v-if="!isSuperadminParentPreview" :compact="true" :collapsed="navCollapsed" />
 
         <!-- Logout -->
         <div class="px-4 py-4 border-t mt-auto">

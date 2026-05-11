@@ -68,6 +68,12 @@ class HandleInertiaRequests extends Middleware
             $request->session()->put('assigned_class_name', $assignedClassName);
         }
 
+        $isSuperadminParentPreview = $request->is('parent*')
+            && $request->session()->has('superadmin_parent_portal_actor_id')
+            && (
+                $request->session()->has('superadmin_parent_portal_user_id')
+                || $request->session()->has('superadmin_parent_portal_member_id')
+            );
         $isSuperadmin = $user?->profile_type === 'superadmin';
         $superadminContext = $isSuperadmin ? SuperadminContext::fromSession() : null;
         $availableClubs = $user ? ClubHelper::clubsForUser($user) : collect();
@@ -153,6 +159,7 @@ class HandleInertiaRequests extends Middleware
                         'role_key' => $user->role_key,
                         'scope_type' => $user->scope_type,
                         'scope_id' => $user->scope_id,
+                        'must_change_password' => (bool) $user->must_change_password,
                         'sub_role' => $user->sub_role,
                         'church_id' => $effectiveChurchId ?: $user->church_id,
                         'church_name' => $effectiveChurch?->church_name ?: $user->church_name,
@@ -289,6 +296,7 @@ class HandleInertiaRequests extends Middleware
                 'effective_role' => fn() => $effectiveRole,
                 'effective_scope_summary' => fn() => $effectiveScopeSummary,
             ],
+            'is_superadmin_parent_preview' => fn() => $isSuperadminParentPreview,
         ]);
     }
 }
