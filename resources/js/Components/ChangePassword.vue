@@ -6,7 +6,11 @@ const props = defineProps({
     userId: {
         type: [Number, String],
         required: true
-    }
+    },
+    force: {
+        type: Boolean,
+        default: false
+    },
 })
 
 const emit = defineEmits(['close', 'updated'])
@@ -47,6 +51,9 @@ watch(() => props.show, (val) => {
     <div v-if="show" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white p-6 rounded shadow-lg w-full max-w-sm">
             <h2 class="text-lg font-semibold mb-4">Update Password</h2>
+            <p v-if="force" class="mb-4 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                You are using a temporary password. Please create a new password to continue.
+            </p>
             <form @submit.prevent="updatePassword">
                 <div class="mb-4">
                     <label class="block mb-1 text-sm">New Password</label>
@@ -54,7 +61,7 @@ watch(() => props.show, (val) => {
                     <p v-if="errorMessage" class="text-red-600 text-xs mt-1">{{ errorMessage }}</p>
                 </div>
                 <div class="flex justify-end gap-2">
-                    <button type="button" @click="$emit('close')"
+                    <button v-if="!force" type="button" @click="$emit('close')"
                         class="bg-gray-300 text-gray-800 px-3 py-1 rounded hover:bg-gray-400 text-sm">
                         Cancel
                     </button>

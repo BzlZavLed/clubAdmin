@@ -786,6 +786,7 @@ class StaffAdventurerController extends Controller
 
         $user = User::findOrFail($id);
         $user->password = Hash::make($request->password);
+        $user->must_change_password = false;
         $user->save();
 
         return response()->json(['message' => 'Password updated successfully']);

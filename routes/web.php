@@ -49,6 +49,7 @@ use App\Http\Controllers\ClassInvestitureRequirementController;
 use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 use App\Http\Controllers\SuperAdminContextController;
 use App\Http\Controllers\SuperAdminEventTaskFormCatalogController;
+use App\Http\Controllers\SuperAdminParentPortalController;
 use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\UnionWorkplanController;
@@ -288,8 +289,10 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
 // 🟣 Parent-Only Routes (Authenticated)
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
-    Route::get('/parent/dashboard', fn() => Inertia::render('Parent/Dashboard', [
+    Route::get('/parent/dashboard', fn(\Illuminate\Http\Request $request) => Inertia::render('Parent/Dashboard', [
         'auth_user' => auth()->user(),
+        'parent_setup' => SuperAdminParentPortalController::dashboardSetupPayload($request),
+        'is_superadmin_parent_preview' => (bool) $request->session()->get('superadmin_parent_portal_actor_id'),
     ]))->name('parent.dashboard');
 
     Route::get('/parent/apply', fn() => Inertia::render('Parent/Apply', [
@@ -354,6 +357,12 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     })->name('superadmin.dashboard');
     Route::post('/super-admin/context', [SuperAdminContextController::class, 'set'])
         ->name('superadmin.context.set');
+    Route::get('/super-admin/parents/{parent}/portal', [SuperAdminParentPortalController::class, 'openExisting'])
+        ->name('superadmin.parents.portal');
+    Route::get('/super-admin/members/{member}/parent-portal', [SuperAdminParentPortalController::class, 'openMember'])
+        ->name('superadmin.members.parent-portal');
+    Route::post('/super-admin/members/{member}/parent-account', [SuperAdminParentPortalController::class, 'createAccount'])
+        ->name('superadmin.members.parent-account.store');
     Route::get('/super-admin/ai-logs', [\App\Http\Controllers\SuperAdminAiLogController::class, 'index'])
         ->name('superadmin.ai-logs.index');
     Route::get('/super-admin/event-task-forms', [SuperAdminEventTaskFormCatalogController::class, 'index'])

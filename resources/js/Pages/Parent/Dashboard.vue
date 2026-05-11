@@ -6,9 +6,18 @@ import { fetchParentWorkplan, fetchParentReceipts } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import UpdatePasswordModal from "@/Components/ChangePassword.vue";
 import { useLocale } from '@/Composables/useLocale'
+import axios from 'axios'
 
 const props = defineProps({
-    auth_user: Object
+    auth_user: Object,
+    parent_setup: {
+        type: Object,
+        default: null,
+    },
+    is_superadmin_parent_preview: {
+        type: Boolean,
+        default: false,
+    },
 })
 
 const { showToast } = useGeneral()
@@ -23,6 +32,11 @@ const selectedEvent = ref(null)
 const eventModalOpen = ref(false)
 const showPasswordModal = ref(false)
 const changePasswordUserId = ref(null)
+const parentSetup = ref(props.parent_setup)
+const creatingParentAccount = ref(false)
+const parentAccountResult = ref(null)
+const parentAccountError = ref('')
+const needsParentAccountSetup = computed(() => Boolean(parentSetup.value?.needs_account))
 const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value }) : '#')
 const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value }) : '#')
 const receipts = ref([])
@@ -96,9 +110,33 @@ const openPasswordModal = () => {
     showPasswordModal.value = true
 }
 
+const createParentAccount = async () => {
+    if (!parentSetup.value?.member_id) return
+
+    creatingParentAccount.value = true
+    parentAccountError.value = ''
+    parentAccountResult.value = null
+
+    try {
+        const { data } = await axios.post(route('superadmin.members.parent-account.store', { member: parentSetup.value.member_id }))
+        parentAccountResult.value = data
+        showToast(data.message || tr('Cuenta creada correctamente', 'Account created successfully'))
+    } catch (error) {
+        console.error(error)
+        parentAccountError.value = error?.response?.data?.message || tr('No se pudo crear la cuenta de padre', 'Could not create the parent account')
+    } finally {
+        creatingParentAccount.value = false
+    }
+}
+
 onMounted(() => {
+    if (needsParentAccountSetup.value) return
+
     load()
     loadReceipts()
+    if (props.auth_user?.must_change_password && !props.is_superadmin_parent_preview) {
+        openPasswordModal()
+    }
 })
 </script>
 
@@ -106,7 +144,80 @@ onMounted(() => {
     <PathfinderLayout>
         <template #title>{{ tr('Panel de padres', 'Parent Dashboard') }}</template>
 
-        <div class="space-y-4">
+        <div v-if="needsParentAccountSetup" class="space-y-4">
+            <div class="rounded border border-blue-200 bg-white p-5 shadow-sm">
+                <div class="space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                        {{ tr('Portal de padre sin cuenta vinculada', 'Parent portal without a linked account') }}
+                    </p>
+                    <h2 class="text-2xl font-semibold text-gray-900">
+                        {{ parentSetup?.parent_name || tr('Padre/Madre registrado', 'Registered parent') }}
+                    </h2>
+                    <p class="text-sm text-gray-600">
+                        {{ tr('Este miembro tiene datos de padre/madre, pero todavia no existe una cuenta de padre vinculada. Crea la cuenta para activar el portal y vincular automaticamente al miembro.', 'This member has parent data, but there is no linked parent account yet. Create the account to activate the portal and automatically link the child.') }}
+                    </p>
+                </div>
+
+                <div class="mt-5 grid gap-3 text-sm md:grid-cols-2">
+                    <div class="rounded bg-gray-50 p-3">
+                        <div class="text-xs font-medium text-gray-500">{{ tr('Miembro', 'Member') }}</div>
+                        <div class="font-semibold text-gray-900">{{ parentSetup?.member_name || '—' }}</div>
+                    </div>
+                    <div class="rounded bg-gray-50 p-3">
+                        <div class="text-xs font-medium text-gray-500">{{ tr('Club', 'Club') }}</div>
+                        <div class="font-semibold text-gray-900">{{ parentSetup?.club_name || '—' }}</div>
+                    </div>
+                    <div class="rounded bg-gray-50 p-3">
+                        <div class="text-xs font-medium text-gray-500">{{ tr('Correo del padre', 'Parent email') }}</div>
+                        <div class="font-semibold text-gray-900">{{ parentSetup?.parent_email || '—' }}</div>
+                    </div>
+                    <div class="rounded bg-gray-50 p-3">
+                        <div class="text-xs font-medium text-gray-500">{{ tr('Telefono del padre', 'Parent phone') }}</div>
+                        <div class="font-semibold text-gray-900">{{ parentSetup?.parent_phone || '—' }}</div>
+                    </div>
+                </div>
+
+                <div v-if="!parentSetup?.can_create" class="mt-5 rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    {{ tr('Para crear la cuenta falta el correo del padre/madre. Actualiza el registro del miembro y vuelve a abrir este portal.', 'The parent email is required before creating the account. Update the member record and open this portal again.') }}
+                </div>
+
+                <div v-if="parentAccountError" class="mt-5 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    {{ parentAccountError }}
+                </div>
+
+                <div v-if="parentAccountResult" class="mt-5 rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                    <div class="font-semibold">{{ tr('Cuenta vinculada correctamente', 'Account linked successfully') }}</div>
+                    <div class="mt-1">{{ tr('Correo:', 'Email:') }} {{ parentAccountResult.email }}</div>
+                    <div v-if="parentAccountResult.temporary_password" class="mt-2 rounded bg-white p-3">
+                        <div class="text-xs font-medium text-gray-500">{{ tr('Codigo temporal para iniciar sesion', 'Temporary login code') }}</div>
+                        <div class="mt-1 font-mono text-lg font-semibold text-gray-900">{{ parentAccountResult.temporary_password }}</div>
+                        <div class="mt-1 text-xs text-gray-600">
+                            {{ tr('El padre debe iniciar sesion con este codigo como contrasena. En el primer ingreso el sistema pedira crear una nueva contrasena.', 'The parent should log in with this code as the password. On first login the system will ask for a new password.') }}
+                        </div>
+                    </div>
+                    <a
+                        :href="parentAccountResult.portal_url"
+                        target="_blank"
+                        rel="noopener"
+                        class="mt-3 inline-flex rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+                    >
+                        {{ tr('Abrir portal del padre', 'Open parent portal') }}
+                    </a>
+                </div>
+
+                <button
+                    v-if="!parentAccountResult"
+                    type="button"
+                    class="mt-6 w-full rounded bg-blue-700 px-5 py-4 text-base font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+                    :disabled="creatingParentAccount || !parentSetup?.can_create"
+                    @click="createParentAccount"
+                >
+                    {{ creatingParentAccount ? tr('Creando cuenta...', 'Creating account...') : tr('Crear cuenta de padre', 'Create parent account') }}
+                </button>
+            </div>
+        </div>
+
+        <div v-else class="space-y-4">
             <div class="bg-white border rounded shadow-sm p-4">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
@@ -217,6 +328,7 @@ onMounted(() => {
             v-if="showPasswordModal && changePasswordUserId"
             :show="showPasswordModal"
             :user-id="changePasswordUserId"
+            :force="Boolean(props.auth_user?.must_change_password && !props.is_superadmin_parent_preview)"
             @close="showPasswordModal = false"
             @updated="showToast(tr('Contrasena actualizada correctamente', 'Password updated successfully'))"
         />

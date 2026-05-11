@@ -995,6 +995,25 @@ class MemberAdventurerController extends Controller
             ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
             ->where('status', 'active')
             ->get();
+        $parentUsers = User::query()
+            ->whereIn('id', $memberRows->pluck('parent_id')->filter()->unique()->values())
+            ->where('profile_type', 'parent')
+            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'deleted'))
+            ->get(['id', 'name', 'email'])
+            ->keyBy('id');
+        $parentPortalProfiles = ['superadmin'];
+        $canOpenParentPortal = in_array(Auth::user()?->profile_type, $parentPortalProfiles, true);
+        $parentPortalUrlFor = function ($memberRow, ?string $parentName = null) use ($canOpenParentPortal, $parentUsers) {
+            if (!$canOpenParentPortal || !$memberRow || blank($parentName)) {
+                return null;
+            }
+
+            if (!empty($memberRow->parent_id) && $parentUsers->has($memberRow->parent_id)) {
+                return route('superadmin.parents.portal', ['parent' => $memberRow->parent_id]);
+            }
+
+            return route('superadmin.members.parent-portal', ['member' => $memberRow->id]);
+        };
 
         $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->all();
         $pathfinderMemberIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id')->all();
@@ -1010,21 +1029,28 @@ class MemberAdventurerController extends Controller
             ->with(['classAssignments.clubClass'])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function ($m) use ($memberRows) {
+            ->map(function ($m) use ($memberRows, $parentUsers, $parentPortalUrlFor) {
                 $memberRow = $memberRows->first(fn ($row) => $row->type === 'adventurers' && (int) $row->id_data === (int) $m->id);
+                $parentUser = $memberRow?->parent_id ? $parentUsers->get($memberRow->parent_id) : null;
                 $memberId = optional($memberRow)->id;
                 $m->member_id = $memberId;
                 $m->current_class_id = optional($memberRow)->class_id;
                 $m->is_sda = (bool) (optional($memberRow)->is_sda ?? true);
                 $m->baptism_date = optional(optional($memberRow)->baptism_date)->toDateString()
                     ?? optional($memberRow)->baptism_date;
+                $m->father_name = $m->parent_name ?: $parentUser?->name;
+                $m->parent_user_id = $memberRow?->parent_id;
+                $m->parent_user_name = $parentUser?->name;
+                $m->parent_user_email = $parentUser?->email;
+                $m->father_portal_url = $parentPortalUrlFor($memberRow, $m->father_name);
                 return $m;
             });
 
         $pathfinderRows = MemberPathfinder::with('insuranceCard')->whereIn('id', $tempPathfinderIds)->get()
-            ->map(function ($row) use ($memberRows, $pathfinderAssignments) {
+            ->map(function ($row) use ($memberRows, $pathfinderAssignments, $parentUsers, $parentPortalUrlFor) {
                 $memberRow = $memberRows->first(fn ($memberRow) => in_array($memberRow->type, ['pathfinders', 'temp_pathfinder'], true)
                     && (int) $memberRow->id_data === (int) $row->id);
+                $parentUser = $memberRow?->parent_id ? $parentUsers->get($memberRow->parent_id) : null;
                 $memberId = optional($memberRow)->id;
                 $age = null;
                 if ($row->birthdate) {
@@ -1054,6 +1080,8 @@ class MemberAdventurerController extends Controller
                         ->all();
                 }
 
+                $fatherName = $row->father_guardian_name ?: ($row->mother_guardian_name ?: $parentUser?->name);
+
                 return [
                     'id' => $row->id,
                     'member_id' => $memberId,
@@ -1073,8 +1101,13 @@ class MemberAdventurerController extends Controller
                     'allergies' => collect([$row->medication_allergies, $row->food_allergies])->filter()->implode(' | ') ?: null,
                     'physical_restrictions' => $row->physical_restrictions,
                     'health_history' => $row->health_history,
+                    'father_name' => $fatherName,
                     'parent_name' => $row->father_guardian_name ?: $row->mother_guardian_name,
                     'parent_cell' => $row->father_guardian_phone ?: $row->mother_guardian_phone,
+                    'parent_user_id' => $memberRow?->parent_id,
+                    'parent_user_name' => $parentUser?->name,
+                    'parent_user_email' => $parentUser?->email,
+                    'father_portal_url' => $parentPortalUrlFor($memberRow, $fatherName),
                     'home_address' => $row->mailing_address,
                     'email_address' => $row->email_address,
                     'signature' => $row->parent_guardian_signature,
