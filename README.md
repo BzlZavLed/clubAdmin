@@ -88,30 +88,9 @@ php artisan serve
 
 ## Superadmin Bootstrap (Postman only)
 
-There is no UI for creating the initial superadmin. Use a direct POST request once to bootstrap the system.
 
-- Endpoint: `POST /setup/superadmin`
-- Constraints:
-  - Only works when no `superadmin` user exists yet.
-  - Returns `403` if a superadmin already exists.
-- Required fields:
-  - `name`
-  - `email`
-  - `password`
-  - `password_confirmation`
 
-Example (curl):
 
-```bash
-curl -X POST http://localhost:8000/setup/superadmin \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "System Admin",
-    "email": "admin@example.com",
-    "password": "your-password",
-    "password_confirmation": "your-password"
-  }'
-```
 
 ## Environment Variables
 
@@ -123,8 +102,8 @@ APP_URL=http://localhost
 DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
 DB_PORT=5432
-DB_DATABASE=club_portal
-DB_USERNAME=postgres
+DB_DATABASE=
+DB_USERNAME=
 DB_PASSWORD=
 ```
 
