@@ -175,7 +175,7 @@ const requestNewDate = () => {
         <template #title>{{ tr('Solicitudes de investidura', 'Investiture requests') }}</template>
 
         <div class="space-y-6">
-            <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div>
                         <p class="text-sm font-semibold uppercase tracking-wide text-gray-400">{{ tr('Asociación', 'Association') }}</p>
@@ -184,14 +184,14 @@ const requestNewDate = () => {
                             {{ tr('Recibe solicitudes de clubes y asigna formalmente el pastor distrital para que el distrito pueda revisarlas.', 'Receive club requests and formally assign the district pastor so the district can review them.') }}
                         </p>
                     </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    <div class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 md:w-auto">
                         <p class="font-semibold text-gray-900">{{ union?.name || tr('Unión', 'Union') }}</p>
                         <p>{{ tr('Sistema', 'System') }}: {{ union?.evaluation_system || 'honors' }}</p>
                     </div>
                 </div>
             </section>
 
-            <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+            <section class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-amber-950">{{ tr('Pendientes de asignación', 'Pending assignment') }}</h2>
@@ -222,7 +222,7 @@ const requestNewDate = () => {
                             </div>
                             <button
                                 type="button"
-                                class="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                                class="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
                                 :disabled="!request.district?.pastor_name && !request.district?.pastor_email"
                                 @click="openAssignModal(request)"
                             >
@@ -244,7 +244,7 @@ const requestNewDate = () => {
                 </div>
             </section>
 
-            <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Solicitudes en proceso', 'Requests in process') }}</h2>
@@ -292,7 +292,7 @@ const requestNewDate = () => {
                                 <button
                                     v-if="request.status === 'completed'"
                                     type="button"
-                                    class="rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800"
+                                    class="w-full rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 sm:w-auto"
                                     @click="openAuthorizeModal(request)"
                                 >
                                     {{ tr('Autorizar investidura', 'Authorize investiture') }}
@@ -300,7 +300,7 @@ const requestNewDate = () => {
                                 <button
                                     v-if="request.status === 'completed'"
                                     type="button"
-                                    class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+                                    class="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 sm:w-auto"
                                     @click="openDateChangeModal(request)"
                                 >
                                     {{ tr('Solicitar nueva fecha', 'Request new date') }}
@@ -315,7 +315,7 @@ const requestNewDate = () => {
                 </div>
             </section>
 
-            <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+            <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm sm:p-5">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-emerald-950">{{ tr('Historial de investiduras completadas', 'Completed investiture history') }}</h2>
@@ -325,7 +325,53 @@ const requestNewDate = () => {
                 </div>
 
                 <div class="mt-4 overflow-hidden rounded-xl border border-emerald-200 bg-white">
-                    <div class="overflow-x-auto">
+                    <div class="space-y-3 p-3 sm:hidden">
+                        <article
+                            v-for="request in historyRequests"
+                            :key="`mobile-history-${request.id}`"
+                            class="rounded-xl border border-emerald-100 bg-white p-4 text-sm"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="font-semibold text-gray-900">#{{ request.id }}</div>
+                                    <div class="mt-1 text-xs text-gray-500">{{ tr('Año', 'Year') }} {{ request.carpeta_year }} · {{ request.club_type }}</div>
+                                </div>
+                                <span class="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                                    {{ progressText(request) }}
+                                </span>
+                            </div>
+                            <dl class="mt-3 space-y-2 text-xs text-gray-600">
+                                <div>
+                                    <dt class="font-semibold text-gray-500">{{ tr('Club', 'Club') }}</dt>
+                                    <dd class="break-words text-gray-900">{{ request.club?.club_name || '—' }}</dd>
+                                    <dd class="break-words text-gray-500">{{ request.club?.church_name || '—' }}</dd>
+                                </div>
+                                <div>
+                                    <dt class="font-semibold text-gray-500">{{ tr('Distrito', 'District') }}</dt>
+                                    <dd class="break-words text-gray-900">{{ request.district?.name || '—' }}</dd>
+                                </div>
+                                <div>
+                                    <dt class="font-semibold text-gray-500">{{ tr('Fecha de investidura', 'Investiture date') }}</dt>
+                                    <dd class="text-gray-900">{{ request.approved_investiture_date || request.tentative_investiture_date || '—' }}</dd>
+                                </div>
+                                <div>
+                                    <dt class="font-semibold text-gray-500">{{ tr('Representante', 'Representative') }}</dt>
+                                    <dd class="break-words text-gray-900">{{ request.ceremony_representative_name || '—' }}</dd>
+                                    <dd v-if="request.ceremony_representative_email" class="break-words text-gray-500">{{ request.ceremony_representative_email }}</dd>
+                                </div>
+                                <div>
+                                    <dt class="font-semibold text-gray-500">{{ tr('Completada', 'Completed') }}</dt>
+                                    <dd class="font-medium text-emerald-700">{{ request.ceremony_completed_at || '—' }}</dd>
+                                    <dd v-if="request.authorized_at" class="text-gray-500">{{ tr('Autorizada', 'Authorized') }}: {{ request.authorized_at }}</dd>
+                                </div>
+                            </dl>
+                        </article>
+                        <p v-if="!historyRequests.length" class="rounded-xl border border-dashed border-emerald-200 px-4 py-6 text-sm text-emerald-900">
+                            {{ tr('Todavía no hay solicitudes completadas en el historial.', 'There are no completed requests in the history yet.') }}
+                        </p>
+                    </div>
+
+                    <div class="hidden overflow-x-auto sm:block">
                         <table class="min-w-full divide-y divide-emerald-100 text-sm">
                             <thead class="bg-emerald-50 text-left text-xs uppercase tracking-wide text-emerald-900">
                                 <tr>
@@ -373,7 +419,7 @@ const requestNewDate = () => {
                         <p class="text-sm text-emerald-900">
                             {{ tr('Mostrando', 'Showing') }} {{ historyPagination.from || 0 }}-{{ historyPagination.to || 0 }} {{ tr('de', 'of') }} {{ historyPagination.total || 0 }}
                         </p>
-                        <div class="flex items-center gap-2">
+                        <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                             <button
                                 type="button"
                                 class="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
@@ -382,7 +428,7 @@ const requestNewDate = () => {
                             >
                                 {{ tr('Anterior', 'Previous') }}
                             </button>
-                            <span class="text-sm font-medium text-emerald-900">
+                            <span class="col-span-2 text-center text-sm font-medium text-emerald-900 sm:col-span-1">
                                 {{ tr('Página', 'Page') }} {{ historyPagination.current_page }} {{ tr('de', 'of') }} {{ historyPagination.last_page }}
                             </span>
                             <button

@@ -286,7 +286,57 @@ const requirementsReportTitle = computed(() => {
                                 {{ tr('Sin datos.', 'No data.') }}
                             </div>
 
-                            <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+                            <template v-else>
+                            <div class="space-y-3 md:hidden">
+                                <article
+                                    v-for="row in filteredRows"
+                                    :key="row.id"
+                                    class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                                    :class="rowIsDrillable ? 'cursor-pointer active:bg-blue-50' : ''"
+                                    @click="rowIsDrillable && drillInto(row)"
+                                >
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="break-words text-sm font-semibold text-gray-900">{{ row.name ?? row.club_name }}</p>
+                                            <p v-if="row.church_name" class="mt-1 break-words text-xs text-gray-500">{{ row.church_name }}</p>
+                                            <span v-if="level === 'district'" class="mt-2 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                                                {{ clubTypeLabel(row.club_type) }}
+                                            </span>
+                                        </div>
+                                        <span v-if="rowIsDrillable" class="shrink-0 text-xs font-medium text-blue-600">
+                                            {{ tr('Detalle', 'Details') }} →
+                                        </span>
+                                    </div>
+
+                                    <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                        <div v-if="level !== 'district'" class="rounded-lg bg-gray-50 p-3">
+                                            <dt class="text-xs text-gray-500">{{ tr('Clubes', 'Clubs') }}</dt>
+                                            <dd class="mt-1 font-semibold text-gray-900">{{ row.total_clubs ?? '—' }}</dd>
+                                        </div>
+                                        <div class="rounded-lg bg-gray-50 p-3">
+                                            <dt class="text-xs text-gray-500">{{ tr('Miembros', 'Members') }}</dt>
+                                            <dd class="mt-1 font-semibold text-gray-900">{{ row.member_count ?? row.total_members ?? 0 }}</dd>
+                                        </div>
+                                    </dl>
+
+                                    <div class="mt-4">
+                                        <div class="flex items-center justify-between gap-3 text-xs">
+                                            <span class="font-medium text-gray-500">{{ tr('Progreso', 'Progress') }}</span>
+                                            <span :class="['font-semibold', progressTextColor(row.progress_pct)]">
+                                                {{ row.progress_pct !== null && row.progress_pct !== undefined ? row.progress_pct + '%' : '—' }}
+                                            </span>
+                                        </div>
+                                        <div class="mt-2 h-2.5 overflow-hidden rounded-full bg-gray-100">
+                                            <div
+                                                class="h-2.5 rounded-full transition-all duration-500"
+                                                :style="{ width: (row.progress_pct != null ? row.progress_pct : 0) + '%', backgroundColor: progressBarColor(row.progress_pct) }"
+                                            />
+                                        </div>
+                                    </div>
+                                </article>
+                            </div>
+
+                            <div class="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white md:block">
                                 <table class="w-full min-w-[760px] divide-y divide-gray-100">
                                     <thead class="bg-gray-50">
                                         <tr>
@@ -344,6 +394,7 @@ const requirementsReportTitle = computed(() => {
                                     </tbody>
                                 </table>
                             </div>
+                            </template>
                         </div>
 
                         <!-- ── Members (club level) ── -->
@@ -370,7 +421,42 @@ const requirementsReportTitle = computed(() => {
                                 {{ tr('Sin miembros con clase asignada.', 'No members with assigned class.') }}
                             </div>
 
-                            <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+                            <template v-else>
+                            <div class="space-y-3 md:hidden">
+                                <article
+                                    v-for="member in filteredMembers"
+                                    :key="member.id"
+                                    class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                                >
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="break-words text-sm font-semibold text-gray-900">{{ member.name }}</p>
+                                            <p class="mt-1 break-words text-xs text-gray-500">{{ member.class_name }}</p>
+                                        </div>
+                                        <span :class="['shrink-0 text-sm font-semibold', progressTextColor(member.progress_pct)]">
+                                            {{ member.progress_pct !== null && member.progress_pct !== undefined ? member.progress_pct + '%' : '—' }}
+                                        </span>
+                                    </div>
+                                    <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                        <div class="rounded-lg bg-gray-50 p-3">
+                                            <dt class="text-xs text-gray-500">{{ tr('Completados', 'Completed') }}</dt>
+                                            <dd class="mt-1 font-semibold text-gray-900">{{ member.fulfilled }}</dd>
+                                        </div>
+                                        <div class="rounded-lg bg-gray-50 p-3">
+                                            <dt class="text-xs text-gray-500">Total</dt>
+                                            <dd class="mt-1 font-semibold text-gray-900">{{ member.total }}</dd>
+                                        </div>
+                                    </dl>
+                                    <div class="mt-4 h-2 overflow-hidden rounded-full bg-gray-100">
+                                        <div
+                                            class="h-2 rounded-full transition-all duration-500"
+                                            :style="{ width: (member.progress_pct != null ? member.progress_pct : 0) + '%', backgroundColor: progressBarColor(member.progress_pct) }"
+                                        />
+                                    </div>
+                                </article>
+                            </div>
+
+                            <div class="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white md:block">
                                 <table class="w-full min-w-[720px] divide-y divide-gray-100">
                                     <thead class="bg-gray-50">
                                         <tr>
@@ -404,6 +490,7 @@ const requirementsReportTitle = computed(() => {
                                     </tbody>
                                 </table>
                             </div>
+                            </template>
                         </div>
                     </div>
                 </section>
@@ -447,7 +534,38 @@ const requirementsReportTitle = computed(() => {
                                     {{ isSectionOpen(`requirements-${group.club_type}-${group.class_name}`) ? '−' : '+' }}
                                 </span>
                             </button>
-                            <div v-show="isSectionOpen(`requirements-${group.club_type}-${group.class_name}`)" class="overflow-x-auto">
+                            <div v-show="isSectionOpen(`requirements-${group.club_type}-${group.class_name}`)" class="space-y-3 p-3 md:hidden">
+                                <article
+                                    v-for="req in group.items"
+                                    :key="req.id"
+                                    class="rounded-xl border border-gray-200 bg-white p-3"
+                                >
+                                    <div class="flex items-start justify-between gap-3">
+                                        <p class="min-w-0 break-words text-sm font-semibold text-gray-900">{{ req.title }}</p>
+                                        <span :class="['shrink-0 text-xs font-semibold', progressTextColor(req.pct)]">
+                                            {{ req.pct != null ? req.pct + '%' : '—' }}
+                                        </span>
+                                    </div>
+                                    <dl class="mt-3 grid grid-cols-2 gap-3 text-sm">
+                                        <div class="rounded-lg bg-gray-50 p-3">
+                                            <dt class="text-xs text-gray-500">{{ tr('Completaron', 'Completed') }}</dt>
+                                            <dd class="mt-1 font-semibold text-gray-900">{{ req.completed }}</dd>
+                                        </div>
+                                        <div class="rounded-lg bg-gray-50 p-3">
+                                            <dt class="text-xs text-gray-500">Total</dt>
+                                            <dd class="mt-1 font-semibold text-gray-900">{{ req.total_members }}</dd>
+                                        </div>
+                                    </dl>
+                                    <div class="mt-3 h-2 overflow-hidden rounded-full bg-gray-100">
+                                        <div
+                                            class="h-2 rounded-full transition-all duration-500"
+                                            :style="{ width: (req.pct != null ? req.pct : 0) + '%', backgroundColor: progressBarColor(req.pct) }"
+                                        />
+                                    </div>
+                                </article>
+                            </div>
+
+                            <div v-show="isSectionOpen(`requirements-${group.club_type}-${group.class_name}`)" class="hidden overflow-x-auto md:block">
                                 <table class="w-full min-w-[640px] divide-y divide-gray-100">
                                     <thead class="bg-gray-50/50">
                                         <tr>

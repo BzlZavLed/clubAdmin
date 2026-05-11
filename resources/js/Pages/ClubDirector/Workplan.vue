@@ -1457,9 +1457,9 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         </div>
                     </div>
 
-                <div class="flex items-center justify-between mb-3">
+                <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h3 class="font-semibold text-gray-800">{{ tr('Lista de eventos', 'Event list') }}</h3>
-                    <button v-if="!isReadOnly" class="px-3 py-2 text-sm rounded-md bg-amber-100 text-amber-800 border border-amber-200" @click="openEventModal()">{{ tr('Agregar evento especial', 'Add special event') }}</button>
+                    <button v-if="!isReadOnly" class="rounded-md border border-amber-200 bg-amber-100 px-3 py-2 text-sm text-amber-800" @click="openEventModal()">{{ tr('Agregar evento especial', 'Add special event') }}</button>
                 </div>
                 <div v-if="isMobile" class="space-y-3">
                     <div v-for="ev in pagedEvents" :key="ev.id" class="border rounded-lg p-3 bg-white shadow-sm">
@@ -1549,8 +1549,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             </div>
 
             <!-- Diff modal -->
-            <div v-if="showDiffModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg max-w-xl w-full p-5">
+            <div v-if="showDiffModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
                     <h4 class="text-lg font-semibold mb-3">{{ tr('Previsualizar cambios', 'Preview changes') }}</h4>
                     <div class="space-y-3 max-h-[60vh] overflow-y-auto">
                         <div>
@@ -1576,11 +1576,11 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             </div>
 
             <!-- Event modal -->
-            <div v-if="eventModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5">
+            <div v-if="eventModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
                     <h4 class="text-lg font-semibold mb-3">{{ editingEvent ? tr('Editar evento', 'Edit event') : tr('Agregar evento', 'Add event') }}</h4>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div class="col-span-2">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div class="sm:col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Titulo', 'Title') }}</label>
                             <input type="text" v-model="eventForm.title" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
@@ -1596,7 +1596,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 <option value="special">{{ tr('Especial', 'Special') }}</option>
                             </select>
                         </div>
-                        <div v-if="eventForm.meeting_type === 'special'" class="col-span-2">
+                        <div v-if="eventForm.meeting_type === 'special'" class="sm:col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Fecha fin', 'End date') }}</label>
                             <input type="date" v-model="eventForm.end_date" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
@@ -1608,7 +1608,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Hora de fin', 'End time') }}</label>
                             <input type="time" v-model="eventForm.end_time" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
-                        <div class="col-span-2">
+                        <div class="sm:col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Ubicacion', 'Location') }}</label>
                             <div class="relative">
                                 <input type="text" v-model="eventForm.location"
@@ -1652,12 +1652,12 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 </option>
                             </select>
                         </div>
-                        <div class="col-span-2">
+                        <div class="sm:col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Descripcion', 'Description') }}</label>
                             <textarea v-model="eventForm.description" rows="3" class="w-full border rounded px-3 py-2 text-sm"></textarea>
                         </div>
                     </div>
-                    <div class="mt-4 flex justify-end gap-2">
+                    <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button class="px-4 py-2 border rounded" @click="eventModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
                         <button class="px-4 py-2 bg-red-600 text-white rounded" @click="saveEvent">{{ editingEvent ? tr('Guardar cambios', 'Save changes') : tr('Agregar evento', 'Add event') }}</button>
                     </div>
@@ -1665,8 +1665,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             </div>
 
             <!-- Export modal -->
-            <div v-if="exportModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-5 space-y-4">
+            <div v-if="exportModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-3xl space-y-4 overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
                     <div class="flex items-start justify-between gap-2">
                         <h4 class="text-lg font-semibold">{{ tr('Exportar a mychurchadmin.net', 'Export to mychurchadmin.net') }}</h4>
                         <button class="text-gray-500" @click="exportModalOpen = false">✕</button>
@@ -1674,7 +1674,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                     <div class="text-sm text-gray-700">
                         {{ tr('Esto enviara los eventos del plan de trabajo al sistema de calendario externo.', 'This will send workplan events to the external calendar system.') }}
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Ano del calendario', 'Calendar year') }}</label>
                             <input type="number" min="2000" v-model.number="exportForm.calendar_year" class="w-full border rounded px-3 py-2 text-sm">
@@ -1685,7 +1685,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 {{ tr('Publicar en el feed', 'Publish to feed') }}
                             </label>
                         </div>
-                        <div class="col-span-2">
+                        <div class="sm:col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Departamento', 'Department') }}</label>
                             <select v-model="exportForm.department_id" class="w-full border rounded px-3 py-2 text-sm">
                                 <option value="">{{ tr('Seleccionar', 'Select') }}</option>
@@ -1694,16 +1694,16 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 </option>
                             </select>
                         </div>
-                        <div class="col-span-2">
+                        <div class="sm:col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Nombre del plan', 'Plan name') }}</label>
                             <input type="text" v-model="exportForm.plan_name" class="w-full border rounded px-3 py-2 text-sm">
                         </div>
-                        <div class="col-span-2">
+                        <div class="sm:col-span-2">
                             <label class="block text-sm text-gray-600 mb-1">{{ tr('Slug de iglesia (opcional)', 'Church slug (optional)') }}</label>
                             <input type="text" v-model="exportForm.church_slug" class="w-full border rounded px-3 py-2 text-sm" placeholder="iglesia-x">
                         </div>
                     </div>
-                    <div class="flex justify-end gap-2">
+                    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button class="px-4 py-2 border rounded" @click="exportModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
                         <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" @click="submitExport">
                             {{ exportLoading ? tr('Exportando...', 'Exporting...') : tr('Exportar', 'Export') }}
@@ -1792,8 +1792,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             </div>
 
             <!-- Objective check modal (recurrent) -->
-            <div v-if="objectiveModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg w-full max-w-3xl p-5 space-y-4">
+            <div v-if="objectiveModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-3xl space-y-4 overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
                     <div class="flex items-start justify-between gap-2">
                         <h4 class="text-lg font-semibold">{{ tr('Asignar objetivos antes de exportar', 'Assign objectives before exporting') }}</h4>
                         <button class="text-gray-500" @click="objectiveModalOpen = false">✕</button>
@@ -1838,7 +1838,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                                 {{ tr('Eventos especiales', 'Special events') }} ({{ missingSpecialEvents.length }})
                             </button>
                         </div>
-                        <div class="max-h-[320px] overflow-y-auto">
+                        <div class="max-h-[320px] overflow-x-auto overflow-y-auto">
                             <table class="min-w-full text-sm">
                                 <thead class="text-left text-gray-500">
                                     <tr>
@@ -1880,7 +1880,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             </table>
                         </div>
                     </div>
-                    <div class="flex justify-end gap-2">
+                    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button class="px-4 py-2 border rounded" @click="objectiveModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
                         <button class="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-60" :disabled="objectiveSaving" @click="saveObjectivesAndExport">
                             {{ objectiveSaving ? tr('Guardando...', 'Saving...') : tr('Guardar y exportar', 'Save and export') }}
@@ -1889,8 +1889,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                 </div>
             </div>
             <!-- Plan detail modal -->
-            <div v-if="planDetailOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
+            <div v-if="planDetailOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
                     <div class="flex items-center justify-between">
                         <h4 class="text-lg font-semibold">{{ tr('Detalles del plan', 'Plan details') }}</h4>
                         <button class="text-gray-500" @click="planDetailOpen = false">✕</button>
@@ -1927,8 +1927,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             </div>
 
             <!-- ICS Help Modal -->
-            <div v-if="showIcsHelp" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
+            <div v-if="showIcsHelp" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
                     <h4 class="text-lg font-semibold">{{ tr('Agregar ICS a tu calendario', 'Add ICS to your calendar') }}</h4>
                     <div class="space-y-2 text-sm text-gray-700">
                         <p class="font-medium text-gray-800">iOS (iPhone/iPad)</p>
@@ -1951,8 +1951,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             </div>
 
             <!-- Request update modal -->
-            <div v-if="requestModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-5 space-y-4">
+            <div v-if="requestModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
                     <div class="flex items-start justify-between gap-2">
                         <h4 class="text-lg font-semibold">{{ tr('Solicitar actualizacion', 'Request update') }}</h4>
                         <button class="text-gray-500" @click="requestModalOpen = false">✕</button>
@@ -1964,7 +1964,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                         <label class="block text-sm text-gray-700 mb-1">{{ tr('Motivo / cambios solicitados', 'Reason / requested changes') }}</label>
                         <textarea v-model="requestNote" rows="4" class="w-full border rounded px-3 py-2 text-sm"></textarea>
                     </div>
-                    <div class="flex justify-end gap-2">
+                    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button class="px-4 py-2 border rounded" @click="requestModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
                         <button class="px-4 py-2 bg-amber-600 text-white rounded" @click="submitRequestNote">{{ tr('Enviar solicitud', 'Send request') }}</button>
                     </div>
@@ -1972,8 +1972,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
             </div>
 
             <!-- Create workplan modal -->
-            <div v-if="workplanModalOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div class="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 space-y-4">
+            <div v-if="workplanModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div class="max-h-[92vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-lg bg-white p-5 shadow-lg sm:p-6">
                     <h4 class="text-lg font-semibold">{{ tr('Crear plan de trabajo', 'Create workplan') }}</h4>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -2043,7 +2043,7 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
                             </div>
                         </div>
                     </div>
-                    <div class="flex justify-end gap-2">
+                    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button class="px-4 py-2 border rounded" @click="workplanModalOpen = false">{{ tr('Cancelar', 'Cancel') }}</button>
                         <button class="px-4 py-2 bg-blue-600 text-white rounded" @click="createWorkplanNow">{{ tr('Guardar', 'Save') }}</button>
                     </div>
@@ -2052,8 +2052,8 @@ watch(() => planForm.value.class_id, (newClassId, oldClassId) => {
 
         <!-- Inherited event info modal -->
         <Teleport to="body">
-            <div v-if="inheritedEventModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" @click.self="inheritedEventModal = null">
-                <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-6 space-y-4">
+            <div v-if="inheritedEventModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="inheritedEventModal = null">
+                <div class="max-h-[92vh] w-full max-w-md space-y-4 overflow-y-auto rounded-lg bg-white p-5 shadow-lg sm:p-6">
                     <div class="flex items-start justify-between gap-2">
                         <div>
                             <h4 class="text-base font-semibold text-gray-900">{{ inheritedEventModal.title }}</h4>

@@ -305,9 +305,9 @@ const toggleClubType = (val) => {
         <template #title>{{ tr('Plan de trabajo distrital', 'District Workplan') }}</template>
 
         <div class="space-y-6">
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div class="flex flex-wrap items-center justify-between gap-4">
-                    <div>
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="min-w-0">
                         <h2 class="text-lg font-semibold text-gray-900">{{ district.name }}</h2>
                         <p class="mt-0.5 text-sm text-gray-500">
                             {{ tr('Calendario publicado por', 'Calendar published by') }} {{ association?.name || tr('la asociación', 'the association') }}
@@ -324,8 +324,8 @@ const toggleClubType = (val) => {
                         </p>
                     </div>
 
-                    <div class="flex flex-wrap items-center gap-3">
-                        <div class="flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-1 py-1">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                        <div class="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-gray-300 bg-white px-1 py-1">
                             <button
                                 v-for="y in yearOptions"
                                 :key="y"
@@ -343,7 +343,7 @@ const toggleClubType = (val) => {
                             v-if="!isDistrictPublished"
                             type="button"
                             :disabled="publishing || syncing || !districtEvents.length"
-                            class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+                            class="w-full rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50 sm:w-auto"
                             @click="publishCalendar"
                         >
                             {{ tr('Publicar distritales', 'Publish district events') }}
@@ -352,7 +352,7 @@ const toggleClubType = (val) => {
                             v-else-if="needsRepublish"
                             type="button"
                             :disabled="publishing || syncing"
-                            class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                            class="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50 sm:w-auto"
                             @click="publishCalendar"
                         >
                             {{ tr('Republicar cambios', 'Republish changes') }}
@@ -361,7 +361,7 @@ const toggleClubType = (val) => {
                             v-if="isDistrictPublished"
                             type="button"
                             :disabled="publishing || syncing"
-                            class="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                            class="w-full rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50 sm:w-auto"
                             @click="syncMissingCalendar"
                         >
                             {{ tr('Sincronizar faltantes', 'Sync missing') }}
@@ -370,14 +370,14 @@ const toggleClubType = (val) => {
                             v-if="isDistrictPublished"
                             type="button"
                             :disabled="publishing || syncing"
-                            class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            class="w-full rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 sm:w-auto"
                             @click="unpublishCalendar"
                         >
                             {{ tr('Despublicar distritales', 'Unpublish district events') }}
                         </button>
                         <button
                             type="button"
-                            class="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
+                            class="w-full rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 sm:w-auto"
                             @click="openCreate"
                         >
                             + {{ tr('Evento distrital', 'District event') }}
@@ -398,14 +398,14 @@ const toggleClubType = (val) => {
             <div v-if="events.length" class="space-y-4">
                 <template v-for="[monthNum, monthEvents] in activeMonths" :key="monthNum">
                     <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                        <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 px-6 py-3">
+                        <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 sm:px-6">
                             <span class="text-sm font-semibold text-gray-700">{{ months[monthNum - 1] }}</span>
                             <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">{{ monthEvents.length }}</span>
                         </div>
 
                         <ul class="divide-y divide-gray-100">
-                            <li v-for="ev in monthEvents" :key="`${ev.source_level}-${ev.id}`" class="group flex items-start gap-4 px-6 py-4 hover:bg-gray-50">
-                                <div class="w-14 shrink-0 text-center">
+                            <li v-for="ev in monthEvents" :key="`${ev.source_level}-${ev.id}`" class="group flex flex-col gap-3 px-4 py-4 hover:bg-gray-50 sm:flex-row sm:items-start sm:gap-4 sm:px-6">
+                                <div class="flex w-full shrink-0 items-center gap-3 text-left sm:w-14 sm:block sm:text-center">
                                     <p class="text-lg font-bold leading-none text-gray-800">{{ new Date(dateOnly(ev.date) + 'T12:00:00').getDate() }}</p>
                                     <p class="text-[10px] uppercase tracking-wide text-gray-400">{{ months[new Date(dateOnly(ev.date) + 'T12:00:00').getMonth()].slice(0, 3) }}</p>
                                     <p v-if="ev.end_date && dateOnly(ev.end_date) !== dateOnly(ev.date)" class="mt-0.5 text-[10px] text-gray-400">
@@ -427,7 +427,7 @@ const toggleClubType = (val) => {
                                     </div>
 
                                     <button type="button" class="block max-w-full text-left" @click="openDetails(ev)">
-                                        <p class="truncate text-sm font-semibold text-gray-900 hover:text-red-700">
+                                        <p class="break-words text-sm font-semibold text-gray-900 hover:text-red-700 sm:truncate">
                                             <span :class="sourcePrefixClass(ev)">{{ sourceLabel(ev) }} / </span>{{ ev.title }}
                                         </p>
                                     </button>
@@ -439,7 +439,7 @@ const toggleClubType = (val) => {
                                     <p v-if="ev.description" class="mt-1 line-clamp-2 text-xs text-gray-500">{{ ev.description }}</p>
                                 </div>
 
-                                <div class="flex shrink-0 items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                                <div class="flex shrink-0 flex-wrap items-center gap-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                                     <button type="button" class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100" @click="openDetails(ev)">
                                         {{ tr('Ver', 'View') }}
                                     </button>
@@ -461,21 +461,21 @@ const toggleClubType = (val) => {
             <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/30" @click="closeModal" />
                 <div class="relative flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-gray-200 bg-white shadow-xl">
-                    <div class="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
+                    <div class="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
                         <h3 class="text-sm font-semibold text-gray-900">
                             {{ editingEvent ? tr('Editar evento distrital', 'Edit district event') : tr('Nuevo evento distrital', 'New district event') }}
                         </h3>
                         <button type="button" class="text-gray-400 hover:text-gray-600" @click="closeModal">x</button>
                     </div>
 
-                    <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+                    <div class="flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
                         <div>
                             <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Título', 'Title') }} <span class="text-red-500">*</span></label>
                             <input v-model="form.title" type="text" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
                             <p v-if="form.errors.title" class="mt-1 text-xs text-red-500">{{ form.errors.title }}</p>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-3">
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
                                 <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Fecha', 'Date') }} <span class="text-red-500">*</span></label>
                                 <input v-model="form.date" type="date" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
@@ -487,7 +487,7 @@ const toggleClubType = (val) => {
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-3">
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
                                 <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Hora inicio', 'Start time') }}</label>
                                 <input v-model="form.start_time" type="time" class="w-full rounded-lg border-gray-300 text-sm shadow-sm" />
@@ -498,7 +498,7 @@ const toggleClubType = (val) => {
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-3">
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
                                 <label class="mb-1 block text-xs font-medium text-gray-700">{{ tr('Tipo', 'Type') }}</label>
                                 <select v-model="form.event_type" class="w-full rounded-lg border-gray-300 text-sm shadow-sm">
@@ -546,7 +546,7 @@ const toggleClubType = (val) => {
                         </div>
                     </div>
 
-                    <div class="flex shrink-0 justify-end gap-3 border-t border-gray-100 px-6 py-4">
+                    <div class="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-100 px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
                         <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" @click="closeModal">
                             {{ tr('Cancelar', 'Cancel') }}
                         </button>
@@ -559,15 +559,15 @@ const toggleClubType = (val) => {
         </Teleport>
 
         <Modal :show="detailModalOpen" max-width="lg" @close="closeDetails">
-            <div v-if="detailEvent" class="p-6">
+            <div v-if="detailEvent" class="p-4 sm:p-6">
                 <div class="flex items-start justify-between gap-4">
-                    <div>
+                    <div class="min-w-0">
                         <div class="mb-2 flex flex-wrap gap-2">
                             <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', typeStyle(detailEvent.event_type)]">{{ typeLabel(detailEvent.event_type) }}</span>
                             <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', sourceBadgeClass(detailEvent)]">{{ sourceLabel(detailEvent) }}</span>
                             <span v-if="detailEvent.is_mandatory" class="rounded-full border border-red-600 px-2 py-0.5 text-xs font-medium text-red-600">{{ tr('Obligatorio', 'Required') }}</span>
                         </div>
-                        <h3 class="text-lg font-semibold text-gray-900">
+                        <h3 class="break-words text-lg font-semibold text-gray-900">
                             <span :class="sourcePrefixClass(detailEvent)">{{ sourceLabel(detailEvent) }} / </span>{{ detailEvent.title }}
                         </h3>
                     </div>
@@ -613,7 +613,7 @@ const toggleClubType = (val) => {
                     </p>
                 </div>
 
-                <div class="mt-6 flex justify-end gap-3">
+                <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                     <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" @click="closeDetails">
                         {{ tr('Cerrar', 'Close') }}
                     </button>

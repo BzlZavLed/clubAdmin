@@ -187,7 +187,63 @@ const componentAmount = (row, componentId) => {
                     </div>
                 </div>
 
-                <div class="overflow-x-auto">
+                <div class="space-y-3 p-4 md:hidden">
+                    <article
+                        v-for="club in visibleFinancialClubs"
+                        :key="`finance-club-card-${club.club_id}`"
+                        class="rounded-lg border bg-white p-4 shadow-sm"
+                    >
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="break-words text-sm font-semibold text-gray-900">{{ club.club_name }}</div>
+                                <div class="mt-1 text-xs text-gray-500">{{ club.district_name || '—' }}</div>
+                            </div>
+                            <span class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold" :class="statusClass(club.status)">
+                                {{ club.status_label }}
+                            </span>
+                        </div>
+                        <div class="mt-1 text-xs text-gray-500">{{ club.signup_status }}</div>
+                        <dl class="mt-4 grid grid-cols-3 gap-2 text-sm">
+                            <div class="rounded bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Esperado', 'Expected') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ money(club.expected_amount) }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Pagado', 'Paid') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ money(club.paid_amount) }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Pendiente', 'Pending') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ money(club.pending_settlement_amount) }}</dd>
+                            </div>
+                        </dl>
+                        <div v-if="financeComponents.length" class="mt-4 space-y-2 border-t border-gray-100 pt-3">
+                            <div
+                                v-for="component in financeComponents"
+                                :key="`finance-club-card-${club.club_id}-${component.id}`"
+                                class="flex items-start justify-between gap-3 text-sm"
+                            >
+                                <div class="min-w-0">
+                                    <div class="break-words text-gray-700">{{ component.label }}</div>
+                                    <div class="text-[11px] font-semibold" :class="component.is_required ? 'text-rose-600' : 'text-indigo-600'">
+                                        {{ component.is_required ? tr('Obligatorio', 'Required') : tr('Opcional', 'Optional') }}
+                                    </div>
+                                </div>
+                                <div class="shrink-0 text-right">
+                                    <div class="font-semibold text-gray-900">{{ money(componentAmount(club, component.id).paid_amount) }}</div>
+                                    <div v-if="Number(componentAmount(club, component.id).expected_amount || 0) > 0" class="text-xs text-gray-500">
+                                        {{ tr('de', 'of') }} {{ money(componentAmount(club, component.id).expected_amount) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                    <div v-if="!visibleFinancialClubs.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                        {{ includeTargetedClubs ? tr('No hay clubes visibles para este reporte.', 'No visible clubs for this report.') : tr('No hay clubes con pagos registrados.', 'No clubs with recorded payments.') }}
+                    </div>
+                </div>
+
+                <div class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
@@ -239,7 +295,52 @@ const componentAmount = (row, componentId) => {
                     <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-gray-900">
                         {{ tr('Desglose por miembros y staff', 'Member and staff breakdown') }}
                     </summary>
-                    <div class="overflow-x-auto border-t">
+                    <div class="space-y-3 border-t p-4 md:hidden">
+                        <article
+                            v-for="participant in visibleFinancialParticipants"
+                            :key="`finance-participant-card-${participant.participant_key}`"
+                            class="rounded-lg border bg-white p-4 shadow-sm"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="break-words text-sm font-semibold text-gray-900">{{ participant.name }}</div>
+                                    <div class="mt-1 text-xs text-gray-500">{{ participant.participant_type_label }}</div>
+                                </div>
+                                <div class="shrink-0 text-right text-sm font-semibold text-gray-900">{{ money(participant.paid_amount) }}</div>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-500">{{ participant.club_name }} · {{ participant.district_name || '—' }}</div>
+                            <div class="mt-3 flex flex-wrap gap-1">
+                                <span v-if="participant.is_enrolled" class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">{{ tr('Inscrito', 'Enrolled') }}</span>
+                                <span v-if="participant.is_confirmed" class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">{{ tr('Confirmado', 'Confirmed') }}</span>
+                                <span v-if="!participant.is_enrolled && !participant.is_confirmed" class="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-600">{{ tr('Pago registrado', 'Payment recorded') }}</span>
+                            </div>
+                            <div v-if="financeComponents.length" class="mt-4 space-y-2 border-t border-gray-100 pt-3">
+                                <div
+                                    v-for="component in financeComponents"
+                                    :key="`finance-participant-card-${participant.participant_key}-${component.id}`"
+                                    class="flex items-start justify-between gap-3 text-sm"
+                                >
+                                    <div class="min-w-0">
+                                        <div class="break-words text-gray-700">{{ component.label }}</div>
+                                        <div class="text-[11px] font-semibold" :class="component.is_required ? 'text-rose-600' : 'text-indigo-600'">
+                                            {{ component.is_required ? tr('Obligatorio', 'Required') : tr('Opcional', 'Optional') }}
+                                        </div>
+                                    </div>
+                                    <div class="shrink-0 text-right">
+                                        <div class="font-semibold text-gray-900">{{ money(componentAmount(participant, component.id).paid_amount) }}</div>
+                                        <div v-if="Number(componentAmount(participant, component.id).expected_amount || 0) > 0" class="text-xs text-gray-500">
+                                            {{ tr('de', 'of') }} {{ money(componentAmount(participant, component.id).expected_amount) }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                        <div v-if="!visibleFinancialParticipants.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                            {{ includeTargetedClubs ? tr('No hay pagos o participantes confirmados para desglosar.', 'No payments or confirmed participants to break down.') : tr('No hay participantes en clubes con pagos registrados.', 'No participants in clubs with recorded payments.') }}
+                        </div>
+                    </div>
+
+                    <div class="hidden overflow-x-auto border-t md:block">
                         <table class="min-w-full text-sm">
                             <thead class="bg-gray-50 text-left text-gray-600">
                                 <tr>
@@ -299,7 +400,51 @@ const componentAmount = (row, componentId) => {
                         <div class="border-b px-4 py-3">
                             <h2 class="text-base font-semibold text-gray-900">{{ tr('Estado por club', 'Status by club') }}</h2>
                         </div>
-                        <div class="overflow-x-auto">
+                        <div class="space-y-3 p-4 md:hidden">
+                            <article
+                                v-for="club in readiness.clubs"
+                                :key="`status-club-card-${club.club_id}`"
+                                class="rounded-lg border bg-white p-4 shadow-sm"
+                            >
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="break-words text-sm font-semibold text-gray-900">{{ club.club_name }}</div>
+                                        <div class="mt-1 text-xs text-gray-500">{{ club.district_name || club.church_name || '—' }}</div>
+                                    </div>
+                                    <span class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold" :class="statusClass(club.status)">
+                                        {{ club.status_label }}
+                                    </span>
+                                </div>
+                                <div class="mt-1 text-xs text-gray-500">{{ club.signup_status }}</div>
+                                <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                    <div class="rounded bg-gray-50 p-3">
+                                        <dt class="text-xs text-gray-500">{{ tr('Miembros', 'Members') }}</dt>
+                                        <dd class="mt-1 font-semibold text-gray-900">{{ club.participants.enrolled_members }} / {{ club.participants.confirmed_members }}</dd>
+                                    </div>
+                                    <div class="rounded bg-gray-50 p-3">
+                                        <dt class="text-xs text-gray-500">{{ tr('Staff', 'Staff') }}</dt>
+                                        <dd class="mt-1 font-semibold text-gray-900">{{ club.participants.enrolled_staff }} / {{ club.participants.confirmed_staff }}</dd>
+                                    </div>
+                                    <div class="rounded bg-gray-50 p-3">
+                                        <dt class="text-xs text-gray-500">{{ tr('Tareas', 'Tasks') }}</dt>
+                                        <dd class="mt-1 font-semibold text-gray-900">{{ club.tasks.done }} / {{ club.tasks.total }}</dd>
+                                    </div>
+                                    <div class="rounded bg-gray-50 p-3">
+                                        <dt class="text-xs text-gray-500">{{ tr('Documentos', 'Documents') }}</dt>
+                                        <dd class="mt-1 font-semibold text-gray-900">{{ club.documents.uploaded }}</dd>
+                                    </div>
+                                </dl>
+                                <div class="mt-3 rounded bg-gray-50 p-3 text-sm">
+                                    <div class="text-xs text-gray-500">{{ tr('Pendiente', 'Pending') }}</div>
+                                    <div class="mt-1 font-semibold text-gray-900">{{ money(club.finance.pending_settlement_amount) }}</div>
+                                </div>
+                            </article>
+                            <div v-if="!readiness.clubs.length" class="rounded-lg border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                                {{ tr('No hay clubes visibles para este evento.', 'No visible clubs for this event.') }}
+                            </div>
+                        </div>
+
+                        <div class="hidden overflow-x-auto md:block">
                             <table class="min-w-full text-sm">
                                 <thead class="bg-gray-50 text-left text-gray-600">
                                     <tr>

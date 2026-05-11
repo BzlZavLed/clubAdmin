@@ -131,8 +131,8 @@ const removeEvaluator = (evaluator) => {
 
         <div class="space-y-8">
             <section class="space-y-4">
-                <div class="flex items-start justify-between rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div>
+                <div class="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6 md:flex-row md:items-start md:justify-between">
+                    <div class="min-w-0">
                         <h2 class="text-lg font-semibold text-gray-900">{{ association.name }}</h2>
                         <p class="mt-1 text-sm text-gray-500">{{ tr('Unión', 'Union') }}: {{ union.name || '—' }}</p>
                         <p class="mt-2 text-sm text-gray-600">
@@ -141,14 +141,14 @@ const removeEvaluator = (evaluator) => {
                     </div>
                     <button
                         type="button"
-                        class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 md:w-auto md:shrink-0"
                         @click="showAddForm = !showAddForm"
                     >
                         {{ showAddForm ? tr('Cancelar', 'Cancel') : tr('+ Agregar distrito', '+ Add district') }}
                     </button>
                 </div>
 
-                <div v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+                <div v-if="showAddForm" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-6">
                     <h3 class="mb-4 text-sm font-semibold text-blue-900">{{ tr('Nuevo distrito', 'New district') }}</h3>
                     <form class="grid gap-4 lg:grid-cols-3" @submit.prevent="submitAdd">
                         <div>
@@ -181,14 +181,14 @@ const removeEvaluator = (evaluator) => {
 
                         <div class="lg:col-span-3">
                             <div class="rounded-xl border border-blue-100 bg-white p-4">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div>
+                                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div class="min-w-0">
                                         <h4 class="text-sm font-semibold text-gray-900">{{ tr('Mover iglesias a este distrito', 'Move churches into this district') }}</h4>
                                         <p class="mt-1 text-xs text-gray-500">
                                             {{ tr('Úsalo al dividir distritos o reacomodar iglesias existentes.', 'Use this when splitting districts or reshuffling existing churches.') }}
                                         </p>
                                     </div>
-                                    <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+                                    <span class="w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
                                         {{ addForm.incoming_church_ids.length }} {{ tr('seleccionadas', 'selected') }}
                                     </span>
                                 </div>
@@ -237,7 +237,7 @@ const removeEvaluator = (evaluator) => {
                     <article
                         v-for="district in districts"
                         :key="district.id"
-                        class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+                        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6"
                     >
                         <template v-if="editingId !== district.id">
                             <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -325,14 +325,14 @@ const removeEvaluator = (evaluator) => {
                                 </div>
 
                                 <div class="lg:col-span-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <div>
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div class="min-w-0">
                                             <h4 class="text-sm font-semibold text-gray-900">{{ tr('Traer iglesias desde otros distritos', 'Bring churches from other districts') }}</h4>
                                             <p class="mt-1 text-xs text-gray-500">
                                                 {{ tr('Selecciona iglesias para moverlas a este distrito. Las existentes aquí no se tocan.', 'Select churches to move them into this district. Existing churches here stay as they are.') }}
                                             </p>
                                         </div>
-                                        <span class="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-700">
+                                        <span class="w-fit rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-700">
                                             {{ editForms[district.id].incoming_church_ids.length }} {{ tr('seleccionadas', 'selected') }}
                                         </span>
                                     </div>
@@ -364,10 +364,10 @@ const removeEvaluator = (evaluator) => {
                                     <InputError class="mt-3" :message="editForms[district.id].errors.incoming_church_ids" />
                                 </div>
 
-                                <div class="lg:col-span-3 flex justify-end gap-3">
+                                <div class="flex flex-col-reverse gap-3 lg:col-span-3 sm:flex-row sm:justify-end">
                                     <button
                                         type="submit"
-                                        class="text-sm font-medium text-blue-600 hover:underline"
+                                        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 sm:bg-transparent sm:p-0 sm:text-blue-600 sm:hover:bg-transparent sm:hover:underline"
                                         :disabled="editForms[district.id].processing"
                                     >
                                         {{ tr('Guardar', 'Save') }}
@@ -383,8 +383,8 @@ const removeEvaluator = (evaluator) => {
             </section>
 
             <section class="space-y-4">
-                <div class="flex items-center justify-between">
-                    <div>
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="min-w-0">
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Evaluadores adicionales', 'Additional evaluators') }}</h3>
                         <p class="mt-1 text-sm text-gray-500">
                             {{ tr('Personas que evaluarán sin estar ligadas a un distrito específico.', 'People who will evaluate without being tied to a specific district.') }}
@@ -392,14 +392,14 @@ const removeEvaluator = (evaluator) => {
                     </div>
                     <button
                         type="button"
-                        class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:w-auto sm:shrink-0"
                         @click="showEvaluatorForm = !showEvaluatorForm"
                     >
                         {{ showEvaluatorForm ? tr('Cancelar', 'Cancel') : tr('+ Agregar evaluador', '+ Add evaluator') }}
                     </button>
                 </div>
 
-                <div v-if="showEvaluatorForm" class="rounded-2xl border border-purple-200 bg-purple-50 p-6 shadow-sm">
+                <div v-if="showEvaluatorForm" class="rounded-2xl border border-purple-200 bg-purple-50 p-4 shadow-sm sm:p-6">
                     <h4 class="mb-4 text-sm font-semibold text-purple-900">{{ tr('Nuevo evaluador', 'New evaluator') }}</h4>
                     <form class="grid gap-4 sm:grid-cols-3" @submit.prevent="submitEvaluator">
                         <div>
@@ -441,7 +441,29 @@ const removeEvaluator = (evaluator) => {
                     {{ tr('Sin evaluadores adicionales aún.', 'No additional evaluators yet.') }}
                 </div>
 
-                <div v-else class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div v-else class="space-y-3">
+                    <article
+                        v-for="evaluator in evaluators"
+                        :key="`mobile-${evaluator.id}`"
+                        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:hidden"
+                    >
+                        <h4 class="break-words text-sm font-semibold text-gray-900">{{ evaluator.name }}</h4>
+                        <dl class="mt-3 space-y-2 text-xs text-gray-600">
+                            <div>
+                                <dt class="font-semibold text-gray-500">{{ tr('Correo', 'Email') }}</dt>
+                                <dd class="break-words text-gray-800">{{ evaluator.email || '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="font-semibold text-gray-500">{{ tr('Notas', 'Notes') }}</dt>
+                                <dd class="break-words text-gray-800">{{ evaluator.notes || '—' }}</dd>
+                            </div>
+                        </dl>
+                        <button type="button" class="mt-4 w-full rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-600" @click="removeEvaluator(evaluator)">
+                            {{ tr('Eliminar', 'Remove') }}
+                        </button>
+                    </article>
+
+                    <div class="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm sm:block">
                     <table class="min-w-full divide-y divide-gray-100">
                         <thead class="bg-gray-50">
                             <tr>
@@ -464,6 +486,7 @@ const removeEvaluator = (evaluator) => {
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </section>
         </div>

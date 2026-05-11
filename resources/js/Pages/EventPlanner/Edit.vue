@@ -34,7 +34,7 @@ const submit = () => {
     <PathfinderLayout>
         <template #title>{{ tr('Editar evento', 'Edit Event') }}</template>
 
-        <div class="bg-white rounded-lg border p-6 space-y-4">
+        <div class="space-y-4 rounded-lg border bg-white p-4 sm:p-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="text-sm text-gray-600">{{ tr('Título', 'Title') }}</label>
@@ -69,12 +69,12 @@ const submit = () => {
                     <input v-model="form.status" class="w-full border rounded px-3 py-2 text-sm" />
                 </div>
             </div>
-            <div class="flex items-center gap-6">
-                <label class="text-sm text-gray-600 flex items-center gap-2">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+                <label class="flex items-center gap-2 text-sm text-gray-600">
                     <input type="checkbox" v-model="form.is_payable" />
                     {{ tr('Evento con pago', 'Payable event') }}
                 </label>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
                     <label class="text-sm text-gray-600">{{ tr('Monto', 'Fee amount') }}</label>
                     <input
                         v-model="form.payment_amount"
@@ -82,12 +82,12 @@ const submit = () => {
                         step="0.01"
                         min="0"
                         :disabled="!form.is_payable"
-                        class="w-32 border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                        class="w-full rounded border px-3 py-2 text-sm disabled:bg-gray-100 sm:w-32"
                         placeholder="0.00"
                     />
                 </div>
             </div>
-            <button @click="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm" :disabled="form.processing">
+            <button @click="submit" class="w-full rounded bg-blue-600 px-4 py-2 text-sm text-white sm:w-auto" :disabled="form.processing">
                 {{ form.processing ? tr('Guardando...', 'Saving...') : tr('Guardar cambios', 'Save Changes') }}
             </button>
         </div>

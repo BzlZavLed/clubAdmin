@@ -207,9 +207,9 @@ const loadMoreNotes = (member) => {
         <template #title>{{ tr('Cuidado pastoral', 'Pastoral care') }}</template>
 
         <div class="space-y-6">
-            <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
+                    <div class="min-w-0">
                         <h2 class="text-lg font-semibold text-gray-900">{{ district.name }}</h2>
                         <p class="mt-1 text-sm text-gray-500">
                             {{ tr('Asociación', 'Association') }}: {{ association?.name || '—' }}
@@ -241,7 +241,7 @@ const loadMoreNotes = (member) => {
                 </div>
             </section>
 
-            <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <div class="grid gap-4 md:grid-cols-[1fr_220px]">
                     <div>
                         <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Buscar', 'Search') }}</label>
@@ -268,7 +268,212 @@ const loadMoreNotes = (member) => {
                     {{ tr('No hay miembros en seguimiento con estos filtros.', 'There are no members in follow-up with these filters.') }}
                 </div>
 
-                <table v-else class="w-full text-sm">
+                <div v-else class="space-y-3 p-3 sm:hidden">
+                    <article
+                        v-for="member in filteredMembers"
+                        :key="`mobile-${member.id}`"
+                        class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words text-sm font-semibold text-gray-900">{{ member.name }}</h3>
+                                <p class="mt-1 text-xs text-gray-500">{{ member.member_type }} · {{ member.class_name || tr('Sin clase', 'No class') }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" :class="statusClass(member.status_key)">
+                                {{ statusLabel(member.status_key, member.status_label) }}
+                            </span>
+                        </div>
+                        <dl class="mt-3 space-y-2 text-xs text-gray-600">
+                            <div>
+                                <dt class="font-semibold text-gray-500">{{ tr('Club', 'Club') }}</dt>
+                                <dd class="break-words text-gray-800">{{ member.club?.name || '—' }}</dd>
+                                <dd class="break-words text-gray-500">{{ member.club?.church_name || '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="font-semibold text-gray-500">{{ tr('Contacto', 'Contact') }}</dt>
+                                <dd class="break-words text-gray-800">{{ member.phone || '—' }}</dd>
+                                <dd class="break-words text-gray-500">{{ member.email || '—' }}</dd>
+                            </div>
+                            <div v-if="member.pastoral_care?.new_believer_until">
+                                <dt class="font-semibold text-gray-500">{{ tr('Hasta', 'Until') }}</dt>
+                                <dd class="text-gray-800">{{ formatDate(member.pastoral_care.new_believer_until) }}</dd>
+                            </div>
+                        </dl>
+                        <button type="button" class="mt-4 w-full rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-600" @click="toggleExpanded(member.id)">
+                            {{ expandedRows.has(member.id) ? tr('Cerrar', 'Close') : tr('Ver seguimiento', 'View follow-up') }}
+                        </button>
+
+                        <div v-if="expandedRows.has(member.id)" class="mt-4 border-t border-gray-100 pt-4">
+                            <div class="grid gap-5">
+                                <div class="rounded-lg border border-gray-200 bg-white p-4">
+                                    <h3 class="mb-3 text-sm font-semibold text-gray-900">{{ tr('Datos del miembro', 'Member data') }}</h3>
+                                    <div class="grid gap-3 text-sm text-gray-700">
+                                        <p><span class="font-medium text-gray-900">{{ tr('Nacimiento:', 'Birthdate:') }}</span> {{ formatDate(member.birthdate) }}</p>
+                                        <p><span class="font-medium text-gray-900">{{ tr('Edad:', 'Age:') }}</span> {{ member.age ?? '—' }}</p>
+                                        <p><span class="font-medium text-gray-900">{{ tr('Grado:', 'Grade:') }}</span> {{ member.grade || '—' }}</p>
+                                        <p><span class="font-medium text-gray-900">{{ tr('Dirección:', 'Address:') }}</span> {{ member.address || '—' }}</p>
+                                        <p><span class="font-medium text-gray-900">{{ tr('Padre/Madre:', 'Parent:') }}</span> {{ member.parent_name || '—' }}</p>
+                                        <p><span class="font-medium text-gray-900">{{ tr('Tel. padre:', 'Parent phone:') }}</span> {{ member.parent_phone || '—' }}</p>
+                                        <p><span class="font-medium text-gray-900">{{ tr('Emergencia:', 'Emergency:') }}</span> {{ member.emergency_contact || '—' }}</p>
+                                        <p><span class="font-medium text-gray-900">{{ tr('Salud:', 'Health:') }}</span> {{ member.health_notes || '—' }}</p>
+                                    </div>
+                                </div>
+
+                                <form class="space-y-4 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="saveMember(member)">
+                                    <h3 class="text-sm font-semibold text-gray-900">{{ tr('Seguimiento pastoral', 'Pastoral follow-up') }}</h3>
+
+                                    <label class="flex items-start gap-3 rounded border border-gray-200 px-3 py-2 text-sm">
+                                        <input v-model="getForm(member).bible_study_active" type="checkbox" class="mt-1 h-4 w-4 accent-blue-600" />
+                                        <span>
+                                            <span class="block font-medium text-gray-900">{{ tr('Tiene estudios bíblicos', 'Has Bible studies') }}</span>
+                                            <span class="text-gray-500">{{ tr('Permite registrar responsable y fecha de inicio.', 'Allows recording the responsible person and start date.') }}</span>
+                                        </span>
+                                    </label>
+
+                                    <div v-if="getForm(member).bible_study_active" class="grid gap-3 rounded-md border border-blue-100 bg-blue-50 p-3">
+                                        <div>
+                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Quién da el estudio', 'Who gives the study') }}</label>
+                                            <input v-model="getForm(member).bible_study_teacher" type="text" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
+                                            <p v-if="getForm(member).errors.bible_study_teacher" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.bible_study_teacher }}</p>
+                                        </div>
+                                        <div>
+                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Inicio del estudio', 'Study start') }}</label>
+                                            <input v-model="getForm(member).bible_study_started_at" type="date" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
+                                            <p v-if="getForm(member).errors.bible_study_started_at" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.bible_study_started_at }}</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid gap-3">
+                                        <div>
+                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha de bautismo', 'Baptism date') }}</label>
+                                            <input v-model="getForm(member).baptism_date" type="date" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" />
+                                            <p v-if="getForm(member).errors.baptism_date" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.baptism_date }}</p>
+                                        </div>
+                                        <div>
+                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Mentor SDA del club', 'SDA mentor from the club') }}</label>
+                                            <select v-model="getForm(member).mentor_member_id" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                                <option value="">{{ tr('Sin mentor asignado', 'No mentor assigned') }}</option>
+                                                <option v-for="mentor in member.mentor_options" :key="mentor.id" :value="mentor.id">
+                                                    {{ mentor.name }}
+                                                </option>
+                                            </select>
+                                            <p v-if="!member.mentor_options.length" class="mt-1 text-xs text-amber-700">{{ tr('Este club no tiene miembros SDA disponibles como mentor.', 'This club has no SDA members available as mentors.') }}</p>
+                                            <p v-if="getForm(member).errors.mentor_member_id" class="mt-1 text-xs text-red-600">{{ getForm(member).errors.mentor_member_id }}</p>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        :disabled="getForm(member).processing"
+                                        class="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {{ tr('Guardar seguimiento', 'Save follow-up') }}
+                                    </button>
+                                </form>
+
+                                <div class="space-y-3">
+                                    <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                        <h3 class="text-sm font-semibold text-gray-900">{{ tr('Notas del miembro', 'Member notes') }}</h3>
+                                        <span class="text-xs text-gray-500">{{ filteredNotes(member).length }} {{ tr('de', 'of') }} {{ member.notes?.length || 0 }} {{ tr('notas', 'notes') }}</span>
+                                    </div>
+
+                                    <div class="grid gap-3">
+                                        <div>
+                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Buscar notas', 'Search notes') }}</label>
+                                            <input
+                                                v-model="noteSearches[member.id]"
+                                                type="search"
+                                                class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                :placeholder="tr('Asunto o nota', 'Subject or note')"
+                                                @input="resetVisibleNotes(member)"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Color', 'Color') }}</label>
+                                            <select
+                                                v-model="noteColorFilters[member.id]"
+                                                class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                @change="resetVisibleNotes(member)"
+                                            >
+                                                <option value="">{{ tr('Todos', 'All') }}</option>
+                                                <option value="yellow">{{ tr('Amarillo', 'Yellow') }}</option>
+                                                <option value="blue">{{ tr('Azul', 'Blue') }}</option>
+                                                <option value="green">{{ tr('Verde', 'Green') }}</option>
+                                                <option value="rose">{{ tr('Rojo', 'Red') }}</option>
+                                                <option value="slate">{{ tr('Gris', 'Gray') }}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="filteredNotes(member).length" class="grid gap-3">
+                                        <article
+                                            v-for="note in visibleNotes(member)"
+                                            :key="note.id"
+                                            class="rounded-md border p-3 shadow-sm"
+                                            :class="noteClass(note.color)"
+                                        >
+                                            <div class="mb-2 flex items-start justify-between gap-3">
+                                                <div class="min-w-0">
+                                                    <h4 class="break-words text-sm font-semibold">{{ note.subject || tr('Nota', 'Note') }}</h4>
+                                                    <p class="text-[11px] opacity-70">
+                                                        {{ note.author_name || tr('Distrito', 'District') }} · {{ formatDate(note.created_at?.slice(0, 10)) }} · {{ noteColorLabel(note.color) }}
+                                                    </p>
+                                                </div>
+                                                <button type="button" class="text-xs font-semibold opacity-70 hover:opacity-100" @click="deleteNote(note)">
+                                                    X
+                                                </button>
+                                            </div>
+                                            <p class="whitespace-pre-line break-words text-sm leading-5">{{ note.body }}</p>
+                                        </article>
+                                    </div>
+                                    <div v-if="filteredNotes(member).length > visibleNotes(member).length" class="flex flex-col gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+                                        <span>{{ tr('Mostrando', 'Showing') }} {{ visibleNotes(member).length }} {{ tr('de', 'of') }} {{ filteredNotes(member).length }}</span>
+                                        <button type="button" class="font-semibold text-blue-600 hover:underline" @click="loadMoreNotes(member)">
+                                            {{ tr('Cargar más notas', 'Load more notes') }}
+                                        </button>
+                                    </div>
+                                    <div v-if="!filteredNotes(member).length" class="rounded-md border border-dashed border-gray-200 bg-white p-4 text-sm text-gray-500">
+                                        {{ member.notes?.length ? tr('No hay notas que coincidan con la búsqueda o color.', 'No notes match the search or color.') : tr('No hay notas registradas para este miembro.', 'There are no notes registered for this member.') }}
+                                    </div>
+
+                                    <form class="grid gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addNote(member)">
+                                        <div class="grid gap-3">
+                                            <div>
+                                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Asunto', 'Subject') }}</label>
+                                                <input v-model="getNoteForm(member).subject" type="text" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" :placeholder="tr('Ej. Visita familiar', 'Ex. Family visit')" />
+                                                <p v-if="getNoteForm(member).errors.subject" class="mt-1 text-xs text-red-600">{{ getNoteForm(member).errors.subject }}</p>
+                                            </div>
+                                            <div>
+                                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Color', 'Color') }}</label>
+                                                <select v-model="getNoteForm(member).color" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                                    <option value="yellow">{{ tr('Amarillo', 'Yellow') }}</option>
+                                                    <option value="blue">{{ tr('Azul', 'Blue') }}</option>
+                                                    <option value="green">{{ tr('Verde', 'Green') }}</option>
+                                                    <option value="rose">{{ tr('Rojo', 'Red') }}</option>
+                                                    <option value="slate">{{ tr('Gris', 'Gray') }}</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Nota', 'Note') }}</label>
+                                            <textarea v-model="getNoteForm(member).body" rows="3" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
+                                            <p v-if="getNoteForm(member).errors.body" class="mt-1 text-xs text-red-600">{{ getNoteForm(member).errors.body }}</p>
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            :disabled="getNoteForm(member).processing"
+                                            class="w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {{ tr('Agregar nota', 'Add note') }}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+
+                <table v-if="filteredMembers.length" class="hidden w-full text-sm sm:table">
                     <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                         <tr>
                             <th class="px-4 py-3">{{ tr('Miembro', 'Member') }}</th>

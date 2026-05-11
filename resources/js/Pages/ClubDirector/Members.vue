@@ -442,17 +442,17 @@ watch(filteredMembers, () => {
 </style>
 <template>
     <PathfinderLayout>
-        <div class="p-8">
+        <div class="p-4 sm:p-6 lg:p-8">
             <h1 class="text-xl font-bold mb-4">{{ tr('Miembros', 'Members') }}</h1>
 
             <!-- Tabs -->
             <div class="mb-4 border-b">
-                <nav class="-mb-px flex space-x-6">
-                    <button :class="selectedTab === 'members' ? activeTabClass : inactiveTabClass"
+                <nav class="-mb-px flex gap-4 overflow-x-auto pb-1">
+                    <button class="shrink-0" :class="selectedTab === 'members' ? activeTabClass : inactiveTabClass"
                         @click="selectedTab = 'members'">
                         {{ tr('Miembros', 'Members') }}
                     </button>
-                    <button :class="selectedTab === 'classes' ? activeTabClass : inactiveTabClass"
+                    <button class="shrink-0" :class="selectedTab === 'classes' ? activeTabClass : inactiveTabClass"
                         @click="selectedTab = 'classes'">
                         {{ tr('Resumen de clases', 'Class Summary') }}
                     </button>
@@ -499,15 +499,15 @@ watch(filteredMembers, () => {
                         {{ filteredMembers.length }} {{ tr('miembros encontrados', 'members found') }}
                     </div>
                 </div>
-                <div class="flex items-center justify-between mb-4">
-                    <div class="flex items-center gap-4">
+                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                         <label class="inline-flex items-center">
                             <input type="checkbox" v-model="selectAll" @change="toggleSelectAll" class="mr-2" />
                             <span>{{ tr('Seleccionar todo', 'Select all') }}</span>
                         </label>
                         <select v-if="selectedMemberIds.size > 0"
                             @change="e => handleBulkAction(e.target.value, 'member')"
-                            class="border p-2 px-4 rounded w-60 text-sm">
+                            class="w-full rounded border p-2 px-4 text-sm sm:w-60">
                             <option value="" disabled selected>{{ tr('Acciones masivas', 'Bulk actions') }}</option>
                             <option value="delete">{{ tr('Eliminar seleccionados', 'Delete selected') }}</option>
                             <option value="download">{{ tr('Descargar formularios', 'Download forms') }}</option>
@@ -515,7 +515,90 @@ watch(filteredMembers, () => {
                     </div>
                     <span class="text-sm text-gray-600">{{ selectedMemberIds.size }} {{ tr('seleccionados', 'selected') }}</span>
                 </div>
-                <table class="w-full text-sm border rounded overflow-hidden">
+                <div class="space-y-3 sm:hidden">
+                    <article v-for="member in paginatedMembers" :key="`mobile-member-${member.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                        <div class="flex items-start gap-3">
+                            <input
+                                type="checkbox"
+                                :value="member.id"
+                                :checked="selectedMemberIds.has(member.id)"
+                                class="mt-1"
+                                @change="() => toggleSelectMember(member.id)"
+                            />
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h3 class="break-words text-sm font-semibold text-gray-900">{{ member.applicant_name }}</h3>
+                                        <p class="mt-1 break-words text-xs text-gray-500">{{ member.home_address || member.mailing_address || '—' }}</p>
+                                    </div>
+                                    <span :class="sdaBadgeClass(member.is_sda !== false)">
+                                        {{ member.is_sda !== false ? 'SDA' : tr('Cuidado pastoral', 'Pastoral care') }}
+                                    </span>
+                                </div>
+                                <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                        <dt class="text-gray-500">{{ progressColumnLabel }}</dt>
+                                        <dd class="font-medium text-gray-900">{{ lastCompletedDisplay(member) }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Padre', 'Parent') }}</dt>
+                                        <dd class="font-medium text-gray-900">{{ member.parent_cell || '—' }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Inscripción', 'Enrollment') }}</dt>
+                                        <dd><span :class="paymentBadgeClass(member.enrollment_paid)">{{ member.enrollment_paid ? tr('Pagada', 'Paid') : tr('Pendiente', 'Pending') }}</span></dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Seguro', 'Insurance') }}</dt>
+                                        <dd>
+                                            <span v-if="selectedClub?.evaluation_system === 'carpetas'" :class="paymentBadgeClass(member.insurance_paid)">
+                                                {{ member.insurance_paid ? tr('Pagado', 'Paid') : tr('Pendiente', 'Pending') }}
+                                            </span>
+                                            <span v-else class="text-gray-400">N/A</span>
+                                        </dd>
+                                    </div>
+                                </dl>
+                                <div class="mt-3 grid grid-cols-5 gap-2">
+                                    <button class="rounded border px-2 py-2 text-green-700" @click="toggleExpanded(member.id)" :title="tr('Ver detalles', 'View details')">
+                                        <component :is="expandedRows.has(member.id) ? MinusIcon : PlusIcon" class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button class="rounded border px-2 py-2 text-blue-700" @click="editMember(member)" :title="tr('Editar', 'Edit')">
+                                        <PencilIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button
+                                        class="rounded border px-2 py-2 text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                        :disabled="member.member_type !== 'temp_pathfinder'"
+                                        @click="triggerInsuranceUpload(member)"
+                                        :title="tr('Subir seguro', 'Upload insurance')"
+                                    >
+                                        <CameraIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button class="rounded border px-2 py-2 text-red-700" @click="deleteMember(member)" :title="tr('Eliminar', 'Delete')">
+                                        <TrashIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                    <button class="rounded border px-2 py-2 text-blue-700" @click="downloadWord(member)" :title="tr('Descargar formulario', 'Download form')">
+                                        <DocumentArrowDownIcon class="mx-auto h-4 w-4" />
+                                    </button>
+                                </div>
+                                <div v-if="expandedRows.has(member.id)" class="mt-3 rounded bg-gray-50 p-3 text-xs text-gray-700">
+                                    <div class="grid gap-2">
+                                        <div><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
+                                        <div><strong>{{ tr('Edad', 'Age') }}:</strong> {{ member.age ?? '—' }}</div>
+                                        <div><strong>{{ tr('Email', 'Email') }}:</strong> {{ member.email_address || '—' }}</div>
+                                        <div><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ member.emergency_contact_name || member.emergency_contact || '—' }}</div>
+                                        <div><strong>{{ tr('Miembro SDA', 'SDA member') }}:</strong> {{ member.is_sda !== false ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                        <div><strong>{{ tr('Fecha de bautismo', 'Baptism date') }}:</strong> {{ member.baptism_date ? formatDate(member.baptism_date) : '—' }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                    <div v-if="paginatedMembers.length === 0" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                        {{ tr('No se encontraron miembros con ese criterio.', 'No members matched that criteria.') }}
+                    </div>
+                </div>
+                <div class="hidden overflow-x-auto rounded border sm:block">
+                <table class="min-w-[980px] w-full text-sm">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
@@ -667,6 +750,7 @@ watch(filteredMembers, () => {
                         </tr>
                     </tbody>
                 </table>
+                </div>
                 <div class="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div class="text-sm text-gray-600">
                         {{ tr('Página', 'Page') }} {{ memberPage }} {{ tr('de', 'of') }} {{ totalMemberPages }}
@@ -692,7 +776,7 @@ watch(filteredMembers, () => {
                 </div>
                 <div class="mt-6 text-center">
                     <button @click="toggleRegistrationForm"
-                        class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                        class="w-full bg-green-600 px-4 py-2 text-white hover:bg-green-700 sm:w-auto sm:rounded">
                         {{ tr('Registrar nuevo miembro', 'Register new member') }}
                     </button>
                 </div>
@@ -700,7 +784,7 @@ watch(filteredMembers, () => {
 
             <!-- Tab 2: Class Overview -->
             <div v-if="selectedTab === 'classes' && selectedClub">
-                <div class="mb-2 flex flex-wrap items-center gap-4 text-sm">
+                <div class="mb-2 grid gap-3 text-sm sm:flex sm:flex-wrap sm:items-center sm:gap-4">
                     <span class="font-medium text-gray-700">{{ tr('Exportar PDF', 'Export PDF') }}:</span>
                     <label class="inline-flex items-center gap-2">
                         <input v-model="classSummaryPdfOptions.include_contact" type="checkbox" />
@@ -721,7 +805,7 @@ watch(filteredMembers, () => {
                     <button
                         type="button"
                         @click="exportClassSummaryPdf"
-                        class="px-3 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900"
+                        class="w-full rounded bg-gray-800 px-3 py-1.5 text-sm text-white hover:bg-gray-900 sm:w-auto"
                     >
                         {{ tr('Exportar PDF', 'Export PDF') }}
                     </button>
@@ -733,7 +817,8 @@ watch(filteredMembers, () => {
                 <div v-else class="space-y-6">
                     <div v-if="unassignedMembers.length > 0" class="border rounded p-4 bg-gray-100">
                         <h2 class="text-lg font-semibold mb-4">{{ tr('Miembros sin asignar', 'Unassigned Members') }}</h2>
-                        <table class="w-full border text-sm">
+                        <div class="overflow-x-auto">
+                        <table class="min-w-[640px] w-full border text-sm">
                             <thead class="bg-gray-200">
                                 <tr>
                                     <th class="p-2">{{ tr('Nombre', 'Name') }}</th>
@@ -763,6 +848,7 @@ watch(filteredMembers, () => {
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                     </div>
                     <div v-for="clubClass in clubClasses" :key="clubClass.id" class="border rounded p-4 bg-gray-50">
                         <h3 class="text-md font-bold">
@@ -775,7 +861,8 @@ watch(filteredMembers, () => {
                             {{ tr('No hay miembros asignados a esta clase.', 'No members are assigned to this class.') }}
                         </div>
 
-                        <table v-else class="w-full border text-sm">
+                        <div v-else class="overflow-x-auto">
+                        <table class="min-w-[720px] w-full border text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
                                     <th class="p-2">{{ tr('Nombre', 'Name') }}</th>
@@ -808,6 +895,7 @@ watch(filteredMembers, () => {
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                     </div>
                 </div>
             </div>

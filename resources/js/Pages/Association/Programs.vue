@@ -71,7 +71,7 @@ const removeSession = (session) => {
         </template>
 
         <div class="space-y-6">
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold text-gray-900">{{ association.name }}</h2>
                 <p class="mt-2 text-sm text-gray-600">
                     {{ tr('Unión', 'Union') }}: {{ union.name || '—' }} |
@@ -80,7 +80,7 @@ const removeSession = (session) => {
             </div>
 
             <div v-if="isCarpetas" class="space-y-6">
-                <div class="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+                <div class="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-6">
                     <h3 class="text-base font-semibold text-blue-900">
                         {{ tr('Ciclo de carpeta activo', 'Active carpeta cycle') }}
                     </h3>
@@ -95,7 +95,7 @@ const removeSession = (session) => {
                     </p>
                 </div>
 
-                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900">
@@ -129,7 +129,7 @@ const removeSession = (session) => {
                                     :key="`${typeGroup.club_type}-${group.class_name}`"
                                     class="rounded-xl border border-gray-200 bg-white p-4"
                                 >
-                                    <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-start justify-between gap-3">
                                         <h5 class="text-sm font-semibold text-gray-900">{{ group.class_name }}</h5>
                                         <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
                                             {{ group.requirements_count }}
@@ -142,7 +142,7 @@ const removeSession = (session) => {
                                             :key="requirement.id"
                                             class="rounded-lg border border-gray-100 bg-gray-50 p-3"
                                         >
-                                            <p class="text-sm font-semibold text-gray-900">
+                                            <p class="break-words text-sm font-semibold text-gray-900">
                                                 <span v-if="requirement.sort_order" class="text-gray-500">{{ requirement.sort_order }}.</span>
                                                 {{ requirement.title }}
                                             </p>
@@ -167,7 +167,7 @@ const removeSession = (session) => {
                     </div>
                 </div>
 
-                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
                     <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900">
@@ -204,7 +204,48 @@ const removeSession = (session) => {
                                 </div>
                             </div>
 
-                            <div v-if="typeGroup.clubs.length" class="mt-4 overflow-x-auto">
+                            <div v-if="typeGroup.clubs.length" class="mt-4">
+                                <div class="space-y-3 sm:hidden">
+                                    <article
+                                        v-for="club in typeGroup.clubs"
+                                        :key="`mobile-progress-${club.id}`"
+                                        class="rounded-xl border border-gray-200 bg-white p-4"
+                                    >
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <h5 class="break-words text-sm font-semibold text-gray-900">{{ club.club_name }}</h5>
+                                                <p v-if="club.director_name" class="mt-1 break-words text-xs text-gray-500">{{ club.director_name }}</p>
+                                            </div>
+                                            <span class="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                                                {{ club.member_count }} {{ tr('miembros', 'members') }}
+                                            </span>
+                                        </div>
+                                        <dl class="mt-3 space-y-1 text-xs text-gray-600">
+                                            <div>
+                                                <dt class="font-semibold text-gray-500">{{ tr('Distrito', 'District') }}</dt>
+                                                <dd class="break-words text-gray-800">{{ club.district_name || '—' }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="font-semibold text-gray-500">{{ tr('Iglesia', 'Church') }}</dt>
+                                                <dd class="break-words text-gray-800">{{ club.church_name || '—' }}</dd>
+                                            </div>
+                                        </dl>
+                                        <div class="mt-3">
+                                            <div class="mb-1 flex items-center justify-between text-xs">
+                                                <span class="font-semibold text-gray-500">{{ tr('Progreso', 'Progress') }}</span>
+                                                <span class="font-medium text-gray-700">{{ formatProgress(club.progress_pct) }}</span>
+                                            </div>
+                                            <div class="h-2 overflow-hidden rounded-full bg-gray-200">
+                                                <div
+                                                    class="h-full rounded-full transition-all"
+                                                    :class="progressBarClass(club.progress_pct)"
+                                                    :style="{ width: progressBarWidth(club.progress_pct) }"
+                                                />
+                                            </div>
+                                        </div>
+                                    </article>
+                                </div>
+                                <div class="hidden overflow-x-auto sm:block">
                                 <table class="min-w-full divide-y divide-gray-200 text-sm">
                                     <thead>
                                         <tr class="text-left text-xs uppercase tracking-wide text-gray-400">
@@ -241,6 +282,7 @@ const removeSession = (session) => {
                                         </tr>
                                     </tbody>
                                 </table>
+                                </div>
                             </div>
 
                             <p
@@ -255,7 +297,7 @@ const removeSession = (session) => {
             </div>
 
             <div v-else class="space-y-6">
-                <div class="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+                <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-6">
                     <h3 class="text-base font-semibold text-amber-900">{{ tr('Planificación de clases de honores', 'Honor class planning') }}</h3>
                     <p class="mt-2 text-sm text-amber-800">
                         {{ tr('Programa jornadas de clases para que los clubes vean la oferta de la asociación y decidan en cuáles inscribirse.', 'Plan class sessions so clubs can see the association offer and decide which ones to join.') }}
@@ -263,7 +305,7 @@ const removeSession = (session) => {
                 </div>
 
                 <div class="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-                    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Nueva jornada', 'New session') }}</h3>
                         <form class="mt-4 space-y-4" @submit.prevent="submitSession">
                             <div>
@@ -306,7 +348,7 @@ const removeSession = (session) => {
                         </form>
                     </div>
 
-                    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Jornadas planificadas', 'Planned sessions') }}</h3>
                         <div class="mt-4 space-y-3">
                             <article
@@ -315,13 +357,13 @@ const removeSession = (session) => {
                                 class="rounded-xl border border-gray-200 bg-gray-50 p-4"
                             >
                                 <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                    <div>
+                                    <div class="min-w-0">
                                         <h4 class="font-medium text-gray-900">{{ session.title }}</h4>
                                         <p class="text-sm text-gray-600">{{ session.class_name }} | {{ session.club_type }}</p>
                                         <p class="mt-1 text-sm text-gray-600">{{ session.session_date }} · {{ session.location || tr('Lugar por definir', 'Location TBD') }}</p>
                                         <p v-if="session.notes" class="mt-2 text-sm text-gray-600">{{ session.notes }}</p>
                                     </div>
-                                    <div class="flex items-center gap-3">
+                                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                                         <span class="inline-flex rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-700">
                                             {{ session.status }}
                                         </span>

@@ -2718,12 +2718,12 @@ const saveBudgetPreference = async (value) => {
                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
                 @keydown.esc="showEventModal = false"
             >
-                <div class="w-full max-w-3xl rounded-lg bg-white border shadow-xl">
-                    <div class="flex items-center justify-between px-5 py-4 border-b">
-                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Editar detalles del evento', 'Edit Event Details') }}</h2>
+                <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border bg-white shadow-xl">
+                    <div class="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
+                        <h2 class="min-w-0 break-words text-lg font-semibold text-gray-800">{{ tr('Editar detalles del evento', 'Edit Event Details') }}</h2>
                         <button type="button" class="text-gray-500 hover:text-gray-700" @click="showEventModal = false">×</button>
                     </div>
-                    <div class="max-h-[85vh] space-y-4 overflow-y-auto p-5">
+                    <div class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
                         <div>
                             <label class="text-xs text-gray-600">{{ tr('Descripción del evento', 'Event Description') }}</label>
                             <textarea
@@ -2817,13 +2817,13 @@ const saveBudgetPreference = async (value) => {
                             {{ eventFormError }}
                         </div>
                     </div>
-                    <div class="flex items-center justify-end gap-2 px-5 py-4 border-t">
-                        <button type="button" class="px-3 py-1 rounded text-sm bg-gray-200 text-gray-700" @click="showEventModal = false">
+                    <div class="flex shrink-0 flex-col-reverse gap-2 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-5">
+                        <button type="button" class="w-full rounded bg-gray-200 px-3 py-2 text-sm text-gray-700 sm:w-auto sm:py-1" @click="showEventModal = false">
                             Cancel
                         </button>
                         <button
                             type="button"
-                            class="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-60"
+                            class="w-full rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60 sm:w-auto sm:py-1"
                             :disabled="eventFormSaving"
                             @click="saveEventBasics"
                         >
@@ -3116,11 +3116,11 @@ const saveBudgetPreference = async (value) => {
                     </div>
 
                     <div class="bg-white rounded-lg border p-4">
-                        <div class="flex gap-3 mb-4">
-                            <button @click="activeTab = 'tasks'" :class="activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Tareas', 'Tasks') }}</button>
-                            <button v-if="supportsClubOperations" @click="activeTab = 'budget'" :class="activeTab === 'budget' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Presupuesto', 'Budget') }}</button>
-                            <button @click="activeTab = 'participants'" :class="activeTab === 'participants' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Participantes', 'Participants') }}</button>
-                            <button @click="activeTab = 'documents'" :class="activeTab === 'documents' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-3 py-1 rounded text-sm">{{ tr('Documentos', 'Documents') }}</button>
+                        <div class="mb-4 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:gap-3 sm:overflow-visible">
+                            <button @click="activeTab = 'tasks'" :class="activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="shrink-0 rounded px-3 py-1 text-sm">{{ tr('Tareas', 'Tasks') }}</button>
+                            <button v-if="supportsClubOperations" @click="activeTab = 'budget'" :class="activeTab === 'budget' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="shrink-0 rounded px-3 py-1 text-sm">{{ tr('Presupuesto', 'Budget') }}</button>
+                            <button @click="activeTab = 'participants'" :class="activeTab === 'participants' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="shrink-0 rounded px-3 py-1 text-sm">{{ tr('Participantes', 'Participants') }}</button>
+                            <button @click="activeTab = 'documents'" :class="activeTab === 'documents' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="shrink-0 rounded px-3 py-1 text-sm">{{ tr('Documentos', 'Documents') }}</button>
                         </div>
 
                         <div v-if="activeTab === 'tasks'">
@@ -3234,7 +3234,7 @@ const saveBudgetPreference = async (value) => {
                                                                         <input
                                                                             v-model="editingTaskTitle"
                                                                             type="text"
-                                                                            class="min-w-[260px] flex-1 rounded border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                                                                            class="min-w-0 w-full flex-1 rounded border border-gray-300 px-2 py-1 text-sm text-gray-800 sm:min-w-[260px]"
                                                                             @click.stop
                                                                             @keydown.enter.prevent="saveTaskTitleEdit(task)"
                                                                             @keydown.esc.prevent="cancelTaskTitleEdit"
@@ -3470,9 +3470,9 @@ const saveBudgetPreference = async (value) => {
                                         </details>
                                     </div>
                                 </div>
-                                <div v-if="canManageTasks" class="mt-3 flex items-center gap-2">
-                                    <input v-model="newChecklistItem" type="text" class="flex-1 rounded border border-gray-300 px-2 py-1 text-sm" :placeholder="tr('Agregar elemento al checklist', 'Add checklist item')" />
-                                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="addChecklistItem">{{ tr('Agregar', 'Add') }}</button>
+                                <div v-if="canManageTasks" class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <input v-model="newChecklistItem" type="text" class="w-full rounded border border-gray-300 px-2 py-2 text-sm sm:flex-1 sm:py-1" :placeholder="tr('Agregar elemento al checklist', 'Add checklist item')" />
+                                    <button type="button" class="w-full rounded bg-blue-600 px-3 py-2 text-sm text-white sm:w-auto sm:py-1" @click="addChecklistItem">{{ tr('Agregar', 'Add') }}</button>
                                 </div>
                                 </div>
                             </details>
@@ -3566,11 +3566,12 @@ const saveBudgetPreference = async (value) => {
         </div>
 
         <div v-if="showTransportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div class="w-full max-w-5xl rounded-lg bg-white p-6 shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">{{ tr('Organizar transporte', 'Arrange Transportation') }}</h3>
+            <div class="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+                <div class="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-4 sm:px-6">
+                    <h3 class="min-w-0 break-words text-lg font-semibold text-gray-800">{{ tr('Organizar transporte', 'Arrange Transportation') }}</h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="showTransportModal = false">✕</button>
                 </div>
+                <div class="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
                 <div v-if="transportLoading" class="text-sm text-gray-500">{{ tr('Cargando conductores...', 'Loading drivers...') }}</div>
                 <div v-else-if="transportError" class="text-sm text-red-500">{{ transportError }}</div>
                 <div v-else class="space-y-4">
@@ -3584,23 +3585,23 @@ const saveBudgetPreference = async (value) => {
                     </div>
                     <div class="rounded-lg border bg-gray-50 p-4 space-y-3">
                         <div class="text-sm font-semibold text-gray-800">{{ tr('Método de transporte', 'Transportation method') }}</div>
-                        <div v-if="!transportMode" class="flex flex-wrap gap-3">
+                        <div v-if="!transportMode" class="grid gap-3 sm:flex sm:flex-wrap">
                             <button
                                 type="button"
-                                class="px-3 py-2 rounded border bg-white text-sm text-gray-700 hover:border-blue-500"
+                                class="rounded border bg-white px-3 py-2 text-sm text-gray-700 hover:border-blue-500"
                                 @click="selectTransportMode('private')"
                             >
                                 {{ tr('Usar autos privados (reembolso de gasolina)', 'Use private cars (gas reimbursement)') }}
                             </button>
                             <button
                                 type="button"
-                                class="px-3 py-2 rounded border bg-white text-sm text-gray-700 hover:border-blue-500"
+                                class="rounded border bg-white px-3 py-2 text-sm text-gray-700 hover:border-blue-500"
                                 @click="selectTransportMode('rental')"
                             >
                                 {{ tr('Rentar vehículos (agrega renta + gasolina al presupuesto)', 'Rent vehicles (adds rental + gas budget)') }}
                             </button>
                         </div>
-                        <div v-else class="flex items-center justify-between gap-3 text-sm text-gray-700">
+                        <div v-else class="flex flex-col gap-3 text-sm text-gray-700 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 {{ tr('Seleccionado', 'Selected') }}: <span class="font-semibold">{{ transportMode === 'rental' ? tr('Vehículos rentados', 'Rental vehicles') : tr('Autos privados', 'Private cars') }}</span>
                             </div>
@@ -3628,16 +3629,16 @@ const saveBudgetPreference = async (value) => {
                         {{ tr('Selecciona un método de transporte para continuar.', 'Select a transportation method to continue.') }}
                     </div>
                     <div v-else class="space-y-3">
-                        <div class="rounded border bg-gray-50 px-3 py-2 flex flex-wrap items-center gap-2">
+                        <div class="flex flex-col gap-2 rounded border bg-gray-50 px-3 py-2 sm:flex-row sm:flex-wrap sm:items-center">
                             <input
                                 v-model="newDriverName"
-                                class="border rounded px-2 py-1 text-sm min-w-[220px]"
+                                class="w-full rounded border px-2 py-2 text-sm sm:min-w-[220px] sm:flex-1 sm:py-1"
                                 :placeholder="tr('Nombre del conductor', 'Driver name')"
                                 @keyup.enter="addDriverParticipant"
                             />
                             <button
                                 type="button"
-                                class="px-3 py-1 rounded text-xs bg-blue-600 text-white disabled:opacity-50"
+                                class="w-full rounded bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-50 sm:w-auto sm:py-1"
                                 :disabled="addingDriver"
                                 @click="addDriverParticipant"
                             >
@@ -3772,8 +3773,9 @@ const saveBudgetPreference = async (value) => {
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                     </div>
-                    </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -3800,7 +3802,7 @@ const saveBudgetPreference = async (value) => {
         </div>
 
         <div v-if="vehicleModalOpen && isPrivateTransport" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div class="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+            <div class="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 shadow-xl sm:p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-gray-800">{{ tr('Detalles del vehículo', 'Vehicle Details') }}</h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="vehicleModalOpen = false">✕</button>
@@ -3821,11 +3823,11 @@ const saveBudgetPreference = async (value) => {
                         </select>
                     </div>
                 </div>
-                <div class="mt-4 flex justify-end gap-2">
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-200 text-gray-700" @click="vehicleModalOpen = false">
+                <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" class="rounded bg-gray-200 px-3 py-2 text-sm text-gray-700 sm:py-1" @click="vehicleModalOpen = false">
                         Cancel
                     </button>
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="saveVehicle">
+                    <button type="button" class="rounded bg-blue-600 px-3 py-2 text-sm text-white sm:py-1" @click="saveVehicle">
                         Save Vehicle
                     </button>
                 </div>
@@ -3833,12 +3835,13 @@ const saveBudgetPreference = async (value) => {
         </div>
 
         <div v-if="showCustomFormBuilder" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div class="w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">{{ tr('Constructor de formularios', 'Custom Form Builder') }}</h3>
+            <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+                <div class="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-4 sm:px-6">
+                    <h3 class="min-w-0 break-words text-lg font-semibold text-gray-800">{{ tr('Constructor de formularios', 'Custom Form Builder') }}</h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="showCustomFormBuilder = false">✕</button>
                 </div>
-                <div class="text-sm text-gray-600 mb-3">
+                <div class="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+                <div class="mb-3 text-sm text-gray-600">
                     {{ tr('Tarea', 'Task') }}: <span class="font-semibold text-gray-800">{{ customFormTask?.title }}</span>
                 </div>
                 <div class="mb-3">
@@ -3855,26 +3858,26 @@ const saveBudgetPreference = async (value) => {
                 <div class="mb-3 text-xs text-gray-500">
                     {{ tr('Marca la casilla en la columna "Obligatorio" para requerir un campo en el formulario.', 'Check the "Required" column to make a field mandatory in the form.') }}
                 </div>
-                <div class="space-y-2 max-h-[55vh] overflow-auto pr-1">
-                    <div class="grid grid-cols-12 gap-2 items-center text-[11px] font-medium uppercase tracking-wide text-gray-500 px-1">
+                <div class="max-h-[55vh] space-y-2 overflow-auto pr-1">
+                    <div class="hidden grid-cols-12 items-center gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-gray-500 sm:grid">
                         <div class="col-span-4">{{ tr('Etiqueta', 'Label') }}</div>
                         <div class="col-span-3">Key</div>
                         <div class="col-span-3">{{ tr('Tipo', 'Type') }}</div>
                         <div class="col-span-1 text-center">{{ tr('Obligatorio', 'Required') }}</div>
                         <div class="col-span-1"></div>
                     </div>
-                    <div v-for="(field, idx) in customFormFields" :key="idx" class="grid grid-cols-12 gap-2 items-center">
+                    <div v-for="(field, idx) in customFormFields" :key="idx" class="grid grid-cols-1 items-center gap-2 rounded border border-gray-200 p-3 sm:grid-cols-12 sm:border-0 sm:p-0">
                         <input
                             v-model="field.label"
-                            class="col-span-4 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-4 sm:py-1"
                             :placeholder="tr('Etiqueta', 'Label')"
                         />
                         <input
                             v-model="field.key"
-                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1"
                             placeholder="key_name"
                         />
-                        <select v-model="field.type" class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm">
+                        <select v-model="field.type" class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1">
                             <option value="text">text</option>
                             <option value="textarea">textarea</option>
                             <option value="number">number</option>
@@ -3884,29 +3887,30 @@ const saveBudgetPreference = async (value) => {
                             <option value="checkbox">checkbox</option>
                             <option value="image">image/banner</option>
                         </select>
-                        <label class="col-span-1 flex items-center justify-center">
+                        <label class="col-span-1 flex items-center justify-start gap-2 text-xs text-gray-600 sm:justify-center">
                             <input type="checkbox" v-model="field.required" class="rounded border-gray-300 text-blue-600" />
+                            <span class="sm:hidden">{{ tr('Obligatorio', 'Required') }}</span>
                         </label>
-                        <div class="col-span-1 flex flex-col items-end gap-1">
+                        <div class="col-span-1 flex flex-wrap justify-end gap-2 sm:flex-col sm:items-end sm:gap-1">
                             <button type="button" class="text-[11px] text-gray-500 hover:text-gray-700" @click="moveCustomFormField(idx, -1)">↑</button>
                             <button type="button" class="text-[11px] text-gray-500 hover:text-gray-700" @click="moveCustomFormField(idx, 1)">↓</button>
                             <button type="button" class="text-[11px] text-red-600" @click="removeCustomFormField(idx)">{{ tr('Eliminar', 'Remove') }}</button>
                         </div>
                         <input
                             v-model="field.help"
-                            class="col-span-6 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-6 sm:py-1"
                             :placeholder="tr('Ayuda o instrucción corta', 'Short help text')"
                         />
                         <div
                             v-if="field.type === 'image'"
-                            class="col-span-6 rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500"
+                            class="col-span-1 rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 sm:col-span-6"
                         >
                             {{ tr('Este campo mostrará un botón para subir imagen cuando se abra el formulario de la tarea.', 'This field will show an image upload button when the task form is opened.') }}
                         </div>
                         <select
                             v-if="field.type === 'select'"
                             v-model="field.source"
-                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1"
                         >
                             <option value="">{{ tr('Opciones manuales', 'Manual options') }}</option>
                             <option value="members">{{ tr('Miembros', 'Members') }}</option>
@@ -3918,7 +3922,7 @@ const saveBudgetPreference = async (value) => {
                         <select
                             v-if="field.type === 'select' && field.source === 'task_data'"
                             v-model="field.sourceTaskId"
-                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1"
                         >
                             <option value="">{{ tr('Selecciona la tarea origen', 'Select source task') }}</option>
                             <option
@@ -3932,7 +3936,7 @@ const saveBudgetPreference = async (value) => {
                         <select
                             v-if="field.type === 'select' && field.source === 'task_data' && field.sourceTaskId"
                             v-model="field.sourceLabelField"
-                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1"
                         >
                             <option value="">{{ tr('Campo visible', 'Display field') }}</option>
                             <option
@@ -3946,7 +3950,7 @@ const saveBudgetPreference = async (value) => {
                         <select
                             v-if="field.type === 'select' && field.source === 'participants'"
                             v-model="field.sourceParticipantRole"
-                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1"
                         >
                             <option value="">{{ tr('Todos los roles', 'All roles') }}</option>
                             <option value="kid">{{ tr('Menores', 'Kids') }}</option>
@@ -3958,7 +3962,7 @@ const saveBudgetPreference = async (value) => {
                         <select
                             v-if="field.type === 'select' && field.source === 'participants'"
                             v-model="field.sourceParticipantStatus"
-                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1"
                         >
                             <option value="">{{ tr('Todos los estados', 'All statuses') }}</option>
                             <option value="invited">{{ tr('Invitado', 'Invited') }}</option>
@@ -3969,12 +3973,12 @@ const saveBudgetPreference = async (value) => {
                         <input
                             v-if="field.type === 'select' && !field.source"
                             v-model="field.optionsText"
-                            class="col-span-3 rounded border border-gray-300 px-2 py-1 text-sm"
+                            class="col-span-1 rounded border border-gray-300 px-2 py-2 text-sm sm:col-span-3 sm:py-1"
                             :placeholder="tr('Opciones separadas por coma', 'Comma-separated options')"
                         />
                         <label
                             v-if="field.type === 'select'"
-                            class="col-span-3 inline-flex items-center gap-2 text-xs text-gray-600"
+                            class="col-span-1 inline-flex items-center gap-2 text-xs text-gray-600 sm:col-span-3"
                         >
                             <input type="checkbox" v-model="field.multiple" class="rounded border-gray-300 text-blue-600" />
                             {{ tr('Selección múltiple', 'Multiple selection') }}
@@ -3982,13 +3986,13 @@ const saveBudgetPreference = async (value) => {
                     </div>
                 </div>
                 <div class="mt-3">
-                    <div class="flex items-center gap-2">
-                        <button type="button" class="px-3 py-1 rounded text-xs bg-gray-200 text-gray-700" @click="addCustomFormField">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <button type="button" class="rounded bg-gray-200 px-3 py-2 text-xs text-gray-700 sm:w-auto sm:py-1" @click="addCustomFormField">
                             Add field
                         </button>
                         <button
                             type="button"
-                            class="px-3 py-1 rounded text-xs bg-blue-100 text-blue-700"
+                            class="rounded bg-blue-100 px-3 py-2 text-xs text-blue-700 sm:w-auto sm:py-1"
                             :disabled="customFormSuggesting"
                             @click="suggestCustomFormDefinition"
                         >
@@ -3997,17 +4001,18 @@ const saveBudgetPreference = async (value) => {
                     </div>
                 </div>
                 <div v-if="customFormError" class="mt-2 text-xs text-red-600">{{ customFormError }}</div>
-                <div class="mt-5 flex justify-end gap-2">
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="showCustomFormBuilder = false">{{ tr('Cancelar', 'Cancel') }}</button>
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" @click="saveCustomFormDefinition">{{ tr('Guardar formulario', 'Save Form') }}</button>
+                <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" class="rounded bg-gray-100 px-3 py-2 text-sm text-gray-600 sm:py-1" @click="showCustomFormBuilder = false">{{ tr('Cancelar', 'Cancel') }}</button>
+                    <button type="button" class="rounded bg-blue-600 px-3 py-2 text-sm text-white sm:py-1" @click="saveCustomFormDefinition">{{ tr('Guardar formulario', 'Save Form') }}</button>
+                </div>
                 </div>
             </div>
         </div>
 
         <div v-if="activeFormTask" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div class="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">
+            <div class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-4 shadow-xl sm:p-6">
+                <div class="mb-4 flex items-start justify-between gap-3">
+                    <h3 class="min-w-0 break-words text-lg font-semibold text-gray-800">
                         {{ activeFormTask.title }} {{ tr('Formulario', 'Form') }}
                     </h3>
                     <button type="button" class="text-gray-400 hover:text-gray-600" @click="closeTaskForm">✕</button>
@@ -4073,7 +4078,7 @@ const saveBudgetPreference = async (value) => {
                                     class="h-auto max-h-64 w-full object-cover"
                                 />
                             </div>
-                            <div class="flex items-center gap-3">
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                                 <label class="inline-flex cursor-pointer items-center justify-center rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                                     <input
                                         type="file"
@@ -4153,7 +4158,7 @@ const saveBudgetPreference = async (value) => {
                                 <input
                                     v-model="multiSelectQueries[field.key]"
                                     type="text"
-                                    class="flex-1 min-w-[180px] border-0 p-0 text-sm focus:ring-0"
+                                    class="min-w-0 flex-1 border-0 p-0 text-sm focus:ring-0"
                                     :placeholder="tr('Escribe para buscar...', 'Type to search...')"
                                     @keydown.enter.prevent="filteredMultiSelectOptions(field).length ? addMultiSelectValue(field, filteredMultiSelectOptions(field)[0].value) : null"
                                 />
@@ -4217,7 +4222,7 @@ const saveBudgetPreference = async (value) => {
                                 :placeholder="tr('Total esperado (opcional si ya hay cantidad x costo)', 'Expected total (optional if qty x unit cost is provided)')"
                                 @input="onVenueExpectedTotalInput($event.target.value)"
                             />
-                            <div class="md:col-span-2 flex items-center justify-between text-xs text-gray-500">
+                            <div class="flex flex-col gap-2 text-xs text-gray-500 md:col-span-2 sm:flex-row sm:items-center sm:justify-between">
                                 <span>
                                     {{ tr('Total automático de cantidad × costo unitario', 'Auto total from qty × unit cost:') }}
                                     <span class="font-semibold text-gray-700">${{ computedVenueTotal().toFixed(2) }}</span>
@@ -4234,17 +4239,17 @@ const saveBudgetPreference = async (value) => {
                     </div>
                 </div>
                 <div v-else class="text-sm text-gray-500">{{ tr('No hay campos de formulario para esta tarea.', 'No form fields available for this task.') }}</div>
-                <div class="mt-6 flex justify-end gap-2">
+                <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                     <button
                         v-if="isRegistryForm && registryEditIndex !== null"
                         type="button"
-                        class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600"
+                        class="rounded bg-gray-100 px-3 py-2 text-sm text-gray-600 sm:py-1"
                         @click="cancelRegistryEdit"
                     >
                         {{ tr('Cancelar edición', 'Cancel edit') }}
                     </button>
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-gray-100 text-gray-600" @click="closeTaskForm">{{ tr('Cerrar', 'Close') }}</button>
-                    <button type="button" class="px-3 py-1 rounded text-sm bg-blue-600 text-white" :disabled="formLoading" @click="saveTaskForm">
+                    <button type="button" class="rounded bg-gray-100 px-3 py-2 text-sm text-gray-600 sm:py-1" @click="closeTaskForm">{{ tr('Cerrar', 'Close') }}</button>
+                    <button type="button" class="rounded bg-blue-600 px-3 py-2 text-sm text-white sm:py-1" :disabled="formLoading" @click="saveTaskForm">
                         {{
                             isRegistryForm
                                 ? (registryEditIndex === null ? tr('Agregar fila', 'Add row') : tr('Actualizar fila', 'Update row'))

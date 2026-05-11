@@ -192,7 +192,7 @@ onMounted(loadData)
                     </div>
                     <button
                         type="button"
-                        class="inline-flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        class="inline-flex w-full items-center justify-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 md:w-auto"
                         :disabled="loading"
                         @click="loadData"
                     >
@@ -301,13 +301,49 @@ onMounted(loadData)
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Ingresos por ubicación', 'Income by Location') }}</h2>
                         <p class="mt-1 text-sm text-gray-600">{{ tr('Los ingresos se clasifican por tipo de pago: efectivo o banco.', 'Income is classified by payment type: cash or bank.') }}</p>
                     </div>
-                    <select v-model="incomeLocationFilter" class="rounded border px-3 py-2 text-sm">
+                    <select v-model="incomeLocationFilter" class="w-full rounded border px-3 py-2 text-sm md:w-auto">
                         <option value="all">{{ tr('Todos', 'All') }}</option>
                         <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
                         <option value="bank">{{ tr('Banco', 'Bank') }}</option>
                     </select>
                 </div>
-                <div class="mt-4 overflow-x-auto">
+                <div class="mt-4 space-y-3 sm:hidden">
+                    <article v-for="row in filteredIncomeRows" :key="`mobile-income-${row.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="break-words text-sm font-semibold text-gray-900">{{ row.concept_name || '—' }}</div>
+                                <div v-if="row.event_title" class="mt-1 break-words text-xs text-gray-500">{{ row.event_title }}</div>
+                            </div>
+                            <div class="shrink-0 text-right text-sm font-semibold text-gray-900">${{ formatMoney(row.amount_paid) }}</div>
+                        </div>
+                        <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                                <dt class="text-gray-500">{{ tr('Fecha', 'Date') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ formatDate(row.payment_date) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-gray-500">{{ tr('Ubicación', 'Location') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ locationLabel(row.location) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-gray-500">{{ tr('Cuenta', 'Account') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ accountLabel(row) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-gray-500">{{ tr('Tipo', 'Type') }}</dt>
+                                <dd class="font-medium capitalize text-gray-900">{{ row.payment_type }}</dd>
+                            </div>
+                            <div class="col-span-2">
+                                <dt class="text-gray-500">{{ tr('Pagador', 'Payer') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ row.payer_name || '—' }}</dd>
+                            </div>
+                        </dl>
+                    </article>
+                    <div v-if="!filteredIncomeRows.length" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                        {{ tr('No hay ingresos para este filtro.', 'No income for this filter.') }}
+                    </div>
+                </div>
+                <div class="mt-4 hidden overflow-x-auto sm:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
@@ -424,7 +460,28 @@ onMounted(loadData)
 
             <section class="rounded-lg border bg-white p-5 shadow-sm">
                 <h2 class="text-lg font-semibold text-gray-900">{{ tr('Movimientos registrados', 'Recorded Movements') }}</h2>
-                <div class="mt-4 overflow-x-auto">
+                <div class="mt-4 space-y-3 sm:hidden">
+                    <article v-for="row in treasury.movements" :key="`mobile-movement-${row.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="text-sm font-semibold text-gray-900">{{ movementLabel(row.movement_type) }}</div>
+                                <div class="mt-1 text-xs text-gray-500">{{ formatDate(row.movement_date) }}</div>
+                            </div>
+                            <div class="text-sm font-semibold text-gray-900">${{ formatMoney(row.amount) }}</div>
+                        </div>
+                        <div class="mt-3 text-xs text-gray-700">
+                            {{ locationLabel(row.from_location) }} → {{ locationLabel(row.to_location) }}
+                        </div>
+                        <div class="mt-2 text-xs text-gray-600">
+                            {{ row.reference || row.receipt_number || '—' }}
+                        </div>
+                        <a v-if="row.proof_url" :href="row.proof_url" target="_blank" rel="noopener" class="mt-2 inline-block text-xs text-blue-700 hover:underline">{{ tr('Ver comprobante', 'View proof') }}</a>
+                    </article>
+                    <div v-if="!treasury.movements.length" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                        {{ tr('No hay movimientos registrados.', 'No movements recorded.') }}
+                    </div>
+                </div>
+                <div class="mt-4 hidden overflow-x-auto sm:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
@@ -456,7 +513,7 @@ onMounted(loadData)
         </div>
 
         <div v-if="selectedSettlement" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div class="w-full max-w-xl rounded-lg border bg-white shadow-xl">
+            <div class="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border bg-white shadow-xl">
                 <div class="flex items-start justify-between gap-4 border-b px-5 py-4">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Transferir a organización', 'Transfer to organization') }}</h2>
@@ -464,7 +521,7 @@ onMounted(loadData)
                     </div>
                     <button type="button" class="text-gray-500 hover:text-gray-700" @click="closeSettlementModal">×</button>
                 </div>
-                <div class="p-5 space-y-4">
+                <div class="space-y-4 overflow-y-auto p-5">
                     <div class="rounded border border-gray-200 bg-gray-50 p-3">
                         <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Monto máximo depositable', 'Maximum depositable amount') }}</div>
                         <div class="mt-1 text-2xl font-semibold text-gray-900">${{ formatMoney(selectedSettlement.pending_settlement_amount) }}</div>
@@ -489,7 +546,7 @@ onMounted(loadData)
                     </div>
                     <div v-if="settlementError" class="text-sm text-red-600">{{ settlementError }}</div>
                 </div>
-                <div class="flex justify-end gap-3 border-t px-5 py-4">
+                <div class="flex flex-col-reverse gap-3 border-t px-5 py-4 sm:flex-row sm:justify-end">
                     <button type="button" class="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="closeSettlementModal">
                         {{ tr('Cancelar', 'Cancel') }}
                     </button>

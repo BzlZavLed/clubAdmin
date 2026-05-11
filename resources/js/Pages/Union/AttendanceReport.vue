@@ -227,7 +227,64 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
                     {{ tr('Sin datos para el período seleccionado.', 'No data for the selected period.') }}
                 </div>
 
-                <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <template v-else>
+                <div class="space-y-3 md:hidden">
+                    <article
+                        v-for="row in filteredRows"
+                        :key="row.id ?? row.club_id"
+                        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                        :class="rowIsDrillable ? 'cursor-pointer active:bg-blue-50' : ''"
+                        @click="rowIsDrillable && drillInto(row)"
+                    >
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="break-words text-sm font-semibold text-gray-900">{{ row.name ?? row.club_name }}</p>
+                                <span v-if="level === 'district'" class="mt-2 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                                    {{ clubTypeLabel(row.club_type) }}
+                                </span>
+                            </div>
+                            <span v-if="rowIsDrillable" class="shrink-0 text-xs font-medium text-blue-600">
+                                {{ tr('Detalle', 'Details') }} →
+                            </span>
+                        </div>
+
+                        <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div v-if="level !== 'district'" class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Clubes', 'Clubs') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ row.total_clubs ?? '—' }}</dd>
+                            </div>
+                            <div v-if="level !== 'district'" class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Con reporte', 'With report') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ row.clubs_reporting ?? '—' }}</dd>
+                            </div>
+                            <div v-if="level === 'district'" class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Inscritos', 'Enrolled') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ row.enrolled ?? 0 }}</dd>
+                            </div>
+                            <div v-if="level === 'district'" class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Sesiones', 'Sessions') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ row.session_count ?? 0 }}</dd>
+                            </div>
+                        </dl>
+
+                        <div class="mt-4">
+                            <div class="flex items-center justify-between gap-3 text-xs">
+                                <span class="font-medium text-gray-500">{{ tr('Asistencia promedio', 'Average attendance') }}</span>
+                                <span :class="['font-semibold', attendanceTextColor(row.avg_attendance_pct)]">
+                                    {{ row.avg_attendance_pct != null ? row.avg_attendance_pct + '%' : '—' }}
+                                </span>
+                            </div>
+                            <div class="mt-2 h-2.5 overflow-hidden rounded-full bg-gray-100">
+                                <div
+                                    class="h-2.5 rounded-full transition-all duration-500"
+                                    :style="{ width: (row.avg_attendance_pct != null ? row.avg_attendance_pct : 0) + '%', backgroundColor: attendanceColor(row.avg_attendance_pct) }"
+                                />
+                            </div>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm md:block">
                     <table class="w-full min-w-[760px] divide-y divide-gray-100">
                         <thead class="bg-gray-50">
                             <tr>
@@ -295,6 +352,7 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
                         </tbody>
                     </table>
                 </div>
+                </template>
             </div>
 
             <!-- ── Sessions (club level) ── -->
@@ -315,7 +373,42 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
                     {{ tr('Sin sesiones registradas para este período.', 'No sessions registered for this period.') }}
                 </div>
 
-                <div v-else class="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <template v-else>
+                <div class="space-y-3 md:hidden">
+                    <article
+                        v-for="(s, i) in sessions"
+                        :key="i"
+                        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-900">{{ s.date }}</p>
+                                <p class="mt-1 text-xs text-gray-500">{{ tr('Sesión', 'Session') }}</p>
+                            </div>
+                            <span :class="['text-sm font-semibold', attendanceTextColor(s.attendance_pct)]">
+                                {{ s.attendance_pct != null ? s.attendance_pct + '%' : '—' }}
+                            </span>
+                        </div>
+                        <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Inscritos', 'Enrolled') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ s.enrolled }}</dd>
+                            </div>
+                            <div class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">{{ tr('Presentes', 'Present') }}</dt>
+                                <dd class="mt-1 font-semibold text-gray-900">{{ s.present }}</dd>
+                            </div>
+                        </dl>
+                        <div class="mt-4 h-2.5 overflow-hidden rounded-full bg-gray-100">
+                            <div
+                                class="h-2.5 rounded-full transition-all duration-500"
+                                :style="{ width: (s.attendance_pct != null ? s.attendance_pct : 0) + '%', backgroundColor: attendanceColor(s.attendance_pct) }"
+                            />
+                        </div>
+                    </article>
+                </div>
+
+                <div class="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm md:block">
                     <table class="w-full min-w-[640px] divide-y divide-gray-100">
                         <thead class="bg-gray-50">
                             <tr>
@@ -363,6 +456,7 @@ const monthLabel = computed(() => months.value.find(m => m.value === props.month
                         </tfoot>
                     </table>
                 </div>
+                </template>
             </div>
 
         </div>
