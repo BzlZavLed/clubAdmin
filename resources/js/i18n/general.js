@@ -223,6 +223,10 @@ export const generalTranslations = {
         es: 'Pagos',
         en: 'Payments',
     },
+    presence_log: {
+        es: 'Usuarios en línea',
+        en: 'Online users',
+    },
     primary_director: {
         es: 'Director principal',
         en: 'Primary director',

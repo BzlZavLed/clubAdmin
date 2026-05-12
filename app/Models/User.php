@@ -31,6 +31,7 @@ class User extends Authenticatable
         'club_id',
         'status',
         'must_change_password',
+        'last_seen_at',
     ];
 
     /**
@@ -54,6 +55,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'must_change_password' => 'boolean',
+            'last_seen_at' => 'datetime',
         ];
     }
     public function clubs()
