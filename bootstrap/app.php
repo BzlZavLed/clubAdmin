@@ -11,6 +11,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Symfony\Component\HttpFoundation\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -19,6 +20,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->trustProxies(
+            at: '*',
+            headers: Request::HEADER_X_FORWARDED_FOR
+            | Request::HEADER_X_FORWARDED_HOST
+            | Request::HEADER_X_FORWARDED_PORT
+            | Request::HEADER_X_FORWARDED_PROTO
+        );
         // Append web middleware
         $middleware->web(append: [
             \App\Http\Middleware\TrackUserPresence::class,
@@ -89,11 +97,16 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if (!$entityType) {
-                if (str_contains($path, '/members')) $entityType = 'Member';
-                elseif (str_contains($path, '/staff')) $entityType = 'Staff';
-                elseif (str_contains($path, '/church')) $entityType = 'Church';
-                elseif (str_contains($path, '/club-classes')) $entityType = 'ClubClass';
-                elseif (str_contains($path, '/users')) $entityType = 'User';
+                if (str_contains($path, '/members'))
+                    $entityType = 'Member';
+                elseif (str_contains($path, '/staff'))
+                    $entityType = 'Staff';
+                elseif (str_contains($path, '/church'))
+                    $entityType = 'Church';
+                elseif (str_contains($path, '/club-classes'))
+                    $entityType = 'ClubClass';
+                elseif (str_contains($path, '/users'))
+                    $entityType = 'User';
             }
 
             if (!$entityType) {
