@@ -77,6 +77,13 @@ const menuItems = computed(() => [
                 icon: DocumentTextIcon
             },
             {
+                id: 'presence_log',
+                name: t('presence_log'),
+                href: '/super-admin/presence-log',
+                route: 'superadmin.presence-log.index',
+                icon: UsersIcon
+            },
+            {
                 id: 'task_forms',
                 name: t('task_forms'),
                 href: '/super-admin/event-task-forms',

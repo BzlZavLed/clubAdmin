@@ -19,7 +19,8 @@ const props = defineProps({
 })
 
 const editingUserId = ref(null)
-const { tr } = useLocale()
+const { tr, locale } = useLocale()
+const onlineThresholdMs = 5 * 60 * 1000
 
 const form = useForm({
     name: '',
@@ -182,6 +183,28 @@ const scopeLabel = (user) => {
     }
 
     return '-'
+}
+
+const formatDateTime = (value) => {
+    if (!value) return '—'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return String(value)
+
+    return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'es-ES', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(date)
+}
+
+const isOnline = (user) => {
+    if (!user.last_seen_at) return false
+    const date = new Date(user.last_seen_at)
+    if (Number.isNaN(date.getTime())) return false
+
+    return Date.now() - date.getTime() <= onlineThresholdMs
 }
 
 const deactivateUser = (user) => {
@@ -365,10 +388,23 @@ const deleteUser = (user) => {
                             </tr>
                             <tr v-for="user in props.users" :key="user.id" class="border-t">
                                 <td class="px-3 py-2">{{ user.name }}</td>
-                                <td class="px-3 py-2">{{ user.email }}</td>
+                                <td class="px-3 py-2">
+                                    <div>{{ user.email }}</div>
+                                    <div class="mt-1 text-xs text-gray-500">
+                                        {{ tr('Visto ultimamente el:', 'Last seen at:') }} {{ formatDateTime(user.last_seen_at) }}
+                                    </div>
+                                </td>
                                 <td class="px-3 py-2">{{ user.role_key || user.profile_type }}</td>
                                 <td class="px-3 py-2">{{ scopeLabel(user) }}</td>
-                                <td class="px-3 py-2">{{ user.status || tr('activo', 'active') }}</td>
+                                <td class="px-3 py-2">
+                                    <div>{{ user.status || tr('activo', 'active') }}</div>
+                                    <span
+                                        v-if="isOnline(user)"
+                                        class="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800"
+                                    >
+                                        {{ tr('En linea', 'Online') }}
+                                    </span>
+                                </td>
                                 <td class="px-3 py-2 text-right space-x-2">
                                     <button type="button" class="text-blue-600 hover:underline" @click="editUser(user)">{{ tr('Editar', 'Edit') }}</button>
                                     <button type="button" class="text-amber-600 hover:underline" @click="deactivateUser(user)">{{ tr('Desactivar', 'Deactivate') }}</button>

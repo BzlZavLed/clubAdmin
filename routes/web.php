@@ -50,6 +50,7 @@ use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 use App\Http\Controllers\SuperAdminContextController;
 use App\Http\Controllers\SuperAdminEventTaskFormCatalogController;
 use App\Http\Controllers\SuperAdminParentPortalController;
+use App\Http\Controllers\SuperAdminPresenceController;
 use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\UnionWorkplanController;
@@ -365,6 +366,8 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
         ->name('superadmin.members.parent-account.store');
     Route::get('/super-admin/ai-logs', [\App\Http\Controllers\SuperAdminAiLogController::class, 'index'])
         ->name('superadmin.ai-logs.index');
+    Route::get('/super-admin/presence-log', [SuperAdminPresenceController::class, 'index'])
+        ->name('superadmin.presence-log.index');
     Route::get('/super-admin/event-task-forms', [SuperAdminEventTaskFormCatalogController::class, 'index'])
         ->name('superadmin.event-task-forms.index');
     Route::post('/super-admin/event-task-forms/schemas', [SuperAdminEventTaskFormCatalogController::class, 'storeSchema'])
@@ -422,34 +425,41 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::put('/super-admin/clubs/{club}', [ClubController::class, 'updateBySuperadmin'])->name('superadmin.clubs.update');
     Route::put('/super-admin/clubs/{club}/deactivate', [ClubController::class, 'deactivateBySuperadmin'])->name('superadmin.clubs.deactivate');
     Route::delete('/super-admin/clubs/{club}', [ClubController::class, 'deleteBySuperadmin'])->name('superadmin.clubs.delete');
-    Route::get('/super-admin/users', fn() => Inertia::render('SuperAdmin/Users', [
-        'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
-        'clubs' => Club::query()
-            ->withoutGlobalScopes()
-            ->select('id', 'club_name', 'church_id', 'status')
-            ->orderBy('club_name')
-            ->get(),
-        'districts' => \App\Models\District::query()
-            ->with('association.union:id,name')
-            ->where('status', '!=', 'deleted')
-            ->orderBy('name')
-            ->get(['id', 'association_id', 'name', 'status']),
-        'associations' => \App\Models\Association::query()
-            ->with('union:id,name')
-            ->where('status', '!=', 'deleted')
-            ->orderBy('name')
-            ->get(['id', 'union_id', 'name', 'status']),
-        'unions' => \App\Models\Union::query()
-            ->where('status', '!=', 'deleted')
-            ->orderBy('name')
-            ->get(['id', 'name', 'status']),
-        'subRoles' => SubRole::all(),
-        'users' => User::query()
-            ->select('id', 'name', 'email', 'profile_type', 'role_key', 'scope_type', 'scope_id', 'sub_role', 'church_id', 'church_name', 'club_id', 'status')
-            ->where('status', '!=', 'deleted')
-            ->orderBy('name')
-            ->get(),
-    ]))->name('superadmin.users.manage');
+    Route::get('/super-admin/users', function () {
+        $userColumns = ['id', 'name', 'email', 'profile_type', 'role_key', 'scope_type', 'scope_id', 'sub_role', 'church_id', 'church_name', 'club_id', 'status'];
+        if (\Illuminate\Support\Facades\Schema::hasColumn('users', 'last_seen_at')) {
+            $userColumns[] = 'last_seen_at';
+        }
+
+        return Inertia::render('SuperAdmin/Users', [
+            'churches' => Church::select('id', 'church_name')->orderBy('church_name')->get(),
+            'clubs' => Club::query()
+                ->withoutGlobalScopes()
+                ->select('id', 'club_name', 'church_id', 'status')
+                ->orderBy('club_name')
+                ->get(),
+            'districts' => \App\Models\District::query()
+                ->with('association.union:id,name')
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(['id', 'association_id', 'name', 'status']),
+            'associations' => \App\Models\Association::query()
+                ->with('union:id,name')
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(['id', 'union_id', 'name', 'status']),
+            'unions' => \App\Models\Union::query()
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(['id', 'name', 'status']),
+            'subRoles' => SubRole::all(),
+            'users' => User::query()
+                ->select($userColumns)
+                ->where('status', '!=', 'deleted')
+                ->orderBy('name')
+                ->get(),
+        ]);
+    })->name('superadmin.users.manage');
     Route::post('/super-admin/users', [RegisteredUserController::class, 'storeBySuperadmin'])->name('superadmin.users.store');
     Route::put('/super-admin/users/{user}', [RegisteredUserController::class, 'updateBySuperadmin'])->name('superadmin.users.update');
     Route::put('/super-admin/users/{user}/deactivate', [RegisteredUserController::class, 'deactivateBySuperadmin'])->name('superadmin.users.deactivate');
