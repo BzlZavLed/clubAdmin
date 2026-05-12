@@ -6,7 +6,9 @@ use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
 use App\Models\ParentMember;
+use App\Models\Payment;
 use App\Models\User;
+use App\Services\PaymentReceiptService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -35,6 +37,7 @@ class SuperAdminParentPortalController extends Controller
                 ->first();
 
             if ($parent) {
+                $this->syncMemberPaymentReceipts($member);
                 $this->startExistingParentPreview($request, $parent);
 
                 return redirect()->route('parent.dashboard');
@@ -53,6 +56,7 @@ class SuperAdminParentPortalController extends Controller
             if ($parent) {
                 $member->forceFill(['parent_id' => $parent->id])->save();
                 $this->syncLegacyParentMemberLink($parent, $member, $contact);
+                $this->syncMemberPaymentReceipts($member);
                 $this->startExistingParentPreview($request, $parent);
 
                 return redirect()->route('parent.dashboard');
@@ -77,6 +81,7 @@ class SuperAdminParentPortalController extends Controller
                 ->firstOrFail();
 
             $this->startExistingParentPreview($request, $parent);
+            $this->syncMemberPaymentReceipts($member);
 
             return response()->json([
                 'created' => false,
@@ -158,6 +163,7 @@ class SuperAdminParentPortalController extends Controller
         });
 
         $this->startExistingParentPreview($request, $parent);
+        $this->syncMemberPaymentReceipts($member->fresh());
 
         return response()->json([
             'created' => $created,
@@ -214,6 +220,19 @@ class SuperAdminParentPortalController extends Controller
         $request->session()->forget('superadmin_parent_portal_member_id');
         $request->session()->put('superadmin_parent_portal_user_id', $parent->id);
         $request->session()->put('superadmin_parent_portal_actor_id', $request->user()->id);
+    }
+
+    protected function syncMemberPaymentReceipts(?Member $member): void
+    {
+        if (!$member?->id || !$member->parent_id) {
+            return;
+        }
+
+        Payment::query()
+            ->where('member_id', $member->id)
+            ->with(['club:id,club_name', 'member:id,type,id_data,parent_id'])
+            ->orderBy('id')
+            ->each(fn (Payment $payment) => app(PaymentReceiptService::class)->syncForPayment($payment));
     }
 
     protected function hasParentContact(Member $member): bool

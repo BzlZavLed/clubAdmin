@@ -59,11 +59,18 @@ class ParentPaymentController extends Controller
         }
 
         $remainingAmount = (float) ($charge['remaining_amount'] ?? 0);
+        $availableAmount = (float) ($charge['available_amount'] ?? $remainingAmount);
         $amount = (float) $validated['amount'];
 
-        if (!$charge['reusable'] && $remainingAmount > 0 && $amount > $remainingAmount) {
+        if (!$charge['reusable'] && $availableAmount <= 0.0001) {
             return back()->withErrors([
-                'amount' => 'El comprobante excede el saldo pendiente de este cargo.',
+                'amount' => 'Ya hay comprobantes en revision que cubren el saldo pendiente de este cargo.',
+            ]);
+        }
+
+        if (!$charge['reusable'] && $availableAmount > 0 && $amount > $availableAmount) {
+            return back()->withErrors([
+                'amount' => 'El comprobante excede el saldo disponible considerando comprobantes en revision.',
             ]);
         }
 
@@ -251,6 +258,7 @@ class ParentPaymentController extends Controller
         foreach ($allocatedPaymentTotals as $key => $amount) {
             $paymentTotals[$key] = round((float) ($paymentTotals[$key] ?? 0) + (float) $amount, 2);
         }
+        $receiptLinksByCharge = $this->receiptLinksByConceptAndMember($memberIds, $concepts->pluck('id'));
 
         $pendingTotals = ParentPaymentSubmission::query()
             ->where('parent_user_id', $user->id)
@@ -319,6 +327,10 @@ class ParentPaymentController extends Controller
                 $remainingAmount = $concept->reusable
                     ? 0.0
                     : max($expectedAmount - $paidAmount, 0.0);
+                $availableAmount = $concept->reusable
+                    ? $expectedAmount
+                    : max($remainingAmount - $pendingAmount, 0.0);
+                $receiptLinks = $receiptLinksByCharge->get($key, []);
 
                 $isRequired = (bool) ($concept->eventFeeComponent?->is_required ?? true);
                 $status = $isRequired ? 'due' : 'optional';
@@ -353,6 +365,10 @@ class ParentPaymentController extends Controller
                     'paid_amount' => $paidAmount,
                     'pending_amount' => $pendingAmount,
                     'remaining_amount' => $remainingAmount,
+                    'available_amount' => $availableAmount,
+                    'receipt_links' => $receiptLinks,
+                    'primary_receipt_number' => $receiptLinks[0]['receipt_number'] ?? null,
+                    'primary_receipt_url' => $receiptLinks[0]['download_url'] ?? null,
                     'reusable' => (bool) $concept->reusable,
                     'due_date' => optional($concept->payment_expected_by)->toDateString(),
                     'scope_label' => $scopeLabels[$member->id] ?? 'Cargo aplicable',
@@ -361,8 +377,14 @@ class ParentPaymentController extends Controller
                     'event_title' => $event?->title,
                     'event_component_label' => $concept->eventFeeComponent?->label,
                     'event_start_at' => $event?->start_at?->toDateTimeString(),
-                    'can_submit_transfer' => (bool) $depositAccount && ($concept->reusable || $remainingAmount > 0.0001),
-                    'transfer_blocked_reason' => null,
+                    'can_submit_transfer' => (bool) $depositAccount && ($concept->reusable || $availableAmount > 0.0001),
+                    'transfer_blocked_reason' => !$depositAccount
+                        ? 'El club todavia no ha publicado datos bancarios para recibir transferencias.'
+                        : ((!$concept->reusable && $remainingAmount <= 0.0001)
+                            ? 'Este cargo ya esta cubierto.'
+                            : ((!$concept->reusable && $availableAmount <= 0.0001)
+                                ? 'Ya hay comprobantes en revision que cubren el saldo pendiente.'
+                                : null)),
                 ]);
             }
         }
@@ -394,6 +416,83 @@ class ParentPaymentController extends Controller
                 ['concept_name', 'asc'],
             ])
             ->values();
+    }
+
+    protected function receiptLinksByConceptAndMember(Collection $memberIds, Collection $conceptIds): Collection
+    {
+        $memberIdValues = $memberIds
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+        $conceptIdValues = $conceptIds
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($memberIdValues->isEmpty() || $conceptIdValues->isEmpty()) {
+            return collect();
+        }
+
+        $conceptIdLookup = array_flip($conceptIdValues->all());
+        $linksByCharge = [];
+
+        Payment::query()
+            ->whereIn('member_id', $memberIdValues)
+            ->where(function ($query) use ($conceptIdValues) {
+                $query->whereIn('payment_concept_id', $conceptIdValues)
+                    ->orWhereHas('allocations', fn ($allocationQuery) => $allocationQuery->whereIn('payment_concept_id', $conceptIdValues));
+            })
+            ->whereHas('receipt')
+            ->with([
+                'receipt:id,payment_id,receipt_number,issued_at',
+                'allocations' => fn ($query) => $query
+                    ->whereIn('payment_concept_id', $conceptIdValues)
+                    ->select('id', 'payment_id', 'payment_concept_id', 'amount'),
+            ])
+            ->orderByDesc('payment_date')
+            ->orderByDesc('id')
+            ->get(['id', 'member_id', 'payment_concept_id', 'amount_paid', 'payment_date'])
+            ->each(function (Payment $payment) use (&$linksByCharge, $conceptIdLookup) {
+                if (!$payment->receipt || !$payment->member_id) {
+                    return;
+                }
+
+                $receiptPayload = [
+                    'id' => (int) $payment->receipt->id,
+                    'payment_id' => (int) $payment->id,
+                    'receipt_number' => $payment->receipt->receipt_number,
+                    'issued_at' => optional($payment->receipt->issued_at)->toDateString(),
+                    'payment_date' => optional($payment->payment_date)->toDateString(),
+                    'download_url' => route('payment-receipts.download', $payment->receipt),
+                ];
+
+                if ($payment->allocations->isNotEmpty()) {
+                    foreach ($payment->allocations as $allocation) {
+                        $key = sprintf('%d|%d', (int) $allocation->payment_concept_id, (int) $payment->member_id);
+                        $linksByCharge[$key][] = [
+                            ...$receiptPayload,
+                            'amount' => (float) $allocation->amount,
+                        ];
+                    }
+
+                    return;
+                }
+
+                if (!isset($conceptIdLookup[(int) $payment->payment_concept_id])) {
+                    return;
+                }
+
+                $key = sprintf('%d|%d', (int) $payment->payment_concept_id, (int) $payment->member_id);
+                $linksByCharge[$key][] = [
+                    ...$receiptPayload,
+                    'amount' => (float) $payment->amount_paid,
+                ];
+            });
+
+        return collect($linksByCharge)
+            ->map(fn (array $links) => collect($links)->unique('id')->values()->all());
     }
 
     protected function transferSubmissionsForParent($user): Collection
@@ -438,8 +537,17 @@ class ParentPaymentController extends Controller
 
     protected function receiptsForParent($user): Collection
     {
+        $memberIds = Member::query()
+            ->where('parent_id', $user->id)
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->where('status', '!=', 'deleted')
+            ->pluck('id');
+
         return PaymentReceipt::query()
-            ->where('parent_user_id', $user->id)
+            ->where(function ($query) use ($user, $memberIds) {
+                $query->where('parent_user_id', $user->id)
+                    ->orWhereIn('member_id', $memberIds);
+            })
             ->with([
                 'club:id,club_name',
                 'payment:id,club_id,member_id,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',

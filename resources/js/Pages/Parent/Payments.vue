@@ -102,7 +102,7 @@ const openTransferModal = (charge) => {
     transferForm.member_id = charge.member_id
     transferForm.amount = charge.reusable
         ? String(Number(charge.expected_amount || 0).toFixed(2))
-        : String(Number(charge.remaining_amount || charge.expected_amount || 0).toFixed(2))
+        : String(Number(charge.available_amount ?? charge.remaining_amount ?? charge.expected_amount ?? 0).toFixed(2))
     transferForm.payment_date = new Date().toISOString().slice(0, 10)
     transferForm.reference = ''
     transferForm.notes = ''
@@ -134,6 +134,15 @@ const submitTransfer = () => {
 }
 
 const pendingCount = computed(() => props.transfer_submissions.filter(item => item.status === 'pending').length)
+const payableCharges = computed(() => props.expected_payments.filter(charge => charge.status !== 'paid'))
+const paidCharges = computed(() => props.expected_payments.filter(charge => charge.status === 'paid'))
+const allChargeReceiptIds = computed(() => new Set(
+    props.expected_payments
+        .flatMap(charge => charge.receipt_links || [])
+        .map(receipt => Number(receipt.id))
+        .filter(Boolean)
+))
+const standaloneReceipts = computed(() => props.receipts.filter(receipt => !allChargeReceiptIds.value.has(Number(receipt.id))))
 </script>
 
 <template>
@@ -154,8 +163,8 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                     </div>
                     <div class="grid grid-cols-2 gap-3 text-sm md:min-w-[280px]">
                         <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                            <div class="text-gray-500">{{ tr('Cargos visibles', 'Visible charges') }}</div>
-                            <div class="mt-1 text-lg font-semibold text-gray-900">{{ expected_payments.length }}</div>
+                            <div class="text-gray-500">{{ tr('Por pagar', 'To pay') }}</div>
+                            <div class="mt-1 text-lg font-semibold text-gray-900">{{ payableCharges.length }}</div>
                         </div>
                         <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                             <div class="text-amber-700">{{ tr('En revisión', 'In review') }}</div>
@@ -220,18 +229,18 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
             <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="flex items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Pagos esperados', 'Expected payments') }}</h2>
-                        <p class="mt-1 text-sm text-gray-600">{{ tr('Cargos que aplican según club, clase, menor o participación en evento.', 'Charges that apply by club, class, child, or event participation.') }}</p>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Por pagar y en revisión', 'To pay and in review') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">{{ tr('Cargos próximos, opcionales o con comprobantes pendientes de aprobación.', 'Upcoming, optional, or submitted charges waiting for approval.') }}</p>
                     </div>
                 </div>
 
-                <div v-if="!expected_payments.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
-                    {{ tr('No hay cargos visibles para tus hijos en este momento.', 'There are no visible charges for your children right now.') }}
+                <div v-if="!payableCharges.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                    {{ tr('No hay cargos pendientes para tus hijos en este momento.', 'There are no pending charges for your children right now.') }}
                 </div>
 
                 <div v-else class="mt-4 space-y-4">
                     <article
-                        v-for="charge in expected_payments"
+                        v-for="charge in payableCharges"
                         :key="charge.row_key"
                         class="rounded-2xl border border-gray-200 p-4"
                     >
@@ -291,11 +300,25 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                 </div>
                                 <div v-if="charge.pending_amount > 0" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                                     {{ tr('Ya hay', 'There is already') }} ${{ formatMoney(charge.pending_amount) }} {{ tr('enviado para revisión en este cargo.', 'submitted for review on this charge.') }}
+                                    <span v-if="!charge.reusable">
+                                        {{ tr('Disponible para enviar ahora:', 'Available to submit now:') }} ${{ formatMoney(charge.available_amount) }}.
+                                    </span>
                                 </div>
                                 <div v-if="charge.transfer_blocked_reason" class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
                                     {{ charge.transfer_blocked_reason }}
                                 </div>
                                 <div class="flex flex-wrap justify-end gap-2">
+                                    <a
+                                        v-for="receipt in charge.receipt_links || []"
+                                        :key="`${charge.row_key}-receipt-${receipt.id}`"
+                                        :href="receipt.download_url"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                                    >
+                                        <CheckCircleIcon class="h-4 w-4" />
+                                        {{ tr('Recibo', 'Receipt') }} {{ receipt.receipt_number || '' }}
+                                    </a>
                                     <button
                                         v-if="charge.can_submit_transfer"
                                         type="button"
@@ -306,6 +329,98 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                                         {{ tr('Enviar comprobante', 'Submit receipt') }}
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+                <div class="flex items-center gap-2">
+                    <CheckCircleIcon class="h-5 w-5 text-emerald-600" />
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Pagados y recibos', 'Paid and receipts') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">{{ tr('Conceptos ya cubiertos, agrupados con sus recibos de pago.', 'Already covered concepts grouped with their payment receipts.') }}</p>
+                    </div>
+                </div>
+
+                <div v-if="!paidCharges.length && !standaloneReceipts.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                    {{ tr('Todavía no hay conceptos pagados ni recibos emitidos.', 'There are no paid concepts or issued receipts yet.') }}
+                </div>
+
+                <div v-else class="mt-4 space-y-4">
+                    <article
+                        v-for="charge in paidCharges"
+                        :key="`paid-${charge.row_key}`"
+                        class="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4"
+                    >
+                        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div class="space-y-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h3 class="text-base font-semibold text-gray-900">{{ charge.concept_name }}</h3>
+                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(charge.status)">
+                                        {{ statusLabel(charge.status) }}
+                                    </span>
+                                    <span v-if="charge.event_title" class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                                        {{ charge.event_title }}
+                                    </span>
+                                </div>
+                                <div class="text-sm text-gray-700">
+                                    {{ charge.member_name }} <span class="text-gray-400">•</span> {{ charge.club_name || '—' }}
+                                    <template v-if="charge.class_name">
+                                        <span class="text-gray-400">•</span> {{ charge.class_name }}
+                                    </template>
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                    {{ charge.scope_label }}
+                                </div>
+                            </div>
+
+                            <div class="grid gap-2 text-sm lg:min-w-[320px]">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="rounded-xl bg-white px-3 py-2">
+                                        <div class="text-xs text-gray-500">{{ tr('Esperado', 'Expected') }}</div>
+                                        <div class="font-semibold text-gray-900">${{ formatMoney(charge.expected_amount) }}</div>
+                                    </div>
+                                    <div class="rounded-xl bg-white px-3 py-2">
+                                        <div class="text-xs text-gray-500">{{ tr('Pagado', 'Paid') }}</div>
+                                        <div class="font-semibold text-gray-900">${{ formatMoney(charge.paid_amount) }}</div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap justify-end gap-2">
+                                    <a
+                                        v-for="receipt in charge.receipt_links || []"
+                                        :key="`${charge.row_key}-paid-receipt-${receipt.id}`"
+                                        :href="receipt.download_url"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                                    >
+                                        <CheckCircleIcon class="h-4 w-4" />
+                                        {{ tr('Recibo', 'Receipt') }} {{ receipt.receipt_number || '' }}
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article v-for="receipt in standaloneReceipts" :key="`standalone-${receipt.id}`" class="rounded-2xl border border-gray-200 p-4">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                            <div class="space-y-1 text-sm">
+                                <div class="font-semibold text-gray-900">{{ receipt.receipt_number }}</div>
+                                <div class="text-gray-700">{{ receipt.member_name }} <span class="text-gray-400">•</span> {{ receipt.concept_name || '—' }}</div>
+                                <div class="text-xs text-gray-500">
+                                    {{ receipt.club_name || '—' }} <span class="mx-1">•</span> {{ formatDate(receipt.payment_date) }} <span class="mx-1">•</span> {{ receipt.payment_type || '—' }}
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <div class="text-right text-sm">
+                                    <div class="text-xs text-gray-500">{{ tr('Monto', 'Amount') }}</div>
+                                    <div class="font-semibold text-gray-900">${{ formatMoney(receipt.amount_paid) }}</div>
+                                </div>
+                                <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
+                                    {{ tr('Descargar', 'Download') }}
+                                </a>
                             </div>
                         </div>
                     </article>
@@ -386,42 +501,6 @@ const pendingCount = computed(() => props.transfer_submissions.filter(item => it
                 </div>
             </section>
 
-            <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div class="flex items-center gap-2">
-                    <CheckCircleIcon class="h-5 w-5 text-emerald-600" />
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Recibos emitidos', 'Issued receipts') }}</h2>
-                        <p class="mt-1 text-sm text-gray-600">{{ tr('Recibos generados por pagos aprobados o registrados directamente por el club.', 'Receipts generated from approved payments or payments registered directly by the club.') }}</p>
-                    </div>
-                </div>
-
-                <div v-if="!receipts.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
-                    {{ tr('No hay recibos disponibles todavía.', 'There are no receipts available yet.') }}
-                </div>
-
-                <div v-else class="mt-4 space-y-3">
-                    <article v-for="receipt in receipts" :key="receipt.id" class="rounded-2xl border border-gray-200 p-4">
-                        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                            <div class="space-y-1 text-sm">
-                                <div class="font-semibold text-gray-900">{{ receipt.receipt_number }}</div>
-                                <div class="text-gray-700">{{ receipt.member_name }} <span class="text-gray-400">•</span> {{ receipt.concept_name || '—' }}</div>
-                                <div class="text-xs text-gray-500">
-                                    {{ receipt.club_name || '—' }} <span class="mx-1">•</span> {{ formatDate(receipt.payment_date) }} <span class="mx-1">•</span> {{ receipt.payment_type || '—' }}
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <div class="text-right text-sm">
-                                    <div class="text-xs text-gray-500">{{ tr('Monto', 'Amount') }}</div>
-                                    <div class="font-semibold text-gray-900">${{ formatMoney(receipt.amount_paid) }}</div>
-                                </div>
-                                <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
-                                    {{ tr('Descargar', 'Download') }}
-                                </a>
-                            </div>
-                        </div>
-                    </article>
-                </div>
-            </section>
         </div>
 
         <div v-if="selectedCharge" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

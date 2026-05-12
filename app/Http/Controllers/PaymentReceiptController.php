@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PaymentReceipt;
+use App\Models\Member;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
 use App\Support\ClubHelper;
@@ -70,9 +71,17 @@ class PaymentReceiptController extends Controller
     public function parentIndex(Request $request)
     {
         $user = $request->user();
+        $memberIds = Member::query()
+            ->where('parent_id', $user->id)
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->where('status', '!=', 'deleted')
+            ->pluck('id');
 
         $receipts = PaymentReceipt::query()
-            ->where('parent_user_id', $user->id)
+            ->where(function ($query) use ($user, $memberIds) {
+                $query->where('parent_user_id', $user->id)
+                    ->orWhereIn('member_id', $memberIds);
+            })
             ->with([
                 'club:id,club_name',
                 'payment:id,club_id,member_id,staff_id,amount_paid,payment_date,payment_type,payment_concept_id,concept_text,pay_to',
@@ -184,6 +193,14 @@ class PaymentReceiptController extends Controller
         }
 
         if ($receipt->parent_user_id && (int) $receipt->parent_user_id === (int) $user->id) {
+            return;
+        }
+
+        if (
+            $user->profile_type === 'parent'
+            && $receipt->payment?->member?->parent_id
+            && (int) $receipt->payment->member->parent_id === (int) $user->id
+        ) {
             return;
         }
 

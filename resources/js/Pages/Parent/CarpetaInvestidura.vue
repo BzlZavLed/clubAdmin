@@ -7,7 +7,6 @@ import { useLocale } from '@/Composables/useLocale'
 
 const props = defineProps({
     children: { type: Array, default: () => [] },
-    pathfinderEvidenceLinks: { type: Array, default: () => [] },
 })
 
 const { showToast } = useGeneral()
@@ -109,7 +108,8 @@ const evidenceOptions = (requirement) => {
     return options.length ? options : ['text']
 }
 
-const requirementActionLabel = (requirement) => {
+const requirementActionLabel = (child, requirement) => {
+    if (!child.can_upload_evidence) return tr('Ver estado', 'View status')
     if (requirement.completed) return tr('Ver / actualizar evidencia', 'View / update evidence')
     if (requirement.validation_mode === 'physical') return tr('Marcar como completado', 'Mark completed')
     return tr('Subir evidencia', 'Upload evidence')
@@ -188,39 +188,15 @@ const submitEvidence = (child, requirement) => {
             <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-5">
                 <h1 class="text-lg font-semibold text-gray-900 sm:text-xl">{{ tr('Carpeta de investidura', 'Investiture folder') }}</h1>
                 <p class="mt-1 text-sm text-gray-600">
-                    {{ tr('Sube evidencias o marca requisitos fisicos para los hijos vinculados a tu cuenta.', 'Upload evidence or mark physical requirements for children linked to your account.') }}
+                    {{ tr('Revisa las carpetas de tus hijos. En aventureros puedes cargar evidencias; en conquistadores la carpeta es solo de consulta porque ellos cargan sus propios requisitos.', 'Review your children folders. For Adventurers you can upload evidence; Pathfinder folders are read-only because they upload their own requirements.') }}
                 </p>
                 <p class="mt-3 rounded bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                    {{ tr('Cada hijo aparece abierto. Toca un requisito para expandirlo y subir evidencia o marcarlo como completado.', 'Each child appears open. Tap a requirement to expand it and upload evidence or mark it completed.') }}
+                    {{ tr('Cada hijo aparece abierto. Toca un requisito para expandirlo, ver su estado y revisar la evidencia disponible.', 'Each child appears open. Tap a requirement to expand it, view status, and review available evidence.') }}
                 </p>
-            </div>
-
-            <div v-if="pathfinderEvidenceLinks.length" class="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-5">
-                <h2 class="text-base font-semibold text-blue-950">{{ tr('Evidencias de conquistadores', 'Pathfinder evidence') }}</h2>
-                <div class="mt-3 space-y-3">
-                    <div v-for="link in pathfinderEvidenceLinks" :key="link.member_id" class="rounded border border-blue-100 bg-white p-3">
-                        <p class="text-sm font-semibold text-gray-900">{{ link.name }}</p>
-                        <p class="mt-1 text-sm text-gray-600">{{ link.club_name }}<span v-if="link.grade"> • {{ link.grade }}</span></p>
-                        <p class="mt-2 text-sm text-blue-900">
-                            Para subir evidencias de la carpeta de requisitos de conquistador por favor use este enlace
-                        </p>
-                        <a
-                            :href="link.url"
-                            target="_blank"
-                            rel="noopener"
-                            class="mt-2 inline-flex break-all rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                        >
-                            {{ link.url }}
-                        </a>
-                        <p v-if="link.expires_at" class="mt-2 text-xs text-blue-800">
-                            Expira: {{ link.expires_at }}
-                        </p>
-                    </div>
-                </div>
             </div>
 
             <div v-if="!children.length" class="rounded-lg border bg-white p-5 text-sm text-gray-600">
-                {{ tr('No tienes hijos adventureros en clubes con sistema de carpetas o aun no tienen una clase asignada.', 'You do not have adventurer children in carpeta clubs or they do not have an assigned class yet.') }}
+                {{ tr('No tienes hijos en clubes con sistema de carpetas o aun no tienen una clase asignada.', 'You do not have children in carpeta clubs or they do not have an assigned class yet.') }}
             </div>
 
             <div v-for="child in children" :key="child.member_id" class="overflow-hidden rounded-lg border bg-white shadow-sm">
@@ -228,7 +204,7 @@ const submitEvidence = (child, requirement) => {
                     <div class="min-w-0">
                         <h2 class="break-words text-base font-semibold text-gray-900 sm:text-lg">{{ child.name }}</h2>
                         <p class="text-sm text-gray-600">
-                            {{ child.club_name }} • {{ child.class_name || 'Sin clase' }} • {{ child.completed_count }}/{{ child.requirements_count }} requisitos
+                            {{ child.member_label || tr('Miembro', 'Member') }} • {{ child.club_name }} • {{ child.class_name || 'Sin clase' }} • {{ child.completed_count }}/{{ child.requirements_count }} requisitos
                         </p>
                     </div>
                     <span class="w-fit rounded-full px-3 py-1 text-xs font-medium" :class="child.all_completed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
@@ -237,20 +213,23 @@ const submitEvidence = (child, requirement) => {
                 </button>
 
                 <div v-if="expandedChildren.has(childKey(child))" class="border-t p-3 sm:p-5">
-                    <div v-if="child.has_evidence" class="mb-4 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+                    <div v-if="child.all_completed" class="mb-4 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 <div class="font-semibold">{{ tr('PDF de carpeta disponible', 'Folder PDF available') }}</div>
-                                <div>{{ tr('Incluye las evidencias registradas y un código de validación antifalsificación.', 'Includes submitted evidence and an anti-forgery validation code.') }}</div>
+                                <div>{{ tr('La carpeta esta completa e incluye codigo QR de validacion.', 'The folder is complete and includes a validation QR code.') }}</div>
                             </div>
                             <a
-                                :href="route('parent.carpeta-investidura.pdf', child.member_id)"
+                                :href="child.print_url || route('parent.carpeta-investidura.pdf', child.member_id)"
                                 target="_blank"
                                 class="inline-flex w-full justify-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 sm:w-auto"
                             >
-                                {{ tr('Descargar PDF', 'Download PDF') }}
+                                {{ tr('Imprimir carpeta', 'Print folder') }}
                             </a>
                         </div>
+                    </div>
+                    <div v-else-if="child.requirements_count" class="mb-4 rounded border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+                        {{ tr('El PDF se habilitara cuando todos los requisitos esten completados.', 'The PDF will be available when all requirements are completed.') }}
                     </div>
 
                     <div v-if="!child.requirements.length" class="text-sm text-gray-600">
@@ -269,7 +248,7 @@ const submitEvidence = (child, requirement) => {
                                         {{ requirement.completed ? tr('Entregado', 'Submitted') : tr('Pendiente', 'Pending') }}
                                     </span>
                                     <span class="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white sm:whitespace-nowrap">
-                                        {{ requirementActionLabel(requirement) }}
+                                        {{ requirementActionLabel(child, requirement) }}
                                     </span>
                                 </div>
                             </button>
@@ -324,7 +303,11 @@ const submitEvidence = (child, requirement) => {
                                     <div v-if="requirement.evidence.text_value" class="break-words">{{ requirement.evidence.text_value }}</div>
                                 </div>
 
-                                <div class="mt-4 space-y-3">
+                                <div v-if="!child.can_upload_evidence" class="mt-4 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+                                    {{ tr('Carpeta de solo consulta para conquistadores. La carga o actualizacion de evidencias se realiza desde el enlace personal del conquistador.', 'Read-only Pathfinder folder. Evidence uploads or updates are handled from the Pathfinder personal link.') }}
+                                </div>
+
+                                <div v-else class="mt-4 space-y-3">
                                     <div v-if="hasElectronicEvidence(requirement)">
                                         <label class="block text-sm font-medium text-gray-700">{{ tr('Tipo de evidencia', 'Evidence type') }}</label>
                                         <select
@@ -406,7 +389,7 @@ const submitEvidence = (child, requirement) => {
                     class="flex w-full items-center justify-between px-4 py-4 sm:px-5 text-left"
                     @click="summaryOpen = !summaryOpen"
                 >
-                    <h2 class="text-lg font-semibold text-gray-900">{{ tr('Resumen de evidencias completas', 'Completed evidence summary') }}</h2>
+                    <h2 class="text-lg font-semibold text-gray-900">{{ tr('Resumen de carpetas completas', 'Completed folder summary') }}</h2>
                     <svg
                         class="h-5 w-5 text-gray-500 transition-transform duration-200 shrink-0"
                         :class="summaryOpen ? 'rotate-180' : ''"

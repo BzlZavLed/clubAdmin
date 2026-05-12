@@ -1600,7 +1600,11 @@ class ReportController extends Controller
 	                ->with(['event:id,title', 'eventClubSettlement:id,receipt_number']);
 
 	            if ($payTo) {
-	                $movementsQ->where('pay_to', $payTo);
+	                $movementsQ->where(function ($query) use ($payTo) {
+	                    $query->where('pay_to', $payTo)
+	                        ->orWhere('from_pay_to', $payTo)
+	                        ->orWhere('to_pay_to', $payTo);
+	                });
 	            }
 	            if ($location) {
 	                $movementsQ->where(function ($query) use ($location) {
@@ -1617,8 +1621,55 @@ class ReportController extends Controller
 	            }
 
 	            foreach ($movementsQ->get() as $movement) {
-	                $key = $movement->pay_to ?? 'club_budget';
 	                $receiptRef = $movement->eventClubSettlement?->receipt_number;
+	                if ($movement->movement_type === TreasuryMovement::TYPE_ACCOUNT_TRANSFER) {
+	                    $fromKey = $movement->from_pay_to ?: $movement->pay_to ?: 'club_budget';
+	                    $toKey = $movement->to_pay_to ?: 'club_budget';
+	                    $fromLabel = $accountLabels[$fromKey] ?? $fromKey;
+	                    $toLabel = $accountLabels[$toKey] ?? $toKey;
+	                    $baseEntry = [
+	                        'entry_type' => 'treasury_movement',
+	                        'id' => $movement->id,
+	                        'date' => $movement->movement_date,
+	                        'created_at' => $movement->created_at?->format('Y-m-d H:i:s.u'),
+	                        'amount' => (float) $movement->amount,
+	                        'payment_type' => null,
+	                        'location' => null,
+	                        'from_location' => $movement->from_location,
+	                        'to_location' => $movement->to_location,
+	                        'member' => null,
+	                        'staff' => null,
+	                        'status' => null,
+	                        'settlement_account' => null,
+	                        'settlement_account_label' => null,
+	                        'settlement_date' => null,
+	                        'receipt_ref' => $movement->reference,
+	                        'receipt_refs' => $movement->reference ? [$movement->reference] : [],
+	                        'is_cancelled' => (bool) $movement->is_cancelled,
+	                        'related_canceled_movement_id' => $movement->related_canceled_movement_id,
+	                        'canceling_id' => $movement->canceling_id,
+	                    ];
+
+	                    if (!$payTo || $payTo === $fromKey) {
+	                        $entriesByAccount[$fromKey][] = [
+	                            ...$baseEntry,
+	                            'concept' => 'Transferencia local a ' . $toLabel,
+	                            'transfer_direction' => 'out',
+	                        ];
+	                    }
+
+	                    if (!$payTo || $payTo === $toKey) {
+	                        $entriesByAccount[$toKey][] = [
+	                            ...$baseEntry,
+	                            'concept' => 'Transferencia local desde ' . $fromLabel,
+	                            'transfer_direction' => 'in',
+	                        ];
+	                    }
+
+	                    continue;
+	                }
+
+	                $key = $movement->pay_to ?? 'club_budget';
 
 	                $entriesByAccount[$key][] = [
 	                    'entry_type' => 'treasury_movement',
@@ -1744,6 +1795,7 @@ class ReportController extends Controller
 	            TreasuryMovement::TYPE_CASH_DEPOSIT => 'Depósito de efectivo a banco',
 	            TreasuryMovement::TYPE_CASH_WITHDRAWAL => 'Retiro de banco a efectivo',
 	            TreasuryMovement::TYPE_EVENT_SETTLEMENT => 'Transferencia externa de evento',
+	            TreasuryMovement::TYPE_ACCOUNT_TRANSFER => 'Transferencia local entre cuentas',
 	            default => $movement->movement_type,
 	        };
 	    }

@@ -5,18 +5,17 @@ namespace App\Http\Controllers;
 use App\Models\Club;
 use App\Models\ClubCarpetaClassActivation;
 use App\Models\ClassMemberAdventurer;
+use App\Models\ClassMemberPathfinder;
 use App\Models\ClubClass;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
 use App\Models\ParentCarpetaRequirementEvidence;
-use App\Models\PublicMemberEvidenceAccessCode;
 use App\Models\UnionCarpetaRequirement;
 use App\Models\UnionCarpetaYear;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -28,7 +27,6 @@ class ParentCarpetaController extends Controller
     {
         return Inertia::render('Parent/CarpetaInvestidura', [
             'children' => $this->childrenPayload($request->user()->id),
-            'pathfinderEvidenceLinks' => $this->pathfinderEvidenceLinks($request->user()->id),
         ]);
     }
 
@@ -47,6 +45,7 @@ class ParentCarpetaController extends Controller
             ->where('id', (int) $validated['member_id'])
             ->where('parent_id', $request->user()->id)
             ->firstOrFail();
+        abort_unless($member->type === 'adventurers', 403);
 
         $requirement = UnionCarpetaRequirement::query()
             ->where('id', (int) $validated['requirement_id'])
@@ -123,23 +122,27 @@ class ParentCarpetaController extends Controller
     public function pdf(Request $request, Member $member, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
     {
         abort_unless((int) $member->parent_id === (int) $request->user()->id, 403);
-        abort_unless($member->type === 'adventurers', 404);
+        abort_unless(in_array($member->type, ['adventurers', 'pathfinders', 'temp_pathfinder'], true), 404);
 
         $member->load(['club.church', 'club.district.association.union']);
         $club = $member->club;
         abort_unless(($club?->evaluation_system ?? 'honors') === 'carpetas', 404);
 
-        $detail = MemberAdventurer::query()
-            ->where('id', $member->id_data)
-            ->first(['id', 'applicant_name', 'birthdate', 'grade', 'parent_name']);
+        $isPathfinder = $this->isPathfinderMember($member);
+        $detail = $isPathfinder
+            ? MemberPathfinder::query()
+                ->where('member_id', $member->id)
+                ->orWhere('id', $member->id_data)
+                ->first(['id', 'member_id', 'applicant_name', 'birthdate', 'grade'])
+            : MemberAdventurer::query()
+                ->where('id', $member->id_data)
+                ->first(['id', 'applicant_name', 'birthdate', 'grade', 'parent_name']);
 
         $requirements = collect($this->requirementsForMember($member));
         $evidences = ParentCarpetaRequirementEvidence::query()
             ->where('member_id', $member->id)
             ->get()
             ->keyBy('union_carpeta_requirement_id');
-
-        abort_if($evidences->isEmpty(), 404, 'No hay evidencias para generar la carpeta.');
 
         $documentRequirements = $requirements
             ->map(function (array $requirement) use ($evidences) {
@@ -175,6 +178,13 @@ class ParentCarpetaController extends Controller
             ->values()
             ->all();
 
+        abort_if(count($documentRequirements) === 0, 404, 'No hay requisitos publicados para esta carpeta.');
+        abort_unless(
+            collect($documentRequirements)->every(fn (array $requirement) => (bool) $requirement['completed']),
+            422,
+            'La carpeta solo se puede imprimir cuando todos los requisitos estan completados.'
+        );
+
         $generatedAt = now();
         $checksumSource = [
             'member_id' => $member->id,
@@ -203,7 +213,7 @@ class ParentCarpetaController extends Controller
             title: 'Carpeta de investidura',
             snapshot: $checksumSource,
             metadata: [
-                'Adventurero' => $detail?->applicant_name ?? '—',
+                ($isPathfinder ? 'Conquistador' : 'Adventurero') => $detail?->applicant_name ?? '—',
                 'Club' => $club?->club_name ?? '—',
                 'Iglesia' => $club?->church?->church_name ?? $club?->church_name ?? '—',
                 'Distrito' => $club?->district?->name ?? '—',
@@ -216,6 +226,7 @@ class ParentCarpetaController extends Controller
 
         $pdf = Pdf::loadView('pdf.parent_carpeta_portfolio', [
             'member' => $member,
+            'memberLabel' => $isPathfinder ? 'Conquistador' : 'Adventurero',
             'detail' => $detail,
             'club' => $club,
             'church' => $club?->church,
@@ -230,7 +241,7 @@ class ParentCarpetaController extends Controller
             'qrCodeDataUri' => $validation['qr_code_data_uri'],
         ])->setPaper('letter', 'portrait');
 
-        $filename = 'carpeta-investidura-' . $member->id . '-' . $generatedAt->format('Ymd-His') . '.pdf';
+        $filename = ($isPathfinder ? 'carpeta-conquistador-' : 'carpeta-investidura-') . $member->id . '-' . $generatedAt->format('Ymd-His') . '.pdf';
 
         return $pdf->download($filename);
     }
@@ -240,14 +251,20 @@ class ParentCarpetaController extends Controller
         $members = Member::query()
             ->with(['club.district.association.union'])
             ->where('parent_id', $parentId)
-            ->where('type', 'adventurers')
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
             ->where('status', 'active')
             ->get();
 
         $adventurerRows = MemberAdventurer::query()
-            ->whereIn('id', $members->pluck('id_data')->filter())
+            ->whereIn('id', $members->where('type', 'adventurers')->pluck('id_data')->filter())
             ->get(['id', 'applicant_name', 'birthdate', 'grade'])
             ->keyBy('id');
+        $pathfinderMembers = $members->filter(fn (Member $member) => $this->isPathfinderMember($member));
+        $pathfinderRows = MemberPathfinder::query()
+            ->whereIn('member_id', $pathfinderMembers->pluck('id')->filter()->values())
+            ->orWhereIn('id', $pathfinderMembers->pluck('id_data')->filter()->values())
+            ->get(['id', 'member_id', 'applicant_name', 'birthdate', 'grade'])
+            ->keyBy(fn ($row) => (int) ($row->member_id ?: 0) ?: ('legacy-' . $row->id));
 
         $evidences = ParentCarpetaRequirementEvidence::query()
             ->whereIn('member_id', $members->pluck('id'))
@@ -255,12 +272,13 @@ class ParentCarpetaController extends Controller
             ->keyBy(fn ($evidence) => $evidence->member_id . '|' . $evidence->union_carpeta_requirement_id);
 
         return $members
-            ->map(function (Member $member) use ($adventurerRows, $evidences) {
+            ->map(function (Member $member) use ($adventurerRows, $pathfinderRows, $evidences) {
                 $club = $member->club;
                 if (($club?->evaluation_system ?? 'honors') !== 'carpetas') {
                     return null;
                 }
 
+                $isPathfinder = $this->isPathfinderMember($member);
                 $requirements = collect($this->requirementsForMember($member))
                     ->map(function (array $requirement) use ($member, $evidences) {
                         $evidence = $evidences->get($member->id . '|' . $requirement['id']);
@@ -282,11 +300,16 @@ class ParentCarpetaController extends Controller
                     ->values()
                     ->all();
 
-                $detail = $adventurerRows->get($member->id_data);
+                $detail = $isPathfinder
+                    ? ($pathfinderRows->get((int) $member->id) ?: $pathfinderRows->get('legacy-' . $member->id_data))
+                    : $adventurerRows->get($member->id_data);
 
                 return [
                     'member_id' => $member->id,
                     'id_data' => $member->id_data,
+                    'member_type' => $member->type,
+                    'member_label' => $isPathfinder ? 'Conquistador' : 'Adventurero',
+                    'can_upload_evidence' => !$isPathfinder,
                     'name' => $detail?->applicant_name ?? '—',
                     'birthdate' => optional($detail?->birthdate)->toDateString(),
                     'grade' => $detail?->grade,
@@ -297,69 +320,7 @@ class ParentCarpetaController extends Controller
                     'requirements_count' => count($requirements),
                     'has_evidence' => collect($requirements)->contains(fn ($requirement) => !empty($requirement['evidence'])),
                     'all_completed' => count($requirements) > 0 && collect($requirements)->every(fn ($r) => (bool) $r['completed']),
-                ];
-            })
-            ->filter()
-            ->values()
-            ->all();
-    }
-
-    private function pathfinderEvidenceLinks(int $parentId): array
-    {
-        $members = Member::query()
-            ->with('club')
-            ->where('parent_id', $parentId)
-            ->whereIn('type', ['pathfinders', 'temp_pathfinder'])
-            ->where('status', 'active')
-            ->get()
-            ->filter(fn (Member $member) =>
-                ($member->club?->evaluation_system ?? 'honors') === 'carpetas'
-                && $member->club?->club_type === 'pathfinders'
-            )
-            ->values();
-
-        if ($members->isEmpty()) {
-            return [];
-        }
-
-        $pathfinderRows = MemberPathfinder::query()
-            ->whereIn('member_id', $members->pluck('id')->filter()->values())
-            ->orWhereIn('id', $members->pluck('id_data')->filter()->values())
-            ->get(['id', 'member_id', 'applicant_name', 'grade'])
-            ->keyBy(fn ($row) => (int) ($row->member_id ?: 0) ?: ('legacy-' . $row->id));
-
-        $accessCodes = PublicMemberEvidenceAccessCode::query()
-            ->whereIn('member_id', $members->pluck('id'))
-            ->whereNull('revoked_at')
-            ->where(function ($query) {
-                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
-            ->latest('created_at')
-            ->get()
-            ->groupBy('member_id');
-
-        return $members
-            ->map(function (Member $member) use ($pathfinderRows, $accessCodes) {
-                $accessCode = $accessCodes->get($member->id)?->first();
-                if (!$accessCode?->code_encrypted) {
-                    return null;
-                }
-
-                try {
-                    $plainCode = Crypt::decryptString($accessCode->code_encrypted);
-                } catch (\Throwable) {
-                    return null;
-                }
-
-                $detail = $pathfinderRows->get((int) $member->id) ?: $pathfinderRows->get('legacy-' . $member->id_data);
-
-                return [
-                    'member_id' => $member->id,
-                    'name' => $detail?->applicant_name ?? '—',
-                    'grade' => $detail?->grade,
-                    'club_name' => $member->club?->club_name,
-                    'url' => route('public.member-evidence.show', ['code' => $plainCode]),
-                    'expires_at' => optional($accessCode->expires_at)->toDateTimeString(),
+                    'print_url' => route('parent.carpeta-investidura.pdf', ['member' => $member->id]),
                 ];
             })
             ->filter()
@@ -427,14 +388,24 @@ class ParentCarpetaController extends Controller
 
     private function currentClubClassForMember(Member $member): ?ClubClass
     {
-        if ($member->id_data) {
-            $assignment = ClassMemberAdventurer::query()
-                ->with('clubClass.unionClassCatalog')
-                ->where('members_adventurer_id', $member->id_data)
-                ->where('active', true)
-                ->orderByDesc('assigned_at')
-                ->orderByDesc('id')
-                ->first();
+        if ($member->id_data || $this->isPathfinderMember($member)) {
+            if ($this->isPathfinderMember($member)) {
+                $assignment = ClassMemberPathfinder::query()
+                    ->with('clubClass.unionClassCatalog')
+                    ->where('member_id', $member->id)
+                    ->where('active', true)
+                    ->orderByDesc('assigned_at')
+                    ->orderByDesc('id')
+                    ->first();
+            } else {
+                $assignment = ClassMemberAdventurer::query()
+                    ->with('clubClass.unionClassCatalog')
+                    ->where('members_adventurer_id', $member->id_data)
+                    ->where('active', true)
+                    ->orderByDesc('assigned_at')
+                    ->orderByDesc('id')
+                    ->first();
+            }
 
             if ($assignment?->clubClass && (int) $assignment->clubClass->club_id === (int) $member->club_id) {
                 return $assignment->clubClass;
@@ -505,5 +476,10 @@ class ParentCarpetaController extends Controller
             'master guide', 'master guides', 'guia mayor', 'guia mayores', 'guia mayor avanzado' => 'master_guide',
             default => $normalized,
         };
+    }
+
+    private function isPathfinderMember(Member $member): bool
+    {
+        return in_array($member->type, ['pathfinders', 'temp_pathfinder'], true);
     }
 }
