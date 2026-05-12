@@ -66,7 +66,7 @@
                 @endif
                 <td>
                     <div class="title">Carpeta de investidura</div>
-                    <div class="subtitle">Documento generado desde evidencia registrada por el padre/tutor.</div>
+                    <div class="subtitle">Documento generado desde evidencias registradas en el sistema.</div>
                 </td>
             </tr>
         </table>

@@ -1078,11 +1078,12 @@ class ClubPaymentController extends Controller
 
         $priorPaid = 0.0;
         if (!$isReusableConcept && $expected !== null && $expected > 0 && $submission->payment_concept_id) {
-            $priorPaid = (float) Payment::query()
-                ->where('club_id', $submission->club_id)
-                ->where('payment_concept_id', $submission->payment_concept_id)
-                ->where('member_id', $submission->member_id)
-                ->sum('amount_paid');
+            $paidTotals = $this->paidTotalsForConceptsAndPayer(
+                [(int) $submission->payment_concept_id],
+                $submission->member_id ? (int) $submission->member_id : null,
+                null
+            );
+            $priorPaid = (float) ($paidTotals[(int) $submission->payment_concept_id] ?? 0.0);
 
             $remainingBefore = max($expected - $priorPaid, 0.0);
             if ($remainingBefore <= 0.0001) {

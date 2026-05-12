@@ -56,8 +56,13 @@ class ClubTreasuryController extends Controller
         $club = $this->resolveAllowedClub($request);
 
         $validated = $request->validate([
-            'movement_type' => ['required', 'in:cash_deposit,cash_withdrawal'],
+            'movement_type' => ['required', 'in:cash_deposit,cash_withdrawal,account_transfer'],
             'pay_to' => ['nullable', 'string', 'max:255'],
+            'from_pay_to' => ['nullable', 'string', 'max:255'],
+            'to_pay_to' => ['nullable', 'string', 'max:255'],
+            'location' => ['nullable', 'in:cash,bank'],
+            'from_location' => ['nullable', 'in:cash,bank'],
+            'to_location' => ['nullable', 'in:cash,bank'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'movement_date' => ['required', 'date'],
             'reference' => ['nullable', 'string', 'max:120'],
@@ -65,10 +70,22 @@ class ClubTreasuryController extends Controller
             'proof' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
         ]);
 
-        if (!$this->treasuryService->hasClubBankInfo($club)) {
-            return response()->json([
-                'message' => 'Registra la cuenta bancaria del club antes de mover fondos electrónicos.',
-            ], 422);
+        $movementType = $validated['movement_type'];
+        $fromLocation = $validated['from_location'] ?? $validated['location'] ?? TreasuryMovement::LOCATION_CASH;
+
+        if (
+            in_array($movementType, [TreasuryMovement::TYPE_CASH_DEPOSIT, TreasuryMovement::TYPE_CASH_WITHDRAWAL], true)
+            || ($movementType === TreasuryMovement::TYPE_ACCOUNT_TRANSFER && $fromLocation === TreasuryMovement::LOCATION_BANK)
+        ) {
+            if (!$this->treasuryService->hasClubBankInfo($club)) {
+                return response()->json([
+                    'message' => 'Registra la cuenta bancaria del club antes de mover fondos electrónicos.',
+                ], 422);
+            }
+        }
+
+        if ($movementType === TreasuryMovement::TYPE_ACCOUNT_TRANSFER) {
+            return $this->storeAccountTransfer($request, $club, $validated);
         }
 
         $summary = $this->treasuryService->summary($club);
@@ -99,10 +116,11 @@ class ClubTreasuryController extends Controller
             $proofOriginalName = $file->getClientOriginalName();
         }
 
-        $movementType = $validated['movement_type'];
         $movement = TreasuryMovement::query()->create([
             'club_id' => $club->id,
             'pay_to' => $payTo,
+            'from_pay_to' => $payTo,
+            'to_pay_to' => $payTo,
             'created_by_user_id' => $request->user()?->id,
             'movement_type' => $movementType,
             'from_location' => $movementType === TreasuryMovement::TYPE_CASH_DEPOSIT
@@ -125,6 +143,86 @@ class ClubTreasuryController extends Controller
         ], 201);
     }
 
+    protected function storeAccountTransfer(Request $request, Club $club, array $validated)
+    {
+        $summary = $this->treasuryService->summary($club);
+        $amount = round((float) $validated['amount'], 2);
+        $fromPayTo = $validated['from_pay_to'] ?? $validated['pay_to'] ?? 'club_budget';
+        $toPayTo = $validated['to_pay_to'] ?? null;
+        $fromLocation = $validated['from_location'] ?? $validated['location'] ?? TreasuryMovement::LOCATION_CASH;
+        $toLocation = $validated['to_location'] ?? $validated['location'] ?? $fromLocation;
+
+        if (!$toPayTo) {
+            return response()->json([
+                'message' => 'Selecciona la cuenta destino.',
+            ], 422);
+        }
+
+        if ($fromPayTo === $toPayTo) {
+            return response()->json([
+                'message' => 'La cuenta origen y destino deben ser diferentes.',
+            ], 422);
+        }
+
+        $existingAccounts = Account::query()
+            ->where('club_id', $club->id)
+            ->whereIn('pay_to', [$fromPayTo, $toPayTo])
+            ->pluck('pay_to')
+            ->all();
+
+        if (!in_array($fromPayTo, $existingAccounts, true) || !in_array($toPayTo, $existingAccounts, true)) {
+            return response()->json([
+                'message' => 'Selecciona cuentas válidas del club.',
+            ], 422);
+        }
+
+        $sourceSummary = collect($summary['accounts'] ?? [])->firstWhere('account', $fromPayTo) ?: [
+            'cash_balance' => 0,
+            'bank_balance' => 0,
+        ];
+        $available = $fromLocation === TreasuryMovement::LOCATION_BANK
+            ? (float) $sourceSummary['bank_balance']
+            : (float) $sourceSummary['cash_balance'];
+
+        if ($amount > $available) {
+            return response()->json([
+                'message' => $fromLocation === TreasuryMovement::LOCATION_BANK
+                    ? 'La transferencia excede el balance bancario disponible de la cuenta origen.'
+                    : 'La transferencia excede el efectivo disponible de la cuenta origen.',
+            ], 422);
+        }
+
+        $proofPath = null;
+        $proofOriginalName = null;
+        if ($request->hasFile('proof')) {
+            $file = $request->file('proof');
+            $proofPath = $file->store('treasury/proofs', 'public');
+            $proofOriginalName = $file->getClientOriginalName();
+        }
+
+        $movement = TreasuryMovement::query()->create([
+            'club_id' => $club->id,
+            'pay_to' => $fromPayTo,
+            'from_pay_to' => $fromPayTo,
+            'to_pay_to' => $toPayTo,
+            'created_by_user_id' => $request->user()?->id,
+            'movement_type' => TreasuryMovement::TYPE_ACCOUNT_TRANSFER,
+            'from_location' => $fromLocation,
+            'to_location' => $toLocation,
+            'amount' => $amount,
+            'movement_date' => Carbon::parse($validated['movement_date'])->toDateString(),
+            'reference' => $validated['reference'] ?? null,
+            'notes' => $validated['notes'] ?? null,
+            'proof_path' => $proofPath,
+            'proof_original_name' => $proofOriginalName,
+        ]);
+
+        return response()->json([
+            'message' => 'Transferencia entre cuentas registrada.',
+            'data' => $movement,
+        ], 201);
+    }
+
     protected function resolveAllowedClub(Request $request): Club
     {
         return ClubHelper::clubForUser($request->user(), $request->input('club_id'));
@@ -132,6 +230,10 @@ class ClubTreasuryController extends Controller
 
     protected function movementRows(Club $club): array
     {
+        $accountLabels = Account::query()
+            ->where('club_id', $club->id)
+            ->pluck('label', 'pay_to');
+
         return TreasuryMovement::query()
             ->where('club_id', $club->id)
             ->with(['creator:id,name', 'event:id,title', 'eventClubSettlement:id,receipt_number'])
@@ -142,6 +244,11 @@ class ClubTreasuryController extends Controller
             ->map(fn (TreasuryMovement $movement) => [
                 'id' => (int) $movement->id,
                 'pay_to' => $movement->pay_to,
+                'from_pay_to' => $movement->from_pay_to ?: $movement->pay_to,
+                'to_pay_to' => $movement->to_pay_to ?: $movement->pay_to,
+                'account_label' => $accountLabels[$movement->pay_to] ?? $movement->pay_to,
+                'from_account_label' => $accountLabels[$movement->from_pay_to ?: $movement->pay_to] ?? ($movement->from_pay_to ?: $movement->pay_to),
+                'to_account_label' => $accountLabels[$movement->to_pay_to ?: $movement->pay_to] ?? ($movement->to_pay_to ?: $movement->pay_to),
                 'movement_type' => $movement->movement_type,
                 'from_location' => $movement->from_location,
                 'to_location' => $movement->to_location,

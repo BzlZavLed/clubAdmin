@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Association;
+use App\Models\Account;
 use App\Models\BankInfo;
 use App\Models\Church;
 use App\Models\Club;
@@ -826,7 +827,30 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             ->where('event_id', $event->id)
             ->where('club_id', $club->id)
             ->firstOrFail();
-        $this->recordMemberPayment($concept, $member, $clubDirector, 25, '2026-05-06');
+        $payment = $this->recordMemberPayment($concept, $member, $clubDirector, 25, '2026-05-06');
+        $receipt = PaymentReceipt::query()->where('payment_id', $payment->id)->firstOrFail();
+        $receipt->forceFill([
+            'parent_user_id' => null,
+            'issued_to_type' => 'member_unlinked',
+            'issued_to_email' => null,
+        ])->save();
+
+        $parentAfterPaymentResponse = $this->actingAs($parent)
+            ->get(route('parent.payments.index'))
+            ->assertOk();
+        $parentPaymentProps = $parentAfterPaymentResponse->viewData('page')['props'];
+        $paidCharge = collect($parentPaymentProps['expected_payments'])
+            ->firstWhere('event_title', 'Association Camporee 2026');
+
+        $this->assertSame('paid', $paidCharge['status']);
+        $this->assertSame($receipt->receipt_number, $paidCharge['primary_receipt_number']);
+        $this->assertSame(route('payment-receipts.download', $receipt), $paidCharge['primary_receipt_url']);
+        $this->assertSame($receipt->receipt_number, $paidCharge['receipt_links'][0]['receipt_number']);
+        $this->assertSame($receipt->receipt_number, collect($parentPaymentProps['receipts'])->firstWhere('id', $receipt->id)['receipt_number']);
+
+        $this->actingAs($parent)
+            ->get(route('payment-receipts.download', $receipt))
+            ->assertOk();
 
         $settlementResponse = $this->actingAs($clubDirector)
             ->getJson(route('club.director.event-settlements.index', ['club_id' => $club->id]))
@@ -848,6 +872,8 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $district = District::create(['name' => 'North District', 'association_id' => $association->id, 'status' => 'active']);
         $church = Church::create(['church_name' => 'North Church', 'email' => 'north@example.com', 'district_id' => $district->id]);
         [$clubDirector, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'North Pathfinders');
+        Account::create(['club_id' => $club->id, 'pay_to' => 'club_budget', 'label' => 'Club Budget', 'balance' => 0]);
+        Account::create(['club_id' => $club->id, 'pay_to' => 'church_budget', 'label' => 'Church Budget', 'balance' => 0]);
 
         $cashPayment = Payment::create([
             'club_id' => $club->id,
@@ -933,13 +959,60 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             ->assertJsonPath('summary.cash_balance', 55)
             ->assertJsonPath('summary.bank_balance', 70);
 
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.director.treasury.movements.store'), [
+                'club_id' => $club->id,
+                'movement_type' => 'account_transfer',
+                'from_pay_to' => 'club_budget',
+                'to_pay_to' => 'church_budget',
+                'from_location' => 'cash',
+                'to_location' => 'bank',
+                'amount' => 20,
+                'movement_date' => '2026-05-04',
+                'reference' => 'LOCAL-CASH-001',
+            ])
+            ->assertCreated();
+
+        $this->actingAs($clubDirector)
+            ->postJson(route('club.director.treasury.movements.store'), [
+                'club_id' => $club->id,
+                'movement_type' => 'account_transfer',
+                'from_pay_to' => 'club_budget',
+                'to_pay_to' => 'church_budget',
+                'from_location' => 'bank',
+                'to_location' => 'bank',
+                'amount' => 30,
+                'movement_date' => '2026-05-05',
+                'reference' => 'LOCAL-BANK-001',
+            ])
+            ->assertCreated();
+
+        $treasuryAfterTransfers = $this->actingAs($clubDirector)
+            ->getJson(route('club.director.treasury.data', ['club_id' => $club->id]))
+            ->assertOk()
+            ->assertJsonPath('summary.cash_balance', 35)
+            ->assertJsonPath('summary.bank_balance', 90);
+
+        $clubBudgetSummary = collect($treasuryAfterTransfers->json('summary.accounts'))->firstWhere('account', 'club_budget');
+        $churchBudgetSummary = collect($treasuryAfterTransfers->json('summary.accounts'))->firstWhere('account', 'church_budget');
+        $this->assertSame(35.0, (float) $clubBudgetSummary['cash_balance']);
+        $this->assertSame(40.0, (float) $clubBudgetSummary['bank_balance']);
+        $this->assertSame(0.0, (float) $churchBudgetSummary['cash_balance']);
+        $this->assertSame(50.0, (float) $churchBudgetSummary['bank_balance']);
+        $this->assertSame('account_transfer', $treasuryAfterTransfers->json('movements.0.movement_type'));
+        $this->assertSame('club_budget', $treasuryAfterTransfers->json('movements.0.from_pay_to'));
+        $this->assertSame('church_budget', $treasuryAfterTransfers->json('movements.0.to_pay_to'));
+
         $report = $this->actingAs($clubDirector)
             ->getJson(route('financial.accounts', ['club_id' => $club->id]))
             ->assertOk();
 
         $clubBudget = collect($report->json('data.accounts'))->firstWhere('account', 'club_budget');
-        $this->assertSame(55.0, (float) $clubBudget['cash_balance']);
-        $this->assertSame(70.0, (float) $clubBudget['bank_balance']);
+        $churchBudget = collect($report->json('data.accounts'))->firstWhere('account', 'church_budget');
+        $this->assertSame(35.0, (float) $clubBudget['cash_balance']);
+        $this->assertSame(40.0, (float) $clubBudget['bank_balance']);
+        $this->assertSame(0.0, (float) $churchBudget['cash_balance']);
+        $this->assertSame(50.0, (float) $churchBudget['bank_balance']);
         $this->assertSame(25.0, (float) $clubBudget['expenses']);
         $this->assertSame(125.0, (float) $clubBudget['balance']);
         $this->assertSame('cash', collect($report->json('data.expenses'))->firstWhere('description', 'Cash snacks')['location']);
@@ -953,10 +1026,15 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             ->assertOk();
 
         $ledgerAccount = collect($ledger->json('data.accounts'))->firstWhere('pay_to', 'club_budget');
-        $this->assertSame(55.0, (float) $ledgerAccount['totals']['cash_balance']);
-        $this->assertSame(70.0, (float) $ledgerAccount['totals']['bank_balance']);
-        $this->assertSame(50.0, (float) $ledgerAccount['totals']['movements']);
+        $churchLedgerAccount = collect($ledger->json('data.accounts'))->firstWhere('pay_to', 'church_budget');
+        $this->assertSame(35.0, (float) $ledgerAccount['totals']['cash_balance']);
+        $this->assertSame(40.0, (float) $ledgerAccount['totals']['bank_balance']);
+        $this->assertSame(100.0, (float) $ledgerAccount['totals']['movements']);
+        $this->assertSame(0.0, (float) $churchLedgerAccount['totals']['cash_balance']);
+        $this->assertSame(50.0, (float) $churchLedgerAccount['totals']['bank_balance']);
+        $this->assertSame(50.0, (float) $churchLedgerAccount['totals']['movements']);
         $this->assertContains('treasury_movement', collect($ledgerAccount['entries'])->pluck('entry_type')->all());
+        $this->assertNotNull(collect($churchLedgerAccount['entries'])->firstWhere('transfer_direction', 'in'));
         $cashPaymentEntry = collect($ledgerAccount['entries'])->firstWhere('concept', 'Cash dues');
         $this->assertSame($clubDirector->name, $cashPaymentEntry['payer_name']);
         $this->assertSame($cashReceipt->id, $cashPaymentEntry['payment_receipt_id']);
@@ -972,7 +1050,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
                 'location' => 'cash',
             ]))
             ->assertOk();
-        $cashEntries = collect($cashLedger->json('data.accounts.0.entries'));
+        $cashEntries = collect($cashLedger->json('data.accounts'))->flatMap(fn (array $account) => $account['entries'] ?? []);
         $this->assertSame(['cash'], $cashEntries->where('entry_type', 'payment')->pluck('location')->unique()->values()->all());
         $this->assertSame(['cash'], $cashEntries->where('entry_type', 'expense')->pluck('location')->unique()->values()->all());
 
@@ -983,7 +1061,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
                 'location' => 'bank',
             ]))
             ->assertOk();
-        $bankEntries = collect($bankLedger->json('data.accounts.0.entries'));
+        $bankEntries = collect($bankLedger->json('data.accounts'))->flatMap(fn (array $account) => $account['entries'] ?? []);
         $this->assertSame(['bank'], $bankEntries->where('entry_type', 'payment')->pluck('location')->unique()->values()->all());
         $this->assertSame(['bank'], $bankEntries->where('entry_type', 'expense')->pluck('location')->unique()->values()->all());
     }

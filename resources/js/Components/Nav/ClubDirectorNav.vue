@@ -21,7 +21,7 @@ const openDropdown = ref(null)
 const { t } = useLocale()
 
 const menuItems = computed(() => [
-    { id: 'dashboard', name: t('dashboard'), href: '/club-director/dashboard', route: 'dashboard', icon: HomeIcon },
+    { id: 'dashboard', name: t('dashboard'), href: '/club-director/dashboard', route: 'club.dashboard', icon: HomeIcon },
     {
         id: 'my_club',
         name: t('my_club'),

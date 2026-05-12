@@ -12,6 +12,7 @@ class TreasuryMovement extends Model
     public const TYPE_CASH_DEPOSIT = 'cash_deposit';
     public const TYPE_CASH_WITHDRAWAL = 'cash_withdrawal';
     public const TYPE_EVENT_SETTLEMENT = 'event_settlement';
+    public const TYPE_ACCOUNT_TRANSFER = 'account_transfer';
 
     public const LOCATION_CASH = 'cash';
     public const LOCATION_BANK = 'bank';
@@ -20,6 +21,8 @@ class TreasuryMovement extends Model
     protected $fillable = [
         'club_id',
         'pay_to',
+        'from_pay_to',
+        'to_pay_to',
         'created_by_user_id',
         'movement_type',
         'from_location',

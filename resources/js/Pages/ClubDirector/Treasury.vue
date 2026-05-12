@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import FinanceWorkflowNav from '@/Components/FinanceWorkflowNav.vue'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -26,15 +26,21 @@ const treasury = ref({
 })
 const eventSettlementRows = ref([])
 const incomeLocationFilter = ref('all')
-const movementForm = ref({
+const defaultMovementForm = () => ({
     movement_type: 'cash_deposit',
     pay_to: 'club_budget',
+    from_pay_to: 'club_budget',
+    to_pay_to: '',
+    location: 'cash',
+    from_location: 'cash',
+    to_location: 'cash',
     amount: '',
     movement_date: new Date().toISOString().slice(0, 10),
     reference: '',
     notes: '',
     proof: null,
 })
+const movementForm = ref(defaultMovementForm())
 const selectedSettlement = ref(null)
 const settlementSaving = ref(false)
 const settlementError = ref('')
@@ -47,6 +53,17 @@ const settlementForm = ref({
 
 const summary = computed(() => treasury.value.summary || {})
 const bankInfo = computed(() => treasury.value.bank_info || null)
+const accountOptions = computed(() => {
+    const accounts = treasury.value.accounts || []
+    return accounts.length ? accounts : [{ value: 'club_budget', label: tr('Presupuesto del club', 'Club budget') }]
+})
+const accountBalanceRows = computed(() => {
+    const labelMap = Object.fromEntries(accountOptions.value.map(account => [account.value, account.label]))
+    return (summary.value.accounts || []).map(row => ({
+        ...row,
+        label: labelMap[row.account] || row.account,
+    }))
+})
 const filteredIncomeRows = computed(() => {
     if (incomeLocationFilter.value === 'all') return treasury.value.income_rows || []
     return (treasury.value.income_rows || []).filter(row => row.location === incomeLocationFilter.value)
@@ -61,7 +78,18 @@ const movementLabel = (value) => ({
     cash_deposit: tr('Depósito a banco', 'Bank deposit'),
     cash_withdrawal: tr('Retiro de banco', 'Bank withdrawal'),
     event_settlement: tr('Transferencia de evento', 'Event transfer'),
+    account_transfer: tr('Transferencia entre cuentas', 'Account transfer'),
 })[value] || value
+const movementDescription = (row) => {
+    if (row?.movement_type === 'account_transfer') {
+        return `${row.from_account_label || row.from_pay_to || '—'} (${locationLabel(row.from_location)}) → ${row.to_account_label || row.to_pay_to || '—'} (${locationLabel(row.to_location)})`
+    }
+
+    const account = row?.account_label || row?.pay_to
+    return account
+        ? `${account}: ${locationLabel(row.from_location)} → ${locationLabel(row.to_location)}`
+        : `${locationLabel(row.from_location)} → ${locationLabel(row.to_location)}`
+}
 
 const bankInfoLines = (info) => {
     if (!info) return []
@@ -91,6 +119,11 @@ async function loadData() {
             income_rows: treasuryData.income_rows || [],
             movements: treasuryData.movements || [],
         }
+        const availableAccounts = (treasuryData.accounts || []).map(account => account.value)
+        const fallbackAccount = availableAccounts[0] || 'club_budget'
+        if (!availableAccounts.includes(movementForm.value.pay_to)) movementForm.value.pay_to = fallbackAccount
+        if (!availableAccounts.includes(movementForm.value.from_pay_to)) movementForm.value.from_pay_to = fallbackAccount
+        if (movementForm.value.to_pay_to && !availableAccounts.includes(movementForm.value.to_pay_to)) movementForm.value.to_pay_to = ''
         eventSettlementRows.value = Array.isArray(settlementsData?.data) ? settlementsData.data : []
     } catch (error) {
         console.error(error)
@@ -109,15 +142,7 @@ async function saveMovement() {
     try {
         await createTreasuryMovement(movementForm.value)
         showToast(tr('Movimiento registrado', 'Movement recorded'), 'success')
-        movementForm.value = {
-            movement_type: 'cash_deposit',
-            pay_to: 'club_budget',
-            amount: '',
-            movement_date: new Date().toISOString().slice(0, 10),
-            reference: '',
-            notes: '',
-            proof: null,
-        }
+        movementForm.value = defaultMovementForm()
         await loadData()
     } catch (error) {
         console.error(error)
@@ -126,6 +151,12 @@ async function saveMovement() {
         savingMovement.value = false
     }
 }
+
+watch(() => movementForm.value.from_pay_to, (fromPayTo) => {
+    if (movementForm.value.to_pay_to === fromPayTo) {
+        movementForm.value.to_pay_to = ''
+    }
+})
 
 const openSettlementModal = (row) => {
     selectedSettlement.value = row
@@ -190,7 +221,7 @@ onMounted(loadData)
                     <div>
                         <h1 class="text-xl font-semibold text-gray-900">{{ tr('Tesorería del club', 'Club Treasury') }}</h1>
                         <p class="mt-1 text-sm text-gray-600">
-                            {{ tr('Control de efectivo, banco y transferencias externas de eventos.', 'Control cash, bank funds, and external event transfers.') }}
+                            {{ tr('Control de efectivo, banco, transferencias entre cuentas y transferencias externas de eventos.', 'Control cash, bank funds, account transfers, and external event transfers.') }}
                         </p>
                     </div>
                     <button
@@ -202,6 +233,39 @@ onMounted(loadData)
                         <ArrowPathIcon class="h-4 w-4" />
                         {{ loading ? tr('Cargando...', 'Loading...') : tr('Actualizar', 'Refresh') }}
                     </button>
+                </div>
+            </section>
+
+            <section class="rounded-lg border bg-white p-5 shadow-sm">
+                <h2 class="text-lg font-semibold text-gray-900">{{ tr('Balances por cuenta', 'Balances by Account') }}</h2>
+                <p class="mt-1 text-sm text-gray-600">
+                    {{ tr('Usa estos saldos para decidir desde qué cuenta y ubicación mover fondos.', 'Use these balances to decide which account and location to move funds from.') }}
+                </p>
+                <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <article v-for="account in accountBalanceRows" :key="account.account" class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                        <div class="font-semibold text-gray-900">{{ account.label }}</div>
+                        <div class="mt-3 grid grid-cols-3 gap-2 text-sm">
+                            <div>
+                                <div class="text-xs text-gray-500">{{ tr('Efectivo', 'Cash') }}</div>
+                                <div class="font-semibold text-gray-900">${{ formatMoney(account.cash_balance) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500">{{ tr('Banco', 'Bank') }}</div>
+                                <div class="font-semibold text-gray-900">${{ formatMoney(account.bank_balance) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500">{{ tr('Total', 'Total') }}</div>
+                                <div class="font-semibold text-gray-900">${{ formatMoney(account.total_available) }}</div>
+                            </div>
+                        </div>
+                        <div v-if="account.transfer_in_total || account.transfer_out_total" class="mt-3 text-xs text-gray-500">
+                            {{ tr('Transferido in/out:', 'Transferred in/out:') }}
+                            ${{ formatMoney(account.transfer_in_total) }} / ${{ formatMoney(account.transfer_out_total) }}
+                        </div>
+                    </article>
+                    <div v-if="!accountBalanceRows.length" class="rounded border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                        {{ tr('No hay cuentas con movimientos todavía.', 'There are no accounts with movements yet.') }}
+                    </div>
                 </div>
             </section>
 
@@ -254,22 +318,53 @@ onMounted(loadData)
             </section>
 
             <section class="rounded-lg border bg-white p-5 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">{{ tr('Depósitos y retiros', 'Deposits and Withdrawals') }}</h2>
+                <h2 class="text-lg font-semibold text-gray-900">{{ tr('Movimientos internos', 'Internal Movements') }}</h2>
                 <form class="mt-4 grid gap-4 md:grid-cols-2" @submit.prevent="saveMovement">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">{{ tr('Tipo', 'Type') }}</label>
                         <select v-model="movementForm.movement_type" class="mt-1 w-full rounded border px-3 py-2 text-sm">
                             <option value="cash_deposit">{{ tr('Depositar efectivo a banco', 'Deposit cash to bank') }}</option>
                             <option value="cash_withdrawal">{{ tr('Retirar efectivo del banco', 'Withdraw cash from bank') }}</option>
+                            <option value="account_transfer">{{ tr('Transferir entre cuentas', 'Transfer between accounts') }}</option>
                         </select>
                     </div>
-                    <div>
+                    <div v-if="movementForm.movement_type !== 'account_transfer'">
                         <label class="block text-sm font-medium text-gray-700">{{ tr('Cuenta', 'Account') }}</label>
                         <select v-model="movementForm.pay_to" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-                            <option v-for="account in treasury.accounts" :key="account.value" :value="account.value">{{ account.label }}</option>
-                            <option v-if="!treasury.accounts.length" value="club_budget">{{ tr('Presupuesto del club', 'Club budget') }}</option>
+                            <option v-for="account in accountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
                         </select>
                     </div>
+                    <template v-else>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Cuenta origen', 'Source account') }}</label>
+                            <select v-model="movementForm.from_pay_to" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+                                <option v-for="account in accountOptions" :key="`from-${account.value}`" :value="account.value">{{ account.label }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Cuenta destino', 'Destination account') }}</label>
+                            <select v-model="movementForm.to_pay_to" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+                                <option value="" disabled>{{ tr('Selecciona destino...', 'Select destination...') }}</option>
+                                <option v-for="account in accountOptions" :key="`to-${account.value}`" :value="account.value" :disabled="account.value === movementForm.from_pay_to">
+                                    {{ account.label }}
+                                </option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Sale desde', 'Source funds') }}</label>
+                            <select v-model="movementForm.from_location" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+                                <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+                                <option value="bank">{{ tr('Banco / electrónico', 'Bank / electronic') }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Queda como', 'Destination funds') }}</label>
+                            <select v-model="movementForm.to_location" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+                                <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+                                <option value="bank">{{ tr('Banco / electrónico', 'Bank / electronic') }}</option>
+                            </select>
+                        </div>
+                    </template>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">{{ tr('Monto', 'Amount') }}</label>
                         <input v-model="movementForm.amount" type="number" min="0.01" step="0.01" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
@@ -289,6 +384,9 @@ onMounted(loadData)
                     <div>
                         <label class="block text-sm font-medium text-gray-700">{{ tr('Notas', 'Notes') }}</label>
                         <textarea v-model="movementForm.notes" rows="2" class="mt-1 w-full rounded border px-3 py-2 text-sm"></textarea>
+                    </div>
+                    <div v-if="movementForm.movement_type === 'account_transfer'" class="rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900 md:col-span-2">
+                        {{ tr('La transferencia mueve dinero entre cuentas internas del club sin crear ingreso ni gasto nuevo. Puedes cambiar tambien la ubicacion del dinero: por ejemplo, efectivo del presupuesto del club que se entrega al tesorero de iglesia y queda registrado como banco/electronico del presupuesto de iglesia.', 'This transfer moves money between internal club accounts without creating new income or expense. You can also change where the money is held, for example club budget cash handed to the church treasurer and recorded as bank/electronic funds in the church budget.') }}
                     </div>
                     <div class="md:col-span-2">
                         <button type="submit" class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" :disabled="savingMovement">
@@ -473,7 +571,7 @@ onMounted(loadData)
                             <div class="text-sm font-semibold text-gray-900">${{ formatMoney(row.amount) }}</div>
                         </div>
                         <div class="mt-3 text-xs text-gray-700">
-                            {{ locationLabel(row.from_location) }} → {{ locationLabel(row.to_location) }}
+                            {{ movementDescription(row) }}
                         </div>
                         <div class="mt-2 text-xs text-gray-600">
                             {{ row.reference || row.receipt_number || '—' }}
@@ -499,7 +597,7 @@ onMounted(loadData)
                             <tr v-for="row in treasury.movements" :key="row.id" class="border-t">
                                 <td class="px-3 py-2">{{ formatDate(row.movement_date) }}</td>
                                 <td class="px-3 py-2">{{ movementLabel(row.movement_type) }}</td>
-                                <td class="px-3 py-2">{{ locationLabel(row.from_location) }} → {{ locationLabel(row.to_location) }}</td>
+                                <td class="px-3 py-2">{{ movementDescription(row) }}</td>
                                 <td class="px-3 py-2">
                                     <div>{{ row.reference || row.receipt_number || '—' }}</div>
                                     <a v-if="row.proof_url" :href="row.proof_url" target="_blank" rel="noopener" class="text-xs text-blue-700 hover:underline">{{ tr('Ver comprobante', 'View proof') }}</a>
