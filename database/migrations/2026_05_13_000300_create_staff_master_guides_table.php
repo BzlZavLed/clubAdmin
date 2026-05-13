@@ -21,6 +21,11 @@ return new class extends Migration
             $table->string('phone', 50)->nullable();
             $table->text('address')->nullable();
             $table->string('email')->nullable();
+            $table->date('dob')->nullable();
+            $table->boolean('has_previous_staff_experience')->default(false);
+            $table->text('previous_staff_where')->nullable();
+            $table->boolean('is_invested_master_guide')->default(false);
+            $table->date('investment_date')->nullable();
             $table->string('emergency_contact_name')->nullable();
             $table->string('emergency_contact_phone', 50)->nullable();
             $table->string('emergency_contact_email')->nullable();

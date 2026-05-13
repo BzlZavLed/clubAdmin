@@ -190,6 +190,28 @@ class ClubClassController extends Controller
     {
         $club = ClubHelper::clubForUser($request->user(), $clubId);
 
+        if (($club->club_type ?? null) === 'master_guide') {
+            $classes = collect([
+                ['class_order' => 1, 'class_name' => '1er año'],
+                ['class_order' => 2, 'class_name' => '2do año'],
+            ])->map(function ($year) use ($club) {
+                return ClubClass::firstOrCreate(
+                    [
+                        'club_id' => $club->id,
+                        'class_name' => $year['class_name'],
+                    ],
+                    [
+                        'union_class_catalog_id' => null,
+                        'class_order' => $year['class_order'],
+                    ]
+                );
+            })->values();
+
+            $this->attachAssignedStaffNames($classes);
+
+            return response()->json($classes);
+        }
+
         if (($club->evaluation_system ?? 'honors') === 'carpetas') {
             $classes = ClubCarpetaClassActivation::query()
                 ->with(['unionClassCatalog', 'assignedStaff' => fn ($q) => $q->with('user:id,name')->select('id', 'id_data', 'type', 'user_id', 'assigned_carpeta_class_activation_id')])

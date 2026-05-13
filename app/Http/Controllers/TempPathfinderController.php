@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Models\Staff;
+use Carbon\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use App\Support\ClubHelper;
@@ -73,10 +74,16 @@ class TempPathfinderController extends Controller
                     'club_id' => $row->club_id,
                     'user_id' => $row->user_id,
                     'staff_name' => $row->staff_name,
-                    'staff_dob' => null,
-                    'staff_age' => null,
+                    'staff_dob' => $row->dob?->toDateString(),
+                    'staff_age' => $row->dob ? Carbon::parse($row->dob)->age : null,
                     'staff_email' => $row->email,
                     'staff_phone' => $row->phone,
+                    'staff_address' => $row->address,
+                    'address' => $row->address,
+                    'has_previous_staff_experience' => (bool) $row->has_previous_staff_experience,
+                    'previous_staff_where' => $row->previous_staff_where,
+                    'is_invested_master_guide' => (bool) $row->is_invested_master_guide,
+                    'investment_date' => $row->investment_date?->toDateString(),
                     'emergency_contact_name' => $row->emergency_contact_name,
                     'emergency_contact_phone' => $row->emergency_contact_phone,
                     'emergency_contact_email' => $row->emergency_contact_email,
@@ -101,6 +108,11 @@ class TempPathfinderController extends Controller
             'staff_age' => 'nullable|integer|min:0|max:120',
             'staff_email' => 'nullable|email|max:255',
             'staff_phone' => 'nullable|string|max:50',
+            'staff_address' => 'nullable|string|max:1000',
+            'has_previous_staff_experience' => 'nullable|boolean',
+            'previous_staff_where' => 'nullable|string|max:1000',
+            'is_invested_master_guide' => 'nullable|boolean',
+            'investment_date' => 'nullable|date',
             'emergency_contact_name' => 'nullable|string|max:255',
             'emergency_contact_phone' => 'nullable|string|max:50',
             'emergency_contact_email' => 'nullable|email|max:255',
@@ -169,7 +181,13 @@ class TempPathfinderController extends Controller
                         'staff_id' => $staffRecord->id,
                         'staff_name' => $data['staff_name'],
                         'phone' => $data['staff_phone'] ?? null,
+                        'address' => $data['staff_address'] ?? null,
                         'email' => $data['staff_email'] ?? null,
+                        'dob' => $data['staff_dob'] ?? null,
+                        'has_previous_staff_experience' => (bool) ($data['has_previous_staff_experience'] ?? false),
+                        'previous_staff_where' => ($data['has_previous_staff_experience'] ?? false) ? ($data['previous_staff_where'] ?? null) : null,
+                        'is_invested_master_guide' => (bool) ($data['is_invested_master_guide'] ?? false),
+                        'investment_date' => ($data['is_invested_master_guide'] ?? false) ? ($data['investment_date'] ?? null) : null,
                         'emergency_contact_name' => $data['emergency_contact_name'] ?? null,
                         'emergency_contact_phone' => $data['emergency_contact_phone'] ?? null,
                         'emergency_contact_email' => $data['emergency_contact_email'] ?? null,

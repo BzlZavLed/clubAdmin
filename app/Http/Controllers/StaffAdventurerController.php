@@ -17,6 +17,7 @@ use App\Models\Staff;
 use App\Models\Club;
 use App\Models\StaffMasterGuide;
 use App\Models\StaffPathfinder;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB as FacadesDB;
 
 use Auth;
@@ -39,6 +40,26 @@ class StaffAdventurerController extends Controller
         }
 
         $club = Club::findOrFail($clubId);
+        if (($club->club_type ?? null) === 'master_guide') {
+            $class = ClubClass::query()
+                ->where('id', (int) $assignedClassId)
+                ->where('club_id', (int) $club->id)
+                ->whereIn('class_name', ['1er año', '2do año'])
+                ->first();
+
+            if (!$class) {
+                abort(422, 'El staff de Guia Mayor solo puede asignarse a 1er año o 2do año.');
+            }
+
+            $this->clearPreviousActivationStaff($staffRecord);
+
+            $staffRecord->assigned_class = $class->id;
+            $staffRecord->assigned_carpeta_class_activation_id = null;
+            $staffRecord->save();
+            $staffRecord->classes()->sync([$class->id => ['club_id' => $clubId]]);
+            return;
+        }
+
         if (($club->evaluation_system ?? 'honors') === 'carpetas') {
             $activation = ClubCarpetaClassActivation::query()
                 ->where('id', (int) $assignedClassId)
@@ -451,9 +472,14 @@ class StaffAdventurerController extends Controller
                     'id_data' => $s->id_data,
                     'assigned_class' => $s->assigned_class,
                     'assigned_carpeta_class_activation_id' => $s->assigned_carpeta_class_activation_id,
-                    'staff_dob' => $pathfinderStaff?->staff_dob,
-                    'staff_age' => $pathfinderStaff?->staff_age,
+                    'staff_dob' => $pathfinderStaff?->staff_dob ?? $masterGuideStaff?->dob?->toDateString(),
+                    'staff_age' => $pathfinderStaff?->staff_age ?? ($masterGuideStaff?->dob ? Carbon::parse($masterGuideStaff->dob)->age : null),
                     'cell_phone' => $pathfinderStaff?->staff_phone ?? $masterGuideStaff?->phone,
+                    'address' => $masterGuideStaff?->address,
+                    'has_previous_staff_experience' => (bool) ($masterGuideStaff?->has_previous_staff_experience ?? false),
+                    'previous_staff_where' => $masterGuideStaff?->previous_staff_where,
+                    'is_invested_master_guide' => (bool) ($masterGuideStaff?->is_invested_master_guide ?? false),
+                    'investment_date' => $masterGuideStaff?->investment_date?->toDateString(),
                     'emergency_contact_name' => $masterGuideStaff?->emergency_contact_name,
                     'emergency_contact_phone' => $masterGuideStaff?->emergency_contact_phone,
                     'emergency_contact_email' => $masterGuideStaff?->emergency_contact_email,
@@ -477,23 +503,27 @@ class StaffAdventurerController extends Controller
             });
 
         $clubUserIds = FacadesDB::table('club_user')->where('club_id', $clubId)->pluck('user_id')->toArray();
+        $linkedClubUserIds = collect($clubUserIds)
+            ->push($club->user_id)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
 
         $subRoleUsers = User::query()
             ->with([
                 'club:id,club_name',
                 'clubs:id,club_name',
             ])
-            ->where('church_id', $churchId)
-            ->where(function ($query) use ($clubId, $clubUserIds, $club) {
-                $query->where('club_id', $clubId)
-                    ->orWhereIn('id', $clubUserIds);
+            ->where(function ($query) use ($clubId, $linkedClubUserIds) {
+                $query->where('club_id', $clubId);
 
-                if (!empty($club->user_id)) {
-                    $query->orWhere('id', (int) $club->user_id);
+                if ($linkedClubUserIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $linkedClubUserIds->all());
                 }
             })
             ->get()
-            ->map(function ($u) use ($clubId, $churchId) {
+            ->map(function ($u) use ($clubId, $churchId, $club) {
                 $staffExists = Staff::query()
                     ->where('club_id', $clubId)
                     ->whereHas('club', fn ($query) => $query->where('church_id', $churchId))
@@ -506,10 +536,21 @@ class StaffAdventurerController extends Controller
                     })
                     ->exists();
 
+                $u->status = $u->status ?: 'active';
                 $u->create_staff = !$staffExists;
-                $u->club_names = $u->clubs
+                $clubNames = $u->clubs
                     ->pluck('club_name')
-                    ->when($u->club?->club_name, fn ($names) => $names->prepend($u->club->club_name))
+                    ->when($u->club?->club_name, fn ($names) => $names->prepend($u->club->club_name));
+
+                if (
+                    (int) $u->id === (int) $club->user_id
+                    || (int) $u->club_id === (int) $clubId
+                    || $u->clubs->contains('id', $clubId)
+                ) {
+                    $clubNames->prepend($club->club_name);
+                }
+
+                $u->club_names = $clubNames
                     ->filter()
                     ->unique()
                     ->values();
@@ -525,16 +566,38 @@ class StaffAdventurerController extends Controller
 
         $tempStaff = ($club->club_type === 'master_guide')
             ? StaffMasterGuide::where('club_id', $clubId)
-                ->get(['id', 'club_id', 'user_id', 'staff_name', 'email', 'phone', 'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_email'])
+                ->get([
+                    'id',
+                    'club_id',
+                    'user_id',
+                    'staff_name',
+                    'email',
+                    'phone',
+                    'address',
+                    'dob',
+                    'has_previous_staff_experience',
+                    'previous_staff_where',
+                    'is_invested_master_guide',
+                    'investment_date',
+                    'emergency_contact_name',
+                    'emergency_contact_phone',
+                    'emergency_contact_email',
+                ])
                 ->map(fn (StaffMasterGuide $row) => [
                     'id' => $row->id,
                     'club_id' => $row->club_id,
                     'user_id' => $row->user_id,
                     'staff_name' => $row->staff_name,
-                    'staff_dob' => null,
-                    'staff_age' => null,
+                    'staff_dob' => $row->dob?->toDateString(),
+                    'staff_age' => $row->dob ? Carbon::parse($row->dob)->age : null,
                     'staff_email' => $row->email,
                     'staff_phone' => $row->phone,
+                    'staff_address' => $row->address,
+                    'address' => $row->address,
+                    'has_previous_staff_experience' => (bool) $row->has_previous_staff_experience,
+                    'previous_staff_where' => $row->previous_staff_where,
+                    'is_invested_master_guide' => (bool) $row->is_invested_master_guide,
+                    'investment_date' => $row->investment_date?->toDateString(),
                     'emergency_contact_name' => $row->emergency_contact_name,
                     'emergency_contact_phone' => $row->emergency_contact_phone,
                     'emergency_contact_email' => $row->emergency_contact_email,
