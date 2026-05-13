@@ -16,6 +16,11 @@ class StaffMasterGuide extends Model
         'phone',
         'address',
         'email',
+        'dob',
+        'has_previous_staff_experience',
+        'previous_staff_where',
+        'is_invested_master_guide',
+        'investment_date',
         'emergency_contact_name',
         'emergency_contact_phone',
         'emergency_contact_email',
@@ -25,6 +30,10 @@ class StaffMasterGuide extends Model
 
     protected $casts = [
         'custom_fields_json' => 'array',
+        'dob' => 'date',
+        'has_previous_staff_experience' => 'boolean',
+        'is_invested_master_guide' => 'boolean',
+        'investment_date' => 'date',
     ];
 
     public function club()

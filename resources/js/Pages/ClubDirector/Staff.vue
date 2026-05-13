@@ -37,7 +37,6 @@ const subRoles = page.props.sub_roles;
 
 // ✅ Auth & general utilities
 const { user, activeClub, availableClubs } = useAuth()
-const directorCanSelectClub = computed(() => !isSuperadmin.value && clubs.value.length > 1)
 const churchId = computed(() => user.value?.church_id || null)
 const userId = computed(() => user.value?.id || null)
 const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
@@ -55,17 +54,24 @@ const tempStaff = ref([])
 const assignedClassChanges = ref({})
 const isUpdatingClass = ref({})
 const parentAccounts = ref(page.props.parent_accounts || [])
-const tempStaffForm = ref({
+const blankTempStaffForm = (overrides = {}) => ({
     club_id: '',
     staff_name: '',
     staff_dob: '',
     staff_age: '',
     staff_email: '',
     staff_phone: '',
+    staff_address: '',
+    has_previous_staff_experience: false,
+    previous_staff_where: '',
+    is_invested_master_guide: false,
+    investment_date: '',
     emergency_contact_name: '',
     emergency_contact_phone: '',
     emergency_contact_email: '',
+    ...overrides,
 })
+const tempStaffForm = ref(blankTempStaffForm())
 const clubClasses = ref([])
 const sub_roles = ref([])
 const pendingUsers = ref([])
@@ -80,6 +86,30 @@ const activeStaffTab = ref('active')
 const clubUserIds = ref(new Set())
 const tempStaffModalVisible = ref(false)
 
+const activeChurchId = computed(() => activeClub.value?.church_id || user.value?.church_id || null)
+const activeChurchName = computed(() => activeClub.value?.church_name || user.value?.church_name || null)
+const selectableClubs = computed(() => {
+    if (isSuperadmin.value) {
+        return clubs.value
+    }
+
+    const churchClubs = clubs.value.filter((club) => {
+        if (activeChurchId.value && club.church_id) {
+            return Number(club.church_id) === Number(activeChurchId.value)
+        }
+
+        if (activeChurchName.value && club.church_name) {
+            return club.church_name === activeChurchName.value
+        }
+
+        return true
+    })
+
+    return churchClubs.length ? churchClubs : clubs.value
+})
+const canSelectStaffClub = computed(() => isSuperadmin.value ? selectableClubs.value.length > 0 : selectableClubs.value.length > 1)
+const isMasterGuideStaffClub = computed(() => selectedClub.value?.club_type === 'master_guide')
+
 // ✅ Create staff eligibility map
 const createStaffMap = computed(() => {
     const map = {}
@@ -89,13 +119,15 @@ const createStaffMap = computed(() => {
     return map
 })
 
+const accountStatus = (account) => account.status || 'active'
+
 const filteredUsers = computed(() =>
     sub_roles.value.filter(user => {
         if (activeTab.value === 'pending') return false
         if (activeTab.value === 'parents') return false
         const targetStatus = activeTab.value === 'active' ? 'active' : 'deleted'
         if (user.profile_type === 'parent') return false
-        return user.status === targetStatus
+        return accountStatus(user) === targetStatus
     })
 )
 
@@ -111,8 +143,12 @@ const displayedStaff = computed(() => staff.value)
 const filteredStaff = computed(() =>
     displayedStaff.value.filter(person => person.status === activeStaffTab.value)
 )
+const masterGuideYearNames = ['1er año', '2do año']
 const availableClasses = computed(() => {
     if (!selectedClub.value) return []
+    if (selectedClub.value.club_type === 'master_guide') {
+        return clubClasses.value.filter(c => masterGuideYearNames.includes(c.class_name))
+    }
     if ((selectedClub.value.evaluation_system || 'honors') === 'carpetas') {
         return clubClasses.value
     }
@@ -120,6 +156,14 @@ const availableClasses = computed(() => {
 })
 
 const classDisplay = (person) => {
+    if (isMasterGuideStaffClub.value) {
+        const assignedYear = availableClasses.value.find(c => String(c.id) === String(person.assigned_class))
+        if (assignedYear) return assignedYear.class_name
+
+        const className = person.class_names?.find(name => masterGuideYearNames.includes(name))
+        return className || '—'
+    }
+
     if (person.class_names?.length) return person.class_names.join(', ')
     if ((selectedClub.value?.evaluation_system || 'honors') === 'carpetas' && person.assigned_carpeta_class_activation_id) {
         const match = clubClasses.value.find(c => String(c.id) === String(person.assigned_carpeta_class_activation_id))
@@ -130,6 +174,11 @@ const classDisplay = (person) => {
         if (match) return match.class_name
     }
     return '—'
+}
+
+const clubOptionLabel = (club) => {
+    const base = `${club.club_name} (${club.club_type})`
+    return isSuperadmin.value && club.church_name ? `${base} - ${club.church_name}` : base
 }
 
 const dobDisplay = (person) => {
@@ -146,7 +195,7 @@ const openEditStaffModal = (staff) => {
 }
 
 watch(sub_roles, (newVal) => {
-    if (!newVal.some(user => user.status === 'deleted')) {
+    if (!newVal.some(user => accountStatus(user) === 'deleted')) {
         activeTab.value = 'active'
     }
 }, { immediate: true })
@@ -161,33 +210,59 @@ watch(staff, (newVal) => {
 const fetchClubs = async () => {
     try {
         clubs.value = Array.isArray(availableClubs.value) ? availableClubs.value : []
+        const options = selectableClubs.value
 
         if (isSuperadmin.value) {
-            const contextClubId = activeClub.value?.id || null
+            const contextClubId = activeClub.value?.id || selectedClub.value?.id || null
             selectedClub.value = contextClubId
-                ? clubs.value.find(club => String(club.id) === String(contextClubId)) || null
+                ? options.find(club => String(club.id) === String(contextClubId)) || null
                 : null
+
+            if (!selectedClub.value && options.length === 1) {
+                selectedClub.value = options[0]
+            }
         } else {
             const preferredClubId = activeClub.value?.id || user.value?.club_id || null
-            selectedClub.value = clubs.value.find(club => String(club.id) === String(preferredClubId)) || clubs.value[0] || null
+            selectedClub.value = options.find(club => String(club.id) === String(preferredClubId)) || options[0] || null
         }
 
         if (selectedClub.value?.id) {
             await fetchStaff(selectedClub.value.id, churchId.value)
         } else {
-            staff.value = []
-            pendingStaff.value = []
-            tempStaff.value = []
-            sub_roles.value = []
-            pendingUsers.value = []
-            clubUserIds.value = new Set()
-            clubClasses.value = []
+            resetStaffState()
         }
         showToast(tr('Clubes cargados', 'Clubs loaded'))
     } catch (error) {
         console.error('Failed to fetch clubs:', error)
         showToast(tr('Error al cargar clubes', 'Could not load clubs'), 'error')
     }
+}
+
+const resetStaffState = () => {
+    staff.value = []
+    pendingStaff.value = []
+    tempStaff.value = []
+    sub_roles.value = []
+    pendingUsers.value = []
+    clubUserIds.value = new Set()
+    clubClasses.value = []
+    assignedClassChanges.value = {}
+    selectedStaffIds.value = new Set()
+    selectAll.value = false
+}
+
+const handleSelectedClubChange = async () => {
+    assignedClassChanges.value = {}
+    selectedStaffIds.value = new Set()
+    selectAll.value = false
+    activeStaffTab.value = 'active'
+
+    if (selectedClub.value?.id) {
+        await fetchStaff(selectedClub.value.id, churchId.value)
+        return
+    }
+
+    resetStaffState()
 }
 
 // Fetch club classes
@@ -210,6 +285,14 @@ const fetchStaff = async (clubId, churchId = null) => {
         await fetchClasses(clubId)
         // hydrate current class selections
         staff.value.forEach(person => {
+            if (isMasterGuideStaffClub.value) {
+                const match = availableClasses.value.find(c => String(c.id) === String(person.assigned_class))
+                    || availableClasses.value.find(c => person.class_names?.includes(c.class_name))
+
+                if (match) assignedClassChanges.value[person.id] = match.id
+                return
+            }
+
             if ((selectedClub.value?.evaluation_system || 'honors') === 'carpetas' && person.assigned_carpeta_class_activation_id) {
                 const match = clubClasses.value.find(c => String(c.id) === String(person.assigned_carpeta_class_activation_id))
                 if (match) assignedClassChanges.value[person.id] = match.id
@@ -243,7 +326,7 @@ const saveAssignedClass = async (person) => {
     try {
         isUpdatingClass.value[person.id] = true
         await updateStaffAssignedClass(staffId, classId)
-        showToast(tr('Clase actualizada', 'Class updated'))
+        showToast(isMasterGuideStaffClub.value ? tr('Año actualizado', 'Year updated') : tr('Clase actualizada', 'Class updated'))
         await fetchStaff(person.club_id)
     } catch (err) {
         console.error('Failed to update class', err)
@@ -260,17 +343,13 @@ const openStaffForm = (user) => {
         return
     }
     selectedUserForStaff.value = user
-    selectedUserForStaff.value.club_name = club_name.value
+    selectedUserForStaff.value.club_name = selectedClub.value?.club_name || club_name.value
     if (['pathfinders', 'temp_pathfinder', 'master_guide'].includes(selectedClub.value?.club_type)) {
-        tempStaffForm.value.club_id = selectedClub.value.id
-        tempStaffForm.value.staff_email = user?.email || ''
-        tempStaffForm.value.staff_name = user?.name || ''
-        tempStaffForm.value.staff_dob = ''
-        tempStaffForm.value.staff_age = ''
-        tempStaffForm.value.staff_phone = ''
-        tempStaffForm.value.emergency_contact_name = ''
-        tempStaffForm.value.emergency_contact_phone = ''
-        tempStaffForm.value.emergency_contact_email = ''
+        tempStaffForm.value = blankTempStaffForm({
+            club_id: selectedClub.value.id,
+            staff_email: user?.email || '',
+            staff_name: user?.name || '',
+        })
         tempStaffModalVisible.value = true
         return
     }
@@ -457,19 +536,24 @@ const saveTempStaff = async () => {
             showToast(tr('Selecciona un club primero', 'Select a club first'), 'error')
             return
         }
-        await createTempStaffPathfinder(tempStaffForm.value)
-        showToast(tr('Perfil de staff creado', 'Staff profile created'), 'success')
-        tempStaffForm.value = {
-            club_id: selectedClub.value?.id || '',
-            staff_name: '',
-            staff_dob: '',
-            staff_age: '',
-            staff_email: '',
-            staff_phone: '',
-            emergency_contact_name: '',
-            emergency_contact_phone: '',
-            emergency_contact_email: '',
+
+        const payload = { ...tempStaffForm.value }
+        if (!isMasterGuideStaffClub.value) {
+            delete payload.staff_address
+            delete payload.has_previous_staff_experience
+            delete payload.previous_staff_where
+            delete payload.is_invested_master_guide
+            delete payload.investment_date
+        } else {
+            if (!payload.has_previous_staff_experience) payload.previous_staff_where = ''
+            if (!payload.is_invested_master_guide) payload.investment_date = ''
         }
+
+        await createTempStaffPathfinder(payload)
+        showToast(tr('Perfil de staff creado', 'Staff profile created'), 'success')
+        tempStaffForm.value = blankTempStaffForm({
+            club_id: selectedClub.value?.id || '',
+        })
         await fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
         console.error('Failed to save temp staff', err)
@@ -491,6 +575,14 @@ watch(() => tempStaffForm.value.staff_dob, (dob) => {
     tempStaffForm.value.staff_age = age
 })
 
+watch(() => tempStaffForm.value.has_previous_staff_experience, (hasExperience) => {
+    if (!hasExperience) tempStaffForm.value.previous_staff_where = ''
+})
+
+watch(() => tempStaffForm.value.is_invested_master_guide, (isInvested) => {
+    if (!isInvested) tempStaffForm.value.investment_date = ''
+})
+
 onMounted(fetchClubs)
 
 watch(
@@ -506,22 +598,26 @@ watch(
     <PathfinderLayout>
         <div class="p-4 sm:p-6 lg:p-8">
             <h1 class="text-xl font-bold mb-4">{{ tr('Personal', 'Staff') }}</h1>
-            <div v-if="directorCanSelectClub" class="max-w-xl mb-6">
+            <div v-if="canSelectStaffClub" class="max-w-xl mb-6 rounded border bg-white p-4">
                 <label class="block mb-1 font-medium text-gray-700">{{ tr('Selecciona un club', 'Select a club') }}</label>
-                <select v-model="selectedClub"
-                    @change="() => { if (selectedClub) { fetchStaff(selectedClub.id, churchId) } }"
+                <select
+                    v-model="selectedClub"
+                    @change="handleSelectedClubChange"
                     class="w-full p-2 border rounded">
-                    <option disabled value="">-- {{ tr('Selecciona un club', 'Select a club') }} --</option>
-                    <option v-for="club in clubs" :key="club.id" :value="club">
-                        {{ club.club_name }} ({{ club.club_type }})
+                    <option disabled :value="null">-- {{ tr('Selecciona un club', 'Select a club') }} --</option>
+                    <option v-for="club in selectableClubs" :key="club.id" :value="club">
+                        {{ clubOptionLabel(club) }}
                     </option>
-                </select><br><br>
+                </select>
+                <p v-if="isSuperadmin" class="mt-2 text-xs text-gray-500">
+                    {{ tr('Como superadmin puedes cambiar el club administrado desde esta vista.', 'As superadmin, you can switch the managed club from this view.') }}
+                </p>
             </div>
             <div v-else-if="selectedClub" class="mb-6 rounded border bg-white px-4 py-3 text-sm text-gray-700">
                 {{ tr('Club activo', 'Active club') }}: <strong>{{ selectedClub.club_name }}</strong>
             </div>
             <div v-else-if="isSuperadmin" class="mb-6 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                {{ tr('Selecciona un club desde el selector global del superadmin para administrar el personal.', 'Select a club from the superadmin global selector to manage staff.') }}
+                {{ tr('No hay clubes disponibles para administrar personal.', 'There are no clubs available to manage staff.') }}
             </div>
             <div v-if="selectedClub" class="mb-6 grid gap-3 sm:flex sm:items-center">
                 <button
@@ -614,7 +710,7 @@ watch(
                                         <dd class="font-medium text-gray-900">{{ person.cell_phone || '—' }}</dd>
                                     </div>
                                     <div class="col-span-2">
-                                        <dt class="text-gray-500">{{ tr('Clases asignadas', 'Assigned classes') }}</dt>
+                                        <dt class="text-gray-500">{{ isMasterGuideStaffClub ? tr('Año asignado', 'Assigned year') : tr('Clases asignadas', 'Assigned classes') }}</dt>
                                         <dd class="font-medium text-gray-900">{{ classDisplay(person) }}</dd>
                                     </div>
                                 </dl>
@@ -685,7 +781,7 @@ watch(
                                         v-model="assignedClassChanges[person.id]"
                                         class="w-full rounded border p-2 text-xs"
                                     >
-                                        <option disabled value="">{{ tr('Seleccionar clase', 'Select class') }}</option>
+                                        <option disabled value="">{{ isMasterGuideStaffClub ? tr('Seleccionar año', 'Select year') : tr('Seleccionar clase', 'Select class') }}</option>
                                         <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
                                             {{ cls.class_name }}
                                         </option>
@@ -695,7 +791,7 @@ watch(
                                         :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
                                         class="rounded bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
                                     >
-                                        {{ isUpdatingClass[person.id] ? tr('Guardando...', 'Saving...') : tr('Guardar clase', 'Save class') }}
+                                        {{ isUpdatingClass[person.id] ? tr('Guardando...', 'Saving...') : (isMasterGuideStaffClub ? tr('Guardar año', 'Save year') : tr('Guardar clase', 'Save class')) }}
                                     </button>
                                 </div>
                                 <div v-if="expandedRows.has(person.id)" class="mt-3 rounded bg-gray-50 p-3 text-xs text-gray-700">
@@ -703,9 +799,10 @@ watch(
                                         <div><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ person.address || '—' }}</div>
                                         <div><strong>{{ tr('Ciudad/Estado/Codigo postal', 'City/State/ZIP code') }}:</strong> {{ [person.city, person.state, person.zip].filter(Boolean).join(', ') || '—' }}</div>
                                         <div><strong>{{ tr('Iglesia', 'Church') }}:</strong> {{ person.church_name || '—' }}</div>
-                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ person.emergency_contact_name || '—' }}</div>
-                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Telefono de emergencia', 'Emergency phone') }}:</strong> {{ person.emergency_contact_phone || '—' }}</div>
-                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Correo de emergencia', 'Emergency email') }}:</strong> {{ person.emergency_contact_email || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Staff previo', 'Previous staff') }}:</strong> {{ person.has_previous_staff_experience ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                        <div v-if="person.type === 'master_guide' && person.has_previous_staff_experience"><strong>{{ tr('Donde sirvio', 'Where served') }}:</strong> {{ person.previous_staff_where || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Guia Mayor investido', 'Invested Master Guide') }}:</strong> {{ person.is_invested_master_guide ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                        <div v-if="person.type === 'master_guide' && person.is_invested_master_guide"><strong>{{ tr('Fecha de investidura', 'Investment date') }}:</strong> {{ person.investment_date || '—' }}</div>
                                         <div><strong>{{ tr('Sterling Volunteer completado', 'Sterling Volunteer completed') }}:</strong> {{ person.sterling_volunteer_completed ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
                                     </div>
                                 </div>
@@ -718,19 +815,19 @@ watch(
                 </div>
 
                 <div class="hidden overflow-x-auto rounded border sm:block">
-                <table class="min-w-[1100px] w-full text-sm">
+                <table class="w-full text-sm" :class="isMasterGuideStaffClub ? 'min-w-[760px]' : 'min-w-[1100px]'">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
                             <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
-                            <th class="p-2 text-left">{{ tr('Fecha de nacimiento', 'Date of birth') }}</th>
-                            <th class="p-2 text-left">{{ tr('Direccion', 'Address') }}</th>
+                            <th v-if="!isMasterGuideStaffClub" class="p-2 text-left">{{ tr('Fecha de nacimiento', 'Date of birth') }}</th>
+                            <th v-if="!isMasterGuideStaffClub" class="p-2 text-left">{{ tr('Direccion', 'Address') }}</th>
                             <!-- <th class="p-2 text-left">Class</th> -->
-                            <th class="p-2 text-left">{{ tr('Celular', 'Cell phone') }}</th>
+                            <th v-if="!isMasterGuideStaffClub" class="p-2 text-left">{{ tr('Celular', 'Cell phone') }}</th>
                             <th class="p-2 text-left w-16">Email</th>
                             <th class="p-2 text-left">{{ tr('Estado', 'Status') }}</th>
                             <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
-                            <th class="p-2 text-left">{{ tr('Clases asignadas', 'Assigned classes') }}</th>
+                            <th class="p-2 text-left">{{ isMasterGuideStaffClub ? tr('Año asignado', 'Assigned year') : tr('Clases asignadas', 'Assigned classes') }}</th>
 
                         </tr>
                     </thead>
@@ -742,10 +839,10 @@ watch(
                                         @change="() => toggleSelectStaff(person.id)" />
                                 </td>
                                 <td class="p-2 text-xs">{{ person.name }}</td>
-                                <td class="p-2 text-xs">{{ dobDisplay(person) }}</td>
-                                <td class="p-2 text-xs">{{ person.address }}</td>
+                                <td v-if="!isMasterGuideStaffClub" class="p-2 text-xs">{{ dobDisplay(person) }}</td>
+                                <td v-if="!isMasterGuideStaffClub" class="p-2 text-xs">{{ person.address }}</td>
                                 <!-- <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td> -->
-                                <td class="p-2 text-xs">{{ person.cell_phone }}</td>
+                                <td v-if="!isMasterGuideStaffClub" class="p-2 text-xs">{{ person.cell_phone }}</td>
                                 <td class="p-2 text-xs w-16 truncate">
                                     <a :href="`mailto:${person.email}`" class="text-blue-600 hover:underline block">
                                         {{ person.email }}
@@ -806,7 +903,7 @@ watch(
                                             v-model="assignedClassChanges[person.id]"
                                             class="border p-1 rounded text-xs"
                                         >
-                                            <option disabled value="">{{ tr('Seleccionar clase', 'Select class') }}</option>
+                                            <option disabled value="">{{ isMasterGuideStaffClub ? tr('Seleccionar año', 'Select year') : tr('Seleccionar clase', 'Select class') }}</option>
                                             <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
                                                 {{ cls.class_name }}
                                             </option>
@@ -823,15 +920,19 @@ watch(
                             </tr>
 
                             <tr v-if="expandedRows.has(person.id)" class="bg-gray-50 border-t">
-                                <td colspan="10" class="p-4 text-gray-700">
+                                <td :colspan="isMasterGuideStaffClub ? 6 : 9" class="p-4 text-gray-700">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div v-if="isMasterGuideStaffClub"><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ dobDisplay(person) }}</div>
+                                        <div v-if="isMasterGuideStaffClub"><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ person.address || '—' }}</div>
+                                        <div v-if="isMasterGuideStaffClub"><strong>{{ tr('Celular', 'Cell phone') }}:</strong> {{ person.cell_phone || '—' }}</div>
                                         <div><strong>{{ tr('Ciudad/Estado/Codigo postal', 'City/State/ZIP code') }}:</strong> {{ person.city }}, {{ person.state }} {{
                                             person.zip }}</div>
                                         <div><strong>{{ tr('Nombre del club', 'Club name') }}:</strong> {{ person.club_name }}</div>
                                         <div><strong>{{ tr('Nombre de la iglesia', 'Church name') }}:</strong> {{ person.church_name }}</div>
-                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ person.emergency_contact_name || '—' }}</div>
-                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Telefono de emergencia', 'Emergency phone') }}:</strong> {{ person.emergency_contact_phone || '—' }}</div>
-                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Correo de emergencia', 'Emergency email') }}:</strong> {{ person.emergency_contact_email || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Staff previo', 'Previous staff') }}:</strong> {{ person.has_previous_staff_experience ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                        <div v-if="person.type === 'master_guide' && person.has_previous_staff_experience"><strong>{{ tr('Donde sirvio', 'Where served') }}:</strong> {{ person.previous_staff_where || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Guia Mayor investido', 'Invested Master Guide') }}:</strong> {{ person.is_invested_master_guide ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                        <div v-if="person.type === 'master_guide' && person.is_invested_master_guide"><strong>{{ tr('Fecha de investidura', 'Investment date') }}:</strong> {{ person.investment_date || '—' }}</div>
 
                                         <div><strong>{{ tr('Limitacion de salud', 'Health limitation') }}:</strong> {{ person.has_health_limitation ? tr('Si', 'Yes')
                                             : tr('No', 'No') }}</div>
@@ -902,9 +1003,8 @@ watch(
                                             </ul>
                                         </div>
 
-                                        <div><strong>{{ tr('Firmado', 'Signed') }}:</strong> {{ person.applicant_signature }} {{ tr('el', 'on') }} {{
-                                            person.application_signed_date.slice(0,
-                                                10) }}</div>
+                                        <div><strong>{{ tr('Firmado', 'Signed') }}:</strong> {{ person.applicant_signature || '—' }} {{ tr('el', 'on') }} {{
+                                            person.application_signed_date?.slice(0, 10) || '—' }}</div>
                                     </div>
                                 </td>
                             </tr>
@@ -926,7 +1026,7 @@ watch(
                             {{ tr('Cuentas de padres', 'Parent accounts') }}
                         </button>
                         <button
-                            v-if="sub_roles.some(user => user.status === 'deleted') && user.profile_type === 'club_director'"
+                            v-if="sub_roles.some(account => accountStatus(account) === 'deleted') && user.profile_type === 'club_director'"
                             @click="activeTab = 'deleted'"
                             class="shrink-0"
                             :class="activeTab === 'deleted' ? 'font-bold border-b-2 border-red-600' : 'text-gray-500'">
@@ -1014,9 +1114,9 @@ watch(
 
                                     <!-- <td class="p-2 capitalize text-xs">{{ user.sub_role }}</td> -->
                                     <td class="p-2 text-xs">{{ user.church_name }}</td>
-                                    <td class="p-2 text-xs">{{ user.status }}</td>
+                                    <td class="p-2 text-xs">{{ accountStatus(user) }}</td>
                                     <td class="p-2 text-xs">
-                                        <template v-if="user.status === 'active'">
+                                        <template v-if="accountStatus(user) === 'active'">
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <button @click="changePassword(user)"class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
                                                     {{ tr('Cambiar contraseña', 'Change password') }}
@@ -1034,7 +1134,7 @@ watch(
                                             </button>
                                             </div>
                                         </template>
-                                        <template v-else-if="user.status !== 'active'">
+                                        <template v-else-if="accountStatus(user) !== 'active'">
                                             <button @click="updateStaffUserAccount(user, 423)"
                                                 class="text-blue-600 hover:underline">
                                                 {{ tr('Reactivar cuenta', 'Reactivate account') }}
@@ -1096,7 +1196,9 @@ watch(
         <div v-if="tempStaffModalVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
             <div class="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 shadow-xl sm:p-6">
                 <div class="mb-4 flex items-center justify-between">
-                    <h2 class="text-lg font-bold">{{ tr('Crear perfil de staff', 'Create Staff Profile') }}</h2>
+                    <h2 class="text-lg font-bold">
+                        {{ isMasterGuideStaffClub ? tr('Registrar staff de Guia Mayor', 'Register Master Guide Staff') : tr('Crear perfil de staff', 'Create Staff Profile') }}
+                    </h2>
                     <button @click="closeTempStaffModal" class="text-xl font-bold text-red-500 hover:text-red-700">
                         &times;
                     </button>
@@ -1106,41 +1208,70 @@ watch(
                         <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Nombre', 'Name') }}</label>
                         <input v-model="tempStaffForm.staff_name" type="text" class="w-full rounded border p-2" required />
                     </div>
-                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha de nacimiento', 'Date of birth') }}</label>
-                            <input v-model="tempStaffForm.staff_dob" type="date" class="w-full rounded border p-2" />
-                        </div>
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Edad', 'Age') }}</label>
-                            <input v-model="tempStaffForm.staff_age" type="number" min="0" class="w-full rounded border p-2" />
-                        </div>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium text-gray-700">Email</label>
-                        <input v-model="tempStaffForm.staff_email" type="email" class="w-full rounded border p-2" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Teléfono', 'Phone') }}</label>
-                        <input v-model="tempStaffForm.staff_phone" type="text" class="w-full rounded border p-2" />
-                    </div>
-                    <div v-if="selectedClub?.club_type === 'master_guide'" class="rounded border border-blue-100 bg-blue-50 p-3">
-                        <h3 class="mb-3 text-sm font-semibold text-blue-900">{{ tr('Contacto de emergencia', 'Emergency contact') }}</h3>
+                    <template v-if="isMasterGuideStaffClub">
                         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                             <div>
-                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Nombre', 'Name') }}</label>
-                                <input v-model="tempStaffForm.emergency_contact_name" type="text" class="w-full rounded border p-2" />
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha de nacimiento', 'Date of birth') }}</label>
+                                <input v-model="tempStaffForm.staff_dob" type="date" class="w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-sm font-medium text-gray-700">Email</label>
+                                <input v-model="tempStaffForm.staff_email" type="email" class="w-full rounded border p-2" />
                             </div>
                             <div>
                                 <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Teléfono', 'Phone') }}</label>
-                                <input v-model="tempStaffForm.emergency_contact_phone" type="text" class="w-full rounded border p-2" />
+                                <input v-model="tempStaffForm.staff_phone" type="text" class="w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Edad', 'Age') }}</label>
+                                <input v-model="tempStaffForm.staff_age" type="number" min="0" class="w-full rounded border p-2" />
                             </div>
                             <div class="md:col-span-2">
-                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Correo', 'Email') }}</label>
-                                <input v-model="tempStaffForm.emergency_contact_email" type="email" class="w-full rounded border p-2" />
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Direccion', 'Address') }}</label>
+                                <textarea v-model="tempStaffForm.staff_address" rows="2" class="w-full rounded border p-2"></textarea>
                             </div>
                         </div>
-                    </div>
+                        <div class="rounded border border-slate-200 bg-slate-50 p-3">
+                            <label class="flex items-start gap-2 text-sm font-medium text-gray-800">
+                                <input v-model="tempStaffForm.has_previous_staff_experience" type="checkbox" class="mt-1" />
+                                <span>{{ tr('Ya ha servido como staff anteriormente', 'Has served as staff before') }}</span>
+                            </label>
+                            <div v-if="tempStaffForm.has_previous_staff_experience" class="mt-3">
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Donde sirvio anteriormente', 'Where did they serve before') }}</label>
+                                <textarea v-model="tempStaffForm.previous_staff_where" rows="2" class="w-full rounded border p-2"></textarea>
+                            </div>
+                        </div>
+                        <div class="rounded border border-slate-200 bg-slate-50 p-3">
+                            <label class="flex items-start gap-2 text-sm font-medium text-gray-800">
+                                <input v-model="tempStaffForm.is_invested_master_guide" type="checkbox" class="mt-1" />
+                                <span>{{ tr('Ya esta investido como Guia Mayor', 'Already invested as a Master Guide') }}</span>
+                            </label>
+                            <div v-if="tempStaffForm.is_invested_master_guide" class="mt-3">
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha de investidura', 'Investment date') }}</label>
+                                <input v-model="tempStaffForm.investment_date" type="date" class="w-full rounded border p-2" />
+                            </div>
+                        </div>
+                    </template>
+                    <template v-else>
+                        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Fecha de nacimiento', 'Date of birth') }}</label>
+                                <input v-model="tempStaffForm.staff_dob" type="date" class="w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Edad', 'Age') }}</label>
+                                <input v-model="tempStaffForm.staff_age" type="number" min="0" class="w-full rounded border p-2" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-700">Email</label>
+                            <input v-model="tempStaffForm.staff_email" type="email" class="w-full rounded border p-2" />
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Teléfono', 'Phone') }}</label>
+                            <input v-model="tempStaffForm.staff_phone" type="text" class="w-full rounded border p-2" />
+                        </div>
+                    </template>
                     <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button type="button" @click="closeTempStaffModal" class="rounded border px-4 py-2 text-gray-700">
                             {{ tr('Cancelar', 'Cancel') }}
