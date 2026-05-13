@@ -762,6 +762,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
     Route::get('/clubs/{id}/members', [MemberAdventurerController::class, 'byClub'])->name('clubs.members');
+    Route::get('/clubs/{id}/members/master-guide-schema', [MemberAdventurerController::class, 'masterGuideSchema'])->name('clubs.members.master-guide-schema');
+    Route::put('/clubs/{id}/members/master-guide-schema', [MemberAdventurerController::class, 'updateMasterGuideSchema'])->name('clubs.members.master-guide-schema.update');
+    Route::patch('/members/{id}/master-guide-year', [MemberAdventurerController::class, 'updateMasterGuideYear'])->name('members.master-guide-year.update');
     Route::get('/clubs/{id}/members/class-summary-pdf', [MemberAdventurerController::class, 'classSummaryPdf'])->name('clubs.members.class-summary-pdf');
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');

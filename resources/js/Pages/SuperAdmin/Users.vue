@@ -232,15 +232,15 @@ const deleteUser = (user) => {
     <PathfinderLayout>
         <template #title>{{ tr('Superadmin: Usuarios', 'Superadmin: Users') }}</template>
 
-        <div class="max-w-6xl mx-auto space-y-6">
-            <div class="bg-white border rounded-lg p-6 space-y-4">
+        <div class="mx-auto max-w-6xl space-y-4 px-3 sm:px-4 lg:px-0">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold">{{ isEditing ? tr('Editar usuario', 'Edit user') : tr('Crear usuario', 'Create user') }}</h2>
 
-                <form @submit.prevent="submit" class="space-y-4">
+                <form @submit.prevent="submit" class="mt-4 space-y-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel for="profile_type" :value="tr('Tipo de perfil', 'Profile type')" />
-                            <select id="profile_type" v-model="form.profile_type" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <select id="profile_type" v-model="form.profile_type" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option value="club_director">{{ tr('Director de club', 'Club director') }}</option>
                                 <option value="club_personal">{{ tr('Personal de club', 'Club staff') }}</option>
                                 <option value="district_pastor">{{ tr('Pastor distrital', 'District pastor') }}</option>
@@ -256,7 +256,7 @@ const deleteUser = (user) => {
                             <select
                                 id="sub_role"
                                 v-model="form.sub_role"
-                                class="mt-1 block w-full rounded-md border-gray-300"
+                                class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base disabled:bg-gray-100 sm:p-2 sm:text-sm"
                                 :required="hasSubRoles"
                                 :disabled="!hasSubRoles"
                             >
@@ -277,7 +277,7 @@ const deleteUser = (user) => {
                     <div v-if="isChurchScoped" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel for="church_id" :value="tr('Iglesia', 'Church')" />
-                            <select id="church_id" v-model="form.church_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <select id="church_id" v-model="form.church_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option disabled value="">{{ tr('Selecciona una iglesia', 'Select a church') }}</option>
                                 <option v-for="church in props.churches" :key="church.id" :value="church.id">
                                     {{ church.church_name }}
@@ -288,7 +288,7 @@ const deleteUser = (user) => {
 
                         <div>
                             <InputLabel for="club_id" :value="tr('Club (opcional)', 'Club (optional)')" />
-                            <select id="club_id" v-model="form.club_id" class="mt-1 block w-full rounded-md border-gray-300">
+                            <select id="club_id" v-model="form.club_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm">
                                 <option value="">{{ tr('Sin club por ahora', 'No club for now') }}</option>
                                 <option v-for="club in filteredClubs" :key="club.id" :value="club.id">
                                     {{ club.status === 'inactive' ? `${club.club_name} (${tr('inactivo', 'inactive')})` : club.club_name }}
@@ -301,7 +301,7 @@ const deleteUser = (user) => {
                     <div v-if="isDistrictScoped" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel for="district_id" :value="tr('Distrito', 'District')" />
-                            <select id="district_id" v-model="form.district_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <select id="district_id" v-model="form.district_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option disabled value="">{{ tr('Selecciona un distrito', 'Select a district') }}</option>
                                 <option v-for="district in props.districts" :key="district.id" :value="district.id">
                                     {{ districtLabel(district) }}
@@ -314,7 +314,7 @@ const deleteUser = (user) => {
                     <div v-if="isAssociationScoped" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel for="association_id" :value="tr('Asociación', 'Association')" />
-                            <select id="association_id" v-model="form.association_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <select id="association_id" v-model="form.association_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option disabled value="">{{ tr('Selecciona una asociación', 'Select an association') }}</option>
                                 <option v-for="association in props.associations" :key="association.id" :value="association.id">
                                     {{ associationLabel(association) }}
@@ -327,7 +327,7 @@ const deleteUser = (user) => {
                     <div v-if="isUnionScoped" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel for="union_id" :value="tr('Unión', 'Union')" />
-                            <select id="union_id" v-model="form.union_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <select id="union_id" v-model="form.union_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option disabled value="">{{ tr('Selecciona una unión', 'Select a union') }}</option>
                                 <option v-for="union in props.unions" :key="union.id" :value="union.id">
                                     {{ union.name }}
@@ -340,37 +340,71 @@ const deleteUser = (user) => {
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <InputLabel for="name" :value="tr('Nombre', 'Name')" />
-                            <TextInput id="name" v-model="form.name" type="text" class="mt-1 block w-full" required />
+                            <TextInput id="name" v-model="form.name" type="text" class="mt-1 block w-full text-base sm:text-sm" required />
                             <InputError class="mt-2" :message="form.errors.name" />
                         </div>
 
                         <div>
                             <InputLabel for="email" :value="tr('Correo', 'Email')" />
-                            <TextInput id="email" v-model="form.email" type="email" class="mt-1 block w-full" required />
+                            <TextInput id="email" v-model="form.email" type="email" class="mt-1 block w-full text-base sm:text-sm" required />
                             <InputError class="mt-2" :message="form.errors.email" />
                         </div>
 
                         <div>
                             <InputLabel for="password" :value="isEditing ? tr('Nueva contrasena (opcional)', 'New password (optional)') : tr('Contrasena temporal', 'Temporary password')" />
-                            <TextInput id="password" v-model="form.password" type="password" class="mt-1 block w-full" :required="!isEditing" />
+                            <TextInput id="password" v-model="form.password" type="password" class="mt-1 block w-full text-base sm:text-sm" :required="!isEditing" />
                             <InputError class="mt-2" :message="form.errors.password" />
                         </div>
                     </div>
 
-                    <div class="flex gap-2">
-                        <PrimaryButton :disabled="form.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <PrimaryButton :disabled="form.processing" class="w-full justify-center rounded-md bg-red-600 px-6 py-3 text-white hover:bg-red-700 sm:w-auto sm:py-2">
                             {{ isEditing ? tr('Guardar cambios', 'Save changes') : tr('Crear usuario', 'Create user') }}
                         </PrimaryButton>
-                        <button v-if="isEditing" type="button" @click="resetForm" class="px-4 py-2 rounded border border-gray-300 text-gray-700">
+                        <button v-if="isEditing" type="button" @click="resetForm" class="w-full rounded border border-gray-300 px-4 py-3 text-gray-700 sm:w-auto sm:py-2">
                             {{ tr('Cancelar', 'Cancel') }}
                         </button>
                     </div>
                 </form>
             </div>
 
-            <div class="bg-white border rounded-lg p-6">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold mb-3">{{ tr('Usuarios existentes', 'Existing users') }}</h2>
-                <div class="overflow-x-auto">
+                <div v-if="props.users.length === 0" class="rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                    {{ tr('No hay usuarios.', 'There are no users.') }}
+                </div>
+
+                <div v-else class="space-y-3 md:hidden">
+                    <article v-for="user in props.users" :key="`mobile-${user.id}`" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words font-semibold text-gray-900">{{ user.name }}</h3>
+                                <p class="break-all text-sm text-gray-600">{{ user.email }}</p>
+                                <p class="mt-1 break-words text-xs text-gray-500">{{ user.role_key || user.profile_type }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full px-2 py-1 text-xs font-medium" :class="isOnline(user) ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'">
+                                {{ isOnline(user) ? tr('En linea', 'Online') : (user.status || tr('activo', 'active')) }}
+                            </span>
+                        </div>
+                        <dl class="mt-3 space-y-2 text-sm">
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Alcance', 'Scope') }}</dt>
+                                <dd class="break-words text-gray-900">{{ scopeLabel(user) }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Visto ultimamente el', 'Last seen at') }}</dt>
+                                <dd class="text-gray-900">{{ formatDateTime(user.last_seen_at) }}</dd>
+                            </div>
+                        </dl>
+                        <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <button type="button" class="rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700" @click="editUser(user)">{{ tr('Editar', 'Edit') }}</button>
+                            <button type="button" class="rounded border border-amber-200 px-3 py-2 text-sm font-medium text-amber-700" @click="deactivateUser(user)">{{ tr('Desactivar', 'Deactivate') }}</button>
+                            <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-700" @click="deleteUser(user)">{{ tr('Eliminar', 'Delete') }}</button>
+                        </div>
+                    </article>
+                </div>
+
+                <div v-if="props.users.length" class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-700">
                             <tr>
@@ -383,9 +417,6 @@ const deleteUser = (user) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-if="props.users.length === 0">
-                                <td colspan="6" class="px-3 py-3 text-gray-500">{{ tr('No hay usuarios.', 'There are no users.') }}</td>
-                            </tr>
                             <tr v-for="user in props.users" :key="user.id" class="border-t">
                                 <td class="px-3 py-2">{{ user.name }}</td>
                                 <td class="px-3 py-2">

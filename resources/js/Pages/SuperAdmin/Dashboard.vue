@@ -124,7 +124,7 @@ const clearContext = async () => {
   <PathfinderLayout>
     <template #title>{{ tr('Panel de Superadministrador', 'Superadmin Dashboard') }}</template>
 
-    <div class="space-y-4 text-gray-800">
+    <div class="space-y-4 px-3 text-gray-800 sm:px-4 lg:px-0">
       <div class="bg-white border rounded-lg shadow-sm p-4">
         <p class="text-lg font-semibold">{{ tr('Contexto operativo', 'Operating context') }}</p>
         <p class="text-sm text-gray-600">
@@ -136,7 +136,7 @@ const clearContext = async () => {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs text-gray-600 mb-1">{{ tr('Unión', 'Union') }}</label>
-            <select v-model="selectedUnionId" class="w-full border rounded px-3 py-2 text-sm">
+            <select v-model="selectedUnionId" class="w-full rounded border px-3 py-3 text-base sm:py-2 sm:text-sm">
               <option value="">{{ tr('Sin unión', 'No union') }}</option>
               <option v-for="union in props.unions" :key="union.id" :value="String(union.id)">
                 {{ union.name }}
@@ -146,7 +146,7 @@ const clearContext = async () => {
 
           <div>
             <label class="block text-xs text-gray-600 mb-1">{{ tr('Conferencia / Asociación', 'Conference / Association') }}</label>
-            <select v-model="selectedAssociationId" class="w-full border rounded px-3 py-2 text-sm" :disabled="!selectedUnionId">
+            <select v-model="selectedAssociationId" class="w-full rounded border px-3 py-3 text-base disabled:bg-gray-100 sm:py-2 sm:text-sm" :disabled="!selectedUnionId">
               <option value="">{{ tr('Sin asociación', 'No association') }}</option>
               <option v-for="association in filteredAssociations" :key="association.id" :value="String(association.id)">
                 {{ association.name }}
@@ -156,7 +156,7 @@ const clearContext = async () => {
 
           <div>
             <label class="block text-xs text-gray-600 mb-1">{{ tr('Distrito', 'District') }}</label>
-            <select v-model="selectedDistrictId" class="w-full border rounded px-3 py-2 text-sm" :disabled="!selectedAssociationId">
+            <select v-model="selectedDistrictId" class="w-full rounded border px-3 py-3 text-base disabled:bg-gray-100 sm:py-2 sm:text-sm" :disabled="!selectedAssociationId">
               <option value="">{{ tr('Sin distrito', 'No district') }}</option>
               <option v-for="district in filteredDistricts" :key="district.id" :value="String(district.id)">
                 {{ district.name }}
@@ -166,7 +166,7 @@ const clearContext = async () => {
 
           <div>
             <label class="block text-xs text-gray-600 mb-1">{{ tr('Iglesia', 'Church') }}</label>
-            <select v-model="selectedChurchId" class="w-full border rounded px-3 py-2 text-sm" :disabled="!selectedDistrictId">
+            <select v-model="selectedChurchId" class="w-full rounded border px-3 py-3 text-base disabled:bg-gray-100 sm:py-2 sm:text-sm" :disabled="!selectedDistrictId">
               <option value="">{{ tr('Sin iglesia', 'No church') }}</option>
               <option v-for="church in filteredChurches" :key="church.id" :value="String(church.id)">
                 {{ church.church_name }}
@@ -176,7 +176,7 @@ const clearContext = async () => {
 
           <div class="md:col-span-2">
             <label class="block text-xs text-gray-600 mb-1">{{ tr('Club', 'Club') }}</label>
-            <select v-model="selectedClubId" class="w-full border rounded px-3 py-2 text-sm" :disabled="!selectedChurchId">
+            <select v-model="selectedClubId" class="w-full rounded border px-3 py-3 text-base disabled:bg-gray-100 sm:py-2 sm:text-sm" :disabled="!selectedChurchId">
               <option value="">{{ tr('Sin club', 'No club') }}</option>
               <option v-for="club in filteredClubs" :key="club.id" :value="String(club.id)">
                 {{ club.club_name }}
@@ -190,10 +190,10 @@ const clearContext = async () => {
           <p class="text-sm text-blue-800">{{ inferredRole }}</p>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
           <button
             type="button"
-            class="px-3 py-2 rounded bg-blue-600 text-white text-sm disabled:opacity-60"
+            class="w-full rounded bg-blue-600 px-3 py-3 text-sm text-white disabled:opacity-60 sm:w-auto sm:py-2"
             :disabled="saving"
             @click="saveContext"
           >
@@ -201,7 +201,7 @@ const clearContext = async () => {
           </button>
           <button
             type="button"
-            class="px-3 py-2 rounded border border-gray-300 text-sm text-gray-700"
+            class="w-full rounded border border-gray-300 px-3 py-3 text-sm text-gray-700 sm:w-auto sm:py-2"
             :disabled="saving"
             @click="clearContext"
           >

@@ -154,14 +154,14 @@ const deleteClub = (club) => {
     <PathfinderLayout>
         <template #title>{{ tr('Superadmin: Clubes', 'Superadmin: Clubs') }}</template>
 
-        <div class="max-w-5xl mx-auto space-y-6">
-            <div class="bg-white border rounded-lg p-6 space-y-4">
+        <div class="mx-auto max-w-6xl space-y-4 px-3 sm:px-4 lg:px-0">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold">{{ isEditing ? tr('Editar club', 'Edit club') : tr('Crear club', 'Create club') }}</h2>
 
-                <form @submit.prevent="submit" class="space-y-4">
+                <form @submit.prevent="submit" class="mt-4 space-y-4">
                     <div>
                         <InputLabel for="church_id" :value="tr('Iglesia', 'Church')" />
-                        <select id="church_id" v-model="form.church_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                        <select id="church_id" v-model="form.church_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                             <option disabled value="">{{ tr('Selecciona una iglesia', 'Select a church') }}</option>
                             <option v-for="church in props.churches" :key="church.id" :value="church.id">
                                 {{ church.church_name }}{{ church.union_name ? ` - ${church.union_name}` : '' }}
@@ -183,7 +183,7 @@ const deleteClub = (club) => {
 
                     <div>
                         <InputLabel for="director_user_id" :value="tr('Director (usuario)', 'Director (user)')" />
-                        <select id="director_user_id" v-model="form.director_user_id" class="mt-1 block w-full rounded-md border-gray-300" :disabled="form.status === 'inactive'">
+                        <select id="director_user_id" v-model="form.director_user_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base disabled:bg-gray-100 sm:p-2 sm:text-sm" :disabled="form.status === 'inactive'">
                             <option value="">{{ tr('Asignar despues', 'Assign later') }}</option>
                             <option v-for="director in props.directors" :key="director.id" :value="director.id">
                                 {{ director.name }} ({{ director.email }})
@@ -197,7 +197,7 @@ const deleteClub = (club) => {
 
                     <div>
                         <InputLabel for="status" :value="tr('Estado', 'Status')" />
-                        <select id="status" v-model="form.status" class="mt-1 block w-full rounded-md border-gray-300" required>
+                        <select id="status" v-model="form.status" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                             <option value="inactive">{{ tr('Inactivo', 'Inactive') }}</option>
                             <option value="active">{{ tr('Activo', 'Active') }}</option>
                         </select>
@@ -206,14 +206,14 @@ const deleteClub = (club) => {
 
                     <div>
                         <InputLabel for="club_name" :value="tr('Nombre del club', 'Club name')" />
-                        <input id="club_name" v-model="form.club_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" required />
+                        <input id="club_name" v-model="form.club_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required />
                         <InputError class="mt-2" :message="form.errors.club_name" />
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel for="club_type" :value="tr('Tipo', 'Type')" />
-                            <select id="club_type" v-model="form.club_type" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <select id="club_type" v-model="form.club_type" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option value="adventurers">Adventurers</option>
                                 <option value="pathfinders">Pathfinders</option>
                                 <option value="master_guide">Master Guide</option>
@@ -222,7 +222,7 @@ const deleteClub = (club) => {
                         </div>
                         <div>
                             <InputLabel for="creation_date" :value="tr('Fecha de creacion', 'Creation date')" />
-                            <input id="creation_date" v-model="form.creation_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <input id="creation_date" v-model="form.creation_date" type="date" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" />
                             <InputError class="mt-2" :message="form.errors.creation_date" />
                         </div>
                     </div>
@@ -238,35 +238,71 @@ const deleteClub = (club) => {
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <InputLabel for="pastor_name" :value="tr('Pastor', 'Pastor')" />
-                            <input id="pastor_name" v-model="form.pastor_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <input id="pastor_name" v-model="form.pastor_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" />
                             <InputError class="mt-2" :message="form.errors.pastor_name" />
                         </div>
                         <div>
                             <InputLabel for="conference_name" :value="tr('Conferencia', 'Conference')" />
-                            <input id="conference_name" v-model="form.conference_name" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <input id="conference_name" v-model="form.conference_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" />
                             <InputError class="mt-2" :message="form.errors.conference_name" />
                         </div>
                         <div>
                             <InputLabel for="conference_region" :value="tr('Region', 'Region')" />
-                            <input id="conference_region" v-model="form.conference_region" type="text" class="mt-1 block w-full rounded-md border-gray-300" />
+                            <input id="conference_region" v-model="form.conference_region" type="text" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" />
                             <InputError class="mt-2" :message="form.errors.conference_region" />
                         </div>
                     </div>
 
-                    <div class="flex gap-2">
-                        <PrimaryButton :disabled="form.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <PrimaryButton :disabled="form.processing" class="w-full justify-center rounded-md bg-red-600 px-6 py-3 text-white hover:bg-red-700 sm:w-auto sm:py-2">
                             {{ isEditing ? tr('Guardar cambios', 'Save changes') : tr('Crear club', 'Create club') }}
                         </PrimaryButton>
-                        <button v-if="isEditing" type="button" @click="resetForm" class="px-4 py-2 rounded border border-gray-300 text-gray-700">
+                        <button v-if="isEditing" type="button" @click="resetForm" class="w-full rounded border border-gray-300 px-4 py-3 text-gray-700 sm:w-auto sm:py-2">
                             {{ tr('Cancelar', 'Cancel') }}
                         </button>
                     </div>
                 </form>
             </div>
 
-            <div class="bg-white border rounded-lg p-6">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold mb-3">{{ tr('Clubes existentes', 'Existing clubs') }}</h2>
-                <div class="overflow-x-auto">
+                <div v-if="props.clubs.length === 0" class="rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                    {{ tr('No hay clubes.', 'There are no clubs.') }}
+                </div>
+
+                <div v-else class="space-y-3 md:hidden">
+                    <article v-for="club in props.clubs" :key="`mobile-${club.id}`" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words font-semibold text-gray-900">{{ club.club_name }}</h3>
+                                <p class="mt-1 break-words text-sm text-gray-600">{{ churchNameById(club.church_id) }}</p>
+                                <p class="mt-1 break-words text-xs text-gray-500">{{ directorLabelById(club.user_id) }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                                {{ club.status || tr('activo', 'active') }}
+                            </span>
+                        </div>
+
+                        <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Tipo', 'Type') }}</dt>
+                                <dd class="break-words font-medium text-gray-900">{{ club.club_type }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Sistema', 'System') }}</dt>
+                                <dd class="break-words font-medium text-gray-900">{{ club.evaluation_system || 'honors' }}</dd>
+                            </div>
+                        </dl>
+
+                        <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <button type="button" class="rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700" @click="editClub(club)">{{ tr('Editar', 'Edit') }}</button>
+                            <button type="button" class="rounded border border-amber-200 px-3 py-2 text-sm font-medium text-amber-700" @click="deactivateClub(club)">{{ tr('Desactivar', 'Deactivate') }}</button>
+                            <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-700" @click="deleteClub(club)">{{ tr('Eliminar', 'Delete') }}</button>
+                        </div>
+                    </article>
+                </div>
+
+                <div v-if="props.clubs.length" class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-700">
                             <tr>
@@ -280,9 +316,6 @@ const deleteClub = (club) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-if="props.clubs.length === 0">
-                                <td colspan="7" class="px-3 py-3 text-gray-500">{{ tr('No hay clubes.', 'There are no clubs.') }}</td>
-                            </tr>
                             <tr v-for="club in props.clubs" :key="club.id" class="border-t">
                                 <td class="px-3 py-2">{{ club.club_name }}</td>
                                 <td class="px-3 py-2">{{ churchNameById(club.church_id) }}</td>

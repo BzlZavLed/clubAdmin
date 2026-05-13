@@ -23,6 +23,7 @@ const selectedClub = computed(() =>
     matchingClubs.value.find(club => club.id === form.club_id) || null
 )
 const isPathfinderClub = computed(() => selectedClub.value?.club_type === 'pathfinders')
+const isMasterGuideClub = computed(() => selectedClub.value?.club_type === 'master_guide')
 
 const form = useForm({
     club_id: '',
@@ -37,6 +38,9 @@ const form = useForm({
     mailing_address: '',
     cell_number: '',
     emergency_contact: '',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    emergency_contact_email: '',
 
     investiture_classes: [],
     allergies: '',
@@ -48,6 +52,7 @@ const form = useForm({
     home_address: '',
     email_address: '',
     signature: '',
+    program_year: 1,
 })
 
 
@@ -103,19 +108,37 @@ watch(() => form.birthdate, (newDate) => {
 })
 
 const submit = () => {
-    form.post('/parent/apply', {
+    const payload = isMasterGuideClub.value
+        ? {
+            club_id: form.club_id,
+            applicant_name: form.applicant_name,
+            phone: form.cell_number,
+            address: form.home_address || form.mailing_address,
+            email: form.email_address,
+            emergency_contact_name: form.emergency_contact_name,
+            emergency_contact_phone: form.emergency_contact_phone,
+            emergency_contact_email: form.emergency_contact_email,
+            program_year: form.program_year,
+            is_sda: true,
+        }
+        : { ...form.data() }
+
+    form.transform(() => payload).post('/parent/apply', {
         preserveScroll: true,
         onSuccess: () => {
+            form.transform(data => data)
             form.reset()
             showSuccess.value = true
             showToast('Member registered successfully!', 'success')
         },
         onError: (e) => {
+            form.transform(data => data)
             const firstError = Object.values(form.errors)[0]
             if (firstError) {
                 showToast(firstError, 'error')
             }
-        }
+        },
+        onFinish: () => form.transform(data => data),
     })
 }
 
@@ -152,6 +175,9 @@ const labels = {
         signature: 'Signature (Typed)',
         submit: 'Submit Registration',
         pathfinderName: 'Name',
+        programYear: 'Program Year',
+        year1: 'Year 1',
+        year2: 'Year 2',
     },
     es: {
         title: 'Registro de Miembro',
@@ -177,6 +203,9 @@ const labels = {
         signature: 'Firma (escrita)',
         submit: 'Enviar registro',
         pathfinderName: 'Nombre',
+        programYear: 'Año del programa',
+        year1: 'Año 1',
+        year2: 'Año 2',
     }
 }
 const t = (key) => labels[locale.value]?.[key] || key
@@ -213,7 +242,57 @@ const t = (key) => labels[locale.value]?.[key] || key
                     <label>{{ t('directorName') }}</label>
                     <input v-model="form.director_name" type="text" class="w-full p-2 border rounded" readonly />
                 </div>
-                <div v-if="isPathfinderClub" class="space-y-4">
+                <div v-if="isMasterGuideClub" class="space-y-4">
+                    <div>
+                        <label>{{ t('pathfinderName') }}</label>
+                        <input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" required />
+                        <p v-if="form.errors.applicant_name" class="text-red-600 text-sm mt-1">{{ form.errors.applicant_name }}</p>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label>{{ t('programYear') }}</label>
+                            <select v-model.number="form.program_year" class="w-full p-2 border rounded" required>
+                                <option :value="1">{{ t('year1') }}</option>
+                                <option :value="2">{{ t('year2') }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>{{ t('phone') }}</label>
+                            <input :value="form.cell_number" @input="onCellNumberInput" type="text"
+                                class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
+                            <p v-if="form.errors.phone" class="text-red-600 text-sm mt-1">{{ form.errors.phone }}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <label>Email</label>
+                        <input v-model="form.email_address" type="email" class="w-full p-2 border rounded" />
+                        <p v-if="form.errors.email" class="text-red-600 text-sm mt-1">{{ form.errors.email }}</p>
+                    </div>
+                    <div>
+                        <label>{{ t('homeAddress') }}</label>
+                        <input v-model="form.home_address" type="text" class="w-full p-2 border rounded" />
+                        <p v-if="form.errors.address" class="text-red-600 text-sm mt-1">{{ form.errors.address }}</p>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label>{{ locale === 'es' ? 'Nombre del contacto de emergencia' : 'Emergency contact name' }}</label>
+                            <input v-model="form.emergency_contact_name" type="text" class="w-full p-2 border rounded" />
+                            <p v-if="form.errors.emergency_contact_name" class="text-red-600 text-sm mt-1">{{ form.errors.emergency_contact_name }}</p>
+                        </div>
+                        <div>
+                            <label>{{ locale === 'es' ? 'Telefono de emergencia' : 'Emergency phone' }}</label>
+                            <input v-model="form.emergency_contact_phone" type="text" class="w-full p-2 border rounded" />
+                            <p v-if="form.errors.emergency_contact_phone" class="text-red-600 text-sm mt-1">{{ form.errors.emergency_contact_phone }}</p>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label>{{ locale === 'es' ? 'Correo del contacto de emergencia' : 'Emergency contact email' }}</label>
+                            <input v-model="form.emergency_contact_email" type="email" class="w-full p-2 border rounded" />
+                            <p v-if="form.errors.emergency_contact_email" class="text-red-600 text-sm mt-1">{{ form.errors.emergency_contact_email }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else-if="isPathfinderClub" class="space-y-4">
                     <div>
                         <label>{{ t('pathfinderName') }}</label>
                         <input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" required />

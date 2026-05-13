@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\MemberAdventurer;
+use App\Models\MasterGuideMemberFormSchema;
+use App\Models\MemberMasterGuide;
 use App\Models\MemberPathfinder;
 use App\Models\MemberPathfinderInsuranceCard;
 use App\Models\Club;
@@ -55,10 +57,57 @@ class MemberAdventurerController extends Controller
 
         $club = Club::findOrFail($request->input('club_id'));
         $clubType = strtolower($club->club_type ?? '');
-        $parentId = auth()->user()?->profile_type === 'parent' ? auth()->id() : null;
+        $parentId = auth()->user()?->profile_type === 'parent' && $clubType !== 'master_guide' ? auth()->id() : null;
         $directorName = $this->resolveClubDirectorName($club);
 
-        if ($clubType === 'pathfinders') {
+        if ($clubType === 'master_guide') {
+            $validated = $request->validate([
+                'applicant_name' => 'required|string|max:255',
+                'phone' => 'nullable|string|max:50',
+                'address' => 'nullable|string|max:1000',
+                'email' => 'nullable|email|max:255',
+                'emergency_contact_name' => 'nullable|string|max:255',
+                'emergency_contact_phone' => 'nullable|string|max:50',
+                'emergency_contact_email' => 'nullable|email|max:255',
+                'program_year' => 'required|integer|in:1,2',
+                'custom_fields_json' => 'nullable|array',
+                'mark_insurance_paid' => 'nullable|boolean',
+                'mark_enrollment_paid' => 'nullable|boolean',
+                'is_sda' => 'nullable|boolean',
+                'baptism_date' => ['nullable', 'date'],
+            ]);
+            $validated = $this->masterGuideDetailPayload($validated, $club);
+
+            $validated['club_id'] = $club->id;
+            $validated['club_name'] = $club->club_name;
+            $validated['director_name'] = $directorName;
+            $validated['church_name'] = $club->church_name;
+            $validated['status'] = 'active';
+
+            $masterGuide = MemberMasterGuide::create($validated);
+
+            $member = Member::create([
+                'type' => 'master_guide',
+                'id_data' => $masterGuide->id,
+                'club_id' => $club->id,
+                'class_id' => null,
+                'parent_id' => null,
+                'assigned_staff_id' => null,
+                'status' => 'active',
+                ...$this->spiritualProfilePayload($request),
+            ]);
+
+            $masterGuide->update(['member_id' => $member->id]);
+            $this->syncPastoralCareForMember($member->fresh(), $club);
+
+            if ($request->boolean('mark_insurance_paid')) {
+                $this->handleInsurancePayment($club, $masterGuide, $member);
+            }
+
+            if ($request->boolean('mark_enrollment_paid')) {
+                $this->handleEnrollmentPayment($club, $masterGuide, $member);
+            }
+        } elseif ($clubType === 'pathfinders') {
             $validated = $request->validate([
                 'applicant_name' => 'required|string|max:255',
                 'birthdate' => 'required|date',
@@ -326,7 +375,7 @@ class MemberAdventurerController extends Controller
     {
         $validated = $request->validate([
             'notes_deleted' => ['nullable', 'string', 'max:2000'],
-            'member_type' => ['nullable', 'string', 'in:adventurers,pathfinders,temp_pathfinder'],
+            'member_type' => ['nullable', 'string', 'in:adventurers,pathfinders,temp_pathfinder,master_guide'],
             'member_record_id' => ['nullable', 'integer', 'exists:members,id'],
         ]);
 
@@ -348,6 +397,27 @@ class MemberAdventurerController extends Controller
                 ->whereIn('type', ['pathfinders', 'temp_pathfinder'])
                 ->where('club_id', $pathfinder->club_id)
                 ->where('id_data', $pathfinder->id)
+                ->update(['status' => 'deleted']);
+
+            return response()->json(['message' => 'Member deleted.']);
+        }
+
+        if ($memberType === 'master_guide') {
+            $masterGuide = MemberMasterGuide::findOrFail($memberRecord?->id_data ?? $id);
+            $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
+            if (!in_array((int) $masterGuide->club_id, $allowedClubIds, true)) {
+                abort(403, 'Unauthorized');
+            }
+
+            $masterGuide->update([
+                'status' => 'deleted',
+                'notes_deleted' => $validated['notes_deleted'] ?? null,
+            ]);
+
+            Member::query()
+                ->where('type', 'master_guide')
+                ->where('club_id', $masterGuide->club_id)
+                ->where('id_data', $masterGuide->id)
                 ->update(['status' => 'deleted']);
 
             return response()->json(['message' => 'Member deleted.']);
@@ -389,6 +459,58 @@ class MemberAdventurerController extends Controller
 
         $clubType = strtolower($club->club_type ?? '');
         $directorName = $this->resolveClubDirectorName($club);
+
+        if ($clubType === 'master_guide') {
+            $validated = $request->validate([
+                'applicant_name' => 'required|string|max:255',
+                'phone' => 'nullable|string|max:50',
+                'address' => 'nullable|string|max:1000',
+                'email' => 'nullable|email|max:255',
+                'emergency_contact_name' => 'nullable|string|max:255',
+                'emergency_contact_phone' => 'nullable|string|max:50',
+                'emergency_contact_email' => 'nullable|email|max:255',
+                'program_year' => 'required|integer|in:1,2',
+                'custom_fields_json' => 'nullable|array',
+                'mark_insurance_paid' => 'nullable|boolean',
+                'mark_enrollment_paid' => 'nullable|boolean',
+                'is_sda' => 'nullable|boolean',
+                'baptism_date' => ['nullable', 'date'],
+            ]);
+            $validated = $this->masterGuideDetailPayload($validated, $club);
+
+            $validated['club_id'] = $club->id;
+            $validated['club_name'] = $club->club_name ?? null;
+            $validated['director_name'] = $directorName;
+            $validated['church_name'] = $club->church_name ?? null;
+
+            $member = MemberMasterGuide::query()
+                ->where('club_id', $club->id)
+                ->findOrFail($id);
+            $wasInsurancePaid = (bool) $member->insurance_paid;
+            $wasEnrollmentPaid = (bool) $member->enrollment_paid;
+            $member->update($validated);
+
+            $memberRecord = Member::query()
+                ->where('type', 'master_guide')
+                ->where('id_data', $member->id)
+                ->where('club_id', $club->id)
+                ->first();
+
+            if ($memberRecord) {
+                $memberRecord->update($this->spiritualProfilePayload($request));
+                $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
+
+                if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
+                    $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
+                }
+
+                if ($request->boolean('mark_enrollment_paid') && !$wasEnrollmentPaid) {
+                    $this->handleEnrollmentPayment($club, $member->fresh(), $memberRecord);
+                }
+            }
+
+            return redirect()->back()->with('success', 'Master Guide member updated successfully.');
+        }
 
         if ($clubType === 'pathfinders') {
             $validated = $request->validate([
@@ -530,6 +652,210 @@ class MemberAdventurerController extends Controller
         return collect($validated)
             ->except(['is_sda', 'baptism_date', 'mark_insurance_paid', 'mark_enrollment_paid'])
             ->all();
+    }
+
+    protected function masterGuideDetailPayload(array $validated, ?Club $club = null): array
+    {
+        $payload = collect($validated)
+            ->except(['is_sda', 'baptism_date', 'mark_insurance_paid', 'mark_enrollment_paid'])
+            ->all();
+
+        $payload['program_year'] = (int) ($payload['program_year'] ?? 1);
+        if (!in_array($payload['program_year'], [1, 2], true)) {
+            $payload['program_year'] = 1;
+        }
+
+        $customFields = is_array($payload['custom_fields_json'] ?? null)
+            ? $payload['custom_fields_json']
+            : [];
+        $payload['custom_fields_json'] = $this->sanitizeMasterGuideCustomFieldValues(
+            $customFields,
+            $this->masterGuideSchemaFieldsForClubId($club?->id)
+        );
+
+        return $payload;
+    }
+
+    protected function masterGuideSchemaFieldsForClubId(?int $clubId): array
+    {
+        if (!$clubId) {
+            return [];
+        }
+
+        $schema = MasterGuideMemberFormSchema::query()
+            ->where('club_id', $clubId)
+            ->value('schema_json');
+
+        if (is_string($schema)) {
+            $schema = json_decode($schema, true) ?: [];
+        }
+
+        return $this->sanitizeMasterGuideSchema(is_array($schema) ? $schema : [])['fields'] ?? [];
+    }
+
+    protected function sanitizeMasterGuideCustomFieldValues(array $values, array $schemaFields): array
+    {
+        if (empty($schemaFields)) {
+            return [];
+        }
+
+        $clean = [];
+        foreach ($schemaFields as $field) {
+            $key = $field['key'] ?? null;
+            if (!$key) {
+                continue;
+            }
+
+            $value = $values[$key] ?? null;
+            $clean[$key] = ($field['type'] ?? null) === 'checkbox' ? (bool) $value : $value;
+        }
+
+        return $clean;
+    }
+
+    protected function masterGuideCustomFieldsDisplay(array $values, array $schemaFields): array
+    {
+        $clean = $this->sanitizeMasterGuideCustomFieldValues($values, $schemaFields);
+
+        return collect($schemaFields)
+            ->map(function ($field) use ($clean) {
+                $key = $field['key'] ?? null;
+                if (!$key || !array_key_exists($key, $clean)) {
+                    return null;
+                }
+
+                $value = $clean[$key];
+                if ($value === null || $value === '') {
+                    return null;
+                }
+
+                return [
+                    'key' => $key,
+                    'label' => $field['label'] ?? $key,
+                    'type' => $field['type'] ?? 'text',
+                    'value' => $value,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    public function masterGuideSchema($id)
+    {
+        $user = Auth::user();
+        $club = ClubHelper::clubForUser($user, $id);
+
+        $schema = MasterGuideMemberFormSchema::query()
+            ->where('club_id', $club->id)
+            ->first();
+
+        return response()->json([
+            'schema_json' => $schema?->schema_json ?: ['mode' => 'single', 'fields' => []],
+            'updated_at' => optional($schema?->updated_at)->toDateTimeString(),
+        ]);
+    }
+
+    public function updateMasterGuideSchema(Request $request, $id)
+    {
+        $user = Auth::user();
+        $club = ClubHelper::clubForUser($user, $id);
+
+        $validated = $request->validate([
+            'schema_json' => ['nullable', 'array'],
+        ]);
+
+        $schemaJson = $this->sanitizeMasterGuideSchema($validated['schema_json'] ?? []);
+
+        $schema = MasterGuideMemberFormSchema::query()->updateOrCreate(
+            ['club_id' => $club->id],
+            [
+                'schema_json' => $schemaJson,
+                'updated_by' => $user?->id,
+            ]
+        );
+
+        return response()->json([
+            'schema_json' => $schema->schema_json ?: ['mode' => 'single', 'fields' => []],
+            'updated_at' => optional($schema->updated_at)->toDateTimeString(),
+        ]);
+    }
+
+    public function updateMasterGuideYear(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'program_year' => ['required', 'integer', 'in:1,2'],
+        ]);
+
+        $member = MemberMasterGuide::query()->findOrFail($id);
+        $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
+
+        if (!in_array((int) $member->club_id, $allowedClubIds, true)) {
+            abort(403, 'Unauthorized');
+        }
+
+        $programYear = (int) $validated['program_year'];
+        $member->update(['program_year' => $programYear]);
+
+        return response()->json([
+            'program_year' => $programYear,
+            'program_year_label' => 'Year ' . $programYear,
+        ]);
+    }
+
+    protected function sanitizeMasterGuideSchema(?array $schema): array
+    {
+        $allowedTypes = ['text', 'textarea', 'number', 'date', 'time', 'select', 'checkbox', 'email', 'phone'];
+        $fields = is_array($schema['fields'] ?? null) ? $schema['fields'] : [];
+        $normalized = [];
+        $seenKeys = [];
+
+        foreach ($fields as $field) {
+            if (!is_array($field)) {
+                continue;
+            }
+
+            $label = trim((string) ($field['label'] ?? ''));
+            $key = Str::of((string) ($field['key'] ?? $label))
+                ->lower()
+                ->replaceMatches('/[^a-z0-9]+/', '_')
+                ->trim('_')
+                ->toString();
+
+            if ($label === '' || $key === '' || isset($seenKeys[$key])) {
+                continue;
+            }
+
+            $type = in_array($field['type'] ?? 'text', $allowedTypes, true)
+                ? $field['type']
+                : 'text';
+
+            $help = trim((string) ($field['help'] ?? ''));
+            $options = [];
+            if ($type === 'select' && is_array($field['options'] ?? null)) {
+                $options = collect($field['options'])
+                    ->map(fn ($option) => trim((string) $option))
+                    ->filter()
+                    ->values()
+                    ->all();
+            }
+
+            $normalized[] = array_filter([
+                'key' => $key,
+                'label' => $label,
+                'type' => $type,
+                'required' => (bool) ($field['required'] ?? false),
+                'help' => $help ?: null,
+                'options' => $options ?: null,
+            ], fn ($value) => $value !== null);
+
+            $seenKeys[$key] = true;
+        }
+
+        return [
+            'mode' => 'single',
+            'fields' => $normalized,
+        ];
     }
 
     protected function spiritualProfilePayload(Request $request): array
@@ -992,7 +1318,7 @@ class MemberAdventurerController extends Controller
     protected function buildMembersPayloadForClub(int $clubId)
     {
         $memberRows = \App\Models\Member::where('club_id', $clubId)
-            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder', 'master_guide'])
             ->where('status', 'active')
             ->get();
         $parentUsers = User::query()
@@ -1018,6 +1344,8 @@ class MemberAdventurerController extends Controller
         $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->all();
         $pathfinderMemberIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id')->all();
         $tempPathfinderIds = $memberRows->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id_data')->all();
+        $masterGuideIds = $memberRows->where('type', 'master_guide')->pluck('id_data')->all();
+        $masterGuideSchemaFields = $this->masterGuideSchemaFieldsForClubId($clubId);
 
         $pathfinderAssignments = ClassMemberPathfinder::whereIn('member_id', $pathfinderMemberIds)
             ->with(['clubClass:id,club_id,class_order,class_name'])
@@ -1147,7 +1475,69 @@ class MemberAdventurerController extends Controller
                 ];
             });
 
-        return $adventurers->concat($pathfinderRows)->values();
+        $masterGuideRows = MemberMasterGuide::whereIn('id', $masterGuideIds)
+            ->where('status', 'active')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($row) use ($memberRows, $masterGuideSchemaFields) {
+                $memberRow = $memberRows->first(fn ($memberRow) => $memberRow->type === 'master_guide'
+                    && (int) $memberRow->id_data === (int) $row->id);
+                $memberId = optional($memberRow)->id;
+                $yearLabel = 'Year ' . ((int) ($row->program_year ?: 1));
+                $customFields = $this->sanitizeMasterGuideCustomFieldValues(
+                    $row->custom_fields_json ?: [],
+                    $masterGuideSchemaFields
+                );
+
+                return [
+                    'id' => $row->id,
+                    'member_id' => $memberId,
+                    'current_class_id' => null,
+                    'member_type' => 'master_guide',
+                    'is_sda' => (bool) (optional($memberRow)->is_sda ?? true),
+                    'baptism_date' => optional(optional($memberRow)->baptism_date)->toDateString()
+                        ?? optional($memberRow)->baptism_date,
+                    'applicant_name' => $row->applicant_name,
+                    'birthdate' => null,
+                    'age' => null,
+                    'grade' => $yearLabel,
+                    'program_year' => (int) ($row->program_year ?: 1),
+                    'program_year_label' => $yearLabel,
+                    'mailing_address' => $row->address,
+                    'cell_number' => $row->phone,
+                    'phone' => $row->phone,
+                    'emergency_contact' => $row->emergency_contact_name,
+                    'emergency_contact_name' => $row->emergency_contact_name,
+                    'emergency_contact_phone' => $row->emergency_contact_phone,
+                    'emergency_contact_email' => $row->emergency_contact_email,
+                    'investiture_classes' => [$yearLabel],
+                    'allergies' => null,
+                    'physical_restrictions' => null,
+                    'health_history' => null,
+                    'father_name' => null,
+                    'parent_name' => null,
+                    'parent_cell' => null,
+                    'parent_user_id' => null,
+                    'parent_user_name' => null,
+                    'parent_user_email' => null,
+                    'father_portal_url' => null,
+                    'home_address' => $row->address,
+                    'address' => $row->address,
+                    'email_address' => $row->email,
+                    'email' => $row->email,
+                    'signature' => null,
+                    'status' => $row->status ?? 'active',
+                    'insurance_paid' => (bool) $row->insurance_paid,
+                    'insurance_paid_at' => $row->insurance_paid_at,
+                    'enrollment_paid' => (bool) $row->enrollment_paid,
+                    'enrollment_paid_at' => $row->enrollment_paid_at,
+                    'custom_fields_json' => $customFields,
+                    'custom_fields_display' => $this->masterGuideCustomFieldsDisplay($customFields, $masterGuideSchemaFields),
+                    'class_assignments' => [],
+                ];
+            });
+
+        return $adventurers->concat($pathfinderRows)->concat($masterGuideRows)->values();
     }
 
     protected function attachAssignedStaffNamesToClasses($classes): void
