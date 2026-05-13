@@ -51,6 +51,10 @@ export const generalTranslations = {
         es: 'Reportes de asistencia',
         en: 'Attendance reports',
     },
+    attendance_tracker: {
+        es: 'Tomar asistencia',
+        en: 'Take attendance',
+    },
     catalogs: {
         es: 'Catálogos',
         en: 'Catalogs',
@@ -202,6 +206,10 @@ export const generalTranslations = {
     requirements_reports: {
         es: 'Reportes de requisitos',
         en: 'Requirements reports',
+    },
+    money_custody: {
+        es: 'Dinero en custodia',
+        en: 'Money custody',
     },
     save_enter: {
         es: 'Guardar y entrar',

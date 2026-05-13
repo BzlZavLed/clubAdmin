@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\Account;
+use App\Models\Payment;
 use App\Models\TreasuryMovement;
+use App\Services\AttendanceDuesPaymentService;
 use App\Services\ClubTreasuryService;
 use App\Support\BankInfoFormatter;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class ClubTreasuryController extends Controller
@@ -47,6 +50,7 @@ class ClubTreasuryController extends Controller
                 ->values(),
             'summary' => $summary,
             'income_rows' => $this->treasuryService->incomeRows($club)->values(),
+            'pending_staff_remittances' => $this->pendingStaffRemittanceRows($club),
             'movements' => $this->movementRows($club),
         ]);
     }
@@ -141,6 +145,56 @@ class ClubTreasuryController extends Controller
             'message' => 'Movimiento registrado.',
             'data' => $movement,
         ], 201);
+    }
+
+    public function validateStaffRemittance(Request $request)
+    {
+        $club = $this->resolveAllowedClub($request);
+        $validated = $request->validate([
+            'remittance_batch_id' => ['required', 'string', 'max:64'],
+        ]);
+
+        $payments = DB::transaction(function () use ($club, $validated, $request) {
+            $payments = Payment::query()
+                ->where('club_id', $club->id)
+                ->where('remittance_batch_id', $validated['remittance_batch_id'])
+                ->where('custody_status', AttendanceDuesPaymentService::CUSTODY_REMITTED_PENDING)
+                ->lockForUpdate()
+                ->get();
+
+            if ($payments->isEmpty()) {
+                abort(422, 'No hay entrega pendiente para validar.');
+            }
+
+            $now = Carbon::now();
+            foreach ($payments as $payment) {
+                $paymentType = $this->paymentTypeForRemittance($payment->remittance_method);
+                $payment->forceFill([
+                    'custody_status' => AttendanceDuesPaymentService::CUSTODY_CLUB_RECEIVED,
+                    'custody_validated_by_user_id' => $request->user()?->id,
+                    'custody_validated_at' => $now,
+                    'payment_type' => $paymentType,
+                    'zelle_phone' => $paymentType === 'zelle'
+                        ? ($payment->zelle_phone ?: $payment->remittance_reference)
+                        : $payment->zelle_phone,
+                ])->save();
+
+                Account::query()
+                    ->firstOrCreate(
+                        ['club_id' => $payment->club_id, 'pay_to' => $payment->pay_to ?: 'club_budget'],
+                        ['label' => $payment->pay_to ?: 'Presupuesto del club', 'balance' => 0]
+                    )
+                    ->increment('balance', (float) $payment->amount_paid);
+            }
+
+            return $payments;
+        });
+
+        return response()->json([
+            'message' => 'Entrega de staff validada.',
+            'count' => $payments->count(),
+            'amount' => round((float) $payments->sum('amount_paid'), 2),
+        ]);
     }
 
     protected function storeAccountTransfer(Request $request, Club $club, array $validated)
@@ -263,5 +317,60 @@ class ClubTreasuryController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    protected function pendingStaffRemittanceRows(Club $club): array
+    {
+        return Payment::query()
+            ->where('club_id', $club->id)
+            ->where('custody_status', AttendanceDuesPaymentService::CUSTODY_REMITTED_PENDING)
+            ->with([
+                'heldBy:id,name,email',
+                'member:id,type,id_data,parent_id',
+                'receipt:id,payment_id,receipt_number',
+            ])
+            ->latest('remitted_at')
+            ->latest('id')
+            ->get()
+            ->groupBy(fn (Payment $payment) => $payment->remittance_batch_id ?: "single-{$payment->id}")
+            ->map(function ($payments, $batchId) {
+                $first = $payments->first();
+
+                return [
+                    'batch_id' => $batchId,
+                    'held_by_user_id' => $first?->held_by_user_id,
+                    'staff_name' => $first?->heldBy?->name ?: '—',
+                    'staff_email' => $first?->heldBy?->email,
+                    'amount' => round((float) $payments->sum('amount_paid'), 2),
+                    'count' => $payments->count(),
+                    'remittance_method' => $first?->remittance_method,
+                    'remittance_reference' => $first?->remittance_reference,
+                    'remittance_notes' => $first?->remittance_notes,
+                    'remitted_at' => optional($first?->remitted_at)->toDateTimeString(),
+                    'payments' => $payments->map(function (Payment $payment) {
+                        $member = ClubHelper::memberDetail($payment->member);
+
+                        return [
+                            'id' => (int) $payment->id,
+                            'payer_name' => $member['name'] ?? '—',
+                            'amount_paid' => (float) $payment->amount_paid,
+                            'payment_date' => optional($payment->payment_date)->toDateString(),
+                            'receipt_number' => $payment->receipt?->receipt_number,
+                            'receipt_url' => $payment->receipt ? route('payment-receipts.download', $payment->receipt) : null,
+                        ];
+                    })->values(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    protected function paymentTypeForRemittance(?string $method): string
+    {
+        return match ($method) {
+            'zelle' => 'zelle',
+            'transfer' => 'transfer',
+            default => 'cash',
+        };
     }
 }

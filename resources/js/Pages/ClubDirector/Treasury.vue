@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
-import { createEventClubSettlement, createTreasuryMovement, fetchClubEventSettlements, fetchClubTreasury } from '@/Services/api'
+import { createEventClubSettlement, createTreasuryMovement, fetchClubEventSettlements, fetchClubTreasury, validateStaffRemittance } from '@/Services/api'
 import { ArrowPathIcon, BanknotesIcon, BuildingLibraryIcon, WalletIcon } from '@heroicons/vue/24/outline'
 
 const { showToast } = useGeneral()
@@ -21,10 +21,12 @@ const treasury = ref({
     accounts: [],
     summary: {},
     income_rows: [],
+    pending_staff_remittances: [],
     movements: [],
 })
 const eventSettlementRows = ref([])
 const incomeLocationFilter = ref('all')
+const validatingRemittanceBatch = ref('')
 const defaultMovementForm = () => ({
     movement_type: 'cash_deposit',
     pay_to: 'club_budget',
@@ -67,12 +69,18 @@ const filteredIncomeRows = computed(() => {
     if (incomeLocationFilter.value === 'all') return treasury.value.income_rows || []
     return (treasury.value.income_rows || []).filter(row => row.location === incomeLocationFilter.value)
 })
+const pendingStaffRemittances = computed(() => treasury.value.pending_staff_remittances || [])
 
 const formatMoney = (value) => Number(value || 0).toFixed(2)
 const formatDate = (value) => value ? String(value).slice(0, 10) : '—'
 const locationLabel = (value) => value === 'bank' ? tr('Banco', 'Bank') : value === 'external' ? tr('Externo', 'External') : value === 'internal' ? tr('Interno', 'Internal') : tr('Efectivo', 'Cash')
 const accountLabel = (row) => row?.account_label || treasury.value.accounts.find(account => account.value === row?.pay_to)?.label || row?.pay_to || '—'
 const paymentTypesLabel = (types) => (types || []).filter(Boolean).join(', ')
+const remittanceMethodLabel = (value) => ({
+    cash: tr('Efectivo', 'Cash'),
+    zelle: 'Zelle',
+    transfer: tr('Transferencia', 'Transfer'),
+})[value] || value || '—'
 const movementLabel = (value) => ({
     cash_deposit: tr('Depósito a banco', 'Bank deposit'),
     cash_withdrawal: tr('Retiro de banco', 'Bank withdrawal'),
@@ -116,6 +124,7 @@ async function loadData() {
             accounts: treasuryData.accounts || [],
             summary: treasuryData.summary || {},
             income_rows: treasuryData.income_rows || [],
+            pending_staff_remittances: treasuryData.pending_staff_remittances || [],
             movements: treasuryData.movements || [],
         }
         const availableAccounts = (treasuryData.accounts || []).map(account => account.value)
@@ -129,6 +138,20 @@ async function loadData() {
         showToast(error?.response?.data?.message || tr('No se pudo cargar tesorería', 'Could not load treasury'), 'error')
     } finally {
         loading.value = false
+    }
+}
+
+async function validateRemittance(batch) {
+    validatingRemittanceBatch.value = batch.batch_id
+    try {
+        await validateStaffRemittance(batch.batch_id, treasury.value.club?.id)
+        showToast(tr('Entrega validada', 'Remittance validated'), 'success')
+        await loadData()
+    } catch (error) {
+        console.error(error)
+        showToast(error?.response?.data?.message || tr('No se pudo validar la entrega', 'Could not validate the remittance'), 'error')
+    } finally {
+        validatingRemittanceBatch.value = ''
     }
 }
 
@@ -553,6 +576,84 @@ onMounted(loadData)
                             </div>
                         </div>
                     </article>
+                </div>
+            </section>
+
+            <section class="rounded-lg border bg-white p-5 shadow-sm">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Entregas de staff pendientes', 'Pending Staff Remittances') }}</h2>
+                        <p class="mt-1 text-sm text-gray-600">
+                            {{ tr('Cuotas cobradas por staff desde asistencia que fueron marcadas como entregadas y necesitan validacion del director.', 'Dues collected by staff from attendance that were marked as remitted and need director validation.') }}
+                        </p>
+                    </div>
+                    <span class="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                        {{ pendingStaffRemittances.length }} {{ tr('pendientes', 'pending') }}
+                    </span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                    <article v-for="batch in pendingStaffRemittances" :key="batch.batch_id" class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div class="min-w-0">
+                                <div class="text-sm font-semibold text-gray-900">
+                                    {{ batch.staff_name }} · ${{ formatMoney(batch.amount) }}
+                                </div>
+                                <div class="mt-1 text-xs text-gray-600">
+                                    {{ formatDate(batch.remitted_at) }} · {{ remittanceMethodLabel(batch.remittance_method) }} · {{ batch.count }} {{ tr('cuotas', 'dues') }}
+                                </div>
+                                <div v-if="batch.remittance_reference" class="mt-1 text-xs text-gray-600">
+                                    {{ tr('Referencia', 'Reference') }}: {{ batch.remittance_reference }}
+                                </div>
+                                <div v-if="batch.remittance_notes" class="mt-1 text-xs text-gray-600">
+                                    {{ batch.remittance_notes }}
+                                </div>
+
+                                <details class="mt-3">
+                                    <summary class="cursor-pointer text-xs font-medium text-blue-700">
+                                        {{ tr('Ver cuotas incluidas', 'View included dues') }}
+                                    </summary>
+                                    <div class="mt-2 overflow-x-auto rounded border bg-white">
+                                        <table class="min-w-full text-xs">
+                                            <thead class="bg-gray-50 text-left text-gray-600">
+                                                <tr>
+                                                    <th class="px-3 py-2">{{ tr('Fecha', 'Date') }}</th>
+                                                    <th class="px-3 py-2">{{ tr('Miembro', 'Member') }}</th>
+                                                    <th class="px-3 py-2">{{ tr('Recibo', 'Receipt') }}</th>
+                                                    <th class="px-3 py-2 text-right">{{ tr('Monto', 'Amount') }}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="payment in batch.payments" :key="payment.id" class="border-t">
+                                                    <td class="px-3 py-2">{{ formatDate(payment.payment_date) }}</td>
+                                                    <td class="px-3 py-2">{{ payment.payer_name }}</td>
+                                                    <td class="px-3 py-2">
+                                                        <a v-if="payment.receipt_url" :href="payment.receipt_url" target="_blank" rel="noopener" class="text-blue-700 hover:underline">
+                                                            {{ payment.receipt_number }}
+                                                        </a>
+                                                        <span v-else>—</span>
+                                                    </td>
+                                                    <td class="px-3 py-2 text-right">${{ formatMoney(payment.amount_paid) }}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </details>
+                            </div>
+                            <button
+                                type="button"
+                                class="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                :disabled="validatingRemittanceBatch === batch.batch_id"
+                                @click="validateRemittance(batch)"
+                            >
+                                {{ validatingRemittanceBatch === batch.batch_id ? tr('Validando...', 'Validating...') : tr('Validar recibido', 'Validate Received') }}
+                            </button>
+                        </div>
+                    </article>
+
+                    <div v-if="!pendingStaffRemittances.length" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                        {{ tr('No hay entregas de staff pendientes.', 'No staff remittances are pending.') }}
+                    </div>
                 </div>
             </section>
 

@@ -32,6 +32,7 @@ use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Controllers\WorkplanController;
 use App\Http\Controllers\ClubSettingsController;
 use App\Http\Controllers\ClubTreasuryController;
+use App\Http\Controllers\StaffPaymentCustodyController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventClubSettlementController;
 use App\Http\Controllers\EventReadinessController;
@@ -583,6 +584,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.treasury.data');
     Route::post('/club-director/treasury/movements', [ClubTreasuryController::class, 'storeMovement'])
         ->name('club.director.treasury.movements.store');
+    Route::post('/club-director/treasury/staff-remittances/validate', [ClubTreasuryController::class, 'validateStaffRemittance'])
+        ->name('club.director.treasury.staff-remittances.validate');
 
     Route::get(
         '/club-director/members',
@@ -682,6 +685,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::delete('/club-director/settings/logo', [ClubSettingsController::class, 'removeLogo'])->name('club.settings.logo.destroy');
     Route::post('/club-director/settings/catalog', [ClubSettingsController::class, 'fetchCatalog'])->name('club.settings.catalog');
     Route::post('/club-director/settings/save', [ClubSettingsController::class, 'saveConfig'])->name('club.settings.save');
+
+    Route::get('/club-director/assistance-report', [AssistanceReportController::class, 'directorIndex'])
+        ->name('club.director.assistance_report');
 
     Route::get('/club-director/reports/assistance', function () {
         return Inertia::render('ClubDirector/Reports/Assistance', [
@@ -930,6 +936,12 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/club-personal/payments', [ClubPaymentController::class, 'store'])->name('club.payments.store');
     Route::put('/club-personal/payments/{payment}', [ClubPaymentController::class, 'update'])->name('club.payments.update');
     Route::delete('/club-personal/payments/{payment}', [ClubPaymentController::class, 'destroy'])->name('club.payments.destroy');
+    Route::get('/club-personal/money-custody', [StaffPaymentCustodyController::class, 'index'])
+        ->name('club.personal.money-custody');
+    Route::get('/club-personal/money-custody/data', [StaffPaymentCustodyController::class, 'data'])
+        ->name('club.personal.money-custody.data');
+    Route::post('/club-personal/money-custody/remit', [StaffPaymentCustodyController::class, 'remit'])
+        ->name('club.personal.money-custody.remit');
 
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 

@@ -7,8 +7,10 @@ use App\Models\Club;
 use App\Models\Expense;
 use App\Models\PayToOption;
 use App\Models\Payment;
+use App\Services\AttendanceDuesPaymentService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class RebuildAccountBalances extends Command
 {
@@ -42,6 +44,12 @@ class RebuildAccountBalances extends Command
                 $paymentSums = Payment::query()
                     ->where('payments.club_id', $club->id)
                     ->leftJoin('payment_concepts', 'payment_concepts.id', '=', 'payments.payment_concept_id')
+                    ->when(Schema::hasColumn('payments', 'custody_status'), function ($query) {
+                        $query->where(function ($custody) {
+                            $custody->whereNull('payments.custody_status')
+                                ->orWhere('payments.custody_status', AttendanceDuesPaymentService::CUSTODY_CLUB_RECEIVED);
+                        });
+                    })
                     ->selectRaw('payment_concepts.pay_to as pay_to, COALESCE(SUM(payments.amount_paid),0) as total')
                     ->groupBy('payment_concepts.pay_to')
                     ->pluck('total', 'pay_to');

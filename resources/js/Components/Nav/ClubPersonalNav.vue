@@ -13,6 +13,7 @@ import {
     ChevronDownIcon,
     ChevronRightIcon,
     BanknotesIcon,
+    WalletIcon,
     CalendarDaysIcon
 
 } from '@heroicons/vue/24/outline'
@@ -30,6 +31,7 @@ const menuItems = computed(() => [
 const clubSubItems = computed(() => [
     { name: t('attendance_report'), href: '/club-personal/assistance-report', route: 'club.assistance_report', icon: BriefcaseIcon },
     { name: t('income'), href: '/club-personal/payments', route: 'club.payments.index', icon: BanknotesIcon },
+    { name: t('money_custody'), href: '/club-personal/money-custody', route: 'club.personal.money-custody', icon: WalletIcon },
     { name: t('workplan'), href: '/club-personal/workplan', route: 'club.personal.workplan', icon: CalendarDaysIcon },
     { name: t('investiture_requirements'), href: '/club-personal/investiture-requirements', route: 'club.personal.investiture-requirements', icon: ChartBarIcon },
 ])

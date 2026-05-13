@@ -13,6 +13,8 @@ class RepAssistanceAdvMerit extends Model
     protected $fillable = [
         'mem_adv_name',
         'mem_adv_id',
+        'member_id',
+        'payment_id',
         'asistencia',
         'puntualidad',
         'uniforme',
@@ -36,5 +38,10 @@ class RepAssistanceAdvMerit extends Model
     public function report()
     {
         return $this->belongsTo(RepAssistanceAdv::class, 'report_id');
+    }
+
+    public function payment()
+    {
+        return $this->belongsTo(Payment::class, 'payment_id');
     }
 }

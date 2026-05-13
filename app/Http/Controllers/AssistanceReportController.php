@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\ClubClass;
+use App\Models\ClubCarpetaClassActivation;
 use App\Models\Club;
 use App\Models\Staff;
 use App\Models\ClassPlan;
@@ -16,8 +17,10 @@ class AssistanceReportController extends Controller
     public function index()
     {
         $user = Auth::user();
-        [$staff, $assignedClass, $assignedClassId] = $this->resolveStaffAndClass($user);
-        if (!$staff || !$assignedClass || !$assignedClassId) {
+        $context = $this->resolveStaffAttendanceContext($user);
+        $staff = $context['staff'];
+
+        if (!$staff || !$context['assigned_class']) {
             return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
                 'auth_user' => $user,
                 'staff' => $staff,
@@ -28,29 +31,46 @@ class AssistanceReportController extends Controller
             ]);
         }
 
-        // Step 3: Load assigned members from members table for this club+class.
-        $clubId = $staff->club_id ?? $user->club_id;
-        $club = $clubId ? Club::find($clubId) : null;
-        $assignedMembers = ClubHelper::getMembersByClassAndClub((int)$clubId, (int)$assignedClassId)
-            ->map(function ($m) {
-                return [
-                    // keep ids aligned with id_data so existing report payload works (mem_adv_id)
-                    'id' => $m['id_data'],
-                    'applicant_name' => $m['applicant_name'],
-                    'member_type' => $m['member_type'],
-                    'member_row_id' => $m['member_id'],
-                ];
-            })
-            ->values();
+        $club = $context['club'];
 
-        // All good
         return Inertia::render('ClubPersonal/AssistanceReport', [
             'auth_user' => $user,
-            'club' => $club ? ['id' => $club->id, 'club_name' => $club->club_name, 'club_type' => $club->club_type] : null,
+            'club' => $this->clubPayload($club),
             'staff' => $staff,
-            'assigned_class' => ['id' => $assignedClass->id, 'name' => $assignedClass->class_name],
-            'assigned_members' => $assignedMembers,
-            'planned_requirement_activities' => $this->plannedRequirementActivities((int) $staff->id, (int) $assignedClassId, now()->toDateString()),
+            'assigned_class' => $context['assigned_class'],
+            'assigned_members' => $context['assigned_members'],
+            'planned_requirement_activities' => $context['tracks_requirements']
+                ? $this->plannedRequirementActivities((int) $staff->id, (int) $context['assigned_class']['id'], now()->toDateString())
+                : [],
+            'attendance_context' => $context['attendance_context'],
+        ]);
+    }
+
+    public function directorIndex(Request $request)
+    {
+        $user = Auth::user();
+        $club = ClubHelper::clubForUser($user, $request->input('club_id'));
+
+        if (($club->club_type ?? null) !== 'master_guide') {
+            return Inertia::render('ClubDirectorDashboard', [
+                'auth_user' => $user,
+                'toast' => [
+                    'type' => 'error',
+                    'message' => 'La toma de asistencia desde direccion esta disponible para clubes de Guias Mayores.',
+                ],
+            ]);
+        }
+
+        $context = $this->clubwideMasterGuideContext($club, $user);
+
+        return Inertia::render('ClubPersonal/AssistanceReport', [
+            'auth_user' => $user,
+            'club' => $this->clubPayload($club),
+            'staff' => $context['staff'],
+            'assigned_class' => $context['assigned_class'],
+            'assigned_members' => $context['assigned_members'],
+            'planned_requirement_activities' => [],
+            'attendance_context' => $context['attendance_context'],
         ]);
     }
 
@@ -61,15 +81,123 @@ class AssistanceReportController extends Controller
         ]);
 
         $user = Auth::user();
-        [$staff, $assignedClass, $assignedClassId] = $this->resolveStaffAndClass($user);
-        if (!$staff || !$assignedClass || !$assignedClassId) {
+        $context = $this->resolveStaffAttendanceContext($user);
+        $staff = $context['staff'];
+        $assignedClass = $context['assigned_class'];
+        if (!$staff || !$assignedClass) {
             abort(422, 'No class assigned to current staff.');
         }
 
         return response()->json([
             'date' => $validated['date'],
-            'activities' => $this->plannedRequirementActivities((int) $staff->id, (int) $assignedClassId, $validated['date']),
+            'activities' => $context['tracks_requirements']
+                ? $this->plannedRequirementActivities((int) $staff->id, (int) $assignedClass['id'], $validated['date'])
+                : [],
         ]);
+    }
+
+    private function resolveStaffAttendanceContext($user): array
+    {
+        [$staff, $assignedClass, $assignedClassId] = $this->resolveStaffAndClass($user);
+        if (!$staff) {
+            return [
+                'staff' => null,
+                'club' => null,
+                'assigned_class' => null,
+                'assigned_members' => collect(),
+                'tracks_requirements' => false,
+                'attendance_context' => [],
+            ];
+        }
+
+        $club = Club::find($staff->club_id ?? $user->club_id);
+        if (($club->club_type ?? null) === 'master_guide') {
+            return $this->clubwideMasterGuideContext($club, $user, $staff);
+        }
+
+        if (!$assignedClass || !$assignedClassId) {
+            return [
+                'staff' => $staff,
+                'club' => $club,
+                'assigned_class' => null,
+                'assigned_members' => collect(),
+                'tracks_requirements' => false,
+                'attendance_context' => [],
+            ];
+        }
+
+        $assignedMembers = ClubHelper::getMembersByClassAndClub((int) $club->id, (int) $assignedClassId)
+            ->map(fn ($m) => $this->memberPayload($m))
+            ->values();
+
+        return [
+            'staff' => $staff,
+            'club' => $club,
+            'assigned_class' => ['id' => (int) $assignedClass->id, 'name' => $assignedClass->class_name],
+            'assigned_members' => $assignedMembers,
+            'tracks_requirements' => ($club->club_type ?? null) === 'adventurers',
+            'attendance_context' => [
+                'mode' => 'class',
+                'club_type' => $club->club_type,
+                'metrics' => $this->metricsForClubType($club->club_type),
+            ],
+        ];
+    }
+
+    private function clubwideMasterGuideContext(Club $club, $user, ?Staff $staff = null): array
+    {
+        $staffPayload = $staff ?: (object) [
+            'id' => 0,
+            'club_id' => $club->id,
+            'type' => 'master_guide_director',
+            'status' => 'active',
+        ];
+
+        return [
+            'staff' => $staffPayload,
+            'club' => $club,
+            'assigned_class' => ['id' => 0, 'name' => 'Club completo'],
+            'assigned_members' => ClubHelper::membersOfClub((int) $club->id)
+                ->map(fn ($m) => $this->memberPayload($m))
+                ->values(),
+            'tracks_requirements' => false,
+            'attendance_context' => [
+                'mode' => 'clubwide',
+                'club_type' => 'master_guide',
+                'metrics' => $this->metricsForClubType('master_guide'),
+                'director_entry' => !$staff,
+            ],
+        ];
+    }
+
+    private function memberPayload(array $member): array
+    {
+        return [
+            'id' => $member['id_data'],
+            'applicant_name' => $member['applicant_name'],
+            'member_type' => $member['member_type'],
+            'member_row_id' => $member['member_id'],
+        ];
+    }
+
+    private function clubPayload(?Club $club): ?array
+    {
+        return $club ? [
+            'id' => $club->id,
+            'club_name' => $club->club_name,
+            'club_type' => $club->club_type,
+            'church_id' => $club->church_id,
+            'church_name' => $club->church_name,
+        ] : null;
+    }
+
+    private function metricsForClubType(?string $clubType): array
+    {
+        return match ($clubType) {
+            'pathfinders' => ['asistencia', 'cuota'],
+            'master_guide' => ['asistencia', 'cuota'],
+            default => ['asistencia', 'puntualidad', 'uniforme', 'cuota'],
+        };
     }
 
     private function resolveStaffAndClass($user): array
@@ -92,6 +220,26 @@ class AssistanceReportController extends Controller
         }
 
         $assignedClass = $assignedClassId ? ClubClass::find($assignedClassId) : null;
+        if (!$assignedClass && $staff->assigned_carpeta_class_activation_id) {
+            $activation = ClubCarpetaClassActivation::query()
+                ->with('unionClassCatalog:id,name,sort_order')
+                ->find($staff->assigned_carpeta_class_activation_id);
+
+            if ($activation) {
+                $assignedClass = ClubClass::firstOrCreate(
+                    [
+                        'club_id' => $activation->club_id,
+                        'union_class_catalog_id' => $activation->union_class_catalog_id,
+                    ],
+                    [
+                        'class_order' => $activation->unionClassCatalog?->sort_order,
+                        'class_name' => $activation->unionClassCatalog?->name,
+                    ]
+                );
+                $assignedClassId = $assignedClass->id;
+            }
+        }
+
         if (!$assignedClassId || !$assignedClass) {
             return [$staff, null, null];
         }
