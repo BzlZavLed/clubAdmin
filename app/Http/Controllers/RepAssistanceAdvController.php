@@ -5,11 +5,18 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\RepAssistanceAdv;
 use App\Models\RepAssistanceAdvMerit;
+use App\Models\Club;
+use App\Services\AttendanceDuesPaymentService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
 class RepAssistanceAdvController extends Controller
 {
+    public function __construct(private readonly AttendanceDuesPaymentService $attendanceDuesPaymentService)
+    {
+    }
+
     // 🔹 Store a new report and its merits
     public function store(Request $request)
     {
@@ -28,6 +35,7 @@ class RepAssistanceAdvController extends Controller
             'merits' => 'required|array',
             'merits.*.mem_adv_name' => 'required|string|max:100',
             'merits.*.mem_adv_id' => 'integer',// Added applicant_id for reference
+            'merits.*.member_id' => 'nullable|integer|exists:members,id',
             'merits.*.asistencia' => 'boolean',
             'merits.*.puntualidad' => 'boolean',
             'merits.*.uniforme' => 'boolean',
@@ -39,51 +47,52 @@ class RepAssistanceAdvController extends Controller
         ]);
 
         try {
-            // Save the main report
-            $report = RepAssistanceAdv::create([
-                'month' => $validated['month'],
-                'year' => $validated['year'],
-                'date' => $validated['date'],
-                'class_name' => $validated['class_name'],
-                'class_id' => $validated['class_id'],// Added 'class_id' for reference
-                'staff_name' => $validated['staff_name'],// Changed from 'counselor' to 'staff_name'
-                'staff_id' => $validated['staff_id'],// Added 'staff_id' for reference
-                'church' => $validated['church'],
-                'church_id' => $validated['church_id'],// Added 'church_id' for reference
-                'district' => $validated['district'],
-                'club_id' => $validated['club_id'], // Added 'club_id' for reference
-            ]);
-
-            // Save each merit row (per member)
-            foreach ($validated['merits'] as $entry) {
-                $asistencia = (bool) ($entry['asistencia'] ?? false);
-                $puntualidad = $asistencia ? (bool) ($entry['puntualidad'] ?? false) : false;
-                $uniforme = $asistencia ? (bool) ($entry['uniforme'] ?? false) : false;
-                $cuota = $asistencia ? (bool) ($entry['cuota'] ?? false) : false;
-                $cuotaAmount = $cuota ? (float) ($entry['cuota_amount'] ?? 0) : 0.0;
-                $checks = $entry['requirement_checks_json'] ?? null;
-                if (!$asistencia && is_array($checks)) {
-                    $checks = array_map(static fn () => false, $checks);
-                }
-                RepAssistanceAdvMerit::create([
-                    'report_id' => $report->id,
-                    'mem_adv_name' => $entry['mem_adv_name'],
-                    'mem_adv_id' => $entry['mem_adv_id'],
-                    'asistencia' => $asistencia,
-                    'puntualidad' => $puntualidad,
-                    'uniforme' => $uniforme,
-                    'conductor' => $entry['conductor'] ?? false,
-                    'cuota' => $cuota,
-                    'cuota_amount' => $cuotaAmount,
-                    'requirement_checks_json' => $checks,
-                    'total' => (int) ($asistencia + $puntualidad + $uniforme + $cuota),
+            $report = null;
+            DB::transaction(function () use ($validated, &$report, $request) {
+                // Save the main report
+                $report = RepAssistanceAdv::create([
+                    'month' => $validated['month'],
+                    'year' => $validated['year'],
+                    'date' => $validated['date'],
+                    'class_name' => $validated['class_name'],
+                    'class_id' => $validated['class_id'],// Added 'class_id' for reference
+                    'staff_name' => $validated['staff_name'],// Changed from 'counselor' to 'staff_name'
+                    'staff_id' => $validated['staff_id'],// Added 'staff_id' for reference
+                    'church' => $validated['church'],
+                    'church_id' => $validated['church_id'],// Added 'church_id' for reference
+                    'district' => $validated['district'],
+                    'club_id' => $validated['club_id'], // Added 'club_id' for reference
                 ]);
-            }
 
+                $clubType = Club::query()->where('id', $validated['club_id'])->value('club_type');
+                $createdMerits = collect();
+
+                // Save each merit row (per member)
+                foreach ($validated['merits'] as $entry) {
+                    $normalized = $this->normalizeMeritEntry($entry, $clubType);
+                    $createdMerits->push(RepAssistanceAdvMerit::create([
+                        'report_id' => $report->id,
+                        'mem_adv_name' => $entry['mem_adv_name'],
+                        'mem_adv_id' => $entry['mem_adv_id'],
+                        'member_id' => $entry['member_id'] ?? null,
+                        'asistencia' => $normalized['asistencia'],
+                        'puntualidad' => $normalized['puntualidad'],
+                        'uniforme' => $normalized['uniforme'],
+                        'conductor' => $entry['conductor'] ?? false,
+                        'cuota' => $normalized['cuota'],
+                        'cuota_amount' => $normalized['cuota_amount'],
+                        'requirement_checks_json' => $normalized['requirement_checks_json'],
+                        'total' => $normalized['total'],
+                    ]));
+                }
+
+                $this->attendanceDuesPaymentService->syncForReport($report, $createdMerits, $request->user());
+            });
 
             return response()->json(['message' => 'Report created successfully.', 'id' => $report->id], 201);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json(['message' => 'Failed to save report.', 'error' => $e->getMessage()], 500);
         }
 
@@ -125,6 +134,7 @@ class RepAssistanceAdvController extends Controller
             'merits' => 'required|array',
             'merits.*.mem_adv_name' => 'required|string|max:100',
             'merits.*.mem_adv_id' => 'integer',
+            'merits.*.member_id' => 'nullable|integer|exists:members,id',
             'merits.*.asistencia' => 'boolean',
             'merits.*.puntualidad' => 'boolean',
             'merits.*.uniforme' => 'boolean',
@@ -136,53 +146,57 @@ class RepAssistanceAdvController extends Controller
         ]);
 
         try {
-            $report = RepAssistanceAdv::findOrFail($id);
+            DB::transaction(function () use ($id, $validated, $request) {
+                $report = RepAssistanceAdv::findOrFail($id);
 
-            // Update main report
-            $report->update([
-                'month' => $validated['month'],
-                'year' => $validated['year'],
-                'date' => $validated['date'],
-                'class_name' => $validated['class_name'],
-                'class_id' => $validated['class_id'],
-                'staff_name' => $validated['staff_name'],
-                'staff_id' => $validated['staff_id'],
-                'church' => $validated['church'],
-                'church_id' => $validated['church_id'],
-                'district' => $validated['district'],
-                'club_id' => $validated['club_id'],
-            ]);
+                $this->attendanceDuesPaymentService->clearReportPaymentsForEditableReport($report);
 
-            // Delete existing merit entries for this report
-            RepAssistanceAdvMerit::where('report_id', $report->id)->delete();
-
-            // Recreate merit rows
-            foreach ($validated['merits'] as $entry) {
-                $asistencia = (bool) ($entry['asistencia'] ?? false);
-                $puntualidad = $asistencia ? (bool) ($entry['puntualidad'] ?? false) : false;
-                $uniforme = $asistencia ? (bool) ($entry['uniforme'] ?? false) : false;
-                $cuota = $asistencia ? (bool) ($entry['cuota'] ?? false) : false;
-                $cuotaAmount = $cuota ? (float) ($entry['cuota_amount'] ?? 0) : 0.0;
-                $checks = $entry['requirement_checks_json'] ?? null;
-                if (!$asistencia && is_array($checks)) {
-                    $checks = array_map(static fn () => false, $checks);
-                }
-                RepAssistanceAdvMerit::create([
-                    'report_id' => $report->id,
-                    'mem_adv_name' => $entry['mem_adv_name'],
-                    'mem_adv_id' => $entry['mem_adv_id'],
-                    'asistencia' => $asistencia,
-                    'puntualidad' => $puntualidad,
-                    'uniforme' => $uniforme,
-                    'conductor' => $entry['conductor'] ?? false,
-                    'cuota' => $cuota,
-                    'cuota_amount' => $cuotaAmount,
-                    'requirement_checks_json' => $checks,
-                    'total' => (int) ($asistencia + $puntualidad + $uniforme + $cuota),
+                // Update main report
+                $report->update([
+                    'month' => $validated['month'],
+                    'year' => $validated['year'],
+                    'date' => $validated['date'],
+                    'class_name' => $validated['class_name'],
+                    'class_id' => $validated['class_id'],
+                    'staff_name' => $validated['staff_name'],
+                    'staff_id' => $validated['staff_id'],
+                    'church' => $validated['church'],
+                    'church_id' => $validated['church_id'],
+                    'district' => $validated['district'],
+                    'club_id' => $validated['club_id'],
                 ]);
-            }
+
+                // Delete existing merit entries for this report
+                RepAssistanceAdvMerit::where('report_id', $report->id)->delete();
+
+                $clubType = Club::query()->where('id', $validated['club_id'])->value('club_type');
+                $createdMerits = collect();
+
+                // Recreate merit rows
+                foreach ($validated['merits'] as $entry) {
+                    $normalized = $this->normalizeMeritEntry($entry, $clubType);
+                    $createdMerits->push(RepAssistanceAdvMerit::create([
+                        'report_id' => $report->id,
+                        'mem_adv_name' => $entry['mem_adv_name'],
+                        'mem_adv_id' => $entry['mem_adv_id'],
+                        'member_id' => $entry['member_id'] ?? null,
+                        'asistencia' => $normalized['asistencia'],
+                        'puntualidad' => $normalized['puntualidad'],
+                        'uniforme' => $normalized['uniforme'],
+                        'conductor' => $entry['conductor'] ?? false,
+                        'cuota' => $normalized['cuota'],
+                        'cuota_amount' => $normalized['cuota_amount'],
+                        'requirement_checks_json' => $normalized['requirement_checks_json'],
+                        'total' => $normalized['total'],
+                    ]));
+                }
+
+                $this->attendanceDuesPaymentService->syncForReport($report, $createdMerits, $request->user());
+            });
 
             return response()->json(['message' => 'Report updated successfully.'], 200);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to update report.',
@@ -205,9 +219,19 @@ class RepAssistanceAdvController extends Controller
     {
         $date = $request->query('date') ?? now()->toDateString();
 
-        $report = RepAssistanceAdv::where('staff_id', $staffId)
-            ->whereDate('date', $date)
-            ->first();
+        $reportQuery = RepAssistanceAdv::query()->whereDate('date', $date);
+
+        if ($request->filled('club_id')) {
+            $reportQuery->where('club_id', (int) $request->query('club_id'));
+
+            if ($request->has('class_id')) {
+                $reportQuery->where('class_id', (int) $request->query('class_id'));
+            }
+        } else {
+            $reportQuery->where('staff_id', $staffId);
+        }
+
+        $report = $reportQuery->first();
 
         if ($report) {
             $merits = RepAssistanceAdvMerit::where('report_id', $report->id)->get();
@@ -219,6 +243,42 @@ class RepAssistanceAdvController extends Controller
         }
 
         return response()->json(['exists' => false]);
+    }
+
+    private function normalizeMeritEntry(array $entry, ?string $clubType): array
+    {
+        $asistencia = (bool) ($entry['asistencia'] ?? false);
+        $puntualidad = $asistencia ? (bool) ($entry['puntualidad'] ?? false) : false;
+        $uniforme = $asistencia ? (bool) ($entry['uniforme'] ?? false) : false;
+        $cuota = $asistencia ? (bool) ($entry['cuota'] ?? false) : false;
+        $checks = $entry['requirement_checks_json'] ?? null;
+
+        if (in_array($clubType, ['pathfinders', 'master_guide'], true)) {
+            $puntualidad = false;
+            $uniforme = false;
+            $checks = null;
+        }
+
+        if (!$asistencia) {
+            $puntualidad = false;
+            $uniforme = false;
+            $cuota = false;
+            if (is_array($checks)) {
+                $checks = array_map(static fn () => false, $checks);
+            }
+        }
+
+        $cuotaAmount = $cuota ? (float) ($entry['cuota_amount'] ?? 0) : 0.0;
+
+        return [
+            'asistencia' => $asistencia,
+            'puntualidad' => $puntualidad,
+            'uniforme' => $uniforme,
+            'cuota' => $cuota,
+            'cuota_amount' => $cuotaAmount,
+            'requirement_checks_json' => $checks,
+            'total' => (int) ($asistencia + $puntualidad + $uniforme + $cuota),
+        ];
     }
 
     public function getBy(string $field, int $value)

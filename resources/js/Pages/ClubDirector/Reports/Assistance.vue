@@ -48,9 +48,17 @@ const reports = ref([]);
 const page = usePage();
 const superadminContext = computed(() => page.props.auth?.superadmin_context ?? null);
 const canSelectClub = computed(() => (clubs.value?.length ?? 0) > 1);
+const selectedClubType = computed(() => selectedClub.value?.club_type || 'adventurers');
+const isMasterGuideClub = computed(() => selectedClubType.value === 'master_guide');
+const isPathfinderClub = computed(() => selectedClubType.value === 'pathfinders');
+const showPunctualityUniform = computed(() => !isPathfinderClub.value && !isMasterGuideClub.value);
+const showDues = computed(() => true);
 
 const onClubChange = async () => {
     if (selectedClub.value) {
+        if (isMasterGuideClub.value && !['date', 'range', ''].includes(reportType.value)) {
+            reportType.value = '';
+        }
         await fetchMembers(selectedClub.value.id);
         await fetchClasses(selectedClub.value.id);
     }
@@ -358,8 +366,8 @@ onMounted(() => {
                         <option value="" disabled>{{ tr("Selecciona un tipo de reporte", "Select a report type") }}</option>
                         <option value="date">{{ tr("Por fecha", "By date") }}</option>
                         <option value="range">{{ tr("Por rango de fechas", "By date range") }}</option>
-                        <option value="class">{{ tr("Por clase", "By class") }}</option>
-                        <option value="member">{{ tr("Por miembro", "By member") }}</option>
+                        <option v-if="!isMasterGuideClub" value="class">{{ tr("Por clase", "By class") }}</option>
+                        <option v-if="!isMasterGuideClub" value="member">{{ tr("Por miembro", "By member") }}</option>
                     </select>
                 </div>
 
@@ -494,11 +502,11 @@ onMounted(() => {
                                 <th class="border p-1">{{ tr("Ano", "Year") }}</th>
                                 <th class="border p-1">{{ tr("Miembro", "Member") }}</th>
                                 <th class="border p-1">{{ tr("Asistencia", "Attendance") }}</th>
-                                <th class="border p-1">{{ tr("Puntualidad", "Punctuality") }}</th>
-                                <th class="border p-1">{{ tr("Uniforme", "Uniform") }}</th>
-                                <th class="border p-1">{{ tr("Conductor", "Driver") }}</th>
-                                <th class="border p-1">{{ tr("Cuota", "Dues") }}</th>
-                                <th class="border p-1">{{ tr("Monto", "Amount") }}</th>
+                                <th v-if="showPunctualityUniform" class="border p-1">{{ tr("Puntualidad", "Punctuality") }}</th>
+                                <th v-if="showPunctualityUniform" class="border p-1">{{ tr("Uniforme", "Uniform") }}</th>
+                                <th v-if="showPunctualityUniform" class="border p-1">{{ tr("Conductor", "Driver") }}</th>
+                                <th v-if="showDues" class="border p-1">{{ tr("Cuota", "Dues") }}</th>
+                                <th v-if="showDues" class="border p-1">{{ tr("Monto", "Amount") }}</th>
                                 <th class="border p-1">{{ tr("Total", "Total") }}</th>
                             </tr>
                         </thead>
@@ -511,19 +519,19 @@ onMounted(() => {
                                 <td class="border p-1">
                                     {{ m.asistencia ? "✓" : "" }}
                                 </td>
-                                <td class="border p-1">
+                                <td v-if="showPunctualityUniform" class="border p-1">
                                     {{ m.puntualidad ? "✓" : "" }}
                                 </td>
-                                <td class="border p-1">
+                                <td v-if="showPunctualityUniform" class="border p-1">
                                     {{ m.uniforme ? "✓" : "" }}
                                 </td>
-                                <td class="border p-1">
+                                <td v-if="showPunctualityUniform" class="border p-1">
                                     {{ m.conductor ? "✓" : "" }}
                                 </td>
-                                <td class="border p-1">
+                                <td v-if="showDues" class="border p-1">
                                     {{ m.cuota ? "✓" : "" }}
                                 </td>
-                                <td class="border p-1">
+                                <td v-if="showDues" class="border p-1">
                                     {{
                                         new Intl.NumberFormat("en-US", {
                                             style: "currency",
@@ -559,15 +567,15 @@ onMounted(() => {
                                             <th class="border p-1">
                                                 {{ tr("Asistencia", "Attendance") }}
                                             </th>
-                                            <th class="border p-1">
+                                            <th v-if="showPunctualityUniform" class="border p-1">
                                                 {{ tr("Puntualidad", "Punctuality") }}
                                             </th>
-                                            <th class="border p-1">{{ tr("Uniforme", "Uniform") }}</th>
-                                            <th class="border p-1">
+                                            <th v-if="showPunctualityUniform" class="border p-1">{{ tr("Uniforme", "Uniform") }}</th>
+                                            <th v-if="showPunctualityUniform" class="border p-1">
                                                 {{ tr("Conductor", "Driver") }}
                                             </th>
-                                            <th class="border p-1">{{ tr("Cuota", "Dues") }}</th>
-                                            <th class="border p-1">{{ tr("Monto", "Amount") }}</th>
+                                            <th v-if="showDues" class="border p-1">{{ tr("Cuota", "Dues") }}</th>
+                                            <th v-if="showDues" class="border p-1">{{ tr("Monto", "Amount") }}</th>
                                             <th class="border p-1">{{ tr("Total", "Total") }}</th>
                                         </tr>
                                     </thead>
@@ -582,19 +590,19 @@ onMounted(() => {
                                             <td class="border p-1">
                                                 {{ m.asistencia ? "✓" : "" }}
                                             </td>
-                                            <td class="border p-1">
+                                            <td v-if="showPunctualityUniform" class="border p-1">
                                                 {{ m.puntualidad ? "✓" : "" }}
                                             </td>
-                                            <td class="border p-1">
+                                            <td v-if="showPunctualityUniform" class="border p-1">
                                                 {{ m.uniforme ? "✓" : "" }}
                                             </td>
-                                            <td class="border p-1">
+                                            <td v-if="showPunctualityUniform" class="border p-1">
                                                 {{ m.conductor ? "✓" : "" }}
                                             </td>
-                                            <td class="border p-1">
+                                            <td v-if="showDues" class="border p-1">
                                                 {{ m.cuota ? "✓" : "" }}
                                             </td>
-                                            <td class="border p-1">
+                                            <td v-if="showDues" class="border p-1">
                                                 {{
                                                     new Intl.NumberFormat(
                                                         "en-US",

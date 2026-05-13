@@ -31,6 +31,18 @@ class Payment extends Model
         'is_cancelled',
         'related_canceled_movement_id',
         'canceling_id',
+        'source_type',
+        'source_id',
+        'source_line_id',
+        'custody_status',
+        'held_by_user_id',
+        'remittance_batch_id',
+        'remittance_method',
+        'remittance_reference',
+        'remittance_notes',
+        'remitted_at',
+        'custody_validated_by_user_id',
+        'custody_validated_at',
     ];
 
     protected $casts = [
@@ -38,6 +50,8 @@ class Payment extends Model
         'amount_paid' => 'decimal:2',
         'expected_amount' => 'decimal:2',
         'is_cancelled' => 'boolean',
+        'remitted_at' => 'datetime',
+        'custody_validated_at' => 'datetime',
     ];
 
     // Relations
@@ -66,6 +80,16 @@ class Payment extends Model
     public function receivedBy()
     {
         return $this->belongsTo(User::class, 'received_by_user_id');
+    }
+
+    public function heldBy()
+    {
+        return $this->belongsTo(User::class, 'held_by_user_id');
+    }
+
+    public function custodyValidatedBy()
+    {
+        return $this->belongsTo(User::class, 'custody_validated_by_user_id');
     }
 
     public function receipt()

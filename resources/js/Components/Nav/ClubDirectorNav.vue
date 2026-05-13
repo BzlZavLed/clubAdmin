@@ -42,6 +42,13 @@ const menuItems = computed(() => [
                 icon: CalendarDaysIcon
             },
             {
+                id: 'attendance_tracker',
+                name: t('attendance_tracker'),
+                href: '/club-director/assistance-report',
+                route: 'club.director.assistance_report',
+                icon: DocumentTextIcon
+            },
+            {
                 id: 'events',
                 name: t('events'),
                 href: '/events',

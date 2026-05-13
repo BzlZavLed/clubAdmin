@@ -21,6 +21,14 @@ const assignedClass = ref(null);
 const attendanceData = ref([]);
 const page = usePage();
 const staff = computed(() => page.props.staff || null);
+const club = computed(() => page.props.club || null);
+const attendanceContext = computed(() => page.props.attendance_context || {});
+const clubType = computed(() => attendanceContext.value.club_type || club.value?.club_type || user.value?.club_type || 'adventurers');
+const isAdventurers = computed(() => clubType.value === 'adventurers');
+const isPathfinders = computed(() => clubType.value === 'pathfinders');
+const isMasterGuide = computed(() => clubType.value === 'master_guide');
+const currentClubId = computed(() => club.value?.id || user.value?.club_id || staff.value?.club_id || null);
+const currentChurchId = computed(() => club.value?.church_id || user.value?.church_id || null);
 const { toast, showToast } = useGeneral()
 const { tr } = useLocale()
 const isEditing = ref(false);
@@ -31,6 +39,20 @@ const submittedMerits = ref([])
 const plannedRequirementActivities = ref([])
 
 const meritsLabels = ['asistencia', 'puntualidad', 'uniforme', 'cuota'];
+const visibleSecondaryMerits = computed(() => {
+    if (isPathfinders.value || isMasterGuide.value) return [{ label: 'cuota', index: 3 }];
+
+    return [
+        { label: 'puntualidad', index: 1 },
+        { label: 'uniforme', index: 2 },
+        { label: 'cuota', index: 3 },
+    ];
+});
+const showRequirementChecks = computed(() => isAdventurers.value && plannedRequirementActivities.value.length > 0);
+const scoreTotal = (scores) => {
+    const allowedIndexes = [0, ...visibleSecondaryMerits.value.map((item) => item.index)];
+    return allowedIndexes.reduce((sum, index) => sum + (Number(scores?.[index] || 0) === 1 ? 1 : 0), 0);
+};
 const requirementActivityLabelMap = computed(() => {
     const map = {}
     plannedRequirementActivities.value.forEach((activity) => {
@@ -43,6 +65,7 @@ const requirementActivityLabelMap = computed(() => {
 })
 
 const hasAnyRequirementChecks = computed(() => {
+    if (!isAdventurers.value) return false
     return submittedMerits.value.some((entry) => {
         const checks = entry.requirement_checks_json || {}
         return Object.keys(checks).length > 0
@@ -127,12 +150,12 @@ const form = reactive({
     captain: '',
     month: new Date().toLocaleString('default', { month: 'long' }),
     year: new Date().getFullYear(),
-    church: user.value?.church_name || '',
+    church: club.value?.church_name || user.value?.church_name || '',
     district: user.value?.conference_name || '',
     date: new Date().toISOString().split('T')[0],
 });
 
-const total = (scores) => scores.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+const total = (scores) => scoreTotal(scores);
 
 const saveReport = async () => {
     const meritsArray = assignedMembers.value.map((member, i) => {
@@ -140,14 +163,15 @@ const saveReport = async () => {
         return {
             mem_adv_name: member.applicant_name,
             mem_adv_id: member.id,
+            member_id: member.member_row_id || member.member_id || null,
             asistencia: scores[0] === 1,
             puntualidad: scores[1] === 1,
             uniforme: scores[2] === 1,
             conductor: false,
             cuota: scores[3] === 1,
-            total: scores.filter(score => score === 1).length,
+            total: scoreTotal(scores),
             cuota_amount: attendanceData.value[i].cuota_amount || 0, // ADD THIS
-            requirement_checks_json: attendanceData.value[i].requirement_checks || {},
+            requirement_checks_json: isAdventurers.value ? (attendanceData.value[i].requirement_checks || {}) : {},
 
         };
     });
@@ -161,8 +185,8 @@ const saveReport = async () => {
         staff_name: form.staff_name,
         staff_id: staff.value.id,
         church: form.church,
-        church_id: user.value?.church_id,
-        club_id: user.value?.club_id,
+        church_id: currentChurchId.value,
+        club_id: currentClubId.value,
         district: form.district,
         merits: meritsArray
     };
@@ -188,14 +212,15 @@ const updateReport = async () => {
         return {
             mem_adv_name: member.applicant_name,
             mem_adv_id: member.id,
+            member_id: member.member_row_id || member.member_id || null,
             asistencia: scores[0] === 1,
             puntualidad: scores[1] === 1,
             uniforme: scores[2] === 1,
             conductor: false,
             cuota: scores[3] === 1,
-            total: scores.filter(score => score === 1).length,
+            total: scoreTotal(scores),
             cuota_amount: attendanceData.value[i].cuota_amount || 0, // ADD THIS
-            requirement_checks_json: attendanceData.value[i].requirement_checks || {},
+            requirement_checks_json: isAdventurers.value ? (attendanceData.value[i].requirement_checks || {}) : {},
 
         };
     });
@@ -209,8 +234,8 @@ const updateReport = async () => {
         staff_name: form.staff_name,
         staff_id: staff.value.id,
         church: form.church,
-        church_id: user.value?.church_id,
-        club_id: user.value?.club_id,
+        church_id: currentChurchId.value,
+        club_id: currentClubId.value,
         district: form.district,
         merits: meritsArray
     };
@@ -241,7 +266,7 @@ watch(assignedMembers, (members) => {
 
 watch(assignedClass, (val) => {
     if (val && val.name) form.unit_name = val.name;
-    if (val && val.id) form.unit_id = val.id;
+    if (val && val.id !== undefined && val.id !== null) form.unit_id = val.id;
 });
 
 const loadAssignedMembers = async (staffId) => {
@@ -261,7 +286,10 @@ const resetAttendanceRows = () => {
 
 const checkIfReportExistsForDate = async (staffId, targetDate) => {
     try {
-        const res = await checkAssistanceReportToday(staffId, targetDate);
+        const res = await checkAssistanceReportToday(staffId, targetDate, {
+            club_id: currentClubId.value,
+            class_id: form.unit_id || 0,
+        });
         if (res.exists) {
             submittedReport.value = res.report;
             submittedMerits.value = res.merits;
@@ -311,6 +339,12 @@ const preloadReport = (report, reportMerits) => {
 };
 
 const loadRequirementActivities = async (date) => {
+    if (!isAdventurers.value) {
+        plannedRequirementActivities.value = []
+        syncRequirementChecksToAttendanceRows()
+        return
+    }
+
     try {
         const data = await fetchAssistanceRequirementActivities(date)
         plannedRequirementActivities.value = Array.isArray(data.activities) ? data.activities : []
@@ -327,9 +361,9 @@ const totalCuotaAmount = computed(() => {
     }, 0);
 });
 onMounted(async () => {
-    if (userId.value && staff.value?.id) {
+    if (userId.value && staff.value && staff.value.id !== undefined && staff.value.id !== null) {
         // Prefer server-provided assigned members/class (derived from members table)
-        if (Array.isArray(page.props.assigned_members) && page.props.assigned_members.length) {
+        if (Array.isArray(page.props.assigned_members)) {
             assignedMembers.value = page.props.assigned_members;
             assignedClass.value = page.props.assigned_class || null;
         } else {
@@ -346,7 +380,7 @@ onMounted(async () => {
 });
 
 watch(() => form.date, async (newDate, oldDate) => {
-    if (!newDate || newDate === oldDate || !staff.value?.id) return
+    if (!newDate || newDate === oldDate || !staff.value || staff.value.id === undefined || staff.value.id === null) return
     await loadRequirementActivities(newDate)
     await checkIfReportExistsForDate(staff.value.id, newDate)
 })
@@ -475,7 +509,7 @@ watch(submittedReport, async (report) => {
                     </summary>
 
                     <div class="p-4 space-y-2 text-xs">
-                        <div v-if="plannedRequirementActivities.length" class="border rounded p-2 bg-blue-50">
+                        <div v-if="showRequirementChecks" class="border rounded p-2 bg-blue-50">
                             <p class="font-semibold text-[12px] mb-2">Requisitos planificados para esta fecha</p>
                             <div class="space-y-1">
                                 <label
@@ -497,16 +531,16 @@ watch(submittedReport, async (report) => {
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                            <div v-for="(label, index) in meritsLabels.slice(1)" :key="index + 1" class="mb-2">
+                            <div v-for="item in visibleSecondaryMerits" :key="item.index" class="mb-2">
                                 <div class="flex items-center gap-2">
-                                    <input type="checkbox" :id="`merit-${i}-${index + 1}`"
-                                        v-model="attendanceData[i].scores[index + 1]" :true-value="1" :false-value="0"
-                                        class="form-checkbox" @change="handleSecondaryMeritToggle(attendanceData[i], index + 1)" />
-                                    <label :for="`merit-${i}-${index + 1}`" class="text-sm capitalize">{{ label
+                                    <input type="checkbox" :id="`merit-${i}-${item.index}`"
+                                        v-model="attendanceData[i].scores[item.index]" :true-value="1" :false-value="0"
+                                        class="form-checkbox" @change="handleSecondaryMeritToggle(attendanceData[i], item.index)" />
+                                    <label :for="`merit-${i}-${item.index}`" class="text-sm capitalize">{{ item.label
                                         }}</label>
                                 </div>
 
-                                <div v-if="label === 'cuota' && attendanceData[i].scores[index + 1] === 1"
+                                <div v-if="item.label === 'cuota' && attendanceData[i].scores[item.index] === 1"
                                     class="pl-6 mt-1">
                                     <label for="">Amount</label> &nbsp;
                                     <input type="number" min="0" step="0.01"
@@ -551,8 +585,8 @@ watch(submittedReport, async (report) => {
                             <th class="border p-1">#</th>
                             <th class="border p-1">Miembro</th>
                             <th class="border p-1">Asistencia</th>
-                            <th class="border p-1">Puntualidad</th>
-                            <th class="border p-1">Uniforme</th>
+                            <th v-if="isAdventurers" class="border p-1">Puntualidad</th>
+                            <th v-if="isAdventurers" class="border p-1">Uniforme</th>
                             <th class="border p-1">Cuota</th>
                             <th class="border p-1">Monto</th>
                             <th v-if="hasAnyRequirementChecks" class="border p-1">Investidura</th>
@@ -564,8 +598,8 @@ watch(submittedReport, async (report) => {
                             <td class="border p-1">{{ i + 1 }}</td>
                             <td class="border p-1">{{ m.mem_adv_name }}</td>
                             <td class="border p-1">{{ m.asistencia ? '✓' : '' }}</td>
-                            <td class="border p-1">{{ m.puntualidad ? '✓' : '' }}</td>
-                            <td class="border p-1">{{ m.uniforme ? '✓' : '' }}</td>
+                            <td v-if="isAdventurers" class="border p-1">{{ m.puntualidad ? '✓' : '' }}</td>
+                            <td v-if="isAdventurers" class="border p-1">{{ m.uniforme ? '✓' : '' }}</td>
                             <td class="border p-1">{{ m.cuota ? '✓' : '' }}</td>
                             <td class="border p-1">{{ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(m.cuota_amount) }}</td>
                             <td v-if="hasAnyRequirementChecks" class="border p-1">
@@ -581,7 +615,7 @@ watch(submittedReport, async (report) => {
                     </tbody>
                     <tfoot class="bg-gray-100 font-semibold">
                         <tr>
-                            <td class="border p-1 text-right" colspan="6">Total Cuota</td>
+                            <td class="border p-1 text-right" :colspan="isAdventurers ? 6 : 4">Total Cuota</td>
                             <td class="border p-1">
                                 {{ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalCuotaAmount) }}
                             </td>

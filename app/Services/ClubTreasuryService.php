@@ -8,7 +8,9 @@ use App\Models\Account;
 use App\Models\Expense;
 use App\Models\Payment;
 use App\Models\TreasuryMovement;
+use App\Services\AttendanceDuesPaymentService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class ClubTreasuryService
 {
@@ -83,6 +85,12 @@ class ClubTreasuryService
     {
         $payments = Payment::query()
             ->where('club_id', $club->id)
+            ->when(Schema::hasColumn('payments', 'custody_status'), function ($query) {
+                $query->where(function ($custody) {
+                    $custody->whereNull('custody_status')
+                        ->orWhere('custody_status', AttendanceDuesPaymentService::CUSTODY_CLUB_RECEIVED);
+                });
+            })
             ->selectRaw("COALESCE(pay_to, 'unassigned') as pay_to, COALESCE(payment_type, 'cash') as payment_type, COALESCE(SUM(amount_paid), 0) as total")
             ->groupBy('pay_to', 'payment_type')
             ->get()
@@ -203,6 +211,12 @@ class ClubTreasuryService
 
         return Payment::query()
             ->where('club_id', $club->id)
+            ->when(Schema::hasColumn('payments', 'custody_status'), function ($query) {
+                $query->where(function ($custody) {
+                    $custody->whereNull('custody_status')
+                        ->orWhere('custody_status', AttendanceDuesPaymentService::CUSTODY_CLUB_RECEIVED);
+                });
+            })
             ->with([
                 'member:id,type,id_data,parent_id',
                 'staff:id,type,id_data,user_id',

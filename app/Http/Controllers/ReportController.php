@@ -293,6 +293,10 @@ class ReportController extends Controller
 
         $club = $this->resolveClubForUser($request->user(), $validated['club_id']);
 
+        if (($club->club_type ?? null) === 'master_guide' && !in_array($request->report_type, ['date', 'range'], true)) {
+            return response()->json(['message' => 'Master Guide attendance reports are available by date or date range only.'], 422);
+        }
+
         $query = RepAssistanceAdv::query()
             ->where('club_id', $club->id);
 
@@ -336,7 +340,7 @@ class ReportController extends Controller
                 return response()->json(['message' => 'Invalid report type'], 400);
         }
 
-        $reports = $query->with($with)->get();
+        $reports = $query->with($with)->orderByDesc('date')->get();
 
 
         return response()->json(['reports' => $reports], 200);

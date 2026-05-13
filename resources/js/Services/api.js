@@ -323,6 +323,26 @@ export const createTreasuryMovement = async (payload) => {
     return data;
 };
 
+export const validateStaffRemittance = async (remittanceBatchId, clubId = null) => {
+    const { data } = await axios.post(route('club.director.treasury.staff-remittances.validate'), {
+        remittance_batch_id: remittanceBatchId,
+        ...(clubId ? { club_id: clubId } : {}),
+    });
+    return data;
+};
+
+export const fetchStaffMoneyCustody = async (clubId = null) => {
+    const { data } = await axios.get(route('club.personal.money-custody.data'), {
+        params: clubId ? { club_id: clubId } : {},
+    });
+    return data;
+};
+
+export const remitStaffMoneyCustody = async (payload) => {
+    const { data } = await axios.post(route('club.personal.money-custody.remit'), payload);
+    return data;
+};
+
 export const deleteClubById = async (clubId) => {
     return await axios.delete(route("club.destroy"), { data: { id: clubId } });
 };
@@ -481,9 +501,10 @@ export async function getAssistanceReport(reportId) {
     return response.data;
 }
 
-export async function checkAssistanceReportToday(staffId, date) {
+export async function checkAssistanceReportToday(staffId, date, params = {}) {
     const response = await axios.get(
-        `/assistance-reports/check-today/${staffId}?date=${date}`
+        `/assistance-reports/check-today/${staffId}`,
+        { params: { date, ...params } }
     );
     return response.data;
 }
