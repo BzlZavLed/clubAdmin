@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MemberPathfinder;
+use App\Models\StaffMasterGuide;
 use App\Models\StaffPathfinder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -61,7 +62,29 @@ class TempPathfinderController extends Controller
 
     public function listStaff($clubId)
     {
-        $this->authorizeClub($clubId);
+        $club = $this->authorizeClub($clubId);
+
+        if (($club->club_type ?? null) === 'master_guide') {
+            $rows = StaffMasterGuide::where('club_id', $clubId)
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn (StaffMasterGuide $row) => [
+                    'id' => $row->id,
+                    'club_id' => $row->club_id,
+                    'user_id' => $row->user_id,
+                    'staff_name' => $row->staff_name,
+                    'staff_dob' => null,
+                    'staff_age' => null,
+                    'staff_email' => $row->email,
+                    'staff_phone' => $row->phone,
+                    'emergency_contact_name' => $row->emergency_contact_name,
+                    'emergency_contact_phone' => $row->emergency_contact_phone,
+                    'emergency_contact_email' => $row->emergency_contact_email,
+                ]);
+
+            return response()->json($rows);
+        }
+
         $rows = StaffPathfinder::where('club_id', $clubId)->orderByDesc('id')->get();
         return response()->json($rows);
     }
@@ -69,7 +92,7 @@ class TempPathfinderController extends Controller
     public function storeStaff(Request $request)
     {
         $clubId = $request->input('club_id');
-        $this->authorizeClub($clubId);
+        $club = $this->authorizeClub($clubId);
 
         $data = $request->validate([
             'club_id' => 'required|exists:clubs,id',
@@ -78,13 +101,16 @@ class TempPathfinderController extends Controller
             'staff_age' => 'nullable|integer|min:0|max:120',
             'staff_email' => 'nullable|email|max:255',
             'staff_phone' => 'nullable|string|max:50',
+            'emergency_contact_name' => 'nullable|string|max:255',
+            'emergency_contact_phone' => 'nullable|string|max:50',
+            'emergency_contact_email' => 'nullable|email|max:255',
         ]);
 
         DB::beginTransaction();
         try {
-            $club = \App\Models\Club::find($data['club_id']);
             $churchId = $club?->church_id;
             $churchName = $club?->church_name;
+            $staffType = ($club?->club_type === 'master_guide') ? 'master_guide' : 'pathfinders';
 
             // create or find user by email
             $userId = null;
@@ -115,7 +141,7 @@ class TempPathfinderController extends Controller
                     [
                         'club_id' => $data['club_id'],
                         'user_id' => $userId,
-                        'type' => 'pathfinders',
+                        'type' => $staffType,
                     ],
                     [
                         'id_data' => 0,
@@ -127,20 +153,38 @@ class TempPathfinderController extends Controller
                 $staffRecord = Staff::create([
                     'club_id' => $data['club_id'],
                     'user_id' => null,
-                    'type' => 'pathfinders',
+                    'type' => $staffType,
                     'id_data' => 0,
                     'status' => 'active',
                     'assigned_class' => null,
                 ]);
             }
 
-            $row = StaffPathfinder::updateOrCreate(
-                ['staff_id' => $staffRecord->id],
-                array_merge($data, [
-                    'user_id' => $userId,
-                    'staff_id' => $staffRecord->id,
-                ])
-            );
+            if ($staffType === 'master_guide') {
+                $row = StaffMasterGuide::updateOrCreate(
+                    ['staff_id' => $staffRecord->id],
+                    [
+                        'club_id' => $data['club_id'],
+                        'user_id' => $userId,
+                        'staff_id' => $staffRecord->id,
+                        'staff_name' => $data['staff_name'],
+                        'phone' => $data['staff_phone'] ?? null,
+                        'email' => $data['staff_email'] ?? null,
+                        'emergency_contact_name' => $data['emergency_contact_name'] ?? null,
+                        'emergency_contact_phone' => $data['emergency_contact_phone'] ?? null,
+                        'emergency_contact_email' => $data['emergency_contact_email'] ?? null,
+                        'status' => 'active',
+                    ]
+                );
+            } else {
+                $row = StaffPathfinder::updateOrCreate(
+                    ['staff_id' => $staffRecord->id],
+                    array_merge($data, [
+                        'user_id' => $userId,
+                        'staff_id' => $staffRecord->id,
+                    ])
+                );
+            }
 
             $staffRecord->id_data = $row->id;
             $staffRecord->save();
@@ -153,11 +197,11 @@ class TempPathfinderController extends Controller
         }
     }
 
-    protected function authorizeClub($clubId): void
+    protected function authorizeClub($clubId): \App\Models\Club
     {
         $user = Auth::user();
         if (!$user) abort(401);
 
-        ClubHelper::clubForUser($user, $clubId);
+        return ClubHelper::clubForUser($user, $clubId);
     }
 }

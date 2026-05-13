@@ -3,6 +3,7 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import MemberRegistrationModal from '@/Components/MemberRegistrationModal.vue'
+import MasterGuideMemberRegistrationModal from '@/Components/MasterGuideMemberRegistrationModal.vue'
 import PathfinderMemberRegistrationModal from '@/Components/PathfinderMemberRegistrationModal.vue'
 import DeleteMemberModal from '@/Components/DeleteMemberModal.vue'
 import { 
@@ -27,6 +28,7 @@ import {
     deleteMemberById,
     downloadMemberZip,
     uploadPathfinderInsuranceCard,
+    updateMasterGuideMemberYear,
 } from '@/Services/api'
 
 // ✅ Auth context
@@ -48,6 +50,7 @@ const memberPageSize = ref(10)
 const expandedRows = ref(new Set())
 const showAdventurerRegistrationModal = ref(false)
 const showPathfinderRegistrationModal = ref(false)
+const showMasterGuideRegistrationModal = ref(false)
 const editingMember = ref(null)
 const registrationFormSection = ref(null)
 const showDeleteModal = ref(false)
@@ -57,6 +60,7 @@ const insuranceUploadMember = ref(null)
 const selectedMemberIds = ref(new Set())
 const selectAll = ref(false)
 const selectedTab = ref('members')
+const programYearUpdatingIds = ref(new Set())
 const classSummaryPdfOptions = ref({
     include_contact: false,
     include_parent: false,
@@ -65,6 +69,9 @@ const classSummaryPdfOptions = ref({
 })
 const activeTabClass = 'border-b-2 border-blue-600 text-blue-600 font-semibold pb-2'
 const inactiveTabClass = 'text-gray-500 hover:text-gray-700 pb-2'
+const isMasterGuideClub = computed(() => selectedClub.value?.club_type === 'master_guide')
+const memberDetailsColspan = computed(() => isMasterGuideClub.value ? 7 : 10)
+const programYearOptions = [1, 2]
 
 // Fetch clubs
 const fetchClubs = async () => {
@@ -141,9 +148,15 @@ const editMember = (member) => {
     editingMember.value = member
     showAdventurerRegistrationModal.value = false
     showPathfinderRegistrationModal.value = false
+    showMasterGuideRegistrationModal.value = false
 
     if (member.member_type === 'temp_pathfinder') {
         showPathfinderRegistrationModal.value = true
+        return
+    }
+
+    if (member.member_type === 'master_guide') {
+        showMasterGuideRegistrationModal.value = true
         return
     }
 
@@ -259,6 +272,39 @@ const undoAssignment = async (member) => {
     }
 }
 
+const programYearLabel = (year) => tr(`Año ${year}`, `Year ${year}`)
+
+const setProgramYearUpdating = (memberId, isUpdating) => {
+    const next = new Set(programYearUpdatingIds.value)
+    isUpdating ? next.add(memberId) : next.delete(memberId)
+    programYearUpdatingIds.value = next
+}
+
+const isProgramYearUpdating = (member) => programYearUpdatingIds.value.has(member.id)
+
+const updateMemberProgramYear = async (member, value) => {
+    const nextYear = Number(value)
+    const currentYear = Number(member.program_year || 1)
+
+    if (member.member_type !== 'master_guide' || !programYearOptions.includes(nextYear) || nextYear === currentYear) {
+        return
+    }
+
+    try {
+        setProgramYearUpdating(member.id, true)
+        const updated = await updateMasterGuideMemberYear(member.id, nextYear)
+        member.program_year = Number(updated.program_year || nextYear)
+        member.program_year_label = updated.program_year_label || `Year ${member.program_year}`
+        showToast(tr('Año del programa actualizado', 'Program year updated'), 'success')
+        await fetchMembers(selectedClub.value.id)
+    } catch (error) {
+        console.error('Failed to update Master Guide program year:', error)
+        showToast(tr('No se pudo actualizar el año del programa', 'Could not update the program year'), 'error')
+    } finally {
+        setProgramYearUpdating(member.id, false)
+    }
+}
+
 // Row UI actions
 const toggleExpanded = (id) => {
     expandedRows.value.has(id) ? expandedRows.value.delete(id) : expandedRows.value.add(id)
@@ -278,6 +324,11 @@ const toggleSelectMember = (id) => {
 
 // Misc
 const downloadWord = (member) => {
+    if (member.member_type === 'master_guide') {
+        showToast(tr('La exportacion de formulario para Guias Mayores aun no esta disponible.', 'Master Guide form export is not available yet.'), 'info')
+        return
+    }
+
     if (member.member_type === 'temp_pathfinder') {
         window.open(`/members/${member.id}/export-pathfinder-pdf`, '_blank')
         return
@@ -294,10 +345,16 @@ const toggleRegistrationForm = async () => {
 
     showAdventurerRegistrationModal.value = false
     showPathfinderRegistrationModal.value = false
+    showMasterGuideRegistrationModal.value = false
     editingMember.value = null
 
     if (selectedClub.value.club_type === 'pathfinders') {
         showPathfinderRegistrationModal.value = true
+        return
+    }
+
+    if (selectedClub.value.club_type === 'master_guide') {
+        showMasterGuideRegistrationModal.value = true
         return
     }
 
@@ -315,6 +372,10 @@ const displayAge = (age) => {
 }
 
 const lastCompletedDisplay = (member) => {
+    if (member.member_type === 'master_guide') {
+        return member.program_year_label || tr(`Año ${member.program_year || 1}`, `Year ${member.program_year || 1}`)
+    }
+
     if (member.member_type === 'temp_pathfinder') {
         if (!member.current_class_id) return 'Unassigned'
         const currentClass = clubClasses.value.find(c => String(c.id) === String(member.current_class_id))
@@ -329,11 +390,23 @@ const lastCompletedDisplay = (member) => {
 }
 
 const progressColumnLabel = computed(() =>
-    selectedClub.value?.club_type === 'pathfinders' ? tr('Clase actual', 'Current class') : tr('Ultima completada', 'Last completed')
+    selectedClub.value?.club_type === 'pathfinders'
+        ? tr('Clase actual', 'Current class')
+        : isMasterGuideClub.value
+            ? tr('Año', 'Year')
+            : tr('Ultima completada', 'Last completed')
 )
 const fatherName = (member) => member.father_name || member.father_guardian_name || member.parent_name || '—'
 const parentPortalUrl = (member) => member.father_portal_url || null
 const parentPortalTitle = computed(() => tr('Abrir portal del padre en una nueva pestaña', 'Open parent portal in a new tab'))
+const contactColumnLabel = computed(() => isMasterGuideClub.value ? 'Email' : tr('Padre', 'Father'))
+const phoneColumnLabel = computed(() => isMasterGuideClub.value ? tr('Telefono', 'Phone') : tr('Celular del padre', 'Parent cell'))
+const contactColumnValue = (member) => isMasterGuideClub.value
+    ? (member.email || member.email_address || '—')
+    : fatherName(member)
+const phoneColumnValue = (member) => isMasterGuideClub.value
+    ? (member.phone || member.cell_number || '—')
+    : (member.parent_cell || '—')
 
 const paymentBadgeClass = (paid) => (
     paid
@@ -368,9 +441,12 @@ const paginatedMembers = computed(() => {
 
 const unassignedMembers = computed(() =>
     members.value.filter(member =>
-        !member.class_assignments ||
-        member.class_assignments.length === 0 ||
-        member.class_assignments.every(assignment => assignment.active === false || assignment.active === 0)
+        member.member_type !== 'master_guide' &&
+        (
+            !member.class_assignments ||
+            member.class_assignments.length === 0 ||
+            member.class_assignments.every(assignment => assignment.active === false || assignment.active === 0)
+        )
     )
 )
 const membersInClass = (classId) => {
@@ -389,6 +465,18 @@ const classOptionsExcluding = (currentClassOrder) => {
     }
     return filtered;
 };
+
+const masterGuideYearBuckets = computed(() => [1, 2].map((year) => {
+    const yearMembers = members.value
+        .filter(member => member.member_type === 'master_guide' && Number(member.program_year || 1) === year)
+        .sort((a, b) => String(a.applicant_name || '').localeCompare(String(b.applicant_name || '')))
+
+    return {
+        year,
+        label: tr(`Año ${year}`, `Year ${year}`),
+        members: yearMembers,
+    }
+}))
 
 const exportClassSummaryPdf = () => {
     if (!selectedClub.value?.id) {
@@ -457,7 +545,7 @@ watch(filteredMembers, () => {
                     </button>
                     <button class="shrink-0" :class="selectedTab === 'classes' ? activeTabClass : inactiveTabClass"
                         @click="selectedTab = 'classes'">
-                        {{ tr('Resumen de clases', 'Class Summary') }}
+                        {{ isMasterGuideClub ? tr('Resumen por año', 'Year Summary') : tr('Resumen de clases', 'Class Summary') }}
                     </button>
                 </nav>
             </div>
@@ -481,7 +569,7 @@ watch(filteredMembers, () => {
                 <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                     <div class="grid gap-3 md:grid-cols-2">
                         <div>
-                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Buscar por nombre o clase', 'Search by name or class') }}</label>
+                            <label class="mb-1 block text-sm font-medium text-gray-700">{{ isMasterGuideClub ? tr('Buscar por nombre o año', 'Search by name or year') : tr('Buscar por nombre o clase', 'Search by name or class') }}</label>
                             <input
                                 v-model="memberSearch"
                                 type="text"
@@ -513,7 +601,7 @@ watch(filteredMembers, () => {
                             class="w-full rounded border p-2 px-4 text-sm sm:w-60">
                             <option value="" disabled selected>{{ tr('Acciones masivas', 'Bulk actions') }}</option>
                             <option value="delete">{{ tr('Eliminar seleccionados', 'Delete selected') }}</option>
-                            <option value="download">{{ tr('Descargar formularios', 'Download forms') }}</option>
+                            <option v-if="!isMasterGuideClub" value="download">{{ tr('Descargar formularios', 'Download forms') }}</option>
                         </select>
                     </div>
                     <span class="text-sm text-gray-600">{{ selectedMemberIds.size }} {{ tr('seleccionados', 'selected') }}</span>
@@ -532,7 +620,7 @@ watch(filteredMembers, () => {
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <h3 class="break-words text-sm font-semibold text-gray-900">{{ member.applicant_name }}</h3>
-                                        <p class="mt-1 break-words text-xs text-gray-500">{{ member.home_address || member.mailing_address || '—' }}</p>
+                                        <p v-if="!isMasterGuideClub" class="mt-1 break-words text-xs text-gray-500">{{ member.home_address || member.mailing_address || '—' }}</p>
                                     </div>
                                     <span :class="sdaBadgeClass(member.is_sda !== false)">
                                         {{ member.is_sda !== false ? 'SDA' : tr('Cuidado pastoral', 'Pastoral care') }}
@@ -541,27 +629,37 @@ watch(filteredMembers, () => {
                                 <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
                                     <div>
                                         <dt class="text-gray-500">{{ progressColumnLabel }}</dt>
-                                        <dd class="font-medium text-gray-900">{{ lastCompletedDisplay(member) }}</dd>
+                                        <dd v-if="member.member_type === 'master_guide'">
+                                            <select
+                                                :value="Number(member.program_year || 1)"
+                                                :disabled="isProgramYearUpdating(member)"
+                                                class="w-full rounded border px-2 py-1 text-xs font-medium text-gray-900 disabled:opacity-60"
+                                                @change="event => updateMemberProgramYear(member, event.target.value)"
+                                            >
+                                                <option v-for="year in programYearOptions" :key="year" :value="year">{{ programYearLabel(year) }}</option>
+                                            </select>
+                                        </dd>
+                                        <dd v-else class="font-medium text-gray-900">{{ lastCompletedDisplay(member) }}</dd>
                                     </div>
-                                    <div>
-                                        <dt class="text-gray-500">{{ tr('Padre', 'Father') }}</dt>
+                                    <div v-if="!isMasterGuideClub">
+                                        <dt class="text-gray-500">{{ contactColumnLabel }}</dt>
                                         <dd class="font-medium text-gray-900">
                                             <a
-                                                v-if="parentPortalUrl(member)"
+                                                v-if="!isMasterGuideClub && parentPortalUrl(member)"
                                                 :href="parentPortalUrl(member)"
                                                 target="_blank"
                                                 rel="noopener"
                                                 class="text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-900"
                                                 :title="parentPortalTitle"
                                             >
-                                                {{ fatherName(member) }}
+                                                {{ contactColumnValue(member) }}
                                             </a>
-                                            <span v-else>{{ fatherName(member) }}</span>
+                                            <span v-else>{{ contactColumnValue(member) }}</span>
                                         </dd>
                                     </div>
-                                    <div>
-                                        <dt class="text-gray-500">{{ tr('Celular del padre', 'Parent cell') }}</dt>
-                                        <dd class="font-medium text-gray-900">{{ member.parent_cell || '—' }}</dd>
+                                    <div v-if="!isMasterGuideClub">
+                                        <dt class="text-gray-500">{{ phoneColumnLabel }}</dt>
+                                        <dd class="font-medium text-gray-900">{{ phoneColumnValue(member) }}</dd>
                                     </div>
                                     <div>
                                         <dt class="text-gray-500">{{ tr('Inscripción', 'Enrollment') }}</dt>
@@ -601,12 +699,26 @@ watch(filteredMembers, () => {
                                 </div>
                                 <div v-if="expandedRows.has(member.id)" class="mt-3 rounded bg-gray-50 p-3 text-xs text-gray-700">
                                     <div class="grid gap-2">
-                                        <div><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
-                                        <div><strong>{{ tr('Edad', 'Age') }}:</strong> {{ member.age ?? '—' }}</div>
-                                        <div><strong>{{ tr('Email', 'Email') }}:</strong> {{ member.email_address || '—' }}</div>
-                                        <div><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ member.emergency_contact_name || member.emergency_contact || '—' }}</div>
-                                        <div><strong>{{ tr('Miembro SDA', 'SDA member') }}:</strong> {{ member.is_sda !== false ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
-                                        <div><strong>{{ tr('Fecha de bautismo', 'Baptism date') }}:</strong> {{ member.baptism_date ? formatDate(member.baptism_date) : '—' }}</div>
+                                        <template v-if="member.member_type === 'master_guide'">
+                                            <div><strong>{{ tr('Año del programa', 'Program year') }}:</strong> {{ member.program_year_label || lastCompletedDisplay(member) }}</div>
+                                            <div><strong>{{ tr('Telefono', 'Phone') }}:</strong> {{ member.phone || member.cell_number || '—' }}</div>
+                                            <div><strong>Email:</strong> {{ member.email || member.email_address || '—' }}</div>
+                                            <div><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ member.address || member.home_address || '—' }}</div>
+                                            <div><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ member.emergency_contact_name || member.emergency_contact || '—' }}</div>
+                                            <div><strong>{{ tr('Telefono de emergencia', 'Emergency phone') }}:</strong> {{ member.emergency_contact_phone || '—' }}</div>
+                                            <div><strong>{{ tr('Correo de emergencia', 'Emergency email') }}:</strong> {{ member.emergency_contact_email || '—' }}</div>
+                                            <div><strong>{{ tr('Miembro SDA', 'SDA member') }}:</strong> {{ member.is_sda !== false ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                            <div><strong>{{ tr('Fecha de bautismo', 'Baptism date') }}:</strong> {{ member.baptism_date ? formatDate(member.baptism_date) : '—' }}</div>
+                                        </template>
+                                        <template v-else>
+                                            <div><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
+                                            <div><strong>{{ tr('Edad', 'Age') }}:</strong> {{ member.age ?? '—' }}</div>
+                                            <div><strong>{{ tr('Email', 'Email') }}:</strong> {{ member.email_address || '—' }}</div>
+                                            <div><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ member.emergency_contact_name || member.emergency_contact || '—' }}</div>
+                                            <div><strong>{{ tr('Telefono de emergencia', 'Emergency phone') }}:</strong> {{ member.emergency_contact_phone || '—' }}</div>
+                                            <div><strong>{{ tr('Miembro SDA', 'SDA member') }}:</strong> {{ member.is_sda !== false ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                            <div><strong>{{ tr('Fecha de bautismo', 'Baptism date') }}:</strong> {{ member.baptism_date ? formatDate(member.baptism_date) : '—' }}</div>
+                                        </template>
                                     </div>
                                 </div>
                             </div>
@@ -617,18 +729,18 @@ watch(filteredMembers, () => {
                     </div>
                 </div>
                 <div class="hidden overflow-x-auto rounded border sm:block">
-                <table class="min-w-[1120px] w-full text-sm">
+                <table :class="[isMasterGuideClub ? 'w-full table-auto' : 'min-w-[1120px] w-full', 'text-sm']">
                     <thead class="bg-gray-200">
                         <tr>
                             <th class="p-2 text-left"></th>
                             <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
                             <th class="p-2 text-left">SDA</th>
-                            <th class="p-2 text-left">{{ tr('Padre', 'Father') }}</th>
-                            <th class="p-2 text-left">{{ tr('Direccion', 'Address') }}</th>
+                            <th v-if="!isMasterGuideClub" class="p-2 text-left">{{ contactColumnLabel }}</th>
+                            <th v-if="!isMasterGuideClub" class="p-2 text-left">{{ tr('Direccion', 'Address') }}</th>
                             <th class="p-2 text-left">{{ progressColumnLabel }}</th>
                             <th class="p-2 text-left">{{ tr('Inscripción', 'Enrollment') }}</th>
                             <th class="p-2 text-left">{{ tr('Seguro', 'Insurance') }}</th>
-                            <th class="p-2 text-left">{{ tr('Celular del padre', 'Parent cell') }}</th>
+                            <th v-if="!isMasterGuideClub" class="p-2 text-left">{{ phoneColumnLabel }}</th>
                             <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                         </tr>
                     </thead>
@@ -647,21 +759,32 @@ watch(filteredMembers, () => {
                                         {{ member.is_sda !== false ? 'SDA' : tr('Cuidado pastoral', 'Pastoral care') }}
                                     </span>
                                 </td>
-                                <td class="p-2">
+                                <td v-if="!isMasterGuideClub" class="p-2">
                                     <a
-                                        v-if="parentPortalUrl(member)"
+                                        v-if="!isMasterGuideClub && parentPortalUrl(member)"
                                         :href="parentPortalUrl(member)"
                                         target="_blank"
                                         rel="noopener"
                                         class="font-medium text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-900"
                                         :title="parentPortalTitle"
                                     >
-                                        {{ fatherName(member) }}
+                                        {{ contactColumnValue(member) }}
                                     </a>
-                                    <span v-else>{{ fatherName(member) }}</span>
+                                    <span v-else>{{ contactColumnValue(member) }}</span>
                                 </td>
-                                <td class="p-2">{{ member.home_address }}</td>
-                                <td class="p-2">{{ lastCompletedDisplay(member) }}</td>
+                                <td v-if="!isMasterGuideClub" class="p-2">{{ member.home_address }}</td>
+                                <td class="p-2">
+                                    <select
+                                        v-if="member.member_type === 'master_guide'"
+                                        :value="Number(member.program_year || 1)"
+                                        :disabled="isProgramYearUpdating(member)"
+                                        class="w-full min-w-[6rem] rounded border px-2 py-1 text-sm disabled:opacity-60"
+                                        @change="event => updateMemberProgramYear(member, event.target.value)"
+                                    >
+                                        <option v-for="year in programYearOptions" :key="year" :value="year">{{ programYearLabel(year) }}</option>
+                                    </select>
+                                    <span v-else>{{ lastCompletedDisplay(member) }}</span>
+                                </td>
                                 <td class="p-2">
                                     <span :class="paymentBadgeClass(member.enrollment_paid)">
                                         {{ member.enrollment_paid ? tr('Pagada', 'Paid') : tr('Pendiente', 'Pending') }}
@@ -673,7 +796,7 @@ watch(filteredMembers, () => {
                                     </span>
                                     <span v-else class="text-xs text-gray-400">N/A</span>
                                 </td>
-                                <td class="p-2">{{ member.parent_cell }}</td>
+                                <td v-if="!isMasterGuideClub" class="p-2">{{ phoneColumnValue(member) }}</td>
                                 <td class="p-2">
                                     <button class="text-green-600 hover:underline" @click="toggleExpanded(member.id)">
                                         <component
@@ -707,7 +830,7 @@ watch(filteredMembers, () => {
 
                             <!-- Expandable Child Row -->
                             <tr v-if="expandedRows.has(member.id)" class="bg-gray-50 border-t">
-                                <td colspan="10" class="p-4">
+                                <td :colspan="memberDetailsColspan" class="p-4">
                                     <div v-if="member.member_type === 'temp_pathfinder'" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
                                         <div><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
                                         <div><strong>{{ tr('Edad', 'Age') }}:</strong> {{ member.age ?? '—' }}</div>
@@ -754,6 +877,27 @@ watch(filteredMembers, () => {
                                         <div><strong>{{ tr('Firma', 'Signature') }}:</strong> {{ member.signature || '—' }}</div>
                                         <div><strong>{{ tr('Fecha de firma', 'Signature date') }}:</strong> {{ member.signed_at ? formatDate(member.signed_at) : '—' }}</div>
                                     </div>
+                                    <div v-else-if="member.member_type === 'master_guide'" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
+                                        <div><strong>{{ tr('Año del programa', 'Program year') }}:</strong> {{ member.program_year_label || lastCompletedDisplay(member) }}</div>
+                                        <div><strong>{{ tr('Telefono', 'Phone') }}:</strong> {{ member.phone || member.cell_number || '—' }}</div>
+                                        <div><strong>Email:</strong> {{ member.email || member.email_address || '—' }}</div>
+                                        <div><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ member.address || member.home_address || '—' }}</div>
+                                        <div><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ member.emergency_contact_name || member.emergency_contact || '—' }}</div>
+                                        <div><strong>{{ tr('Telefono de emergencia', 'Emergency phone') }}:</strong> {{ member.emergency_contact_phone || '—' }}</div>
+                                        <div><strong>{{ tr('Correo de emergencia', 'Emergency email') }}:</strong> {{ member.emergency_contact_email || '—' }}</div>
+                                        <div><strong>{{ tr('Inscripción', 'Enrollment') }}:</strong> {{ member.enrollment_paid ? tr('Pagada', 'Paid') : tr('Pendiente', 'Pending') }}</div>
+                                        <div><strong>{{ tr('Miembro SDA', 'SDA member') }}:</strong> {{ member.is_sda !== false ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
+                                        <div><strong>{{ tr('Fecha de bautismo', 'Baptism date') }}:</strong> {{ member.baptism_date ? formatDate(member.baptism_date) : '—' }}</div>
+                                        <div v-if="member.custom_fields_display?.length" class="md:col-span-2">
+                                            <strong>{{ tr('Campos adicionales', 'Extra fields') }}:</strong>
+                                            <div class="mt-2 grid gap-2 md:grid-cols-2">
+                                                <div v-for="field in member.custom_fields_display" :key="field.key" class="rounded border bg-white px-3 py-2">
+                                                    <span class="font-medium text-gray-700">{{ field.label }}:</span>
+                                                    <span class="ml-1">{{ field.value === true ? tr('Si', 'Yes') : field.value === false ? tr('No', 'No') : (field.value || '—') }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
                                         <div><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ member.birthdate ? formatDate(member.birthdate) : '—' }}</div>
                                         <div><strong>{{ tr('Edad', 'Age') }}:</strong> {{ member.age ?? '—' }}</div>
@@ -777,7 +921,7 @@ watch(filteredMembers, () => {
                             </tr>
                         </template>
                         <tr v-if="paginatedMembers.length === 0">
-                            <td colspan="10" class="p-4 text-center text-gray-500">
+                            <td :colspan="memberDetailsColspan" class="p-4 text-center text-gray-500">
                                 {{ tr('No se encontraron miembros con ese criterio.', 'No members matched that criteria.') }}
                             </td>
                         </tr>
@@ -817,40 +961,114 @@ watch(filteredMembers, () => {
 
             <!-- Tab 2: Class Overview -->
             <div v-if="selectedTab === 'classes' && selectedClub">
-                <div class="mb-2 grid gap-3 text-sm sm:flex sm:flex-wrap sm:items-center sm:gap-4">
-                    <span class="font-medium text-gray-700">{{ tr('Exportar PDF', 'Export PDF') }}:</span>
-                    <label class="inline-flex items-center gap-2">
-                        <input v-model="classSummaryPdfOptions.include_contact" type="checkbox" />
-                        {{ tr('Contacto', 'Contact') }}
-                    </label>
-                    <label class="inline-flex items-center gap-2">
-                        <input v-model="classSummaryPdfOptions.include_parent" type="checkbox" />
-                        {{ tr('Padre/Madre', 'Parent') }}
-                    </label>
-                    <label class="inline-flex items-center gap-2">
-                        <input v-model="classSummaryPdfOptions.include_dob" type="checkbox" />
-                        DOB
-                    </label>
-                    <label class="inline-flex items-center gap-2">
-                        <input v-model="classSummaryPdfOptions.include_address" type="checkbox" />
-                        {{ tr('Direccion', 'Address') }}
-                    </label>
-                    <button
-                        type="button"
-                        @click="exportClassSummaryPdf"
-                        class="w-full rounded bg-gray-800 px-3 py-1.5 text-sm text-white hover:bg-gray-900 sm:w-auto"
-                    >
-                        {{ tr('Exportar PDF', 'Export PDF') }}
-                    </button>
+                <div class="mb-4 rounded-lg border bg-white p-4 shadow-sm">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">{{ isMasterGuideClub ? tr('Resumen por año', 'Year Summary') : tr('Resumen de clases', 'Class Summary') }}</h2>
+                            <p class="mt-1 text-sm text-gray-600">
+                                {{ selectedClub.club_name }} •
+                                <template v-if="isMasterGuideClub">{{ tr('Programa de 2 años', '2-year program') }}</template>
+                                <template v-else>{{ clubClasses.length }} {{ tr('clases', 'classes') }}</template>
+                                • {{ members.length }} {{ tr('miembros', 'members') }}
+                            </p>
+                        </div>
+
+                        <div v-if="!isMasterGuideClub" class="rounded border border-gray-200 bg-gray-50 p-3">
+                            <div class="text-sm font-medium text-gray-700">{{ tr('Exportar PDF', 'Export PDF') }}</div>
+                            <div class="mt-2 grid grid-cols-2 gap-2 text-sm sm:flex sm:flex-wrap sm:items-center">
+                                <label class="inline-flex items-center gap-2 rounded bg-white px-2 py-2">
+                                    <input v-model="classSummaryPdfOptions.include_contact" type="checkbox" />
+                                    {{ tr('Contacto', 'Contact') }}
+                                </label>
+                                <label class="inline-flex items-center gap-2 rounded bg-white px-2 py-2">
+                                    <input v-model="classSummaryPdfOptions.include_parent" type="checkbox" />
+                                    {{ tr('Padre/Madre', 'Parent') }}
+                                </label>
+                                <label class="inline-flex items-center gap-2 rounded bg-white px-2 py-2">
+                                    <input v-model="classSummaryPdfOptions.include_dob" type="checkbox" />
+                                    DOB
+                                </label>
+                                <label class="inline-flex items-center gap-2 rounded bg-white px-2 py-2">
+                                    <input v-model="classSummaryPdfOptions.include_address" type="checkbox" />
+                                    {{ tr('Direccion', 'Address') }}
+                                </label>
+                            </div>
+                            <button
+                                type="button"
+                                @click="exportClassSummaryPdf"
+                                class="mt-3 w-full rounded bg-gray-800 px-3 py-3 text-sm text-white hover:bg-gray-900 sm:w-auto sm:py-2"
+                            >
+                                {{ tr('Exportar PDF', 'Export PDF') }}
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <h2 class="text-lg font-semibold mb-4">{{ tr('Resumen de clases', 'Class Summary') }}</h2>
-                <div v-if="clubClasses.length === 0" class="text-gray-600">
+
+                <div v-if="isMasterGuideClub" class="grid gap-4 md:grid-cols-2">
+                    <article v-for="bucket in masterGuideYearBuckets" :key="bucket.year" class="rounded-lg border bg-white p-4 shadow-sm">
+                        <div class="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-semibold text-gray-900">{{ bucket.label }}</h3>
+                                <p class="text-sm text-gray-500">{{ tr('Guias Mayores registrados en este año del programa.', 'Master Guides registered in this program year.') }}</p>
+                            </div>
+                            <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+                                {{ bucket.members.length }} {{ tr('miembros', 'members') }}
+                            </span>
+                        </div>
+                        <div v-if="bucket.members.length" class="space-y-2">
+                            <div v-for="member in bucket.members" :key="`mg-year-${bucket.year}-${member.id}`" class="rounded border bg-gray-50 px-3 py-2">
+                                <div class="font-medium text-gray-900">{{ member.applicant_name }}</div>
+                                <div class="mt-1 text-xs text-gray-500">
+                                    {{ member.phone || member.cell_number || '—' }} • {{ member.email || member.email_address || '—' }}
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="rounded border border-dashed p-4 text-sm text-gray-500">
+                            {{ tr('No hay miembros registrados en este año.', 'No members registered in this year.') }}
+                        </div>
+                    </article>
+                </div>
+                <div v-else-if="clubClasses.length === 0" class="text-gray-600">
                     {{ tr('No se encontraron clases para este club.', 'No classes were found for this club.') }}
                 </div>
                 <div v-else class="space-y-6">
-                    <div v-if="unassignedMembers.length > 0" class="border rounded p-4 bg-gray-100">
-                        <h2 class="text-lg font-semibold mb-4">{{ tr('Miembros sin asignar', 'Unassigned Members') }}</h2>
-                        <div class="overflow-x-auto">
+                    <div v-if="unassignedMembers.length > 0" class="rounded-lg border bg-gray-100 p-4">
+                        <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <h2 class="text-lg font-semibold">{{ tr('Miembros sin asignar', 'Unassigned Members') }}</h2>
+                            <span class="text-sm text-gray-600">{{ unassignedMembers.length }} {{ tr('miembros', 'members') }}</span>
+                        </div>
+
+                        <div class="space-y-3 sm:hidden">
+                            <article v-for="member in unassignedMembers" :key="`unassigned-mobile-${member.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h3 class="break-words text-sm font-semibold text-gray-900">{{ member.applicant_name }}</h3>
+                                        <p class="mt-1 text-xs text-gray-500">{{ tr('Edad', 'Age') }}: {{ displayAge(member.age) }}</p>
+                                    </div>
+                                    <span class="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
+                                        {{ tr('Sin asignar', 'Unassigned') }}
+                                    </span>
+                                </div>
+                                <div class="mt-3 space-y-2">
+                                    <label class="block text-xs font-medium text-gray-600">{{ tr('Asignar a clase', 'Assign to class') }}</label>
+                                    <select v-model="member.assigned_class" class="w-full rounded border p-3 text-base">
+                                        <option value="" disabled selected>{{ tr('Seleccionar clase', 'Select class') }}</option>
+                                        <option v-for="targetClass in clubClasses" :key="targetClass.id" :value="targetClass.id">
+                                            {{ targetClass.class_name }} - {{ targetClass.class_order }}
+                                        </option>
+                                    </select>
+                                    <button
+                                        @click="() => assignToClass(member)"
+                                        :disabled="!member.assigned_class"
+                                        class="w-full rounded bg-blue-600 px-3 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {{ tr('Asignar', 'Assign') }}
+                                    </button>
+                                </div>
+                            </article>
+                        </div>
+
+                        <div class="hidden overflow-x-auto sm:block">
                         <table class="min-w-[640px] w-full border text-sm">
                             <thead class="bg-gray-200">
                                 <tr>
@@ -883,18 +1101,64 @@ watch(filteredMembers, () => {
                         </table>
                         </div>
                     </div>
-                    <div v-for="clubClass in clubClasses" :key="clubClass.id" class="border rounded p-4 bg-gray-50">
-                        <h3 class="text-md font-bold">
-                            {{ clubClass.class_name }} ({{ tr('Orden', 'Order') }}: {{ clubClass.class_order }})
-                        </h3>
-                        <p class="text-sm text-gray-700 mb-2" v-if="selectedClub.club_type === 'adventurers'">
-                            {{ tr('Personal asignado', 'Assigned staff') }}: {{ clubClass.assigned_staff_name || '—' }}
-                        </p>
-                        <div v-if="membersInClass(clubClass.id).length === 0" class="text-gray-600">
+                    <div v-for="clubClass in clubClasses" :key="clubClass.id" class="rounded-lg border bg-gray-50 p-4">
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <h3 class="text-md font-bold">
+                                    {{ clubClass.class_name }}
+                                </h3>
+                                <p class="text-sm text-gray-600">{{ tr('Orden', 'Order') }}: {{ clubClass.class_order }}</p>
+                                <p class="text-sm text-gray-700" v-if="selectedClub.club_type === 'adventurers'">
+                                    {{ tr('Personal asignado', 'Assigned staff') }}: {{ clubClass.assigned_staff_name || '—' }}
+                                </p>
+                            </div>
+                            <span class="w-fit rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-700">
+                                {{ membersInClass(clubClass.id).length }} {{ tr('miembros', 'members') }}
+                            </span>
+                        </div>
+                        <div v-if="membersInClass(clubClass.id).length === 0" class="mt-4 rounded border border-dashed border-gray-200 bg-white p-4 text-sm text-gray-600">
                             {{ tr('No hay miembros asignados a esta clase.', 'No members are assigned to this class.') }}
                         </div>
 
-                        <div v-else class="overflow-x-auto">
+                        <div v-else class="mt-4 space-y-3 sm:hidden">
+                            <article v-for="member in membersInClass(clubClass.id)" :key="`class-mobile-${clubClass.id}-${member.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h4 class="break-words text-sm font-semibold text-gray-900">{{ member.applicant_name }}</h4>
+                                        <p class="mt-1 text-xs text-gray-500">{{ tr('Edad', 'Age') }}: {{ displayAge(member.age) }}</p>
+                                    </div>
+                                    <span class="shrink-0 rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                                        {{ clubClass.class_name }}
+                                    </span>
+                                </div>
+
+                                <div class="mt-3 space-y-2">
+                                    <label class="block text-xs font-medium text-gray-600">{{ tr('Mover a clase', 'Move to class') }}</label>
+                                    <select v-model="member.assigned_class" class="w-full rounded border p-3 text-base">
+                                        <option v-for="targetClass in classOptionsExcluding(clubClass.class_order)" :key="targetClass.id" :value="targetClass.id">
+                                            {{ targetClass.class_name }}
+                                        </option>
+                                    </select>
+                                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        <button
+                                            @click="() => assignToClass(member)"
+                                            :disabled="!member.assigned_class"
+                                            class="rounded bg-blue-600 px-3 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {{ tr('Asignar', 'Assign') }}
+                                        </button>
+                                        <button
+                                            @click="() => undoAssignment(member)"
+                                            class="rounded bg-red-500 px-3 py-3 text-sm font-medium text-white hover:bg-red-600"
+                                        >
+                                            {{ tr('Deshacer ultimo', 'Undo last') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+
+                        <div v-if="membersInClass(clubClass.id).length" class="mt-4 hidden overflow-x-auto sm:block">
                         <table class="min-w-[720px] w-full border text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
@@ -939,6 +1203,8 @@ watch(filteredMembers, () => {
                 @close="showAdventurerRegistrationModal = false; editingMember = null" @submitted="fetchMembers(selectedClub.id); editingMember = null" />
             <PathfinderMemberRegistrationModal :show="showPathfinderRegistrationModal" :selectedClub="selectedClub" :editing-member="editingMember"
                 @close="showPathfinderRegistrationModal = false; editingMember = null" @submitted="fetchMembers(selectedClub.id); editingMember = null" />
+            <MasterGuideMemberRegistrationModal :show="showMasterGuideRegistrationModal" :selected-club="selectedClub" :editing-member="editingMember"
+                @close="showMasterGuideRegistrationModal = false; editingMember = null" @submitted="fetchMembers(selectedClub.id); editingMember = null" />
             <DeleteMemberModal :show="showDeleteModal" :memberId="deletingMember?.id"
                 :memberName="deletingMember?.applicant_name" @cancel="showDeleteModal = false"
                 @confirm="handleMemberDelete" />

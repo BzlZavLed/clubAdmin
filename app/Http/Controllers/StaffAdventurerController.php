@@ -15,6 +15,7 @@ use App\Models\ClassMemberAdventurer; // Import the ClassMemberAdventurer model
 use App\Models\MemberAdventurer; // Import the MemberAdventurer model
 use App\Models\Staff;
 use App\Models\Club;
+use App\Models\StaffMasterGuide;
 use App\Models\StaffPathfinder;
 use Illuminate\Support\Facades\DB as FacadesDB;
 
@@ -413,6 +414,7 @@ class StaffAdventurerController extends Controller
             ->map(function ($s) {
                 $displayName = $s->user?->name;
                 $pathfinderStaff = null;
+                $masterGuideStaff = null;
                 if (in_array($s->type, ['temp_pathfinder', 'pathfinders'], true)) {
                     $pathfinderStaff = StaffPathfinder::query()
                         ->where(function ($query) use ($s) {
@@ -423,12 +425,22 @@ class StaffAdventurerController extends Controller
                         })
                         ->first();
                     $displayName = $pathfinderStaff?->staff_name ?? $displayName;
+                } elseif ($s->type === 'master_guide') {
+                    $masterGuideStaff = StaffMasterGuide::query()
+                        ->where(function ($query) use ($s) {
+                            $query->where('staff_id', $s->id);
+                            if ($s->user_id) {
+                                $query->orWhere('user_id', $s->user_id);
+                            }
+                        })
+                        ->first();
+                    $displayName = $masterGuideStaff?->staff_name ?? $displayName;
                 }
                 return [
                     'id' => $s->id,
                     'type' => in_array($s->type, ['temp_pathfinder', 'pathfinders'], true) ? 'pathfinders' : $s->type,
                     'name' => $displayName,
-                    'email' => $pathfinderStaff?->staff_email ?? $s->user?->email,
+                    'email' => $pathfinderStaff?->staff_email ?? $masterGuideStaff?->email ?? $s->user?->email,
                     'club_id' => $s->club_id,
                     'status' => $s->status,
                     'class_names' => $s->assignedCarpetaClassActivation
@@ -441,7 +453,10 @@ class StaffAdventurerController extends Controller
                     'assigned_carpeta_class_activation_id' => $s->assigned_carpeta_class_activation_id,
                     'staff_dob' => $pathfinderStaff?->staff_dob,
                     'staff_age' => $pathfinderStaff?->staff_age,
-                    'cell_phone' => $pathfinderStaff?->staff_phone,
+                    'cell_phone' => $pathfinderStaff?->staff_phone ?? $masterGuideStaff?->phone,
+                    'emergency_contact_name' => $masterGuideStaff?->emergency_contact_name,
+                    'emergency_contact_phone' => $masterGuideStaff?->emergency_contact_phone,
+                    'emergency_contact_email' => $masterGuideStaff?->emergency_contact_email,
                 ];
             });
 
@@ -508,8 +523,24 @@ class StaffAdventurerController extends Controller
             ->where('status', 'pending')
             ->get(['id', 'name', 'email', 'profile_type', 'church_id', 'club_id', 'status']);
 
-        $tempStaff = StaffPathfinder::where('club_id', $clubId)
-            ->get(['id', 'club_id', 'user_id', 'staff_name', 'staff_dob', 'staff_age', 'staff_email', 'staff_phone']);
+        $tempStaff = ($club->club_type === 'master_guide')
+            ? StaffMasterGuide::where('club_id', $clubId)
+                ->get(['id', 'club_id', 'user_id', 'staff_name', 'email', 'phone', 'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_email'])
+                ->map(fn (StaffMasterGuide $row) => [
+                    'id' => $row->id,
+                    'club_id' => $row->club_id,
+                    'user_id' => $row->user_id,
+                    'staff_name' => $row->staff_name,
+                    'staff_dob' => null,
+                    'staff_age' => null,
+                    'staff_email' => $row->email,
+                    'staff_phone' => $row->phone,
+                    'emergency_contact_name' => $row->emergency_contact_name,
+                    'emergency_contact_phone' => $row->emergency_contact_phone,
+                    'emergency_contact_email' => $row->emergency_contact_email,
+                ])
+            : StaffPathfinder::where('club_id', $clubId)
+                ->get(['id', 'club_id', 'user_id', 'staff_name', 'staff_dob', 'staff_age', 'staff_email', 'staff_phone']);
 
         return response()->json([
             'staff' => $staffActive,

@@ -71,40 +71,73 @@ const deleteUnion = (union) => {
     <PathfinderLayout>
         <template #title>{{ tr('Superadmin: Uniones', 'Superadmin: Unions') }}</template>
 
-        <div class="max-w-5xl mx-auto space-y-6">
-            <div class="bg-white border rounded-lg p-6 space-y-4">
+        <div class="mx-auto max-w-6xl space-y-4 px-3 sm:px-4 lg:px-0">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold">{{ isEditing ? tr('Editar union', 'Edit union') : tr('Crear union', 'Create union') }}</h2>
 
-                <form @submit.prevent="submit" class="space-y-4">
+                <form @submit.prevent="submit" class="mt-4 space-y-4">
                     <div>
                         <InputLabel for="name" :value="tr('Nombre de la union', 'Union name')" />
-                        <TextInput id="name" v-model="form.name" type="text" class="mt-1 block w-full" required />
+                        <TextInput id="name" v-model="form.name" type="text" class="mt-1 block w-full text-base sm:text-sm" required />
                         <InputError class="mt-2" :message="form.errors.name" />
                     </div>
 
                     <div>
                         <InputLabel for="evaluation_system" :value="tr('Sistema de evaluación', 'Evaluation system')" />
-                        <select id="evaluation_system" v-model="form.evaluation_system" class="mt-1 block w-full rounded-md border-gray-300" required>
+                        <select id="evaluation_system" v-model="form.evaluation_system" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                             <option value="honors">{{ tr('Honores / requisitos', 'Honors / requirements') }}</option>
                             <option value="carpetas">{{ tr('Carpetas', 'Carpetas') }}</option>
                         </select>
                         <InputError class="mt-2" :message="form.errors.evaluation_system" />
                     </div>
 
-                    <div class="flex gap-2">
-                        <PrimaryButton :disabled="form.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <PrimaryButton :disabled="form.processing" class="w-full justify-center rounded-md bg-red-600 px-6 py-3 text-white hover:bg-red-700 sm:w-auto sm:py-2">
                             {{ isEditing ? tr('Guardar cambios', 'Save changes') : tr('Crear union', 'Create union') }}
                         </PrimaryButton>
-                        <button v-if="isEditing" type="button" @click="resetForm" class="px-4 py-2 rounded border border-gray-300 text-gray-700">
+                        <button v-if="isEditing" type="button" @click="resetForm" class="w-full rounded border border-gray-300 px-4 py-3 text-gray-700 sm:w-auto sm:py-2">
                             {{ tr('Cancelar', 'Cancel') }}
                         </button>
                     </div>
                 </form>
             </div>
 
-            <div class="bg-white border rounded-lg p-6">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold mb-3">{{ tr('Uniones registradas', 'Registered unions') }}</h2>
-                <div class="overflow-x-auto">
+                <div v-if="props.unions.length === 0" class="rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                    {{ tr('No hay uniones.', 'There are no unions.') }}
+                </div>
+
+                <div v-else class="space-y-3 md:hidden">
+                    <article v-for="union in props.unions" :key="`mobile-${union.id}`" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words font-semibold text-gray-900">{{ union.name }}</h3>
+                                <p class="mt-1 text-sm text-gray-600">{{ tr('Sistema', 'System') }}: {{ union.evaluation_system || 'honors' }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                                {{ union.status || tr('activo', 'active') }}
+                            </span>
+                        </div>
+                        <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Asociaciones', 'Associations') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ union.associations_count ?? 0 }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('ID', 'ID') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ union.id }}</dd>
+                            </div>
+                        </dl>
+                        <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <button type="button" class="rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700" @click="editUnion(union)">{{ tr('Editar', 'Edit') }}</button>
+                            <button type="button" class="rounded border border-amber-200 px-3 py-2 text-sm font-medium text-amber-700" @click="deactivateUnion(union)">{{ tr('Desactivar', 'Deactivate') }}</button>
+                            <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-700" @click="deleteUnion(union)">{{ tr('Eliminar', 'Delete') }}</button>
+                        </div>
+                    </article>
+                </div>
+
+                <div v-if="props.unions.length" class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-700">
                             <tr>
@@ -116,9 +149,6 @@ const deleteUnion = (union) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-if="props.unions.length === 0">
-                                <td colspan="5" class="px-3 py-3 text-gray-500">{{ tr('No hay uniones.', 'There are no unions.') }}</td>
-                            </tr>
                             <tr v-for="union in props.unions" :key="union.id" class="border-t">
                                 <td class="px-3 py-2">{{ union.name }}</td>
                                 <td class="px-3 py-2">{{ union.evaluation_system || 'honors' }}</td>

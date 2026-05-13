@@ -72,15 +72,15 @@ const deleteAssociation = (association) => {
     <PathfinderLayout>
         <template #title>{{ tr('Superadmin: Asociaciones', 'Superadmin: Associations') }}</template>
 
-        <div class="max-w-6xl mx-auto space-y-6">
-            <div class="bg-white border rounded-lg p-6 space-y-4">
+        <div class="mx-auto max-w-6xl space-y-4 px-3 sm:px-4 lg:px-0">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold">{{ isEditing ? tr('Editar asociacion', 'Edit association') : tr('Crear asociacion', 'Create association') }}</h2>
 
-                <form @submit.prevent="submit" class="space-y-4">
+                <form @submit.prevent="submit" class="mt-4 space-y-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel for="union_id" :value="tr('Union', 'Union')" />
-                            <select id="union_id" v-model="form.union_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                            <select id="union_id" v-model="form.union_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option disabled value="">{{ tr('Selecciona una union', 'Select a union') }}</option>
                                 <option v-for="union in props.unions" :key="union.id" :value="union.id">
                                     {{ union.name }}
@@ -91,25 +91,58 @@ const deleteAssociation = (association) => {
 
                         <div>
                             <InputLabel for="name" :value="tr('Nombre de la asociacion', 'Association name')" />
-                            <TextInput id="name" v-model="form.name" type="text" class="mt-1 block w-full" required />
+                            <TextInput id="name" v-model="form.name" type="text" class="mt-1 block w-full text-base sm:text-sm" required />
                             <InputError class="mt-2" :message="form.errors.name" />
                         </div>
                     </div>
 
-                    <div class="flex gap-2">
-                        <PrimaryButton :disabled="form.processing" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-md">
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <PrimaryButton :disabled="form.processing" class="w-full justify-center rounded-md bg-red-600 px-6 py-3 text-white hover:bg-red-700 sm:w-auto sm:py-2">
                             {{ isEditing ? tr('Guardar cambios', 'Save changes') : tr('Crear asociacion', 'Create association') }}
                         </PrimaryButton>
-                        <button v-if="isEditing" type="button" @click="resetForm" class="px-4 py-2 rounded border border-gray-300 text-gray-700">
+                        <button v-if="isEditing" type="button" @click="resetForm" class="w-full rounded border border-gray-300 px-4 py-3 text-gray-700 sm:w-auto sm:py-2">
                             {{ tr('Cancelar', 'Cancel') }}
                         </button>
                     </div>
                 </form>
             </div>
 
-            <div class="bg-white border rounded-lg p-6">
+            <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
                 <h2 class="text-lg font-semibold mb-3">{{ tr('Asociaciones registradas', 'Registered associations') }}</h2>
-                <div class="overflow-x-auto">
+                <div v-if="props.associations.length === 0" class="rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                    {{ tr('No hay asociaciones.', 'There are no associations.') }}
+                </div>
+
+                <div v-else class="space-y-3 md:hidden">
+                    <article v-for="association in props.associations" :key="`mobile-${association.id}`" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words font-semibold text-gray-900">{{ association.name }}</h3>
+                                <p class="mt-1 break-words text-sm text-gray-600">{{ association.union?.name || '-' }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                                {{ association.status || tr('activo', 'active') }}
+                            </span>
+                        </div>
+                        <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Distritos', 'Districts') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ association.districts_count ?? 0 }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('ID', 'ID') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ association.id }}</dd>
+                            </div>
+                        </dl>
+                        <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <button type="button" class="rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700" @click="editAssociation(association)">{{ tr('Editar', 'Edit') }}</button>
+                            <button type="button" class="rounded border border-amber-200 px-3 py-2 text-sm font-medium text-amber-700" @click="deactivateAssociation(association)">{{ tr('Desactivar', 'Deactivate') }}</button>
+                            <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-700" @click="deleteAssociation(association)">{{ tr('Eliminar', 'Delete') }}</button>
+                        </div>
+                    </article>
+                </div>
+
+                <div v-if="props.associations.length" class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-700">
                             <tr>
@@ -121,9 +154,6 @@ const deleteAssociation = (association) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-if="props.associations.length === 0">
-                                <td colspan="5" class="px-3 py-3 text-gray-500">{{ tr('No hay asociaciones.', 'There are no associations.') }}</td>
-                            </tr>
                             <tr v-for="association in props.associations" :key="association.id" class="border-t">
                                 <td class="px-3 py-2">{{ association.name }}</td>
                                 <td class="px-3 py-2">{{ association.union?.name || '-' }}</td>

@@ -369,7 +369,7 @@ class EventController extends Controller
         if (!$supportsClubOperations && !empty($visibleClubIds)) {
             $members = Member::query()
                 ->whereIn('club_id', $visibleClubIds)
-                ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+                ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder', 'master_guide'])
                 ->where('status', '!=', 'deleted')
                 ->with(['club:id,club_name', 'class:id,class_name'])
                 ->get(['id', 'type', 'id_data', 'club_id', 'class_id', 'parent_id'])

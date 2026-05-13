@@ -9,8 +9,10 @@ use App\Models\District;
 use App\Models\Staff;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
+use App\Models\MemberMasterGuide;
 use App\Models\MemberPathfinder;
 use App\Models\StaffAdventurer;
+use App\Models\StaffMasterGuide;
 use App\Models\StaffPathfinder;
 use App\Models\Union;
 use Illuminate\Support\Collection;
@@ -503,6 +505,8 @@ class ClubHelper
             $query->whereIn('type', ['temp_pathfinder', 'pathfinders']);
         } elseif ($clubType === 'adventurers') {
             $query->where('type', 'adventurers');
+        } elseif ($clubType === 'master_guide') {
+            $query->where('type', 'master_guide');
         }
 
         if ($classId !== null) {
@@ -514,6 +518,7 @@ class ClubHelper
         $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->filter()->values();
         $pathfinderMemberIds = $memberRows->whereIn('type', ['temp_pathfinder', 'pathfinders'])->pluck('id')->filter()->values();
         $pathfinderIds = $memberRows->whereIn('type', ['temp_pathfinder', 'pathfinders'])->pluck('id_data')->filter()->values();
+        $masterGuideIds = $memberRows->where('type', 'master_guide')->pluck('id_data')->filter()->values();
 
         $adventurerNames = MemberAdventurer::query()
             ->whereIn('id', $adventurerIds)
@@ -539,8 +544,12 @@ class ClubHelper
 
         $pathfindersById = $pathfinderRows->keyBy('id');
         $pathfindersByMemberId = $pathfinderRows->filter(fn ($row) => !empty($row->member_id))->keyBy('member_id');
+        $masterGuideNames = MemberMasterGuide::query()
+            ->whereIn('id', $masterGuideIds)
+            ->get(['id', 'applicant_name'])
+            ->keyBy('id');
 
-        $normalizedRows = $memberRows->map(function ($m) use ($adventurerNames, $pathfindersById, $pathfindersByMemberId, $clubType) {
+        $normalizedRows = $memberRows->map(function ($m) use ($adventurerNames, $pathfindersById, $pathfindersByMemberId, $masterGuideNames, $clubType) {
             $name = null;
             $resolvedPathfinderId = null;
 
@@ -551,6 +560,8 @@ class ClubHelper
                 $name = $resolvedPathfinder?->applicant_name;
             } elseif ($m->type === 'adventurers') {
                 $name = $adventurerNames[$m->id_data]->applicant_name ?? null;
+            } elseif ($m->type === 'master_guide') {
+                $name = $masterGuideNames[$m->id_data]->applicant_name ?? null;
             }
 
             return [
@@ -567,6 +578,7 @@ class ClubHelper
 
         return $normalizedRows
             ->sortByDesc(function ($row) {
+                if ($row['member_type'] === 'master_guide') return 3;
                 if ($row['member_type'] === 'pathfinders') return 2;
                 if ($row['member_type'] === 'temp_pathfinder') return 1;
                 return 0;
@@ -642,6 +654,17 @@ class ClubHelper
             ];
         }
 
+        if ($type === 'master_guide' && $idData) {
+            $row = MemberMasterGuide::query()->find($idData);
+
+            return [
+                'member_id' => $member->id,
+                'type' => $type,
+                'id_data' => $idData,
+                'name' => $row?->applicant_name,
+            ];
+        }
+
         return [
             'member_id' => $member->id,
             'type' => $type,
@@ -678,6 +701,16 @@ class ClubHelper
             return [
                 'staff_id' => $staff->id,
                 'type' => 'pathfinders',
+                'id_data' => $idData,
+                'name' => $row?->staff_name ?? $fallbackName,
+            ];
+        }
+
+        if ($type === 'master_guide' && $idData) {
+            $row = StaffMasterGuide::query()->find($idData);
+            return [
+                'staff_id' => $staff->id,
+                'type' => $type,
                 'id_data' => $idData,
                 'name' => $row?->staff_name ?? $fallbackName,
             ];

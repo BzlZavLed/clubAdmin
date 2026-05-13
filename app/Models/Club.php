@@ -49,9 +49,20 @@ class Club extends Model
     {
         return $this->hasMany(MemberPathfinder::class, 'club_id');
     }
+
+    public function masterGuideMembers()
+    {
+        return $this->hasMany(MemberMasterGuide::class, 'club_id');
+    }
+
     public function staffAdventurers()
     {
         return $this->hasMany(StaffAdventurer::class);
+    }
+
+    public function masterGuideStaff()
+    {
+        return $this->hasMany(StaffMasterGuide::class, 'club_id');
     }
 
     public function church()

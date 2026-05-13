@@ -6,6 +6,7 @@ use App\Models\AiRequestLog;
 use App\Models\EventTask;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
+use App\Models\MemberMasterGuide;
 use App\Models\TaskFormResponse;
 use App\Models\TaskFormSchema;
 use App\Models\MemberPathfinder;
@@ -488,6 +489,7 @@ class TaskFormController extends Controller
 
         $adventurerIds = $memberRows->where('type', 'adventurers')->pluck('id_data')->filter()->values();
         $pathfinderIds = $memberRows->whereIn('type', ['temp_pathfinder', 'pathfinders'])->pluck('id_data')->filter()->values();
+        $masterGuideIds = $memberRows->where('type', 'master_guide')->pluck('id_data')->filter()->values();
 
         $adventurers = MemberAdventurer::whereIn('id', $adventurerIds)
             ->get(['id', 'applicant_name', 'emergency_contact', 'cell_number', 'allergies', 'health_history', 'physical_restrictions'])
@@ -495,6 +497,10 @@ class TaskFormController extends Controller
 
         $pathfinders = MemberPathfinder::whereIn('id', $pathfinderIds)
             ->get(['id', 'applicant_name', 'father_guardian_name', 'father_guardian_phone'])
+            ->keyBy('id');
+
+        $masterGuides = MemberMasterGuide::whereIn('id', $masterGuideIds)
+            ->get(['id', 'applicant_name', 'phone', 'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_email'])
             ->keyBy('id');
 
         $contactLines = [];
@@ -529,6 +535,13 @@ class TaskFormController extends Controller
                 $father = $detail->father_guardian_name ?? '—';
                 $phone = $detail->father_guardian_phone ?? '—';
                 $contactLines[] = "{$name} — Father: {$father} (Phone: {$phone})";
+            } elseif ($member && $member->type === 'master_guide') {
+                $detail = $masterGuides->get($member->id_data);
+                $name = $detail->applicant_name ?? $name;
+                $contact = $detail->emergency_contact_name ?? '—';
+                $phone = $detail->emergency_contact_phone ?: ($detail->phone ?? '—');
+                $email = $detail->emergency_contact_email ?: '—';
+                $contactLines[] = "{$name} — Emergency Contact: {$contact} (Phone: {$phone}, Email: {$email})";
             } else {
                 $contactLines[] = "{$name} — Emergency Contact: — (Phone: —)";
             }

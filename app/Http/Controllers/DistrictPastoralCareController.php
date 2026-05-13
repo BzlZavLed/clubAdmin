@@ -6,6 +6,7 @@ use App\Models\Club;
 use App\Models\District;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
+use App\Models\MemberMasterGuide;
 use App\Models\MemberNote;
 use App\Models\MemberPastoralCare;
 use App\Models\MemberPathfinder;
@@ -32,7 +33,7 @@ class DistrictPastoralCareController extends Controller
             ])
             ->whereIn('club_id', $clubIds)
             ->where('status', 'active')
-            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder', 'master_guide'])
             ->where(function ($query) {
                 $query->where('is_sda', false)
                     ->orWhereHas('pastoralCare', function ($careQuery) {
@@ -229,7 +230,7 @@ class DistrictPastoralCareController extends Controller
             ->whereIn('club_id', $clubIds)
             ->where('is_sda', true)
             ->where('status', 'active')
-            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder', 'master_guide'])
             ->get()
             ->map(function (Member $member) {
                 $detail = $this->memberDetail($member);
@@ -324,7 +325,7 @@ class DistrictPastoralCareController extends Controller
                 'address' => $row?->home_address ?: $row?->mailing_address,
                 'parent_name' => $row?->parent_name,
                 'parent_phone' => $row?->parent_cell,
-                'emergency_contact' => $row?->emergency_contact,
+                'emergency_contact' => collect([$row?->emergency_contact_name, $row?->emergency_contact_phone])->filter()->implode(' - '),
                 'health_notes' => collect([$row?->health_history, $row?->allergies, $row?->physical_restrictions])->filter()->implode(' | '),
             ];
         }
@@ -350,6 +351,24 @@ class DistrictPastoralCareController extends Controller
                     $row?->food_allergies,
                     $row?->physical_restrictions,
                 ])->filter()->implode(' | '),
+            ];
+        }
+
+        if ($member->type === 'master_guide') {
+            $row = MemberMasterGuide::query()->find($member->id_data);
+
+            return [
+                'name' => $row?->applicant_name,
+                'birthdate' => null,
+                'age' => null,
+                'grade' => $row?->program_year ? 'Año ' . $row->program_year : null,
+                'phone' => $row?->phone,
+                'email' => $row?->email,
+                'address' => $row?->address,
+                'parent_name' => null,
+                'parent_phone' => null,
+                'emergency_contact' => collect([$row?->emergency_contact_name, $row?->emergency_contact_phone, $row?->emergency_contact_email])->filter()->implode(' - '),
+                'health_notes' => null,
             ];
         }
 

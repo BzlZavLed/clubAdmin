@@ -43,6 +43,11 @@ class Member extends Model
         return $this->hasOne(MemberPastoralCare::class);
     }
 
+    public function masterGuide()
+    {
+        return $this->hasOne(MemberMasterGuide::class);
+    }
+
     public function notes()
     {
         return $this->hasMany(MemberNote::class)->latest();

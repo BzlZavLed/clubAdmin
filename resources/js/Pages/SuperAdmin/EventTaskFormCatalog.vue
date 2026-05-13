@@ -535,7 +535,7 @@ const visitLink = (link) => {
     <PathfinderLayout>
         <template #title>{{ tr('Formularios de tareas', 'Task Forms') }}</template>
 
-        <div class="space-y-5">
+        <div class="space-y-5 px-3 sm:px-4 lg:px-0">
             <div class="rounded-lg border bg-white p-4 shadow-sm">
                 <div class="grid gap-3 lg:grid-cols-[1fr_220px_220px]">
                     <div>
@@ -543,13 +543,13 @@ const visitLink = (link) => {
                         <input
                             v-model="filters.search"
                             type="search"
-                            class="w-full rounded border px-3 py-2 text-sm"
+                            class="w-full rounded border px-3 py-3 text-base sm:py-2 sm:text-sm"
                             :placeholder="tr('Tarea, evento, key o descripción', 'Task, event, key, or description')"
                         >
                     </div>
                     <div>
                         <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Club', 'Club') }}</label>
-                        <select v-model="filters.club_id" class="w-full rounded border px-3 py-2 text-sm">
+                        <select v-model="filters.club_id" class="w-full rounded border px-3 py-3 text-base sm:py-2 sm:text-sm">
                             <option value="">{{ tr('Todos', 'All') }}</option>
                             <option v-for="club in clubs" :key="club.id" :value="club.id">
                                 {{ club.club_name }}{{ club.status !== 'active' ? ` (${tr('inactivo', 'inactive')})` : '' }}
@@ -558,7 +558,7 @@ const visitLink = (link) => {
                     </div>
                     <div>
                         <label class="mb-1 block text-xs font-medium text-gray-600">{{ tr('Tipo de evento', 'Event type') }}</label>
-                        <select v-model="filters.event_type" class="w-full rounded border px-3 py-2 text-sm">
+                        <select v-model="filters.event_type" class="w-full rounded border px-3 py-3 text-base sm:py-2 sm:text-sm">
                             <option value="">{{ tr('Todos', 'All') }}</option>
                             <option v-for="type in eventTypes" :key="type" :value="type">{{ type }}</option>
                         </select>
@@ -648,20 +648,47 @@ const visitLink = (link) => {
             </section>
 
             <section class="rounded-lg border bg-white shadow-sm">
-                <div class="flex items-center justify-between border-b px-4 py-3">
+                <div class="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-sm font-semibold text-gray-900">{{ tr('Formularios globales reutilizables', 'Reusable global forms') }}</h2>
                         <p class="text-xs text-gray-500">{{ tr('Schemas reutilizables por task_key. No son redirects a tabs existentes.', 'Reusable schemas by task_key. They are not redirects to existing tabs.') }}</p>
                     </div>
                     <button
                         type="button"
-                        class="rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                        class="w-full rounded bg-blue-600 px-3 py-3 text-sm font-medium text-white hover:bg-blue-700 sm:w-auto sm:py-2 sm:text-xs"
                         @click="openCreateSchema"
                     >
                         {{ tr('Nuevo formulario global', 'New global form') }}
                     </button>
                 </div>
-                <div class="overflow-x-auto">
+                <div v-if="!schemas.length" class="px-4 py-8 text-center text-sm text-gray-500">
+                    {{ tr('No hay formularios globales creados.', 'No global forms have been created.') }}
+                </div>
+                <div v-else class="space-y-3 p-3 md:hidden">
+                    <article v-for="schema in schemas" :key="`mobile-schema-${schema.id}`" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words font-semibold text-gray-900">{{ schema.name }}</h3>
+                                <p class="mt-1 break-all font-mono text-xs text-gray-500">{{ schema.key }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                                {{ schema.field_count }} {{ tr('campos', 'fields') }}
+                            </span>
+                        </div>
+                        <p class="mt-3 break-words text-sm text-gray-600">{{ schema.description || '—' }}</p>
+                        <div v-if="schema.is_shadowed_by_fixed_handler" class="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                            {{ tr('Lo cubre', 'Covered by') }} {{ schema.fixed_handler?.target }}. {{ tr('No aparece en "Asignar formulario existente".', 'It does not appear in "Assign existing form".') }}
+                        </div>
+                        <div class="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500">
+                            <span>{{ schema.mode || 'single' }}</span>
+                            <span>{{ schema.updated_at || '—' }}</span>
+                        </div>
+                        <button type="button" class="mt-4 w-full rounded border px-3 py-2 text-sm font-medium text-gray-700" @click="editSchema(schema)">
+                            {{ tr('Editar', 'Edit') }}
+                        </button>
+                    </article>
+                </div>
+                <div v-if="schemas.length" class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
@@ -698,9 +725,6 @@ const visitLink = (link) => {
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="!schemas.length">
-                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">{{ tr('No hay formularios globales creados.', 'No global forms have been created.') }}</td>
-                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -713,7 +737,38 @@ const visitLink = (link) => {
                         <p class="text-xs text-gray-500">{{ tr('Catálogo que se reutiliza cuando se crean tareas para eventos.', 'Catalog reused when event tasks are created.') }}</p>
                     </div>
                 </div>
-                <div class="overflow-x-auto">
+                <div v-if="!templates.data.length" class="px-4 py-8 text-center text-sm text-gray-500">
+                    {{ tr('No hay plantillas con estos filtros.', 'No templates match these filters.') }}
+                </div>
+                <div v-else class="space-y-3 p-3 md:hidden">
+                    <article v-for="template in templates.data" :key="`mobile-template-${template.id}`" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words font-semibold text-gray-900">{{ template.title }}</h3>
+                                <p v-if="template.task_key" class="mt-1 break-all font-mono text-xs text-gray-500">{{ template.task_key }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold" :class="template.is_active ? handlerClass('green') : handlerClass('red')">
+                                {{ template.is_active ? tr('Activa', 'Active') : tr('Inactiva', 'Inactive') }}
+                            </span>
+                        </div>
+                        <p class="mt-3 break-words text-sm text-gray-600">{{ template.description || '—' }}</p>
+                        <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Club / evento', 'Club / event') }}</dt>
+                                <dd class="break-words text-gray-900">{{ template.club_name || `Club #${template.club_id}` }} / {{ template.event_type }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Form', 'Form') }}</dt>
+                                <dd class="break-words text-gray-900">{{ template.field_count }} {{ tr('campos', 'fields') }} / {{ template.form_mode || tr('sin schema custom', 'no custom schema') }}</dd>
+                            </div>
+                        </dl>
+                        <div class="mt-3 text-xs text-gray-500">{{ template.is_custom ? tr('Custom', 'Custom') : tr('Inferida', 'Inferred') }}</div>
+                        <button type="button" class="mt-4 w-full rounded border px-3 py-2 text-sm font-medium text-gray-700" @click="editTemplate(template)">
+                            {{ tr('Editar', 'Edit') }}
+                        </button>
+                    </article>
+                </div>
+                <div v-if="templates.data.length" class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
@@ -751,9 +806,6 @@ const visitLink = (link) => {
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="!templates.data.length">
-                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">{{ tr('No hay plantillas con estos filtros.', 'No templates match these filters.') }}</td>
-                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -778,7 +830,43 @@ const visitLink = (link) => {
                         <p class="text-xs text-gray-500">{{ tr('Handler activo para cada tarea real. Custom form tiene prioridad sobre handlers fijos.', 'Active handler for each real task. Custom form has priority over fixed handlers.') }}</p>
                     </div>
                 </div>
-                <div class="overflow-x-auto">
+                <div v-if="!tasks.data.length" class="px-4 py-8 text-center text-sm text-gray-500">
+                    {{ tr('No hay tareas con estos filtros.', 'No tasks match these filters.') }}
+                </div>
+                <div v-else class="space-y-3 p-3 md:hidden">
+                    <article v-for="task in tasks.data" :key="`mobile-task-${task.id}`" class="rounded-lg border border-gray-200 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="break-words font-semibold text-gray-900">{{ task.title }}</h3>
+                                <p class="mt-1 break-words text-sm text-gray-600">{{ task.event?.title || '—' }}</p>
+                            </div>
+                            <span class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold" :class="handlerClass(task.active_handler_tone)">
+                                {{ task.active_handler_label }}
+                            </span>
+                        </div>
+                        <p class="mt-3 break-words text-sm text-gray-600">{{ task.description || '—' }}</p>
+                        <div class="mt-3 flex flex-wrap gap-1">
+                            <span v-if="task.task_key" class="rounded bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-600">{{ task.task_key }}</span>
+                            <span class="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{{ task.responsibility_level }}</span>
+                            <span class="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{{ task.club?.club_name || '—' }}</span>
+                            <span class="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{{ task.event?.event_type || '—' }}</span>
+                        </div>
+                        <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Asignaciones', 'Assignments') }}</dt>
+                                <dd class="font-medium text-gray-900">{{ task.assignments_count }}</dd>
+                            </div>
+                            <div class="rounded bg-gray-50 p-2">
+                                <dt class="text-xs text-gray-500">{{ tr('Schema custom', 'Custom schema') }}</dt>
+                                <dd class="break-words text-gray-900">{{ task.custom_field_count }} {{ tr('campos', 'fields') }} / {{ task.custom_form_mode || tr('sin custom form', 'no custom form') }}</dd>
+                            </div>
+                        </dl>
+                        <button type="button" class="mt-4 w-full rounded border px-3 py-2 text-sm font-medium text-gray-700" @click="editTask(task)">
+                            {{ tr('Editar', 'Edit') }}
+                        </button>
+                    </article>
+                </div>
+                <div v-if="tasks.data.length" class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-left text-gray-600">
                             <tr>
@@ -820,9 +908,6 @@ const visitLink = (link) => {
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="!tasks.data.length">
-                                <td colspan="5" class="px-4 py-8 text-center text-gray-500">{{ tr('No hay tareas con estos filtros.', 'No tasks match these filters.') }}</td>
-                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -841,17 +926,17 @@ const visitLink = (link) => {
             </section>
         </div>
 
-        <div v-if="editingType" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+        <div v-if="editingType" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-3 py-4 sm:px-4 sm:py-8">
             <div class="w-full max-w-4xl rounded-lg bg-white shadow-xl">
-                <div class="flex items-center justify-between border-b px-5 py-4">
-                    <div>
+                <div class="flex items-start justify-between gap-3 border-b px-4 py-4 sm:px-5">
+                    <div class="min-w-0">
                         <h2 class="text-base font-semibold text-gray-900">{{ modalTitle }}</h2>
-                        <p class="text-xs text-gray-500">{{ editingRecord?.title || editingRecord?.name || editingRecord?.key }}</p>
+                        <p class="break-words text-xs text-gray-500">{{ editingRecord?.title || editingRecord?.name || editingRecord?.key }}</p>
                     </div>
                     <button type="button" class="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100" @click="closeEditor">{{ tr('Cerrar', 'Close') }}</button>
                 </div>
 
-                <div class="space-y-4 px-5 py-4">
+                <div class="space-y-4 px-4 py-4 sm:px-5">
                     <template v-if="editingType === 'schema' || editingType === 'schema_create'">
                         <div class="grid gap-3 md:grid-cols-2">
                             <div>
@@ -864,10 +949,10 @@ const visitLink = (link) => {
                                 <input
                                     v-if="editingType === 'schema_create'"
                                     v-model="schemaForm.key"
-                                    class="w-full rounded border px-3 py-2 font-mono text-sm"
+                                    class="w-full rounded border px-3 py-3 font-mono text-base sm:py-2 sm:text-sm"
                                     placeholder="medical_forms"
                                 >
-                                <input v-else :value="editingRecord?.key" disabled class="w-full rounded border bg-gray-50 px-3 py-2 font-mono text-sm text-gray-500">
+                                <input v-else :value="editingRecord?.key" disabled class="w-full rounded border bg-gray-50 px-3 py-3 font-mono text-base text-gray-500 sm:py-2 sm:text-sm">
                                 <p v-if="editingType === 'schema_create'" class="mt-1 text-xs text-gray-500">
                                     {{ tr('No uses keys reservadas por handlers fijos como permission_slips, transportation_plan o finalize_attendee_list.', 'Do not use keys reserved by fixed handlers such as permission_slips, transportation_plan, or finalize_attendee_list.') }}
                                 </p>

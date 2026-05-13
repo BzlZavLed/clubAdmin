@@ -108,6 +108,25 @@ export const fetchClubClasses = async (clubId) => {
     return response.data;
 };
 
+export const fetchMasterGuideMemberSchema = async (clubId) => {
+    const { data } = await axios.get(route("clubs.members.master-guide-schema", clubId));
+    return data;
+};
+
+export const updateMasterGuideMemberSchema = async (clubId, schemaJson) => {
+    const { data } = await axios.put(route("clubs.members.master-guide-schema.update", clubId), {
+        schema_json: schemaJson,
+    });
+    return data;
+};
+
+export const updateMasterGuideMemberYear = async (memberId, programYear) => {
+    const { data } = await axios.patch(route("members.master-guide-year.update", memberId), {
+        program_year: programYear,
+    });
+    return data;
+};
+
 export const deleteMemberById = async (memberId, notes, options = {}) => {
     return await axios.post(route("members.destroy", memberId), {
         notes_deleted: notes,

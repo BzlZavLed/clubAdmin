@@ -62,6 +62,9 @@ const tempStaffForm = ref({
     staff_age: '',
     staff_email: '',
     staff_phone: '',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    emergency_contact_email: '',
 })
 const clubClasses = ref([])
 const sub_roles = ref([])
@@ -258,13 +261,16 @@ const openStaffForm = (user) => {
     }
     selectedUserForStaff.value = user
     selectedUserForStaff.value.club_name = club_name.value
-    if (['pathfinders', 'temp_pathfinder'].includes(selectedClub.value?.club_type)) {
+    if (['pathfinders', 'temp_pathfinder', 'master_guide'].includes(selectedClub.value?.club_type)) {
         tempStaffForm.value.club_id = selectedClub.value.id
         tempStaffForm.value.staff_email = user?.email || ''
         tempStaffForm.value.staff_name = user?.name || ''
         tempStaffForm.value.staff_dob = ''
         tempStaffForm.value.staff_age = ''
         tempStaffForm.value.staff_phone = ''
+        tempStaffForm.value.emergency_contact_name = ''
+        tempStaffForm.value.emergency_contact_phone = ''
+        tempStaffForm.value.emergency_contact_email = ''
         tempStaffModalVisible.value = true
         return
     }
@@ -460,6 +466,9 @@ const saveTempStaff = async () => {
             staff_age: '',
             staff_email: '',
             staff_phone: '',
+            emergency_contact_name: '',
+            emergency_contact_phone: '',
+            emergency_contact_email: '',
         }
         await fetchStaff(selectedClub.value.id, churchId.value)
     } catch (err) {
@@ -694,6 +703,9 @@ watch(
                                         <div><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ person.address || '—' }}</div>
                                         <div><strong>{{ tr('Ciudad/Estado/Codigo postal', 'City/State/ZIP code') }}:</strong> {{ [person.city, person.state, person.zip].filter(Boolean).join(', ') || '—' }}</div>
                                         <div><strong>{{ tr('Iglesia', 'Church') }}:</strong> {{ person.church_name || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ person.emergency_contact_name || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Telefono de emergencia', 'Emergency phone') }}:</strong> {{ person.emergency_contact_phone || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Correo de emergencia', 'Emergency email') }}:</strong> {{ person.emergency_contact_email || '—' }}</div>
                                         <div><strong>{{ tr('Sterling Volunteer completado', 'Sterling Volunteer completed') }}:</strong> {{ person.sterling_volunteer_completed ? tr('Si', 'Yes') : tr('No', 'No') }}</div>
                                     </div>
                                 </div>
@@ -817,6 +829,9 @@ watch(
                                             person.zip }}</div>
                                         <div><strong>{{ tr('Nombre del club', 'Club name') }}:</strong> {{ person.club_name }}</div>
                                         <div><strong>{{ tr('Nombre de la iglesia', 'Church name') }}:</strong> {{ person.church_name }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Contacto de emergencia', 'Emergency contact') }}:</strong> {{ person.emergency_contact_name || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Telefono de emergencia', 'Emergency phone') }}:</strong> {{ person.emergency_contact_phone || '—' }}</div>
+                                        <div v-if="person.type === 'master_guide'"><strong>{{ tr('Correo de emergencia', 'Emergency email') }}:</strong> {{ person.emergency_contact_email || '—' }}</div>
 
                                         <div><strong>{{ tr('Limitacion de salud', 'Health limitation') }}:</strong> {{ person.has_health_limitation ? tr('Si', 'Yes')
                                             : tr('No', 'No') }}</div>
@@ -1108,6 +1123,23 @@ watch(
                     <div>
                         <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Teléfono', 'Phone') }}</label>
                         <input v-model="tempStaffForm.staff_phone" type="text" class="w-full rounded border p-2" />
+                    </div>
+                    <div v-if="selectedClub?.club_type === 'master_guide'" class="rounded border border-blue-100 bg-blue-50 p-3">
+                        <h3 class="mb-3 text-sm font-semibold text-blue-900">{{ tr('Contacto de emergencia', 'Emergency contact') }}</h3>
+                        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Nombre', 'Name') }}</label>
+                                <input v-model="tempStaffForm.emergency_contact_name" type="text" class="w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Teléfono', 'Phone') }}</label>
+                                <input v-model="tempStaffForm.emergency_contact_phone" type="text" class="w-full rounded border p-2" />
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Correo', 'Email') }}</label>
+                                <input v-model="tempStaffForm.emergency_contact_email" type="email" class="w-full rounded border p-2" />
+                            </div>
+                        </div>
                     </div>
                     <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <button type="button" @click="closeTempStaffModal" class="rounded border px-4 py-2 text-gray-700">
