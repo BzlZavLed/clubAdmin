@@ -161,6 +161,7 @@ class ClubPaymentController extends Controller
                     'account_label' => $p->account?->label,
                     'member_id' => $p->member_id,
                     'staff_id' => $p->staff_id,
+                    'payer_name' => $p->payer_name,
                     'amount_paid' => $p->amount_paid,
                     'expected_amount' => $p->expected_amount,
                     'balance_due_after' => $p->balance_due_after,
@@ -174,6 +175,7 @@ class ClubPaymentController extends Controller
                     'updated_at' => $p->updated_at,
                     'member_display_name' => $member['name'] ?? null,
                     'staff_display_name' => $staff['name'] ?? null,
+                    'payer_display_name' => $member['name'] ?? $staff['name'] ?? $p->payer_name,
                     'concept' => $p->concept ? [
                         'id' => $p->concept->id,
                         'concept' => $p->concept->concept,
@@ -276,6 +278,12 @@ class ClubPaymentController extends Controller
             })
             ->values();
 
+        $classes = ClubClass::query()
+            ->where('club_id', $club->id)
+            ->orderBy('class_order')
+            ->orderBy('class_name')
+            ->get(['id', 'club_id', 'class_name', 'class_order']);
+
         $concepts = PaymentConcept::query()
             ->whereIn('club_id', $clubIds)
             ->where('status', 'active')
@@ -331,6 +339,7 @@ class ClubPaymentController extends Controller
                     'account_label' => $p->account?->label,
                     'member_id' => $p->member_id,
                     'staff_id' => $p->staff_id,
+                    'payer_name' => $p->payer_name,
                     'amount_paid' => $p->amount_paid,
                     'expected_amount' => $p->expected_amount,
                     'balance_due_after' => $p->balance_due_after,
@@ -344,6 +353,7 @@ class ClubPaymentController extends Controller
                     'updated_at' => $p->updated_at,
                     'member_display_name' => $member['name'] ?? null,
                     'staff_display_name' => $staff['name'] ?? null,
+                    'payer_display_name' => $member['name'] ?? $staff['name'] ?? $p->payer_name,
                     'concept' => $p->concept ? [
                         'id' => $p->concept->id,
                         'concept' => $p->concept->concept,
@@ -377,6 +387,7 @@ class ClubPaymentController extends Controller
                 'data' => [
                     'club' => ['id' => $club->id, 'club_name' => $club->club_name],
                     'clubs' => $clubsForUser,
+                    'classes' => $classes,
                     'members' => $members,
                     'staff' => $staff,
                     'concepts' => $concepts,
@@ -396,6 +407,7 @@ class ClubPaymentController extends Controller
             'user' => $user,
             'club' => ['id' => $club->id, 'club_name' => $club->club_name],
             'clubs' => $clubsForUser,
+            'classes' => $classes,
             'members' => $members,
             'staff' => $staff,
             'concepts' => $concepts,
@@ -428,6 +440,7 @@ class ClubPaymentController extends Controller
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
             'member_id' => ['nullable', 'integer', 'exists:members,id'],
             'staff_id' => ['nullable', 'integer', 'exists:staff,id'],
+            'payer_name' => ['nullable', 'string', 'max:255'],
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
             'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'transfer', 'initial'])],
@@ -444,8 +457,9 @@ class ClubPaymentController extends Controller
         // exactly one payer (unless initial balance)
         $isMember = !empty($validated['member_id']);
         $isStaff = !empty($validated['staff_id']);
-        if (!$isInitial && $isMember === $isStaff) {
-            return response()->json(['message' => 'Provide exactly one payer: member OR staff.'], 422);
+        $hasCustomPayer = !empty($validated['payer_name']);
+        if (!$isInitial && collect([$isMember, $isStaff, $hasCustomPayer])->filter()->count() !== 1) {
+            return response()->json(['message' => 'Provide exactly one payer: member, staff, or external payer name.'], 422);
         }
 
         $allowedClubIds = ClubHelper::clubIdsForUser($user);
@@ -557,8 +571,13 @@ class ClubPaymentController extends Controller
 
             if ($isMember) {
                 $priorPaidQuery->where('member_id', $validated['member_id'] ?? null);
-            } else {
+            } elseif ($isStaff) {
                 $priorPaidQuery->where('staff_id', $validated['staff_id'] ?? null);
+            } else {
+                $priorPaidQuery
+                    ->whereNull('member_id')
+                    ->whereNull('staff_id')
+                    ->where('payer_name', $validated['payer_name'] ?? null);
             }
 
             if ($isInitial) {
@@ -723,6 +742,7 @@ class ClubPaymentController extends Controller
                 'account_id' => $account?->id,
                 'member_id' => $validated['member_id'] ?? null,
                 'staff_id' => $validated['staff_id'] ?? null,
+                'payer_name' => $validated['payer_name'] ?? null,
                 'amount_paid' => $amountPaid,
                 'expected_amount' => $expected,
                 'balance_due_after' => $balanceAfter,
@@ -764,6 +784,7 @@ class ClubPaymentController extends Controller
         $detailStaff = ClubHelper::staffDetail($payment->staff);
         $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
         $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
+        $payment->setAttribute('payer_display_name', $detailMember['name'] ?? $detailStaff['name'] ?? $payment->payer_name);
         $receipt = $this->paymentReceiptService->syncForPayment($payment);
         $payment->setAttribute('receipt', [
             'id' => $receipt->id,
@@ -905,6 +926,7 @@ class ClubPaymentController extends Controller
             $detailStaff = ClubHelper::staffDetail($payment->staff);
             $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
             $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
+            $payment->setAttribute('payer_display_name', $detailMember['name'] ?? $detailStaff['name'] ?? $payment->payer_name);
             $receipt = $this->paymentReceiptService->syncForPayment($payment);
             $payment->setAttribute('receipt', [
                 'id' => $receipt->id,
@@ -1016,6 +1038,7 @@ class ClubPaymentController extends Controller
         $detailStaff = ClubHelper::staffDetail($payment->staff);
         $payment->setAttribute('member_display_name', $detailMember['name'] ?? null);
         $payment->setAttribute('staff_display_name', $detailStaff['name'] ?? null);
+        $payment->setAttribute('payer_display_name', $detailMember['name'] ?? $detailStaff['name'] ?? $payment->payer_name);
         $receipt = $this->paymentReceiptService->syncForPayment($payment);
         $payment->setAttribute('receipt', [
             'id' => $receipt->id,
@@ -1454,6 +1477,11 @@ class ClubPaymentController extends Controller
                 ->where('payment_concept_id', $payment->payment_concept_id)
                 ->when($payment->member_id, fn ($q) => $q->where('member_id', $payment->member_id))
                 ->when($payment->staff_id, fn ($q) => $q->where('staff_id', $payment->staff_id))
+                ->when(!$payment->member_id && !$payment->staff_id, fn ($q) => $q
+                    ->whereNull('member_id')
+                    ->whereNull('staff_id')
+                    ->where('payer_name', $payment->payer_name)
+                )
                 ->update([
                     'expected_amount' => $payment->expected_amount,
                     'balance_due_after' => null,
@@ -1470,6 +1498,11 @@ class ClubPaymentController extends Controller
             ->where('payment_concept_id', $payment->payment_concept_id)
             ->when($payment->member_id, fn ($q) => $q->where('member_id', $payment->member_id))
             ->when($payment->staff_id, fn ($q) => $q->where('staff_id', $payment->staff_id))
+            ->when(!$payment->member_id && !$payment->staff_id, fn ($q) => $q
+                ->whereNull('member_id')
+                ->whereNull('staff_id')
+                ->where('payer_name', $payment->payer_name)
+            )
             ->orderBy('payment_date')
             ->orderBy('id')
             ->get()
@@ -1567,7 +1600,7 @@ class ClubPaymentController extends Controller
                     ->orWhereNull('issued_to_email');
             })
             ->with([
-                'payment:id,club_id,member_id,staff_id,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',
+                'payment:id,club_id,member_id,staff_id,payer_name,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',
                 'payment.member:id,type,id_data,parent_id',
                 'payment.staff:id,type,id_data,user_id',
                 'payment.concept:id,concept,amount,reusable,event_id,event_fee_component_id',
@@ -1601,6 +1634,7 @@ class ClubPaymentController extends Controller
                     'last_downloaded_at' => optional($receipt->last_downloaded_at)->toDateTimeString(),
                     'member_name' => $memberDetail['name'] ?? null,
                     'staff_name' => $staffDetail['name'] ?? null,
+                    'payer_name' => $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name,
                     'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text,
                     'amount_paid' => (float) ($payment?->amount_paid ?? 0),
                     'payment_date' => optional($payment?->payment_date)->toDateString(),

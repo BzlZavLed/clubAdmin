@@ -339,7 +339,7 @@ class EventFinanceService
                     'payer_id' => $payment->member_id ?: $payment->staff_id,
                     'payer_name' => $payment->member_id
                         ? (ClubHelper::memberDetail($payment->member)['name'] ?? 'Unknown')
-                        : (ClubHelper::staffDetail($payment->staff)['name'] ?? $payment->staff?->user?->name ?? 'Unknown'),
+                        : (ClubHelper::staffDetail($payment->staff)['name'] ?? $payment->staff?->user?->name ?? $payment->payer_name ?? 'Unknown'),
                     'notes' => $payment->notes,
                     'received_by' => $payment->receivedBy?->name,
                     'concept_label' => $eventTitle ?: $payment->concept?->eventFeeComponent?->label ?: $payment->concept_text ?: $payment->concept?->concept,

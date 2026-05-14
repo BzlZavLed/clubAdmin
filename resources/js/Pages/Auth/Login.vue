@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from 'vue'
 import Checkbox from '@/Components/Checkbox.vue'
 import InputError from '@/Components/InputError.vue'
 import InputLabel from '@/Components/InputLabel.vue'
@@ -7,6 +8,7 @@ import TextInput from '@/Components/TextInput.vue'
 import PathfinderLayout from '@/Layouts/AuthLayout.vue'
 import { useLocale } from '@/Composables/useLocale'
 import { Head, Link, useForm } from '@inertiajs/vue3'
+import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 
 defineProps({
     canResetPassword: {
@@ -23,6 +25,7 @@ const form = useForm({
     remember: false,
 })
 const { tr } = useLocale()
+const showPassword = ref(false)
 
 const submit = () => {
     form.post(route('login'), {
@@ -53,15 +56,32 @@ const submit = () => {
 
             <div>
                 <InputLabel for="password" :value="tr('Contraseña', 'Password')" />
-                <TextInput id="password" type="password"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
-                    v-model="form.password" required autocomplete="current-password" />
+                <div class="relative mt-1">
+                    <TextInput
+                        id="password"
+                        :type="showPassword ? 'text' : 'password'"
+                        class="block w-full rounded-md border-gray-300 pr-11 shadow-sm focus:ring-red-600 focus:border-red-600"
+                        v-model="form.password"
+                        required
+                        autocomplete="current-password"
+                    />
+                    <button
+                        type="button"
+                        class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-200"
+                        :aria-label="showPassword ? tr('Ocultar contraseña', 'Hide password') : tr('Mostrar contraseña', 'Show password')"
+                        :aria-pressed="showPassword"
+                        @click="showPassword = !showPassword"
+                    >
+                        <EyeSlashIcon v-if="showPassword" class="h-5 w-5" />
+                        <EyeIcon v-else class="h-5 w-5" />
+                    </button>
+                </div>
                 <InputError class="mt-2" :message="form.errors.password" />
             </div>
 
             <div class="block">
                 <label class="flex items-center">
-                    <Checkbox name="remember" :checked="form.remember" @change="form.remember = $event.target.checked" />
+                    <Checkbox name="remember" v-model:checked="form.remember" />
                     <span class="ms-2 text-sm text-gray-600">{{ tr('Recordarme', 'Remember me') }}</span>
                 </label>
             </div>

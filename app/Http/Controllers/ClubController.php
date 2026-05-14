@@ -1242,8 +1242,8 @@ class ClubController extends Controller
             'scopes.*.scope_type'  => ['required_with:scopes', Rule::in(['club_wide','class','member','staff_wide','staff'])],
             'scopes.*.club_id'     => ['nullable','integer','exists:clubs,id'],
             'scopes.*.class_id'    => ['nullable','integer','exists:club_classes,id'],
-            'scopes.*.member_id'   => ['nullable','integer','exists:member_adventurers,id'],
-            'scopes.*.staff_id'    => ['nullable','integer','exists:staff_adventurers,id'],
+            'scopes.*.member_id'   => ['nullable','integer','exists:members,id'],
+            'scopes.*.staff_id'    => ['nullable','integer','exists:staff,id'],
         ];
 
         return $request->validate($base);

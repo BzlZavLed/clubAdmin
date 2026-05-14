@@ -283,53 +283,113 @@ export const updateClubBankInfo = async (clubId, payTo, payload) => {
     return data;
 };
 
-export const fetchClubEventSettlements = async (clubId = null) => {
-    const { data } = await axios.get(route('club.director.event-settlements.index'), {
+export const fetchFinanceEngineActionables = async (clubId = null) => {
+    const { data } = await axios.get(route('club.finance-engine.actionables'), {
         params: clubId ? { club_id: clubId } : {},
     });
     return data;
 };
 
-export const createEventClubSettlement = async (eventId, payload) => {
-    const fd = new FormData();
-    Object.entries(payload).forEach(([key, value]) => {
-        if (value === undefined || value === null || value === '') return;
-        fd.append(key, value);
-    });
-
-    const { data } = await axios.post(route('event-club-settlements.store', { event: eventId }), fd, {
-        headers: { 'Content-Type': 'multipart/form-data', Accept: 'application/json' },
+export const fetchFinanceEngineMovements = async (params = {}) => {
+    const { data } = await axios.get(route('club.finance-engine.movements'), {
+        params,
     });
     return data;
 };
 
-export const fetchClubTreasury = async (clubId = null) => {
-    const { data } = await axios.get(route('club.director.treasury.data'), {
+export const fetchFinanceEngineCashbox = async (clubId = null) => {
+    const { data } = await axios.get(route('club.finance-engine.cashbox'), {
         params: clubId ? { club_id: clubId } : {},
     });
     return data;
 };
 
-export const createTreasuryMovement = async (payload) => {
-    const fd = new FormData();
-    Object.entries(payload).forEach(([key, value]) => {
-        if (value === undefined || value === null || value === '') return;
-        fd.append(key, value);
-    });
-
-    const { data } = await axios.post(route('club.director.treasury.movements.store'), fd, {
-        headers: { 'Content-Type': 'multipart/form-data', Accept: 'application/json' },
+export const fetchFinanceEngineAccounting = async (clubId = null) => {
+    const { data } = await axios.get(route('club.finance-engine.accounting'), {
+        params: clubId ? { club_id: clubId } : {},
     });
     return data;
 };
 
-export const validateStaffRemittance = async (remittanceBatchId, clubId = null) => {
-    const { data } = await axios.post(route('club.director.treasury.staff-remittances.validate'), {
+const financeEngineFormData = (payload) => {
+    const fd = new FormData();
+    Object.entries(payload || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        if (Array.isArray(value)) {
+            value.forEach((item) => fd.append(`${key}[]`, item));
+            return;
+        }
+        fd.append(key, value);
+    });
+    return fd;
+};
+
+const financeEngineFormHeaders = {
+    'Content-Type': 'multipart/form-data',
+    Accept: 'application/json',
+};
+
+export const createFinanceEngineConcept = async (payload) => {
+    const { data } = await axios.post(route('club.finance-engine.concepts.store'), payload, {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const createFinanceEngineIncome = async (payload) => {
+    const { data } = await axios.post(route('club.finance-engine.income.store'), financeEngineFormData(payload), {
+        headers: financeEngineFormHeaders,
+    });
+    return data;
+};
+
+export const createFinanceEngineExpense = async (payload) => {
+    const { data } = await axios.post(route('club.finance-engine.expenses.store'), financeEngineFormData(payload), {
+        headers: financeEngineFormHeaders,
+    });
+    return data;
+};
+
+export const createFinanceEngineTransfer = async (payload) => {
+    const { data } = await axios.post(route('club.finance-engine.transfers.store'), financeEngineFormData(payload), {
+        headers: financeEngineFormHeaders,
+    });
+    return data;
+};
+
+export const validateFinanceEngineStaffRemittance = async (remittanceBatchId, clubId = null) => {
+    const { data } = await axios.post(route('club.finance-engine.staff-remittances.validate'), {
         remittance_batch_id: remittanceBatchId,
         ...(clubId ? { club_id: clubId } : {}),
+    }, {
+        headers: { Accept: 'application/json' },
     });
     return data;
 };
+
+export const createFinanceEngineEventSettlement = async (eventId, payload) => {
+    const { data } = await axios.post(
+        route('club.finance-engine.event-settlements.store', { event: eventId }),
+        financeEngineFormData(payload),
+        { headers: financeEngineFormHeaders }
+    );
+    return data;
+};
+
+export const reverseFinanceEnginePayment = async (paymentId, payload) =>
+    await axios.post(route('club.finance-engine.corrections.payments.reverse', paymentId), payload, {
+        headers: { Accept: 'application/json' },
+    });
+
+export const reverseFinanceEngineExpense = async (expenseId, payload) =>
+    await axios.post(route('club.finance-engine.corrections.expenses.reverse', expenseId), payload, {
+        headers: { Accept: 'application/json' },
+    });
+
+export const reverseFinanceEngineReimbursement = async (expenseId, payload) =>
+    await axios.post(route('club.finance-engine.corrections.reimbursements.reverse', expenseId), payload, {
+        headers: { Accept: 'application/json' },
+    });
 
 export const fetchStaffMoneyCustody = async (clubId = null) => {
     const { data } = await axios.get(route('club.personal.money-custody.data'), {
@@ -557,6 +617,13 @@ export const deletePaymentConcept = (clubId, id) =>
     );
 
 //PAYMENTS
+export const fetchDirectorPayments = async (clubId = null) => {
+    const { data } = await axios.get(route('club.director.payments'), {
+        params: clubId ? { club_id: clubId } : {},
+    });
+    return data;
+};
+
 export const createClubPayment = async (payload) => {
     const fd = new FormData();
     Object.entries(payload).forEach(([k, v]) => {
@@ -586,107 +653,12 @@ export const updateClubPayment = async (paymentId, payload) => {
     });
 };
 
-export const deleteClubPayment = async (paymentId) => {
-    return await axios.delete(route("club.payments.destroy", { payment: paymentId }));
-};
-
-export const fetchAccountingCorrections = async (clubId = null) => {
-    const { data } = await axios.get(route('club.director.accounting-corrections'), {
-        params: clubId ? { club_id: clubId } : {}
-    })
-
-    return data
-}
-
-export const reverseAccountingPayment = async (paymentId, payload) => {
-    return await axios.post(route('club.director.accounting-corrections.payments.reverse', paymentId), payload)
-}
-
-export const reverseAccountingExpense = async (expenseId, payload) => {
-    return await axios.post(route('club.director.accounting-corrections.expenses.reverse', expenseId), payload)
-}
-
-export const reverseAccountingReimbursement = async (expenseId, payload) => {
-    return await axios.post(route('club.director.accounting-corrections.reimbursements.reverse', expenseId), payload)
-}
-
-// Director Financial Report — bootstrap data
+// Director Financial Report bootstrap data
 export const fetchFinancialReportBootstrap = async (clubId = null) => {
     const { data } = await axios.get(route('financial.preload'), {
         params: clubId ? { club_id: clubId } : {}
     })
     return data
-}
-
-// Account balances by pay_to
-export const fetchFinancialAccountBalances = async (clubId = null) => {
-    const { data } = await axios.get(route('financial.accounts'), {
-        params: clubId ? { club_id: clubId } : {}
-    })
-    return data
-}
-
-// Expenses
-export const fetchExpenses = async (clubId = null) => {
-    const { data } = await axios.get(route('club.director.expenses'), {
-        params: clubId ? { club_id: clubId } : {}
-    })
-
-    return data
-}
-
-export const recalculateAccounts = async (clubId) => {
-    return await axios.post(route('clubs.accounts.recalculate', clubId))
-}
-
-export const createExpense = async (payload) => {
-    const fd = new FormData()
-    Object.entries(payload).forEach(([k, v]) => {
-        if (v === undefined || v === null) return
-        fd.append(k, v)
-    })
-
-    return await axios.post(route('club.director.expenses.store'), fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-    })
-}
-
-export const uploadExpenseReceipt = async (expenseId, file) => {
-    const fd = new FormData()
-    fd.append('receipt_image', file)
-
-    return await axios.post(route('club.director.expenses.upload', expenseId), fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-    })
-}
-
-export const removeExpenseReceipt = async (expenseId) => {
-    return await axios.delete(route('club.director.expenses.removeReceipt', expenseId))
-}
-
-export const uploadReimbursementReceipt = async (expenseId, file) => {
-    const fd = new FormData()
-    fd.append('receipt_image', file)
-
-    return await axios.post(route('club.director.expenses.uploadReimbursementReceipt', expenseId), fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-    })
-}
-
-export const removeReimbursementReceipt = async (expenseId) => {
-    return await axios.delete(route('club.director.expenses.removeReimbursementReceipt', expenseId))
-}
-
-export const markExpenseReimbursed = async (expenseId, payTo, receiptFile, fundsLocation = 'cash') => {
-    const fd = new FormData()
-    fd.append('pay_to', payTo)
-    fd.append('funds_location', fundsLocation)
-    if (receiptFile) {
-        fd.append('receipt_image', receiptFile)
-    }
-    return await axios.post(route('club.director.expenses.reimburse', expenseId), fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-    })
 }
 
 // Parent workplan

@@ -41,6 +41,8 @@ class PaymentReceiptService
             $issuedToType = 'member_unlinked';
         } elseif ($payment->staff_id) {
             $issuedToType = 'staff_unlinked';
+        } elseif ($payment->payer_name) {
+            $issuedToType = 'external_payer';
         }
 
         return DB::transaction(function () use ($payment, $parentUserId, $staffUserId, $issuedToType, $issuedToEmail) {

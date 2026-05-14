@@ -83,8 +83,11 @@ class ClubTreasuryService
 
     public function locationBalancesByAccount(Club $club): Collection
     {
-        $payments = Payment::query()
-            ->where('club_id', $club->id)
+        $payments = $this->activeFinancialRows(
+            Payment::query()->where('club_id', $club->id),
+            'payments',
+            ['reversed_payment_id']
+        )
             ->when(Schema::hasColumn('payments', 'custody_status'), function ($query) {
                 $query->where(function ($custody) {
                     $custody->whereNull('custody_status')
@@ -96,8 +99,10 @@ class ClubTreasuryService
             ->get()
             ->groupBy('pay_to');
 
-        $movements = TreasuryMovement::query()
-            ->where('club_id', $club->id)
+        $movements = $this->activeFinancialRows(
+            TreasuryMovement::query()->where('club_id', $club->id),
+            'treasury_movements'
+        )
             ->get([
                 'pay_to',
                 'from_pay_to',
@@ -108,8 +113,11 @@ class ClubTreasuryService
                 'amount',
             ]);
 
-        $expenses = Expense::query()
-            ->where('club_id', $club->id)
+        $expenses = $this->activeFinancialRows(
+            Expense::query()->where('club_id', $club->id),
+            'expenses',
+            ['reversed_expense_id']
+        )
             ->where('pay_to', '!=', 'reimbursement_to')
             ->selectRaw("COALESCE(pay_to, 'unassigned') as pay_to, COALESCE(funds_location, 'cash') as funds_location, COALESCE(SUM(amount), 0) as total")
             ->groupBy('pay_to', 'funds_location')
@@ -209,8 +217,11 @@ class ClubTreasuryService
             ->where('club_id', $club->id)
             ->pluck('label', 'pay_to');
 
-        return Payment::query()
-            ->where('club_id', $club->id)
+        return $this->activeFinancialRows(
+            Payment::query()->where('club_id', $club->id),
+            'payments',
+            ['reversed_payment_id']
+        )
             ->when(Schema::hasColumn('payments', 'custody_status'), function ($query) {
                 $query->where(function ($custody) {
                     $custody->whereNull('custody_status')
@@ -249,9 +260,35 @@ class ClubTreasuryService
                     'amount_paid' => (float) $payment->amount_paid,
                     'concept_name' => $eventTitle ?: $payment->concept?->concept ?: $payment->concept_text,
                     'event_title' => $eventTitle,
-                    'payer_name' => $member['name'] ?? $staff['name'] ?? '—',
+                    'payer_name' => $member['name'] ?? $staff['name'] ?? $payment->payer_name ?? '—',
                     'received_by' => $payment->receivedBy?->name,
                 ];
             });
+    }
+
+    protected function activeFinancialRows($query, string $table, array $reversalColumns = [])
+    {
+        if (Schema::hasColumn($table, 'is_cancelled')) {
+            $query->where(function ($status) {
+                $status->whereNull('is_cancelled')
+                    ->orWhere('is_cancelled', false);
+            });
+        }
+
+        if (Schema::hasColumn($table, 'related_canceled_movement_id')) {
+            $query->whereNull('related_canceled_movement_id');
+        }
+
+        if (Schema::hasColumn($table, 'canceling_id')) {
+            $query->whereNull('canceling_id');
+        }
+
+        foreach ($reversalColumns as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                $query->whereNull($column);
+            }
+        }
+
+        return $query;
     }
 }

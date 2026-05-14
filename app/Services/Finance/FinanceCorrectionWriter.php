@@ -1,212 +1,28 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Services\Finance;
 
 use App\Models\Account;
 use App\Models\Expense;
 use App\Models\Payment;
+use App\Services\PaymentReceiptService;
 use App\Support\ClubHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
+use Illuminate\Support\Facades\Schema;
 
-class AccountingCorrectionController extends Controller
+class FinanceCorrectionWriter
 {
-    public function index(Request $request)
+    public function __construct(private readonly PaymentReceiptService $paymentReceiptService)
     {
-        $user = $request->user();
-        $this->ensureAccountingAccess($user);
-
-        $club = ClubHelper::clubForUser($user, $request->input('club_id'));
-        $clubs = ClubHelper::clubsForUser($user)
-            ->map(fn ($allowedClub) => [
-                'id' => $allowedClub->id,
-                'club_name' => $allowedClub->club_name,
-            ])
-            ->values();
-
-        $payments = Payment::query()
-            ->where('club_id', $club->id)
-            ->whereNull('reversed_payment_id')
-            ->where('payment_type', '!=', 'internal')
-            ->with([
-                'member:id,type,id_data',
-                'staff:id,type,id_data,user_id',
-                'staff.user:id,name',
-                'concept:id,concept',
-                'account:id,club_id,pay_to,label',
-                'receivedBy:id,name',
-                'reversalPayment:id,reversed_payment_id,amount_paid,payment_date,created_at',
-            ])
-            ->orderByDesc('payment_date')
-            ->orderByDesc('id')
-            ->get()
-            ->map(function (Payment $payment) {
-                $member = ClubHelper::memberDetail($payment->member);
-                $staff = ClubHelper::staffDetail($payment->staff);
-                $reversal = $payment->reversalPayment;
-
-                return [
-                    'id' => $payment->id,
-                    'club_id' => $payment->club_id,
-                    'payment_concept_id' => $payment->payment_concept_id,
-                    'concept_text' => $payment->concept_text,
-                    'concept_name' => $payment->concept?->concept,
-                    'pay_to' => $payment->pay_to,
-                    'account_label' => $payment->account?->label,
-                    'member_display_name' => $member['name'] ?? null,
-                    'staff_display_name' => $staff['name'] ?? null,
-                    'amount_paid' => (float) $payment->amount_paid,
-                    'payment_date' => optional($payment->payment_date)->toDateString(),
-                    'payment_type' => $payment->payment_type,
-                    'notes' => $payment->notes,
-                    'received_by_name' => $payment->receivedBy?->name,
-                    'is_cancelled' => (bool) $payment->is_cancelled,
-                    'related_canceled_movement_id' => $payment->related_canceled_movement_id,
-                    'canceling_id' => $payment->canceling_id,
-                    'can_reverse' => $reversal === null && !$payment->is_cancelled && !$payment->related_canceled_movement_id,
-                    'reversal' => $reversal ? [
-                        'id' => $reversal->id,
-                        'amount_paid' => (float) $reversal->amount_paid,
-                        'payment_date' => optional($reversal->payment_date)->toDateString(),
-                        'created_at' => optional($reversal->created_at)->toDateTimeString(),
-                    ] : null,
-                ];
-            })
-            ->values();
-
-        $reimbursements = Expense::query()
-            ->where('club_id', $club->id)
-            ->whereNull('reversed_expense_id')
-            ->where('pay_to', 'reimbursement_to')
-            ->whereNull('settles_expense_id')
-            ->with([
-                'createdBy:id,name',
-                'settlementExpense:id,club_id,pay_to,amount,expense_date,created_at,settles_expense_id,reversed_expense_id,is_cancelled,related_canceled_movement_id,canceling_id',
-                'settlementExpense.reversalExpense:id,reversed_expense_id,amount,expense_date,created_at,status',
-                'reversalExpense:id,reversed_expense_id,amount,expense_date,created_at,status',
-            ])
-            ->orderByDesc('expense_date')
-            ->orderByDesc('id')
-            ->get()
-            ->map(function (Expense $expense) {
-                $settlementExpense = $expense->settlementExpense;
-                $settlementPayment = $this->findSettlementPaymentForExpense($expense, $settlementExpense);
-                $reversal = $expense->reversalExpense;
-                $canReverse = $reversal === null
-                    && (!$settlementExpense || (
-                        $settlementExpense->reversalExpense === null
-                        && !$settlementExpense->is_cancelled
-                        && !$settlementExpense->related_canceled_movement_id
-                    ))
-                    && (!$settlementPayment || (
-                        $settlementPayment->reversalPayment === null
-                        && !$settlementPayment->is_cancelled
-                        && !$settlementPayment->related_canceled_movement_id
-                    ));
-
-                return [
-                    'id' => $expense->id,
-                    'club_id' => $expense->club_id,
-                    'amount' => (float) $expense->amount,
-                    'expense_date' => optional($expense->expense_date)->toDateString(),
-                    'description' => $expense->description,
-                    'status' => $expense->status,
-                    'reimbursed_to' => $expense->reimbursed_to,
-                    'created_by_name' => $expense->createdBy?->name,
-                    'is_cancelled' => (bool) $expense->is_cancelled,
-                    'related_canceled_movement_id' => $expense->related_canceled_movement_id,
-                    'canceling_id' => $expense->canceling_id,
-                    'can_reverse' => $canReverse && !$expense->is_cancelled && !$expense->related_canceled_movement_id,
-                    'is_completed' => $expense->status === 'completed' && $settlementExpense !== null,
-                    'settlement' => $settlementExpense ? [
-                        'expense_id' => $settlementExpense->id,
-                        'pay_to' => $settlementExpense->pay_to,
-                        'amount' => (float) $settlementExpense->amount,
-                        'expense_date' => optional($settlementExpense->expense_date)->toDateString(),
-                        'reversed' => $settlementExpense->reversalExpense !== null
-                            || (bool) $settlementExpense->is_cancelled
-                            || (bool) $settlementExpense->related_canceled_movement_id,
-                    ] : null,
-                    'settlement_payment' => $settlementPayment ? [
-                        'id' => $settlementPayment->id,
-                        'amount_paid' => (float) $settlementPayment->amount_paid,
-                        'payment_date' => optional($settlementPayment->payment_date)->toDateString(),
-                        'reversed' => $settlementPayment->reversalPayment !== null
-                            || (bool) $settlementPayment->is_cancelled
-                            || (bool) $settlementPayment->related_canceled_movement_id,
-                    ] : null,
-                    'reversal' => $reversal ? [
-                        'id' => $reversal->id,
-                        'amount' => (float) $reversal->amount,
-                        'expense_date' => optional($reversal->expense_date)->toDateString(),
-                        'created_at' => optional($reversal->created_at)->toDateTimeString(),
-                    ] : null,
-                ];
-            })
-            ->values();
-
-        $expenses = Expense::query()
-            ->where('club_id', $club->id)
-            ->whereNull('reversed_expense_id')
-            ->whereNull('settles_expense_id')
-            ->where('pay_to', '!=', 'reimbursement_to')
-            ->whereDoesntHave('settlementExpense')
-            ->with([
-                'createdBy:id,name',
-                'reversalExpense:id,reversed_expense_id,amount,expense_date,created_at',
-            ])
-            ->orderByDesc('expense_date')
-            ->orderByDesc('id')
-            ->get()
-            ->map(function (Expense $expense) {
-                $reversal = $expense->reversalExpense;
-
-                return [
-                    'id' => $expense->id,
-                    'club_id' => $expense->club_id,
-                    'pay_to' => $expense->pay_to,
-                    'amount' => (float) $expense->amount,
-                    'expense_date' => optional($expense->expense_date)->toDateString(),
-                    'description' => $expense->description,
-                    'status' => $expense->status,
-                    'reimbursed_to' => $expense->reimbursed_to,
-                    'created_by_name' => $expense->createdBy?->name,
-                    'is_cancelled' => (bool) $expense->is_cancelled,
-                    'related_canceled_movement_id' => $expense->related_canceled_movement_id,
-                    'canceling_id' => $expense->canceling_id,
-                    'can_reverse' => $reversal === null && !$expense->is_cancelled && !$expense->related_canceled_movement_id,
-                    'reversal' => $reversal ? [
-                        'id' => $reversal->id,
-                        'amount' => (float) $reversal->amount,
-                        'expense_date' => optional($reversal->expense_date)->toDateString(),
-                        'created_at' => optional($reversal->created_at)->toDateTimeString(),
-                    ] : null,
-                ];
-            })
-            ->values();
-
-        $payload = [
-            'club_id' => $club->id,
-            'clubs' => $clubs,
-            'payments' => $payments,
-            'reimbursements' => $reimbursements,
-            'expenses' => $expenses,
-        ];
-
-        if ($request->wantsJson()) {
-            return response()->json(['data' => $payload]);
-        }
-
-        return Inertia::render('ClubDirector/AccountingCorrections', $payload);
     }
 
     public function reversePayment(Request $request, Payment $payment): JsonResponse
     {
         $user = $request->user();
         $this->ensureAccountingAccess($user);
-        $this->ensurePaymentBelongsToDirector($user, $payment);
+        $this->ensurePaymentBelongsToUser($user, $payment);
 
         $validated = $request->validate([
             'correction_date' => ['required', 'date'],
@@ -230,7 +46,7 @@ class AccountingCorrectionController extends Controller
         $reversal = null;
 
         DB::transaction(function () use ($payment, $validated, $user, $account, $amount, &$reversal) {
-            $reversal = Payment::create([
+            $reversal = Payment::query()->create([
                 'club_id' => $payment->club_id,
                 'payment_concept_id' => $payment->payment_concept_id,
                 'concept_text' => $payment->concept_text ?: 'Correccion contable de ingreso',
@@ -238,6 +54,7 @@ class AccountingCorrectionController extends Controller
                 'account_id' => $account->id,
                 'member_id' => $payment->member_id,
                 'staff_id' => $payment->staff_id,
+                'payer_name' => $payment->payer_name,
                 'amount_paid' => -$amount,
                 'expected_amount' => null,
                 'balance_due_after' => null,
@@ -251,6 +68,8 @@ class AccountingCorrectionController extends Controller
                 'canceling_id' => $payment->id,
             ]);
 
+            $this->paymentReceiptService->syncForPayment($reversal);
+
             $payment->update([
                 'is_cancelled' => true,
                 'related_canceled_movement_id' => $reversal->id,
@@ -261,9 +80,7 @@ class AccountingCorrectionController extends Controller
 
         return response()->json([
             'message' => 'Ingreso revertido mediante movimiento opuesto.',
-            'data' => [
-                'reversal_id' => $reversal->id,
-            ],
+            'data' => ['reversal_id' => $reversal->id],
         ], 201);
     }
 
@@ -271,7 +88,7 @@ class AccountingCorrectionController extends Controller
     {
         $user = $request->user();
         $this->ensureAccountingAccess($user);
-        $this->ensureExpenseBelongsToDirector($user, $expense);
+        $this->ensureExpenseBelongsToUser($user, $expense);
 
         $validated = $request->validate([
             'correction_date' => ['required', 'date'],
@@ -295,7 +112,7 @@ class AccountingCorrectionController extends Controller
         $reversal = null;
 
         DB::transaction(function () use ($expense, $validated, $user, $account, $amount, &$reversal) {
-            $reversal = Expense::create([
+            $reversal = Expense::query()->create([
                 'club_id' => $expense->club_id,
                 'event_id' => $expense->event_id,
                 'pay_to' => $expense->pay_to,
@@ -325,9 +142,7 @@ class AccountingCorrectionController extends Controller
 
         return response()->json([
             'message' => 'Gasto revertido mediante movimiento opuesto.',
-            'data' => [
-                'reversal_id' => $reversal->id,
-            ],
+            'data' => ['reversal_id' => $reversal->id],
         ], 201);
     }
 
@@ -335,7 +150,7 @@ class AccountingCorrectionController extends Controller
     {
         $user = $request->user();
         $this->ensureAccountingAccess($user);
-        $this->ensureExpenseBelongsToDirector($user, $expense);
+        $this->ensureExpenseBelongsToUser($user, $expense);
 
         $validated = $request->validate([
             'correction_date' => ['required', 'date'],
@@ -365,8 +180,7 @@ class AccountingCorrectionController extends Controller
         $reimbursementAccount = $this->resolveAccount($expense->club_id, 'reimbursement_to');
 
         DB::transaction(function () use ($expense, $validated, $user, $amount, $reimbursementAccount, $settlementExpense, $settlementPayment) {
-            // Reverse the original reimbursement request so the clearing account is restored.
-            $reimbursementReversal = Expense::create([
+            $reimbursementReversal = Expense::query()->create([
                 'club_id' => $expense->club_id,
                 'event_id' => $expense->event_id,
                 'pay_to' => 'reimbursement_to',
@@ -394,7 +208,7 @@ class AccountingCorrectionController extends Controller
             $reimbursementAccount->increment('balance', $amount);
 
             if ($settlementPayment) {
-                $settlementPaymentReversal = Payment::create([
+                $settlementPaymentReversal = Payment::query()->create([
                     'club_id' => $settlementPayment->club_id,
                     'payment_concept_id' => $settlementPayment->payment_concept_id,
                     'concept_text' => $settlementPayment->concept_text ?: 'Correccion contable de liquidacion de reembolso',
@@ -402,6 +216,7 @@ class AccountingCorrectionController extends Controller
                     'account_id' => $settlementPayment->account_id,
                     'member_id' => $settlementPayment->member_id,
                     'staff_id' => $settlementPayment->staff_id,
+                    'payer_name' => $settlementPayment->payer_name,
                     'amount_paid' => -abs((float) $settlementPayment->amount_paid),
                     'expected_amount' => null,
                     'balance_due_after' => null,
@@ -416,6 +231,8 @@ class AccountingCorrectionController extends Controller
                     'canceling_id' => $settlementPayment->id,
                 ]);
 
+                $this->paymentReceiptService->syncForPayment($settlementPaymentReversal);
+
                 $settlementPayment->update([
                     'is_cancelled' => true,
                     'related_canceled_movement_id' => $settlementPaymentReversal->id,
@@ -427,7 +244,7 @@ class AccountingCorrectionController extends Controller
             if ($settlementExpense) {
                 $fundingAccount = $this->resolveAccount($settlementExpense->club_id, $settlementExpense->pay_to);
 
-                $settlementExpenseReversal = Expense::create([
+                $settlementExpenseReversal = Expense::query()->create([
                     'club_id' => $settlementExpense->club_id,
                     'event_id' => $settlementExpense->event_id,
                     'pay_to' => $settlementExpense->pay_to,
@@ -463,24 +280,22 @@ class AccountingCorrectionController extends Controller
         ], 201);
     }
 
-    protected function ensureAccountingAccess($user): void
+    private function ensureAccountingAccess($user): void
     {
         abort_unless(in_array(($user?->profile_type ?? null), ['club_director', 'superadmin'], true), 403, 'Unauthorized.');
     }
 
-    protected function ensurePaymentBelongsToDirector($user, Payment $payment): void
+    private function ensurePaymentBelongsToUser($user, Payment $payment): void
     {
-        $allowedClubIds = ClubHelper::clubIdsForUser($user);
-        abort_unless($allowedClubIds->contains((int) $payment->club_id), 403, 'Unauthorized.');
+        abort_unless(ClubHelper::clubIdsForUser($user)->contains((int) $payment->club_id), 403, 'Unauthorized.');
     }
 
-    protected function ensureExpenseBelongsToDirector($user, Expense $expense): void
+    private function ensureExpenseBelongsToUser($user, Expense $expense): void
     {
-        $allowedClubIds = ClubHelper::clubIdsForUser($user);
-        abort_unless($allowedClubIds->contains((int) $expense->club_id), 403, 'Unauthorized.');
+        abort_unless(ClubHelper::clubIdsForUser($user)->contains((int) $expense->club_id), 403, 'Unauthorized.');
     }
 
-    protected function findSettlementPaymentForExpense(Expense $expense, ?Expense $settlementExpense = null): ?Payment
+    private function findSettlementPaymentForExpense(Expense $expense, ?Expense $settlementExpense = null): ?Payment
     {
         $query = Payment::query()
             ->where('club_id', $expense->club_id)
@@ -492,7 +307,7 @@ class AccountingCorrectionController extends Controller
             $query->where('payment_concept_id', $expense->payment_concept_id);
         }
 
-        if (\Schema::hasColumn('payments', 'settles_expense_id')) {
+        if (Schema::hasColumn('payments', 'settles_expense_id')) {
             $linked = (clone $query)
                 ->where('settles_expense_id', $expense->id)
                 ->with('reversalPayment')
@@ -514,9 +329,9 @@ class AccountingCorrectionController extends Controller
             ->first();
     }
 
-    protected function resolveAccount(int $clubId, string $payTo): Account
+    private function resolveAccount(int $clubId, string $payTo): Account
     {
-        return Account::firstOrCreate(
+        return Account::query()->firstOrCreate(
             ['club_id' => $clubId, 'pay_to' => $payTo],
             ['label' => $payTo, 'balance' => 0]
         );

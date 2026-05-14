@@ -1342,119 +1342,6 @@ class ReportController extends Controller
         }
     }
 
-    public function financialReportPdf(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
-    {
-        $payload = $this->buildFinancialLedgerPdfPayload($request);
-        $validation = $documentValidationService->create(
-            documentType: 'financial_ledger',
-            title: 'Reporte financiero por cuenta',
-            snapshot: [
-                'club_id' => $payload['club']->id,
-                'filters' => $payload['filters'],
-                'accounts' => collect($payload['accounts'])->map(fn ($account) => [
-                    'pay_to' => $account['pay_to'] ?? null,
-                    'label' => $account['label'] ?? null,
-                    'totals' => $account['totals'] ?? [],
-                    'entries' => collect($account['entries'] ?? [])->map(fn ($entry) => [
-                        'date' => $entry['date'] ?? null,
-                        'entry_type' => $entry['entry_type'] ?? null,
-                        'location' => $entry['location'] ?? null,
-                        'from_location' => $entry['from_location'] ?? null,
-                        'to_location' => $entry['to_location'] ?? null,
-	                        'receipt_ref' => $entry['receipt_ref'] ?? null,
-	                        'concept' => $entry['concept'] ?? null,
-	                        'amount' => $entry['amount'] ?? null,
-	                        'payer_name' => $entry['payer_name'] ?? null,
-	                        'payee_name' => $entry['payee_name'] ?? null,
-	                        'payment_receipt_id' => $entry['payment_receipt_id'] ?? null,
-	                        'payment_receipt_number' => $entry['payment_receipt_number'] ?? null,
-	                        'is_cancelled' => $entry['is_cancelled'] ?? false,
-	                        'related_canceled_movement_id' => $entry['related_canceled_movement_id'] ?? null,
-	                        'canceling_id' => $entry['canceling_id'] ?? null,
-	                    ])->all(),
-                ])->all(),
-            ],
-            metadata: [
-                'Club' => $payload['club']->club_name,
-                'Documento' => 'Reporte financiero por cuenta',
-                'Cuentas' => (string) count($payload['accounts']),
-                'Movimientos' => (string) collect($payload['accounts'])->sum(fn ($account) => count($account['entries'] ?? [])),
-            ],
-            generatedBy: $request->user(),
-            generatedAt: $payload['generatedAt'],
-        );
-
-        $pdf = Pdf::loadView('reports.financial_ledger_print', [
-            'club' => $payload['club'],
-            'accounts' => $payload['accounts'],
-            'receipts' => $payload['receipts'],
-            'filters' => $payload['filters'],
-            'generatedAt' => $payload['generatedAt'],
-            'clubLogoDataUri' => $clubLogoService->dataUri($payload['club']),
-            'validationUrl' => $validation['url'],
-            'qrCodeDataUri' => $validation['qr_code_data_uri'],
-        ])->setPaper('a4', 'landscape');
-
-        $filename = 'financial-ledger-club-' . $payload['club']->id . '-' . now()->format('Ymd-His') . '.pdf';
-
-        return response($pdf->output(), 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
-        ]);
-    }
-
-    protected function buildFinancialLedgerPdfPayload(Request $request): array
-    {
-        $user = $request->user();
-        $club = $this->resolveClubForUser($user, $request->input('club_id'));
-        $clubId = $club->id;
-
-        $validated = $request->validate([
-            'concept_id' => ['nullable', 'integer', Rule::exists('payment_concepts', 'id')->where(fn($q) => $q->where('club_id', $clubId))],
-            'date' => ['nullable', 'date'],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-            'pay_to' => ['nullable', 'string', 'max:255'],
-            'location' => ['nullable', Rule::in(['cash', 'bank'])],
-            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
-        ]);
-
-        $payTo = $validated['pay_to'] ?? null;
-        if ($payTo) {
-            $exists = Account::query()
-                ->where('club_id', $club->id)
-                ->where('pay_to', $payTo)
-                ->exists();
-            if (!$exists) {
-                abort(422, 'Cuenta invalida.');
-            }
-        }
-
-        $report = $this->buildFinancialAccountLedgerData($club, $validated, true);
-        $concept = null;
-        if (!empty($validated['concept_id'])) {
-            $concept = PaymentConcept::query()
-                ->where('club_id', $club->id)
-                ->where('id', $validated['concept_id'])
-                ->first(['id', 'concept']);
-        }
-
-	        return [
-	            'club' => $club,
-	            'accounts' => $report['accounts'],
-	            'receipts' => $report['receipts'],
-	            'filters' => [
-	                'pay_to' => $payTo,
-	                'location' => $validated['location'] ?? null,
-	                'concept' => $concept,
-                'date_from' => $validated['date_from'] ?? null,
-                'date_to' => $validated['date_to'] ?? null,
-                'date' => $validated['date'] ?? null,
-            ],
-            'generatedAt' => now(),
-        ];
-    }
-
     protected function buildFinancialAccountLedgerData(Club $club, array $filters = [], bool $includeReceipts = false): array
     {
 	        $payTo = $filters['pay_to'] ?? null;
@@ -1571,7 +1458,7 @@ class ReportController extends Controller
             }
             $memberName = is_array($p->member) ? ($p->member['applicant_name'] ?? null) : ($p->member?->applicant_name ?? null);
             $staffName = is_array($p->staff) ? ($p->staff['name'] ?? null) : ($p->staff?->name ?? null);
-            $payerName = $memberName ?: $staffName ?: $p->receivedBy?->name;
+            $payerName = $memberName ?: $staffName ?: $p->payer_name ?: $p->receivedBy?->name;
             $entriesByAccount[$key][] = [
                 'entry_type' => 'payment',
                 'id' => $p->id,
@@ -1850,6 +1737,7 @@ class ReportController extends Controller
                 'id' => $p->staff->id,
                 'name' => $staffName ?? '—',
             ] : null);
+            $p->payer_display_name = $memberName ?? $staffName ?? $p->payer_name;
 
             return $p;
         });
@@ -1895,68 +1783,6 @@ class ReportController extends Controller
             'balance_remaining' => (float) $countableChargeSummaries->sum('remaining'),
             'by_payment_type' => $byType,
         ];
-    }
-
-    public function financialAccountBalancesPdf(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
-    {
-        $user = $request->user();
-        $club = $this->resolveClubForUser($user, $request->input('club_id'));
-        $data = $this->buildAccountReportData($club);
-        $generatedAt = now();
-        $validation = $documentValidationService->create(
-            documentType: 'financial_account_balances',
-            title: 'Balance de cuentas',
-            snapshot: [
-                'club_id' => $club->id,
-                'accounts' => $data['accounts'],
-                'payments' => collect($data['payments'])->map(fn ($payment) => [
-                    'id' => $payment['id'] ?? null,
-                    'payment_date' => $payment['payment_date'] ?? null,
-                    'amount_paid' => $payment['amount_paid'] ?? null,
-                    'receipt_ref' => $payment['receipt_ref'] ?? null,
-	                    'account' => $payment['account'] ?? null,
-	                    'location' => $payment['location'] ?? null,
-	                    'zelle_phone' => $payment['zelle_phone'] ?? null,
-	                    'is_cancelled' => $payment['is_cancelled'] ?? false,
-	                    'related_canceled_movement_id' => $payment['related_canceled_movement_id'] ?? null,
-	                    'canceling_id' => $payment['canceling_id'] ?? null,
-	                ])->all(),
-                'expenses' => collect($data['expenses'])->map(fn ($expense) => [
-                    'id' => $expense['id'] ?? null,
-                    'expense_date' => $expense['expense_date'] ?? null,
-                    'amount' => $expense['amount'] ?? null,
-	                    'receipt_ref' => $expense['receipt_ref'] ?? null,
-	                    'pay_to' => $expense['pay_to'] ?? null,
-	                    'location' => $expense['location'] ?? null,
-	                    'is_cancelled' => $expense['is_cancelled'] ?? false,
-	                    'related_canceled_movement_id' => $expense['related_canceled_movement_id'] ?? null,
-	                    'canceling_id' => $expense['canceling_id'] ?? null,
-	                ])->all(),
-            ],
-            metadata: [
-                'Club' => $club->club_name,
-                'Documento' => 'Balance de cuentas',
-                'Cuentas' => (string) count($data['accounts']),
-                'Ingresos' => (string) count($data['payments']),
-                'Gastos' => (string) count($data['expenses']),
-            ],
-            generatedBy: $user,
-            generatedAt: $generatedAt,
-        );
-
-        $pdf = Pdf::loadView('reports.account_balances', [
-            'club' => $club,
-            'accounts' => $data['accounts'],
-            'payments' => $data['payments'],
-            'expenses' => $data['expenses'],
-            'receipts' => $data['receipts'] ?? [],
-            'generatedAt' => $generatedAt,
-            'clubLogoDataUri' => $clubLogoService->dataUri($club),
-            'validationUrl' => $validation['url'],
-            'qrCodeDataUri' => $validation['qr_code_data_uri'],
-        ])->setPaper('a4', 'landscape');
-
-        return $pdf->download('account-balances.pdf');
     }
 
     public function financialAccountBalances(Request $request)
@@ -2045,6 +1871,7 @@ class ReportController extends Controller
                 'member:id,type,id_data',
                 'staff:id,type,id_data,user_id',
                 'staff.user:id,name',
+                'receipt:id,payment_id,receipt_number',
             ])
             ->orderByDesc('payment_date')
             ->orderByDesc('payments.id')
@@ -2056,6 +1883,7 @@ class ReportController extends Controller
                 'payments.zelle_phone',
                 'payments.member_id',
                 'payments.staff_id',
+                'payments.payer_name',
                 'payments.payment_concept_id',
 	                'payments.check_image_path',
 	                'payments.concept_text',
@@ -2068,12 +1896,20 @@ class ReportController extends Controller
                 'payment_concepts.concept as concept_name',
             ])
             ->map(function ($p) use ($payToLabelMap, $treasuryService) {
-                $ref = null;
-                $url = null;
+                $proofRef = null;
+                $proofUrl = null;
                 if ($p->check_image_path) {
-                    $ref = $this->receiptReference('payment', $p->id);
-                    $url = $this->toPublicUrl($p->check_image_path);
+                    $proofRef = $this->receiptReference('payment', $p->id);
+                    $proofUrl = $this->toPublicUrl($p->check_image_path);
                 }
+                $generatedReceiptRef = $p->receipt
+                    ? trim("Recibo #{$p->receipt->id} - {$p->receipt->receipt_number}")
+                    : null;
+                $generatedReceiptUrl = $p->receipt
+                    ? route('payment-receipts.download', $p->receipt)
+                    : null;
+                $receiptRefs = collect([$generatedReceiptRef, $proofRef])->filter()->values();
+
                 return [
                     'id' => $p->id,
                     'payment_date' => $p->payment_date,
@@ -2086,9 +1922,16 @@ class ReportController extends Controller
                     'concept' => $p->concept_name ?? $p->concept_text ?? '—',
                     'member' => $p->member ? ['id' => $p->member->id, 'applicant_name' => (ClubHelper::memberDetail($p->member)['name'] ?? '—')] : null,
                     'staff' => $p->staff ? ['id' => $p->staff->id, 'name' => (ClubHelper::staffDetail($p->staff)['name'] ?? ($p->staff->user?->name ?? '—'))] : null,
+                    'payer_name' => $p->payer_name,
 	                    'receipt_path' => $p->check_image_path,
-	                    'receipt_ref' => $ref,
-	                    'receipt_url' => $url,
+                    'payment_receipt_id' => $p->receipt?->id,
+                    'payment_receipt_number' => $p->receipt?->receipt_number,
+                    'payment_receipt_url' => $generatedReceiptUrl,
+                    'payment_proof_ref' => $proofRef,
+                    'payment_proof_url' => $proofUrl,
+	                    'receipt_ref' => $receiptRefs->implode(', ') ?: null,
+	                    'receipt_refs' => $receiptRefs->all(),
+	                    'receipt_url' => $generatedReceiptUrl ?: $proofUrl,
 	                    'is_cancelled' => (bool) $p->is_cancelled,
 	                    'related_canceled_movement_id' => $p->related_canceled_movement_id,
 	                    'canceling_id' => $p->canceling_id ?: $p->reversed_payment_id,
@@ -2129,6 +1972,7 @@ class ReportController extends Controller
                 'status' => $e->status,
                 'receipt_path' => $e->receipt_path,
                 'receipt_ref' => $ref,
+                'receipt_refs' => collect([$ref, $reimburseRef])->filter()->values()->all(),
                 'receipt_url' => $e->receipt_url ?? null,
 	                'reimbursement_receipt_path' => $e->reimbursement_receipt_path,
 	                'reimbursement_receipt_ref' => $reimburseRef,
@@ -2165,7 +2009,7 @@ class ReportController extends Controller
         });
 
         $payments->filter(fn($p) => $p['receipt_path'])->each(function ($p) use (&$receiptAnnexes, $buildAnnex) {
-            $receiptAnnexes->push($buildAnnex($p['receipt_ref'], $p['receipt_path'], $p['id'], 'Payment'));
+            $receiptAnnexes->push($buildAnnex($p['payment_proof_ref'], $p['receipt_path'], $p['id'], 'Payment'));
         });
 
         return [

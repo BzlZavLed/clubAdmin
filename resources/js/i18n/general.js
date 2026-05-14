@@ -7,6 +7,14 @@ export const generalTranslations = {
         es: 'Correcciones contables',
         en: 'Accounting corrections',
     },
+    accounting_engine: {
+        es: 'Contabilidad',
+        en: 'Accounting',
+    },
+    accounting_engine_description: {
+        es: 'Transferencias, correcciones, saldos y libro contable.',
+        en: 'Transfers, corrections, balances, and ledger.',
+    },
     account_setup: {
         es: 'Configuración de cuentas',
         en: 'Account setup',
@@ -87,6 +95,10 @@ export const generalTranslations = {
         es: 'Ingresos de caja',
         en: 'Cashbox income',
     },
+    cashbox_unified: {
+        es: 'Caja unificada',
+        en: 'Unified cashbox',
+    },
     children: {
         es: 'Hijos',
         en: 'Children',
@@ -158,6 +170,14 @@ export const generalTranslations = {
     financial_reports_description: {
         es: 'Reportes por cuenta, concepto, rango de fechas y trazabilidad contable.',
         en: 'Reports by account, concept, date range, and accounting traceability.',
+    },
+    finance: {
+        es: 'Finanzas',
+        en: 'Finance',
+    },
+    finance_description: {
+        es: 'Caja y contabilidad son las entradas principales del modulo financiero.',
+        en: 'Cashbox and accounting are the main finance module entries.',
     },
     folder_requirements: {
         es: 'Requisitos de carpeta',

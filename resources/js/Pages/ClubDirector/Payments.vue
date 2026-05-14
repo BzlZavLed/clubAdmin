@@ -353,8 +353,8 @@ const pendingReceiptGroups = computed(() => {
     const groups = new Map()
 
     ;(props.pending_receipts || []).forEach((receipt) => {
-        const payerName = receipt.member_name || receipt.staff_name || tr('Sin nombre', 'No name')
-        const payerType = receipt.member_name ? 'member' : (receipt.staff_name ? 'staff' : 'unknown')
+        const payerName = receipt.payer_name || receipt.member_name || receipt.staff_name || tr('Sin nombre', 'No name')
+        const payerType = receipt.member_name ? 'member' : (receipt.staff_name ? 'staff' : (receipt.payer_name ? 'external' : 'unknown'))
         const key = `${payerType}:${payerName}`
 
         if (!groups.has(key)) {
@@ -847,7 +847,7 @@ const filteredPayments = computed(() => {
     })
     if (!q) return clubFiltered
     return clubFiltered.filter(p => {
-        const name = (p.member_display_name ?? p.staff_display_name ?? '').toLowerCase()
+        const name = (p.payer_display_name ?? p.member_display_name ?? p.staff_display_name ?? p.payer_name ?? '').toLowerCase()
         const concept = paymentConceptLabel(p).toLowerCase()
         return name.includes(q) || concept.includes(q)
     })
@@ -1460,7 +1460,7 @@ const setFormMode = (mode) => {
                                 <div class="flex-1">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <div class="text-sm font-medium text-gray-900">
-                                            {{ p.member_display_name ?? p.staff_display_name ?? '—' }}
+                                            {{ p.payer_display_name ?? p.member_display_name ?? p.staff_display_name ?? p.payer_name ?? '—' }}
                                         </div>
 
                                         <span
@@ -1580,7 +1580,7 @@ const setFormMode = (mode) => {
                         <div>
                             <h3 class="text-base font-semibold text-gray-900">{{ tr('Editar ingreso', 'Edit Income') }}</h3>
                             <p class="mt-1 text-sm text-gray-600">
-                                {{ editingPayment.member_display_name ?? editingPayment.staff_display_name ?? '—' }}
+                                {{ editingPayment.payer_display_name ?? editingPayment.member_display_name ?? editingPayment.staff_display_name ?? editingPayment.payer_name ?? '—' }}
                                 • {{ editingPayment.concept?.concept ?? editingPayment.concept_text ?? '—' }}
                             </p>
                         </div>

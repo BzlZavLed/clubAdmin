@@ -147,6 +147,7 @@ class PaymentReceiptController extends Controller
             'concept_name' => $this->receiptConceptName($payment),
             'member_name' => $memberDetail['name'] ?? null,
             'staff_name' => $staffDetail['name'] ?? null,
+            'payer_name' => $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name,
             'download_url' => route('payment-receipts.download', $receipt),
         ];
     }
@@ -245,12 +246,18 @@ class PaymentReceiptController extends Controller
         $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
         $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
         $club = $receipt->club ?? $payment?->club;
-        $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? '—';
+        $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name ?? '—';
         $conceptName = $this->receiptConceptName($payment);
+        $isCancellationReceipt = $payment && (
+            (float) $payment->amount_paid < 0
+            || !empty($payment->canceling_id)
+            || !empty($payment->reversed_payment_id)
+        );
+        $receiptTitle = $isCancellationReceipt ? 'Recibo de cancelación' : 'Recibo de ingreso';
         $generatedAt = now();
         $validation = $documentValidationService->create(
-            documentType: 'payment_receipt',
-            title: 'Recibo de ingreso',
+            documentType: $isCancellationReceipt ? 'payment_cancellation_receipt' : 'payment_receipt',
+            title: $receiptTitle,
             snapshot: [
                 'receipt_id' => $receipt->id,
                 'receipt_number' => $receipt->receipt_number,
@@ -264,8 +271,11 @@ class PaymentReceiptController extends Controller
                 'account' => $payment?->account?->label ?? $payment?->pay_to,
                 'recipient_name' => $recipientName,
                 'recipient_email' => $receipt->issued_to_email,
+                'is_cancellation' => $isCancellationReceipt,
+                'canceling_payment_id' => $payment?->canceling_id ?: $payment?->reversed_payment_id,
                 'member_name' => $memberDetail['name'] ?? null,
                 'staff_name' => $staffDetail['name'] ?? null,
+                'payer_name' => $payment?->payer_name,
             ],
             metadata: [
                 'Recibo' => $receipt->receipt_number,
@@ -287,6 +297,9 @@ class PaymentReceiptController extends Controller
             'recipient_name' => $recipientName,
             'recipient_email' => $receipt->issued_to_email,
             'concept_name' => $conceptName,
+            'receiptTitle' => $receiptTitle,
+            'isCancellationReceipt' => $isCancellationReceipt,
+            'originalPaymentId' => $payment?->canceling_id ?: $payment?->reversed_payment_id,
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
             'qrCodeDataUri' => $validation['qr_code_data_uri'],

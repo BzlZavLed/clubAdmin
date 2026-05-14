@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="utf-8">
-    <title>Recibo de ingreso</title>
+    <title>{{ $receiptTitle ?? 'Recibo de ingreso' }}</title>
     <style>
         @page { margin: 24px 28px 92px; }
 
@@ -321,7 +321,7 @@
                             </div>
                         </td>
                         <td class="receipt-title-cell">
-                            <div class="receipt-title">Recibo de ingreso</div>
+                            <div class="receipt-title">{{ $receiptTitle ?? 'Recibo de ingreso' }}</div>
                             <div class="receipt-number-pill">{{ $receipt->receipt_number }}</div>
                         </td>
                     </tr>
@@ -410,6 +410,12 @@
                                                 <td class="info-value">{{ $payment->zelle_phone }}</td>
                                             </tr>
                                         @endif
+                                        @if(!empty($isCancellationReceipt) && !empty($originalPaymentId))
+                                            <tr>
+                                                <td class="info-label">Movimiento original</td>
+                                                <td class="info-value">#{{ $originalPaymentId }}</td>
+                                            </tr>
+                                        @endif
                                     </table>
                                 </div>
                             </div>
@@ -421,13 +427,13 @@
                     <table class="total-table">
                         <tr>
                             <td>
-                                <div class="total-label">Importe recibido</div>
+                                <div class="total-label">{{ !empty($isCancellationReceipt) ? 'Importe cancelado' : 'Importe recibido' }}</div>
                                 <div class="total-support">
                                     {{ $concept_name ?? $payment?->concept?->concept ?? $payment?->concept_text ?? 'Ingreso registrado' }}
                                 </div>
                             </td>
                             <td class="total-amount">
-                                ${{ number_format((float) ($payment?->amount_paid ?? 0), 2) }}
+                                ${{ number_format(!empty($isCancellationReceipt) ? abs((float) ($payment?->amount_paid ?? 0)) : (float) ($payment?->amount_paid ?? 0), 2) }}
                             </td>
                         </tr>
                     </table>

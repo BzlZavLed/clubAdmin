@@ -8,11 +8,8 @@ import {
     ChartBarIcon,
     CogIcon,
     DocumentTextIcon,
-    CurrencyDollarIcon,
     BanknotesIcon,
     CalendarDaysIcon,
-    BuildingLibraryIcon,
-    ArrowPathIcon
 } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useLocale } from '@/Composables/useLocale'
@@ -58,77 +55,28 @@ const menuItems = computed(() => [
         ]
     },
     {
-        id: 'cashbox',
-        name: t('cashbox'),
+        id: 'finance',
+        name: t('finance'),
         icon: BanknotesIcon,
         children: [
             {
-                id: 'cashbox_income',
-                name: t('cashbox_income'),
-                href: '/club-director/payments',
-                route: 'club.director.payments',
+                id: 'cashbox',
+                name: t('cashbox'),
+                href: '/club-director/finance/cashbox',
+                route: 'club.director.finance.cashbox',
                 icon: BanknotesIcon
             },
             {
-                id: 'cashbox_expenses',
-                name: t('cashbox_expenses'),
-                href: '/club-director/expenses',
-                route: 'club.director.expenses',
-                icon: CurrencyDollarIcon
-            },
-            {
-                id: 'corrections_audit',
-                name: t('corrections_audit'),
-                href: '/club-director/accounting-corrections',
-                route: 'club.director.accounting-corrections',
-                icon: ArrowPathIcon
-            }
-        ]
-    },
-    {
-        id: 'balances_transfers',
-        name: t('balances_transfers'),
-        icon: BuildingLibraryIcon,
-        children: [
-            {
-                id: 'accounts_concepts',
-                name: t('accounts_concepts'),
-                href: '/club-director/my-club-finances',
-                route: 'club.my-club-finances',
-                icon: CurrencyDollarIcon
-            },
-            {
-                id: 'treasury_transfers',
-                name: t('treasury_transfers'),
-                href: '/club-director/treasury',
-                route: 'club.director.treasury',
-                icon: BanknotesIcon
+                id: 'accounting_engine',
+                name: t('accounting_engine'),
+                href: '/club-director/finance/accounting',
+                route: 'club.director.finance.accounting',
+                icon: ChartBarIcon
             }
         ]
     },
     { id: 'members', name: t('members'), href: '/club-director/members', route: 'club.members', icon: UserGroupIcon },
     { id: 'staff_accounts', name: t('staff_accounts'), href: '/club-director/staff', route: 'club.staff', icon: BriefcaseIcon },
-    {
-        id: 'financial_reports',
-        name: t('financial_reports'),
-        icon: ChartBarIcon,
-        children: [
-            {
-                id: 'general_financial_report',
-                name: t('general_financial_report'),
-                href: '/club-director/reports/finances',
-                route: 'club.reports.finances',
-                icon: BanknotesIcon
-            },
-            {
-                id: 'movement_report',
-                name: t('movement_report'),
-                href: '/club-director/reports/accounts',
-                route: 'club.reports.accounts',
-                icon: CurrencyDollarIcon
-            }
-        ]
-    },
     {
         id: 'reports',
         name: t('reports'),

@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Club;
 use App\Models\Expense;
 use App\Models\Payment;
+use App\Models\PaymentReceipt;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -51,6 +52,7 @@ class AccountingCorrectionTest extends TestCase
             ->assertJsonPath('message', 'Ingreso revertido mediante movimiento opuesto.');
 
         $reversal = Payment::query()->where('reversed_payment_id', $payment->id)->firstOrFail();
+        $receipt = PaymentReceipt::query()->where('payment_id', $reversal->id)->first();
 
         $this->assertDatabaseHas('payments', [
             'id' => $reversal->id,
@@ -60,6 +62,12 @@ class AccountingCorrectionTest extends TestCase
             'amount_paid' => -25.00,
             'payment_type' => 'internal',
         ]);
+        $this->assertNotNull($receipt);
+        $this->assertStringStartsWith('RCPT-', $receipt->receipt_number);
+        $receiptResponse = $this->actingAs($director)
+            ->get(route('payment-receipts.download', $receipt))
+            ->assertOk();
+        $this->assertStringContainsString('application/pdf', $receiptResponse->headers->get('content-type'));
         $this->assertDatabaseHas('payments', [
             'id' => $payment->id,
             'is_cancelled' => true,

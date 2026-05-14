@@ -36,8 +36,8 @@
 ### Cuentas y conceptos
 
 - Ruta: `/club-director/my-club-finances`
-- Vista: `ClubDirector/MyClubFinances.vue`
-- Proposito: configurar cuentas `pay_to`, conceptos de pago y datos bancarios del club.
+- Vista actual: redirige a `ClubDirector/Finance/Accounting.vue`
+- Proposito: las cuentas, conceptos y saldos se consolidan en el motor financiero nuevo.
 - Conexiones:
   - Alimenta pagos de padres, pagos de club, tesoreria y reportes financieros.
   - Datos bancarios del club se muestran en `/parent/payments`.
@@ -46,9 +46,9 @@
 ### Ingresos
 
 - Ruta: `/club-director/payments`
-- Vista: `ClubDirector/Payments.vue`
-- Controlador: `ClubPaymentController`
-- Proposito: registrar pagos, aprobar/rechazar comprobantes enviados por padres y generar recibos.
+- Vista actual: redirige a `ClubDirector/Finance/Cashbox.vue`
+- Controlador actual de escritura: `FinanceEngineController` / servicios `App\Services\Finance`.
+- Proposito: registrar pagos desde el modulo unificado de caja, aprobar/rechazar comprobantes enviados por padres y generar recibos.
 - Conexiones:
   - Padres envian comprobantes desde `/parent/payments`.
   - Recibos se descargan con `payment-receipts.download`.
@@ -58,8 +58,8 @@
 ### Tesoreria
 
 - Ruta: `/club-director/treasury`
-- Vista: `ClubDirector/Treasury.vue`
-- Controlador: `ClubTreasuryController`
+- Vista actual: redirige a `ClubDirector/Finance/Accounting.vue`
+- Controlador actual de escritura: `FinanceEngineController` / servicios `App\Services\Finance`.
 - Proposito: saldos por ubicacion, movimientos internos, depositos/retiros y transferencias de eventos.
 - Conexiones:
   - Lee `event-settlements` para depositos de eventos hacia organizadores superiores.
@@ -69,9 +69,9 @@
 ### Gastos
 
 - Ruta: `/club-director/expenses`
-- Vista: `ClubDirector/Expenses.vue`
-- Controlador: `ExpenseController`
-- Proposito: registrar gastos, comprobantes, reembolsos y recibos de reembolso.
+- Vista actual: redirige a `ClubDirector/Finance/Cashbox.vue`
+- Controlador actual de escritura: `FinanceEngineController` / servicios `App\Services\Finance`.
+- Proposito: registrar gastos desde el modulo unificado de caja.
 - Conexiones:
   - Afecta cuentas locales `pay_to`.
   - Reembolsos generan movimientos relacionados en tesoreria/reportes.
@@ -80,9 +80,9 @@
 ### Correcciones contables
 
 - Ruta: `/club-director/accounting-corrections`
-- Vista: `ClubDirector/AccountingCorrections.vue`
-- Controlador: `AccountingCorrectionController`
-- Proposito: revertir ingresos, gastos y reembolsos sin eliminar registros.
+- Vista actual: redirige a `ClubDirector/Finance/Accounting.vue`
+- Controlador actual de escritura: `FinanceEngineController` / `FinanceCorrectionWriter`.
+- Proposito: revertir ingresos, gastos y reembolsos desde el libro contable, sin eliminar registros.
 - Conexiones:
   - Usa campos `is_cancelled`, `related_canceled_movement_id` y `canceling_id`.
   - Los reportes financieros deben mostrar las relaciones de cancelacion.

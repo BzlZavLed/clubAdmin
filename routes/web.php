@@ -3,6 +3,7 @@
 use App\Http\Controllers\StaffAdventurerController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Http\Controllers\ClubController;
 use App\Http\Controllers\ClubCarpetaClassActivationController;
@@ -24,7 +25,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AssistanceReportController;
 use App\Http\Controllers\ClubPaymentController;
 use App\Http\Controllers\ExpenseController;
-use App\Http\Controllers\AccountingCorrectionController;
+use App\Http\Controllers\FinanceEngineController;
 use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
 use App\Http\Controllers\ReportController;
@@ -117,9 +118,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/assistance-reports/filter', [ReportController::class, 'assistanceReportsDirector'])->name('assistance-reports.director');
     Route::get('/financial-report/bootstrap', [ReportController::class, 'financialReportPreload'])->name('financial.preload');
     Route::get('/financial-report/report', [ReportController::class, 'financialReport'])->name('financial.report');
-    Route::get('/financial-report/pdf', [ReportController::class, 'financialReportPdf'])->name('financial.report.pdf');
+    Route::get('/financial-report/pdf', [FinanceEngineController::class, 'movementsPdf'])->name('financial.report.pdf');
     Route::get('/financial-report/accounts', [ReportController::class, 'financialAccountBalances'])->name('financial.accounts');
-    Route::get('/financial-report/accounts/pdf', [ReportController::class, 'financialAccountBalancesPdf'])->name('financial.accounts.pdf');
+    Route::get('/financial-report/accounts/pdf', [FinanceEngineController::class, 'accountingPdf'])->name('financial.accounts.pdf');
 });
 
 Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secretary'])->group(function () {
@@ -571,21 +572,61 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         }
     )->name('club.my-club');
 
-    Route::get(
-        '/club-director/my-club-finances',
-        fn() =>
-        Inertia::render('ClubDirector/MyClubFinances', ['auth_user' => auth()->user()])
+    Route::get('/club-director/my-club-finances', fn(Request $request) =>
+        redirect()->route('club.director.finance.accounting', $request->query())
     )->name('club.my-club-finances');
+    Route::get(
+        '/club-director/finance/cashbox',
+        fn() =>
+        Inertia::render('ClubDirector/Finance/Cashbox', ['auth_user' => auth()->user()])
+    )->name('club.director.finance.cashbox');
+    Route::get(
+        '/club-director/finance/accounting',
+        fn() =>
+        Inertia::render('ClubDirector/Finance/Accounting', ['auth_user' => auth()->user()])
+    )->name('club.director.finance.accounting');
     Route::get('/club-director/event-settlements', [EventClubSettlementController::class, 'indexForClub'])
         ->name('club.director.event-settlements.index');
-    Route::get('/club-director/treasury', [ClubTreasuryController::class, 'index'])
+    Route::get('/club-director/treasury', fn(Request $request) =>
+        redirect()->route('club.director.finance.accounting', $request->query())
+    )
         ->name('club.director.treasury');
     Route::get('/club-director/treasury/data', [ClubTreasuryController::class, 'data'])
         ->name('club.director.treasury.data');
-    Route::post('/club-director/treasury/movements', [ClubTreasuryController::class, 'storeMovement'])
+    Route::post('/club-director/treasury/movements', [FinanceEngineController::class, 'storeTransfer'])
         ->name('club.director.treasury.movements.store');
-    Route::post('/club-director/treasury/staff-remittances/validate', [ClubTreasuryController::class, 'validateStaffRemittance'])
+    Route::post('/club-director/treasury/staff-remittances/validate', [FinanceEngineController::class, 'validateStaffRemittance'])
         ->name('club.director.treasury.staff-remittances.validate');
+    Route::get('/club-director/finance-engine/actionables', [FinanceEngineController::class, 'actionables'])
+        ->name('club.finance-engine.actionables');
+    Route::get('/club-director/finance-engine/movements', [FinanceEngineController::class, 'movements'])
+        ->name('club.finance-engine.movements');
+    Route::get('/club-director/finance-engine/cashbox', [FinanceEngineController::class, 'cashbox'])
+        ->name('club.finance-engine.cashbox');
+    Route::get('/club-director/finance-engine/accounting', [FinanceEngineController::class, 'accounting'])
+        ->name('club.finance-engine.accounting');
+    Route::get('/club-director/finance-engine/movements/pdf', [FinanceEngineController::class, 'movementsPdf'])
+        ->name('club.finance-engine.movements.pdf');
+    Route::get('/club-director/finance-engine/accounting/pdf', [FinanceEngineController::class, 'accountingPdf'])
+        ->name('club.finance-engine.accounting.pdf');
+    Route::post('/club-director/finance-engine/concepts', [FinanceEngineController::class, 'storeConcept'])
+        ->name('club.finance-engine.concepts.store');
+    Route::post('/club-director/finance-engine/income', [FinanceEngineController::class, 'storeIncome'])
+        ->name('club.finance-engine.income.store');
+    Route::post('/club-director/finance-engine/expenses', [FinanceEngineController::class, 'storeExpense'])
+        ->name('club.finance-engine.expenses.store');
+    Route::post('/club-director/finance-engine/transfers', [FinanceEngineController::class, 'storeTransfer'])
+        ->name('club.finance-engine.transfers.store');
+    Route::post('/club-director/finance-engine/staff-remittances/validate', [FinanceEngineController::class, 'validateStaffRemittance'])
+        ->name('club.finance-engine.staff-remittances.validate');
+    Route::post('/club-director/finance-engine/event-settlements/{event}', [FinanceEngineController::class, 'storeEventSettlement'])
+        ->name('club.finance-engine.event-settlements.store');
+    Route::post('/club-director/finance-engine/corrections/payments/{payment}/reverse', [FinanceEngineController::class, 'reversePayment'])
+        ->name('club.finance-engine.corrections.payments.reverse');
+    Route::post('/club-director/finance-engine/corrections/expenses/{expense}/reverse', [FinanceEngineController::class, 'reverseExpense'])
+        ->name('club.finance-engine.corrections.expenses.reverse');
+    Route::post('/club-director/finance-engine/corrections/reimbursements/{expense}/reverse', [FinanceEngineController::class, 'reverseReimbursement'])
+        ->name('club.finance-engine.corrections.reimbursements.reverse');
 
     Route::get(
         '/club-director/members',
@@ -593,7 +634,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         Inertia::render('ClubDirector/Members', ['auth_user' => auth()->user()])
     )->name('club.members');
 
-    Route::get('/club-director/payments', [ClubPaymentController::class, 'directorIndex'])
+    Route::get('/club-director/payments', fn(Request $request) =>
+        redirect()->route('club.director.finance.cashbox', $request->query())
+    )
         ->name('club.director.payments');
     Route::post('/club-director/payments/parent-transfers/{submission}/approve', [ClubPaymentController::class, 'approveParentTransfer'])
         ->name('club.director.payments.parent-transfers.approve');
@@ -601,9 +644,11 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.payments.parent-transfers.reject');
     Route::post('/club-director/staff/{staff}/approve', [\App\Http\Controllers\StaffApprovalController::class, 'approve'])->name('staff.approve');
     Route::post('/club-director/staff/{staff}/reject', [\App\Http\Controllers\StaffApprovalController::class, 'reject'])->name('staff.reject');
-    Route::get('/club-director/expenses', [ExpenseController::class, 'index'])
+    Route::get('/club-director/expenses', fn(Request $request) =>
+        redirect()->route('club.director.finance.cashbox', $request->query())
+    )
         ->name('club.director.expenses');
-    Route::post('/club-director/expenses', [ExpenseController::class, 'store'])
+    Route::post('/club-director/expenses', [FinanceEngineController::class, 'storeExpense'])
         ->name('club.director.expenses.store');
     Route::post('/club-director/expenses/{expense}/receipt', [ExpenseController::class, 'uploadReceipt'])
         ->name('club.director.expenses.upload');
@@ -696,19 +741,13 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ]);
     })->name('club.reports.assistance');
 
-    Route::get('/club-director/reports/finances', function () {
-        return Inertia::render('ClubDirector/Reports/Finances', [
-            'auth_user' => auth()->user(),
-            'sub_roles' => SubRole::all(),
-        ]);
-    })->name('club.reports.finances');
+    Route::get('/club-director/reports/finances', fn(Request $request) =>
+        redirect()->route('club.director.finance.accounting', $request->query())
+    )->name('club.reports.finances');
 
-    Route::get('/club-director/reports/accounts', function () {
-        return Inertia::render('ClubDirector/Reports/Accounts', [
-            'auth_user' => auth()->user(),
-            'sub_roles' => SubRole::all(),
-        ]);
-    })->name('club.reports.accounts');
+    Route::get('/club-director/reports/accounts', fn(Request $request) =>
+        redirect()->route('club.director.finance.accounting', $request->query())
+    )->name('club.reports.accounts');
 
     Route::get('/club-director/reports/investiture-requirements', [ReportController::class, 'investitureRequirementsReport'])
         ->name('club.reports.investiture-requirements');
@@ -949,13 +988,15 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::middleware(['auth', 'verified', 'profile:club_director,superadmin'])->group(function () {
-    Route::get('/club-director/accounting-corrections', [AccountingCorrectionController::class, 'index'])
+    Route::get('/club-director/accounting-corrections', fn(Request $request) =>
+        redirect()->route('club.director.finance.accounting', $request->query())
+    )
         ->name('club.director.accounting-corrections');
-    Route::post('/club-director/accounting-corrections/payments/{payment}/reverse', [AccountingCorrectionController::class, 'reversePayment'])
+    Route::post('/club-director/accounting-corrections/payments/{payment}/reverse', [FinanceEngineController::class, 'reversePayment'])
         ->name('club.director.accounting-corrections.payments.reverse');
-    Route::post('/club-director/accounting-corrections/expenses/{expense}/reverse', [AccountingCorrectionController::class, 'reverseExpense'])
+    Route::post('/club-director/accounting-corrections/expenses/{expense}/reverse', [FinanceEngineController::class, 'reverseExpense'])
         ->name('club.director.accounting-corrections.expenses.reverse');
-    Route::post('/club-director/accounting-corrections/reimbursements/{expense}/reverse', [AccountingCorrectionController::class, 'reverseReimbursement'])
+    Route::post('/club-director/accounting-corrections/reimbursements/{expense}/reverse', [FinanceEngineController::class, 'reverseReimbursement'])
         ->name('club.director.accounting-corrections.reimbursements.reverse');
 });
 
