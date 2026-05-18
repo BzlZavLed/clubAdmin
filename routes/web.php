@@ -24,7 +24,6 @@ use App\Http\Controllers\LLMQueryController as AIQueryController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AssistanceReportController;
 use App\Http\Controllers\ClubPaymentController;
-use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FinanceEngineController;
 use App\Http\Controllers\RepAssistanceAdvController;
 use App\Models\SubRole;
@@ -615,6 +614,16 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.income.store');
     Route::post('/club-director/finance-engine/expenses', [FinanceEngineController::class, 'storeExpense'])
         ->name('club.finance-engine.expenses.store');
+    Route::post('/club-director/finance-engine/expenses/{expense}/receipt', [FinanceEngineController::class, 'uploadExpenseReceipt'])
+        ->name('club.finance-engine.expenses.receipt.upload');
+    Route::delete('/club-director/finance-engine/expenses/{expense}/receipt', [FinanceEngineController::class, 'removeExpenseReceipt'])
+        ->name('club.finance-engine.expenses.receipt.remove');
+    Route::post('/club-director/finance-engine/expenses/{expense}/reimbursement-receipt', [FinanceEngineController::class, 'uploadReimbursementReceipt'])
+        ->name('club.finance-engine.expenses.reimbursement-receipt.upload');
+    Route::delete('/club-director/finance-engine/expenses/{expense}/reimbursement-receipt', [FinanceEngineController::class, 'removeReimbursementReceipt'])
+        ->name('club.finance-engine.expenses.reimbursement-receipt.remove');
+    Route::post('/club-director/finance-engine/expenses/{expense}/reimburse', [FinanceEngineController::class, 'markExpenseReimbursed'])
+        ->name('club.finance-engine.expenses.reimburse');
     Route::post('/club-director/finance-engine/transfers', [FinanceEngineController::class, 'storeTransfer'])
         ->name('club.finance-engine.transfers.store');
     Route::post('/club-director/finance-engine/staff-remittances/validate', [FinanceEngineController::class, 'validateStaffRemittance'])
@@ -650,15 +659,15 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.expenses');
     Route::post('/club-director/expenses', [FinanceEngineController::class, 'storeExpense'])
         ->name('club.director.expenses.store');
-    Route::post('/club-director/expenses/{expense}/receipt', [ExpenseController::class, 'uploadReceipt'])
+    Route::post('/club-director/expenses/{expense}/receipt', [FinanceEngineController::class, 'uploadExpenseReceipt'])
         ->name('club.director.expenses.upload');
-    Route::delete('/club-director/expenses/{expense}/receipt', [ExpenseController::class, 'removeReceipt'])
+    Route::delete('/club-director/expenses/{expense}/receipt', [FinanceEngineController::class, 'removeExpenseReceipt'])
         ->name('club.director.expenses.removeReceipt');
-    Route::post('/club-director/expenses/{expense}/reimbursement-receipt', [ExpenseController::class, 'uploadReimbursementReceipt'])
+    Route::post('/club-director/expenses/{expense}/reimbursement-receipt', [FinanceEngineController::class, 'uploadReimbursementReceipt'])
         ->name('club.director.expenses.uploadReimbursementReceipt');
-    Route::delete('/club-director/expenses/{expense}/reimbursement-receipt', [ExpenseController::class, 'removeReimbursementReceipt'])
+    Route::delete('/club-director/expenses/{expense}/reimbursement-receipt', [FinanceEngineController::class, 'removeReimbursementReceipt'])
         ->name('club.director.expenses.removeReimbursementReceipt');
-    Route::post('/club-director/expenses/{expense}/reimburse', [ExpenseController::class, 'markReimbursed'])
+    Route::post('/club-director/expenses/{expense}/reimburse', [FinanceEngineController::class, 'markExpenseReimbursed'])
         ->name('club.director.expenses.reimburse');
     Route::get('/club-director/staff', function () {
         $authUser = auth()->user();

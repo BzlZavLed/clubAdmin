@@ -153,6 +153,13 @@ class FinanceIncomeWriter
             $expected = null;
         }
 
+        if ($payTo === 'reimbursement_to') {
+            return response()->json([
+                'message' => 'Los ingresos deben registrarse en una cuenta de fondos, no en reembolsos pendientes.',
+                'errors' => ['pay_to' => ['Los ingresos deben registrarse en una cuenta de fondos, no en reembolsos pendientes.']],
+            ], 422);
+        }
+
         $isReusableConcept = (bool) ($concept?->reusable);
         if (!$isEventBundle) {
             $priorPaidQuery = Payment::query()

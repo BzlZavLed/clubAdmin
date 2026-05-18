@@ -1,7 +1,7 @@
 # Guia de reacomodo de finanzas
 
 Fecha de referencia inicial: 2026-05-08
-Ultima actualizacion documentada: 2026-05-14
+Ultima actualizacion documentada: 2026-05-18
 Rama actual de trabajo: `feature/frontend-finance-reorg`
 Commit base del primer reacomodo: `edbf498 first rework`
 
@@ -25,6 +25,7 @@ Commit base del primer reacomodo: `edbf498 first rework`
 | Bootstrap de Caja y Contabilidad desde el motor financiero | Hecho inicial | 2026-05-14 |
 | Escrituras principales extraidas a servicios del motor | Hecho inicial | 2026-05-14 |
 | Redireccion de vistas historicas financieras al motor | Hecho inicial | 2026-05-14 |
+| Comprobantes tardios y liquidacion de reembolsos en el motor | Hecho inicial | 2026-05-18 |
 | Refactor backend del motor financiero | Pendiente | Sin fecha |
 | Cierre total de la rama | Pendiente | Sin fecha |
 
@@ -499,6 +500,39 @@ Pendiente despues de esta limpieza:
 
 - Integrar la gestion tardia de comprobantes de gasto y liquidacion de reembolsos dentro de `Caja` o `Contabilidad`.
 - Cuando eso quede cubierto, borrar las ultimas rutas de `ExpenseController`.
+
+Nota 2026-05-18: este pendiente quedo resuelto en la siguiente fase documentada.
+
+### 2026-05-18, Comprobantes tardios y reembolsos por el motor
+
+Se cerro el pendiente de comprobantes tardios y liquidacion de reembolsos dentro del flujo nuevo.
+
+Cambios hechos:
+
+- `Caja` ahora muestra seguimiento de gastos para:
+  - subir, reemplazar o quitar comprobantes de gastos ya registrados;
+  - subir, reemplazar o quitar comprobantes de reembolsos;
+  - liquidar reembolsos pendientes seleccionando cuenta origen, efectivo/banco, fecha y comprobante.
+- Se agregaron rutas explicitas del motor:
+  - `club.finance-engine.expenses.receipt.upload`
+  - `club.finance-engine.expenses.receipt.remove`
+  - `club.finance-engine.expenses.reimbursement-receipt.upload`
+  - `club.finance-engine.expenses.reimbursement-receipt.remove`
+  - `club.finance-engine.expenses.reimburse`
+- Las rutas historicas equivalentes de gastos siguen existiendo por compatibilidad, pero ahora apuntan a `FinanceEngineController`.
+- `FinanceExpenseWriter` concentra ahora captura de gastos, comprobantes tardios y liquidacion de reembolsos.
+- La captura de gastos permite seleccionar o registrar una persona distinta para recibir el reembolso cuando el gasto excede el saldo disponible de la cuenta/ubicacion seleccionada.
+- Las personas de reembolso se guardan en `finance_reimbursement_payees` con nombre, telefono y correo opcionales, y los reembolsos quedan enlazados por `expenses.reimbursement_payee_id` ademas del texto historico `reimbursed_to`.
+- La liquidacion de reembolsos genera el pago interno de cierre, el gasto de salida desde la cuenta origen y el recibo del pago interno. El comprobante de reembolso es opcional y puede cargarse despues; si se carga tarde, se enlaza tambien al gasto de salida.
+- Los reembolsos pendientes se exponen en los saldos como cuenta `reimbursement_to` con balance negativo hasta su liquidacion, para que `Caja` y `Contabilidad` muestren el estado real de obligaciones.
+- `reimbursement_to` es una cuenta de obligacion, no una cuenta operativa: se muestra en saldos, pero se excluye de ingresos, gastos, conceptos manuales y cuentas origen de liquidacion. La liquidacion valida el saldo de la cuenta origen seleccionada, aunque el total global siga negativo por otros reembolsos pendientes.
+- Se elimino `app/Http/Controllers/ExpenseController.php`.
+- El libro normalizado vuelve a exponer como reversible el movimiento principal de un reembolso liquidado, para que `Contabilidad` pueda corregirlo desde el flujo de correcciones.
+
+Validacion hecha:
+
+- `php artisan test tests/Feature/FinanceEngineWorkflowTest.php tests/Feature/AccountingCorrectionTest.php`
+- `npm run build`
 
 ## Mapa actual de herramientas
 

@@ -18,6 +18,11 @@ class FinanceActionCatalog
                     $this->action('concept.store', 'Crear concepto', 'Create concept', 'club.finance-engine.concepts.store', 'POST', 'concept', writesLedger: false),
                     $this->action('income.store', 'Guardar ingreso', 'Save income', 'club.finance-engine.income.store', 'POST', 'income', writesLedger: true),
                     $this->action('expense.store', 'Guardar gasto', 'Save expense', 'club.finance-engine.expenses.store', 'POST', 'expense', writesLedger: true),
+                    $this->action('expense.receipt_upload', 'Subir comprobante de gasto', 'Upload expense proof', 'club.finance-engine.expenses.receipt.upload', 'POST', 'expense', needsTarget: true, writesLedger: false),
+                    $this->action('expense.receipt_remove', 'Quitar comprobante de gasto', 'Remove expense proof', 'club.finance-engine.expenses.receipt.remove', 'DELETE', 'expense', needsTarget: true, writesLedger: false),
+                    $this->action('expense.reimbursement_receipt_upload', 'Subir comprobante de reembolso', 'Upload reimbursement proof', 'club.finance-engine.expenses.reimbursement-receipt.upload', 'POST', 'expense', needsTarget: true, writesLedger: false),
+                    $this->action('expense.reimbursement_receipt_remove', 'Quitar comprobante de reembolso', 'Remove reimbursement proof', 'club.finance-engine.expenses.reimbursement-receipt.remove', 'DELETE', 'expense', needsTarget: true, writesLedger: false),
+                    $this->action('expense.reimburse', 'Liquidar reembolso', 'Settle reimbursement', 'club.finance-engine.expenses.reimburse', 'POST', 'expense', needsTarget: true, writesLedger: true),
                 ],
             ],
             'accounting' => [

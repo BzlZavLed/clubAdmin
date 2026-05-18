@@ -20,6 +20,7 @@ class Expense extends Model
         'expense_date',
         'description',
         'reimbursed_to',
+        'reimbursement_payee_id',
         'created_by_user_id',
         'status',
         'receipt_path',
@@ -47,6 +48,11 @@ class Expense extends Model
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function reimbursementPayee()
+    {
+        return $this->belongsTo(FinanceReimbursementPayee::class, 'reimbursement_payee_id');
     }
 
     public function event()

@@ -1,20 +1,27 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import {
     ArrowPathIcon,
+    ArrowUpTrayIcon,
     BanknotesIcon,
     CheckCircleIcon,
     CreditCardIcon,
     CurrencyDollarIcon,
     DocumentTextIcon,
     ExclamationTriangleIcon,
+    TrashIcon,
 } from '@heroicons/vue/24/outline'
 import {
     createFinanceEngineConcept,
     createFinanceEngineExpense,
     createFinanceEngineIncome,
     fetchFinanceEngineCashbox,
+    reimburseFinanceEngineExpense,
+    removeFinanceEngineExpenseReceipt,
+    removeFinanceEngineReimbursementReceipt,
+    uploadFinanceEngineExpenseReceipt,
+    uploadFinanceEngineReimbursementReceipt,
 } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -40,15 +47,23 @@ const staff = ref([])
 const concepts = ref([])
 const accounts = ref([])
 const expenses = ref([])
+const reimbursementPayees = ref([])
 const engineReport = ref(null)
 const movementDomain = ref('all')
+const balanceAccountFilter = ref('all')
 const incomeErrors = ref({})
 const expenseErrors = ref({})
 const conceptErrors = ref({})
 const incomeCheckInput = ref(null)
 const expenseReceiptInput = ref(null)
+const expenseReceiptFiles = ref({})
+const reimbursementReceiptFiles = ref({})
+const reimbursementForms = ref({})
+const expenseActionBusy = ref({})
+const expenseActionErrors = ref({})
 const showConceptModal = ref(false)
 const savingConcept = ref(false)
+const showReimbursementOverflowModal = ref(false)
 const CREATE_CONCEPT_OPTION = '__create_concept__'
 const CUSTOM_PAYER_OPTION = '__custom_payer__'
 
@@ -76,6 +91,12 @@ const expenseForm = ref({
     amount: '',
     expense_date: today(),
     description: '',
+    reimbursed_to: '',
+    reimbursement_target_mode: 'new',
+    reimbursement_payee_id: '',
+    reimbursement_payee_name: '',
+    reimbursement_payee_phone: '',
+    reimbursement_payee_email: '',
     receipt_image: null,
 })
 
@@ -127,6 +148,13 @@ const scopeTypeOptions = computed(() => [
     { value: 'staff', label: tr('Personal especifico', 'Specific staff') },
 ])
 
+const accountDisplayLabel = (payTo, fallback = null) => {
+    if (payTo === 'reimbursement_to') return tr('Reembolsos pendientes', 'Pending reimbursements')
+    if (payTo === 'club_budget' && (!fallback || fallback === 'club_budget')) return tr('Presupuesto del club', 'Club budget')
+
+    return fallback || payTo || '—'
+}
+
 const accountOptions = computed(() => {
     const rows = new Map()
     ;(accounts.value || [])
@@ -134,31 +162,97 @@ const accountOptions = computed(() => {
         .forEach((account) => {
             rows.set(account.pay_to, {
                 value: account.pay_to,
-                label: account.label || account.pay_to,
+                label: accountDisplayLabel(account.pay_to, account.label),
             })
         })
     summaryAccounts.value.forEach((account) => {
         if (!rows.has(account.account)) {
             rows.set(account.account, {
                 value: account.account,
-                label: account.account,
+                label: accountDisplayLabel(account.account),
             })
         }
     })
     if (!rows.has('club_budget')) {
-        rows.set('club_budget', { value: 'club_budget', label: tr('Presupuesto del club', 'Club budget') })
+        rows.set('club_budget', { value: 'club_budget', label: accountDisplayLabel('club_budget') })
     }
     return Array.from(rows.values())
 })
+const isOperatingAccount = (payTo) => payTo !== 'reimbursement_to'
+const operatingAccountOptions = computed(() => accountOptions.value.filter((account) => isOperatingAccount(account.value)))
+const reimbursementFundingOptions = computed(() => operatingAccountOptions.value)
+const reimbursementPayeeOptions = computed(() => reimbursementPayees.value.map((payee) => ({
+    value: payee.id,
+    label: [
+        payee.name,
+        payee.phone,
+        payee.email,
+    ].filter(Boolean).join(' · '),
+})))
+const balanceAccountOptions = computed(() => [
+    { value: 'all', label: tr('Todas las cuentas', 'All accounts') },
+    ...summaryAccounts.value.map((account) => ({
+        value: account.account,
+        label: accountOptions.value.find((option) => option.value === account.account)?.label || account.account,
+    })),
+])
+const selectedBalanceAccountSummary = computed(() => {
+    if (balanceAccountFilter.value === 'all') return null
+
+    return summaryAccounts.value.find((account) => account.account === balanceAccountFilter.value) || null
+})
+const balanceSummary = computed(() => {
+    const row = selectedBalanceAccountSummary.value
+
+    if (row) {
+        return {
+            cash_balance: Number(row.cash_balance || 0),
+            bank_balance: Number(row.bank_balance || 0),
+            total_available: Number(row.total_available ?? (Number(row.cash_balance || 0) + Number(row.bank_balance || 0))),
+        }
+    }
+
+    return {
+        cash_balance: Number(summary.value.cash_balance || 0),
+        bank_balance: Number(summary.value.bank_balance || 0),
+        total_available: Number(summary.value.total_available ?? (Number(summary.value.cash_balance || 0) + Number(summary.value.bank_balance || 0))),
+    }
+})
+const selectedExpenseAccountSummary = computed(() =>
+    summaryAccounts.value.find((account) => account.account === expenseForm.value.pay_to) || null
+)
+const expenseSelectedLocationBalance = computed(() => {
+    const summaryRow = selectedExpenseAccountSummary.value
+    const fundsLocation = expenseForm.value.funds_location || 'cash'
+
+    return Math.max(Number(summaryRow?.[`${fundsLocation}_balance`] || 0), 0)
+})
+const expenseAmount = computed(() => Number(expenseForm.value.amount || 0))
+const expenseOverflowAmount = computed(() => Math.max(expenseAmount.value - expenseSelectedLocationBalance.value, 0))
+const expenseHasOverflow = computed(() => expenseAmount.value > 0 && expenseOverflowAmount.value > 0)
+const selectedReimbursementPayee = computed(() =>
+    reimbursementPayees.value.find((payee) => Number(payee.id) === Number(expenseForm.value.reimbursement_payee_id)) || null
+)
+const reimbursementTargetLabel = computed(() => {
+    if (expenseForm.value.reimbursement_target_mode === 'existing' && selectedReimbursementPayee.value) {
+        return selectedReimbursementPayee.value.name
+    }
+
+    return expenseForm.value.reimbursement_payee_name || tr('Pendiente de registrar', 'Pending registration')
+})
+const regularExpenseRows = computed(() => expenses.value.filter((expense) => expense.pay_to !== 'reimbursement_to'))
+const reimbursementExpenseRows = computed(() => expenses.value.filter((expense) => expense.pay_to === 'reimbursement_to'))
+const hasExpenseFollowUp = computed(() => regularExpenseRows.value.length > 0 || reimbursementExpenseRows.value.length > 0)
 
 const isEventConcept = (concept) => Boolean(concept?.event_id && concept?.event_fee_component_id)
 const eventComponent = (concept) => concept?.event_fee_component || concept?.eventFeeComponent || null
 const eventTitle = (concept) => concept?.event?.title || concept?.event_title || concept?.concept || 'Evento'
 const conceptAmount = (concept) => Number(concept?.amount || 0)
+const incomeConcepts = computed(() => filteredConcepts.value.filter((concept) => isOperatingAccount(concept.pay_to || 'club_budget')))
 
 const eventGroups = computed(() => {
     const groups = new Map()
-    filteredConcepts.value.filter(isEventConcept).forEach((concept) => {
+    incomeConcepts.value.filter(isEventConcept).forEach((concept) => {
         const key = `event:${concept.event_id}:${concept.club_id}`
         if (!groups.has(key)) {
             groups.set(key, {
@@ -192,7 +286,7 @@ const eventGroups = computed(() => {
 
 const conceptOptions = computed(() => {
     const groupedIds = new Set(eventGroups.value.flatMap((group) => group.concepts.map((concept) => Number(concept.id))))
-    const regular = filteredConcepts.value
+    const regular = incomeConcepts.value
         .filter((concept) => !groupedIds.has(Number(concept.id)))
         .map((concept) => ({
             key: `concept:${concept.id}`,
@@ -247,7 +341,11 @@ const payerOptions = computed(() => [
     })),
 ])
 
-const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`
+const formatMoney = (value) => {
+    const amount = Number(value || 0)
+
+    return `${amount < 0 ? '-' : ''}$${Math.abs(amount).toFixed(2)}`
+}
 const formatDate = (value) => value ? String(value).slice(0, 10) : '—'
 const accountLabel = (payTo) => accountOptions.value.find((account) => account.value === payTo)?.label || payTo || '—'
 const locationLabel = (location) => {
@@ -257,6 +355,12 @@ const locationLabel = (location) => {
     if (location === 'external') return tr('Externo', 'External')
     if (location === 'internal') return tr('Interno', 'Internal')
     return location || '—'
+}
+const expenseStatusLabel = (status) => {
+    if (status === 'completed') return tr('Completado', 'Completed')
+    if (status === 'working') return tr('Pendiente de comprobante', 'Proof pending')
+    if (status === 'pending_reimbursement') return tr('Reembolso pendiente', 'Pending reimbursement')
+    return status || tr('Registrado', 'Posted')
 }
 const movementTone = (movement) => {
     if (movement.domain === 'income') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -273,6 +377,27 @@ const normalizeErrors = (error) => {
     return Object.fromEntries(Object.entries(errors).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]))
 }
 const firstError = (errors, key) => errors?.[key] || null
+const reimbursementTargetError = computed(() =>
+    firstError(expenseErrors.value, 'reimbursement_payee_id')
+    || firstError(expenseErrors.value, 'reimbursement_payee_name')
+    || firstError(expenseErrors.value, 'reimbursement_payee_email')
+    || firstError(expenseErrors.value, 'reimbursed_to')
+)
+const expenseActionError = (expenseId) => expenseActionErrors.value[expenseId] || null
+const isExpenseActionBusy = (expenseId) => Boolean(expenseActionBusy.value[expenseId])
+const defaultOperatingPayTo = () => operatingAccountOptions.value[0]?.value || 'club_budget'
+const accountLocationBalance = (payTo, fundsLocation = 'cash') => {
+    const row = summaryAccounts.value.find((account) => account.account === payTo)
+
+    return Math.max(Number(row?.[`${fundsLocation || 'cash'}_balance`] || 0), 0)
+}
+const reimbursementSourceBalance = (expense) => {
+    const form = reimbursementForms.value[expense.id] || {}
+
+    return accountLocationBalance(form.pay_to, form.funds_location || 'cash')
+}
+const canSettleReimbursement = (expense) =>
+    reimbursementSourceBalance(expense) + 0.0001 >= Number(expense.amount || 0)
 
 const mergeAccounts = (paymentAccounts, expenseAccounts) => {
     const rows = new Map()
@@ -281,6 +406,51 @@ const mergeAccounts = (paymentAccounts, expenseAccounts) => {
         rows.set(`${account.club_id || selectedClubId.value}:${account.pay_to}`, account)
     })
     accounts.value = Array.from(rows.values())
+}
+
+const setExpenseActionBusy = (expenseId, value) => {
+    expenseActionBusy.value = {
+        ...expenseActionBusy.value,
+        [expenseId]: value,
+    }
+}
+
+const setExpenseActionError = (expenseId, message = '') => {
+    expenseActionErrors.value = {
+        ...expenseActionErrors.value,
+        [expenseId]: message,
+    }
+}
+
+const ensureReimbursementForms = () => {
+    const defaultPayTo = defaultOperatingPayTo()
+    const next = { ...reimbursementForms.value }
+
+    reimbursementExpenseRows.value.forEach((expense) => {
+        if (!next[expense.id]) {
+            next[expense.id] = {
+                pay_to: defaultPayTo,
+                funds_location: 'cash',
+                reimbursement_date: today(),
+            }
+        }
+    })
+
+    reimbursementForms.value = next
+}
+
+const setExpenseReceiptFile = (expenseId, event) => {
+    expenseReceiptFiles.value = {
+        ...expenseReceiptFiles.value,
+        [expenseId]: event.target.files?.[0] || null,
+    }
+}
+
+const setReimbursementReceiptFile = (expenseId, event) => {
+    reimbursementReceiptFiles.value = {
+        ...reimbursementReceiptFiles.value,
+        [expenseId]: event.target.files?.[0] || null,
+    }
 }
 
 const loadCaja = async (clubId = null, quiet = false) => {
@@ -303,14 +473,16 @@ const loadCaja = async (clubId = null, quiet = false) => {
         staff.value = Array.isArray(data.staff) ? data.staff : []
         concepts.value = Array.isArray(data.concepts) ? data.concepts : []
         expenses.value = Array.isArray(data.expenses) ? data.expenses : []
+        reimbursementPayees.value = Array.isArray(data.reimbursement_payees) ? data.reimbursement_payees : []
         mergeAccounts(data.accounts || [], [])
         engineReport.value = data.engine_report || null
+        ensureReimbursementForms()
 
-        if (!incomeForm.value.pay_to && accountOptions.value.length) {
-            incomeForm.value.pay_to = accountOptions.value[0].value
+        if (!incomeForm.value.pay_to || !operatingAccountOptions.value.some((account) => account.value === incomeForm.value.pay_to)) {
+            incomeForm.value.pay_to = defaultOperatingPayTo()
         }
-        if (!expenseForm.value.pay_to && accountOptions.value.length) {
-            expenseForm.value.pay_to = accountOptions.value[0].value
+        if (!expenseForm.value.pay_to || !operatingAccountOptions.value.some((account) => account.value === expenseForm.value.pay_to)) {
+            expenseForm.value.pay_to = defaultOperatingPayTo()
         }
     } catch (error) {
         console.error(error)
@@ -341,7 +513,7 @@ const onConceptChange = () => {
 
     if (!option) return
 
-    incomeForm.value.pay_to = option.pay_to || 'club_budget'
+    incomeForm.value.pay_to = isOperatingAccount(option.pay_to) ? option.pay_to : defaultOperatingPayTo()
     if (option.type === 'event_bundle') {
         const required = selectedEventRequiredIds.value
         incomeForm.value.selected_event_concept_ids = required.length
@@ -383,7 +555,7 @@ const resetIncomeForm = () => {
         payer_key: '',
         payer_name: '',
         concept_text: '',
-        pay_to: accountOptions.value[0]?.value || 'club_budget',
+        pay_to: defaultOperatingPayTo(),
         amount_paid: '',
         payment_date: today(),
         payment_type: 'cash',
@@ -396,11 +568,17 @@ const resetIncomeForm = () => {
 
 const resetExpenseForm = () => {
     expenseForm.value = {
-        pay_to: accountOptions.value[0]?.value || 'club_budget',
+        pay_to: defaultOperatingPayTo(),
         funds_location: 'cash',
         amount: '',
         expense_date: today(),
         description: '',
+        reimbursed_to: '',
+        reimbursement_target_mode: reimbursementPayeeOptions.value.length ? expenseForm.value.reimbursement_target_mode : 'new',
+        reimbursement_payee_id: '',
+        reimbursement_payee_name: '',
+        reimbursement_payee_phone: '',
+        reimbursement_payee_email: '',
         receipt_image: null,
     }
     if (expenseReceiptInput.value) expenseReceiptInput.value.value = ''
@@ -413,7 +591,7 @@ const openConceptModal = () => {
         amount: '',
         type: 'mandatory',
         reusable: false,
-        pay_to: incomeForm.value.pay_to || accountOptions.value[0]?.value || 'club_budget',
+        pay_to: incomeForm.value.pay_to || defaultOperatingPayTo(),
         payment_expected_by: '',
         scope_type: 'club_wide',
         class_id: '',
@@ -427,6 +605,15 @@ const closeConceptModal = () => {
     if (savingConcept.value) return
     showConceptModal.value = false
     conceptErrors.value = {}
+}
+
+const openReimbursementOverflowModal = () => {
+    if (!expenseHasOverflow.value) return
+    showReimbursementOverflowModal.value = true
+}
+
+const closeReimbursementOverflowModal = () => {
+    showReimbursementOverflowModal.value = false
 }
 
 const onConceptReusableChange = () => {
@@ -590,21 +777,159 @@ const submitExpense = async () => {
     expenseErrors.value = {}
 
     try {
-        await createFinanceEngineExpense({
+        const payload = {
             club_id: selectedClubId.value,
             ...expenseForm.value,
-        })
+        }
+
+        if (!expenseHasOverflow.value) {
+            payload.reimbursed_to = ''
+            payload.reimbursement_payee_id = ''
+            payload.reimbursement_payee_name = ''
+            payload.reimbursement_payee_phone = ''
+            payload.reimbursement_payee_email = ''
+        }
+
+        await createFinanceEngineExpense(payload)
         showToast(tr('Gasto guardado.', 'Expense saved.'), 'success')
         resetExpenseForm()
         await refreshCaja()
     } catch (error) {
         expenseErrors.value = normalizeErrors(error)
+        if (expenseHasOverflow.value && reimbursementTargetError.value) {
+            showReimbursementOverflowModal.value = true
+        }
         showToast(error?.response?.data?.message || tr('No se pudo guardar el gasto.', 'Could not save expense.'), 'error')
         console.error(error)
     } finally {
         savingExpense.value = false
     }
 }
+
+const actionErrorMessage = (error, fallback) =>
+    error?.response?.data?.message || Object.values(normalizeErrors(error)).find(Boolean) || fallback
+
+const uploadExpenseReceipt = async (expense) => {
+    const file = expenseReceiptFiles.value[expense.id]
+    if (!file) {
+        setExpenseActionError(expense.id, tr('Selecciona un comprobante.', 'Select a proof image.'))
+        return
+    }
+
+    setExpenseActionBusy(expense.id, true)
+    setExpenseActionError(expense.id)
+
+    try {
+        await uploadFinanceEngineExpenseReceipt(expense.id, { receipt_image: file })
+        expenseReceiptFiles.value = { ...expenseReceiptFiles.value, [expense.id]: null }
+        showToast(tr('Comprobante guardado.', 'Proof saved.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo guardar el comprobante.', 'Could not save proof.')))
+        console.error(error)
+    } finally {
+        setExpenseActionBusy(expense.id, false)
+    }
+}
+
+const removeExpenseReceipt = async (expense) => {
+    setExpenseActionBusy(expense.id, true)
+    setExpenseActionError(expense.id)
+
+    try {
+        await removeFinanceEngineExpenseReceipt(expense.id)
+        showToast(tr('Comprobante removido.', 'Proof removed.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo remover el comprobante.', 'Could not remove proof.')))
+        console.error(error)
+    } finally {
+        setExpenseActionBusy(expense.id, false)
+    }
+}
+
+const uploadReimbursementReceipt = async (expense) => {
+    const file = reimbursementReceiptFiles.value[expense.id]
+    if (!file) {
+        setExpenseActionError(expense.id, tr('Selecciona un comprobante de reembolso.', 'Select a reimbursement proof image.'))
+        return
+    }
+
+    setExpenseActionBusy(expense.id, true)
+    setExpenseActionError(expense.id)
+
+    try {
+        await uploadFinanceEngineReimbursementReceipt(expense.id, { receipt_image: file })
+        reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: null }
+        showToast(tr('Comprobante de reembolso guardado.', 'Reimbursement proof saved.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo guardar el comprobante de reembolso.', 'Could not save reimbursement proof.')))
+        console.error(error)
+    } finally {
+        setExpenseActionBusy(expense.id, false)
+    }
+}
+
+const removeReimbursementReceipt = async (expense) => {
+    setExpenseActionBusy(expense.id, true)
+    setExpenseActionError(expense.id)
+
+    try {
+        await removeFinanceEngineReimbursementReceipt(expense.id)
+        showToast(tr('Comprobante de reembolso removido.', 'Reimbursement proof removed.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo remover el comprobante de reembolso.', 'Could not remove reimbursement proof.')))
+        console.error(error)
+    } finally {
+        setExpenseActionBusy(expense.id, false)
+    }
+}
+
+const reimburseExpense = async (expense) => {
+    const form = reimbursementForms.value[expense.id] || {}
+    const file = reimbursementReceiptFiles.value[expense.id]
+
+    if (!form.pay_to) {
+        setExpenseActionError(expense.id, tr('Selecciona una cuenta origen.', 'Select a source account.'))
+        return
+    }
+    if (!canSettleReimbursement(expense)) {
+        setExpenseActionError(expense.id, tr('La cuenta seleccionada no tiene el monto completo para este reembolso.', 'The selected account does not have the full amount for this reimbursement.'))
+        return
+    }
+
+    setExpenseActionBusy(expense.id, true)
+    setExpenseActionError(expense.id)
+
+    try {
+        await reimburseFinanceEngineExpense(expense.id, {
+            pay_to: form.pay_to,
+            funds_location: form.funds_location || 'cash',
+            reimbursement_date: form.reimbursement_date || today(),
+            receipt_image: file || null,
+        })
+        reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: null }
+        showToast(tr('Reembolso liquidado.', 'Reimbursement settled.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo liquidar el reembolso.', 'Could not settle reimbursement.')))
+        console.error(error)
+    } finally {
+        setExpenseActionBusy(expense.id, false)
+    }
+}
+
+watch(expenseHasOverflow, (hasOverflow) => {
+    showReimbursementOverflowModal.value = hasOverflow
+})
+
+watch(summaryAccounts, (accounts) => {
+    if (balanceAccountFilter.value !== 'all' && !accounts.some((account) => account.account === balanceAccountFilter.value)) {
+        balanceAccountFilter.value = 'all'
+    }
+})
 
 onMounted(() => loadCaja())
 </script>
@@ -647,27 +972,45 @@ onMounted(() => loadCaja())
                 {{ loadError }}
             </div>
 
-            <section class="grid gap-3 sm:grid-cols-3">
-                <div class="rounded-lg border border-gray-200 bg-white p-4">
-                    <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                        <BanknotesIcon class="h-5 w-5 text-emerald-600" />
-                        {{ tr('Efectivo', 'Cash') }}
+            <section class="space-y-3">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h3 class="text-base font-semibold text-gray-900">{{ tr('Estado de cuenta', 'Account status') }}</h3>
+                        <p class="mt-1 text-sm text-gray-500">{{ tr('Filtra los saldos por cuenta financiera.', 'Filter balances by finance account.') }}</p>
                     </div>
-                    <p class="mt-3 text-2xl font-semibold text-gray-950">{{ formatMoney(summary.cash_balance) }}</p>
+                    <div class="sm:min-w-72">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cuenta', 'Account') }}</label>
+                        <select
+                            v-model="balanceAccountFilter"
+                            class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                        >
+                            <option v-for="account in balanceAccountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="rounded-lg border border-gray-200 bg-white p-4">
-                    <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                        <CreditCardIcon class="h-5 w-5 text-blue-600" />
-                        {{ tr('Banco', 'Bank') }}
+
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div class="rounded-lg border border-gray-200 bg-white p-4">
+                        <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <BanknotesIcon class="h-5 w-5 text-emerald-600" />
+                            {{ tr('Efectivo', 'Cash') }}
+                        </div>
+                        <p class="mt-3 text-2xl font-semibold" :class="balanceSummary.cash_balance < 0 ? 'text-rose-700' : 'text-gray-950'">{{ formatMoney(balanceSummary.cash_balance) }}</p>
                     </div>
-                    <p class="mt-3 text-2xl font-semibold text-gray-950">{{ formatMoney(summary.bank_balance) }}</p>
-                </div>
-                <div class="rounded-lg border border-gray-200 bg-white p-4">
-                    <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                        <CheckCircleIcon class="h-5 w-5 text-gray-600" />
-                        {{ tr('Disponible', 'Available') }}
+                    <div class="rounded-lg border border-gray-200 bg-white p-4">
+                        <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <CreditCardIcon class="h-5 w-5 text-blue-600" />
+                            {{ tr('Banco', 'Bank') }}
+                        </div>
+                        <p class="mt-3 text-2xl font-semibold" :class="balanceSummary.bank_balance < 0 ? 'text-rose-700' : 'text-gray-950'">{{ formatMoney(balanceSummary.bank_balance) }}</p>
                     </div>
-                    <p class="mt-3 text-2xl font-semibold text-gray-950">{{ formatMoney(summary.total_available) }}</p>
+                    <div class="rounded-lg border border-gray-200 bg-white p-4">
+                        <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <CheckCircleIcon class="h-5 w-5 text-gray-600" />
+                            {{ tr('Disponible', 'Available') }}
+                        </div>
+                        <p class="mt-3 text-2xl font-semibold" :class="balanceSummary.total_available < 0 ? 'text-rose-700' : 'text-gray-950'">{{ formatMoney(balanceSummary.total_available) }}</p>
+                    </div>
                 </div>
             </section>
 
@@ -762,7 +1105,7 @@ onMounted(() => loadCaja())
                                 :disabled="incomeForm.mode === 'existing' && Boolean(selectedConceptOption)"
                                 class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500 disabled:bg-gray-100"
                             >
-                                <option v-for="account in accountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
+                                <option v-for="account in operatingAccountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
                             </select>
                         </div>
 
@@ -881,7 +1224,7 @@ onMounted(() => loadCaja())
                                 v-model="expenseForm.pay_to"
                                 class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
                             >
-                                <option v-for="account in accountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
+                                <option v-for="account in operatingAccountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
                             </select>
                             <p v-if="firstError(expenseErrors, 'pay_to')" class="mt-1 text-xs text-rose-600">{{ firstError(expenseErrors, 'pay_to') }}</p>
                         </div>
@@ -927,6 +1270,31 @@ onMounted(() => loadCaja())
                             ></textarea>
                         </div>
 
+                        <div v-if="expenseHasOverflow" class="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold text-amber-900">{{ tr('Excedente detectado', 'Overflow detected') }}</p>
+                                    <p class="mt-1 text-xs text-amber-800">
+                                        {{ tr('Disponible', 'Available') }}: {{ formatMoney(expenseSelectedLocationBalance) }}
+                                        · {{ tr('Excedente', 'Overflow') }}: {{ formatMoney(expenseOverflowAmount) }}
+                                    </p>
+                                    <p class="mt-1 text-xs text-amber-800">
+                                        {{ tr('Reembolso a', 'Reimbursement to') }}: {{ reimbursementTargetLabel }}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-10 items-center justify-center rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800"
+                                    @click="openReimbursementOverflowModal"
+                                >
+                                    {{ tr('Definir reembolso', 'Set reimbursement') }}
+                                </button>
+                            </div>
+                            <p v-if="reimbursementTargetError" class="mt-2 text-xs text-rose-600">
+                                {{ reimbursementTargetError }}
+                            </p>
+                        </div>
+
                         <div class="sm:col-span-2">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Comprobante', 'Proof') }}</label>
                             <input
@@ -949,6 +1317,187 @@ onMounted(() => loadCaja())
                         {{ savingExpense ? tr('Guardando...', 'Saving...') : tr('Guardar gasto', 'Save expense') }}
                     </button>
                 </form>
+            </section>
+
+            <section v-if="hasExpenseFollowUp" class="rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div class="border-b border-gray-200 p-4">
+                    <h3 class="text-base font-semibold text-gray-900">{{ tr('Seguimiento de gastos', 'Expense follow-up') }}</h3>
+                    <p class="mt-1 text-sm text-gray-500">
+                        {{ tr('Completa comprobantes pendientes y liquida reembolsos desde Caja.', 'Complete pending proofs and settle reimbursements from Cashbox.') }}
+                    </p>
+                </div>
+
+                <div class="divide-y divide-gray-100">
+                    <article v-for="expense in regularExpenseRows" :key="`expense-${expense.id}`" class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
+                                    {{ tr('Gasto', 'Expense') }}
+                                </span>
+                                <span class="text-sm font-semibold text-gray-900">{{ expense.description || tr('Gasto sin descripcion', 'Expense without description') }}</span>
+                                <span class="text-xs text-gray-500">#{{ expense.id }}</span>
+                            </div>
+                            <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
+                                <span>{{ tr('Fecha', 'Date') }}: {{ formatDate(expense.expense_date) }}</span>
+                                <span>{{ tr('Cuenta', 'Account') }}: {{ accountLabel(expense.pay_to) }}</span>
+                                <span>{{ tr('Ubicacion', 'Location') }}: {{ locationLabel(expense.funds_location) }}</span>
+                                <span>{{ tr('Estado', 'Status') }}: {{ expenseStatusLabel(expense.status) }}</span>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-3 text-sm">
+                                <span class="font-semibold text-rose-700">{{ formatMoney(expense.amount) }}</span>
+                                <a v-if="expense.receipt_url" :href="expense.receipt_url" target="_blank" rel="noopener" class="font-semibold text-gray-700 hover:underline">
+                                    {{ tr('Ver comprobante', 'View proof') }}
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <input
+                                type="file"
+                                accept="image/*"
+                                class="block w-full text-sm text-gray-700"
+                                @change="setExpenseReceiptFile(expense.id, $event)"
+                            />
+                            <div class="flex flex-col gap-2 sm:flex-row">
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                    :disabled="isExpenseActionBusy(expense.id)"
+                                    @click="uploadExpenseReceipt(expense)"
+                                >
+                                    <ArrowUpTrayIcon class="h-4 w-4" />
+                                    {{ expense.receipt_url ? tr('Reemplazar', 'Replace') : tr('Subir comprobante', 'Upload proof') }}
+                                </button>
+                                <button
+                                    v-if="expense.receipt_url"
+                                    type="button"
+                                    class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                                    :disabled="isExpenseActionBusy(expense.id)"
+                                    @click="removeExpenseReceipt(expense)"
+                                >
+                                    <TrashIcon class="h-4 w-4" />
+                                    {{ tr('Quitar', 'Remove') }}
+                                </button>
+                            </div>
+                            <p v-if="expenseActionError(expense.id)" class="text-xs text-rose-600">{{ expenseActionError(expense.id) }}</p>
+                        </div>
+                    </article>
+
+                    <article v-for="expense in reimbursementExpenseRows" :key="`reimbursement-${expense.id}`" class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                                    {{ tr('Reembolso', 'Reimbursement') }}
+                                </span>
+                                <span class="text-sm font-semibold text-gray-900">{{ expense.reimbursement_payee?.name || expense.reimbursed_to || tr('Persona pendiente', 'Pending person') }}</span>
+                                <span class="text-xs text-gray-500">#{{ expense.id }}</span>
+                            </div>
+                            <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
+                                <span>{{ tr('Fecha', 'Date') }}: {{ formatDate(expense.expense_date) }}</span>
+                                <span>{{ tr('Cuenta', 'Account') }}: {{ accountLabel(expense.pay_to) }}</span>
+                                <span>{{ tr('Monto', 'Amount') }}: {{ formatMoney(expense.amount) }}</span>
+                                <span>{{ tr('Estado', 'Status') }}: {{ expenseStatusLabel(expense.status) }}</span>
+                            </div>
+                            <div v-if="expense.reimbursement_payee?.phone || expense.reimbursement_payee?.email" class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
+                                <span v-if="expense.reimbursement_payee?.phone">{{ expense.reimbursement_payee.phone }}</span>
+                                <span v-if="expense.reimbursement_payee?.email">{{ expense.reimbursement_payee.email }}</span>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-3 text-sm">
+                                <a v-if="expense.reimbursement_receipt_url" :href="expense.reimbursement_receipt_url" target="_blank" rel="noopener" class="font-semibold text-gray-700 hover:underline">
+                                    {{ tr('Ver comprobante de reembolso', 'View reimbursement proof') }}
+                                </a>
+                                <span v-if="expense.settlement_expense" class="text-gray-500">
+                                    {{ tr('Liquidado desde', 'Settled from') }} {{ accountLabel(expense.settlement_expense.pay_to) }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div v-if="expense.status === 'pending_reimbursement' && reimbursementForms[expense.id]" class="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label class="text-sm font-medium text-gray-700">{{ tr('Cuenta origen', 'Source account') }}</label>
+                                    <select
+                                        v-model="reimbursementForms[expense.id].pay_to"
+                                        class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    >
+                                        <option v-for="account in reimbursementFundingOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-sm font-medium text-gray-700">{{ tr('Origen del dinero', 'Money origin') }}</label>
+                                    <select
+                                        v-model="reimbursementForms[expense.id].funds_location"
+                                        class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    >
+                                        <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
+                                        <option value="bank">{{ tr('Banco', 'Bank') }}</option>
+                                    </select>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label class="text-sm font-medium text-gray-700">{{ tr('Fecha de liquidacion', 'Settlement date') }}</label>
+                                    <input
+                                        v-model="reimbursementForms[expense.id].reimbursement_date"
+                                        type="date"
+                                        class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    />
+                                </div>
+                                <p class="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                                    {{ tr('Liquida el reembolso solo cuando la cuenta origen tenga el monto completo. No se registran reembolsos parciales.', 'Settle reimbursement only when the source account has the full amount. Partial reimbursements are not tracked.') }}
+                                </p>
+                                <p class="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700">
+                                    {{ tr('Disponible en cuenta origen', 'Available in source account') }}: {{ formatMoney(reimbursementSourceBalance(expense)) }}
+                                    · {{ tr('Reembolso completo', 'Full reimbursement') }}: {{ formatMoney(expense.amount) }}
+                                </p>
+                                <p v-if="!canSettleReimbursement(expense)" class="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+                                    {{ tr('La cuenta seleccionada aun no tiene el monto completo para este reembolso.', 'The selected account does not yet have the full amount for this reimbursement.') }}
+                                </p>
+                            </div>
+
+                            <input
+                                type="file"
+                                accept="image/*"
+                                class="block w-full text-sm text-gray-700"
+                                @change="setReimbursementReceiptFile(expense.id, $event)"
+                            />
+                            <p class="text-xs text-gray-500">
+                                {{ tr('Comprobante opcional; puedes agregarlo luego.', 'Proof is optional; you can add it later.') }}
+                            </p>
+                            <div class="flex flex-col gap-2 sm:flex-row">
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                    :disabled="isExpenseActionBusy(expense.id)"
+                                    @click="uploadReimbursementReceipt(expense)"
+                                >
+                                    <ArrowUpTrayIcon class="h-4 w-4" />
+                                    {{ expense.reimbursement_receipt_url ? tr('Reemplazar comprobante', 'Replace proof') : tr('Guardar comprobante', 'Save proof') }}
+                                </button>
+                                <button
+                                    v-if="expense.reimbursement_receipt_url"
+                                    type="button"
+                                    class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                                    :disabled="isExpenseActionBusy(expense.id)"
+                                    @click="removeReimbursementReceipt(expense)"
+                                >
+                                    <TrashIcon class="h-4 w-4" />
+                                    {{ tr('Quitar', 'Remove') }}
+                                </button>
+                            </div>
+                            <button
+                                v-if="expense.status === 'pending_reimbursement'"
+                                type="button"
+                                class="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-60"
+                                :disabled="isExpenseActionBusy(expense.id) || !canSettleReimbursement(expense)"
+                                @click="reimburseExpense(expense)"
+                            >
+                                <ArrowPathIcon v-if="isExpenseActionBusy(expense.id)" class="h-4 w-4 animate-spin" />
+                                <CheckCircleIcon v-else class="h-4 w-4" />
+                                {{ tr('Liquidar reembolso', 'Settle reimbursement') }}
+                            </button>
+                            <p v-if="expenseActionError(expense.id)" class="text-xs text-rose-600">{{ expenseActionError(expense.id) }}</p>
+                        </div>
+                    </article>
+                </div>
             </section>
 
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -1055,6 +1604,131 @@ onMounted(() => loadCaja())
         </div>
 
         <div
+            v-if="showReimbursementOverflowModal && expenseHasOverflow"
+            class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+            @click.self="closeReimbursementOverflowModal"
+        >
+            <form
+                class="max-h-[92vh] w-full overflow-y-auto rounded-t-xl bg-white p-4 shadow-xl sm:max-w-2xl sm:rounded-xl sm:p-6"
+                @submit.prevent="closeReimbursementOverflowModal"
+            >
+                <div class="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ tr('Reembolsar excedente', 'Reimburse overflow') }}</h3>
+                        <p class="mt-1 text-sm text-gray-500">
+                            {{ tr('El gasto excede el saldo seleccionado. Registra quien cubrio el excedente para dejar el reembolso pendiente.', 'This expense exceeds the selected balance. Register who covered the overflow so the reimbursement remains pending.') }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-500 hover:bg-gray-50"
+                        @click="closeReimbursementOverflowModal"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                <div class="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cuenta', 'Account') }}</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ accountLabel(expenseForm.pay_to) }}</p>
+                        <p class="mt-1 text-xs text-gray-500">{{ locationLabel(expenseForm.funds_location) }}</p>
+                    </div>
+                    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Disponible', 'Available') }}</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ formatMoney(expenseSelectedLocationBalance) }}</p>
+                    </div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">{{ tr('Excedente', 'Overflow') }}</p>
+                        <p class="mt-1 text-sm font-semibold text-amber-900">{{ formatMoney(expenseOverflowAmount) }}</p>
+                    </div>
+                </div>
+
+                <div class="mt-5">
+                    <label class="text-sm font-medium text-gray-700">{{ tr('Reembolsar excedente a', 'Reimburse overflow to') }}</label>
+                    <div class="mt-2 grid grid-cols-2 rounded-lg border border-gray-200 bg-gray-50 p-1">
+                        <button
+                            type="button"
+                            class="rounded-md px-3 py-2 text-sm font-medium"
+                            :class="expenseForm.reimbursement_target_mode === 'new' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600'"
+                            @click="expenseForm.reimbursement_target_mode = 'new'"
+                        >
+                            {{ tr('Registrar persona', 'Register person') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-md px-3 py-2 text-sm font-medium disabled:text-gray-400"
+                            :class="expenseForm.reimbursement_target_mode === 'existing' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600'"
+                            :disabled="!reimbursementPayeeOptions.length"
+                            @click="expenseForm.reimbursement_target_mode = 'existing'"
+                        >
+                            {{ tr('Persona guardada', 'Saved person') }}
+                        </button>
+                    </div>
+
+                    <select
+                        v-if="expenseForm.reimbursement_target_mode === 'existing'"
+                        v-model="expenseForm.reimbursement_payee_id"
+                        class="mt-3 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                    >
+                        <option value="">{{ tr('Selecciona persona', 'Select person') }}</option>
+                        <option v-for="payee in reimbursementPayeeOptions" :key="payee.value" :value="payee.value">{{ payee.label }}</option>
+                    </select>
+
+                    <div v-else class="mt-3 grid gap-3 sm:grid-cols-3">
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Nombre', 'Name') }}</label>
+                            <input
+                                v-model="expenseForm.reimbursement_payee_name"
+                                type="text"
+                                class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                :placeholder="tr('Nombre', 'Name')"
+                            />
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Telefono', 'Phone') }}</label>
+                            <input
+                                v-model="expenseForm.reimbursement_payee_phone"
+                                type="tel"
+                                class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                :placeholder="tr('Telefono', 'Phone')"
+                            />
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Correo', 'Email') }}</label>
+                            <input
+                                v-model="expenseForm.reimbursement_payee_email"
+                                type="email"
+                                class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                placeholder="email@example.com"
+                            />
+                        </div>
+                    </div>
+
+                    <p v-if="reimbursementTargetError" class="mt-2 text-xs text-rose-600">
+                        {{ reimbursementTargetError }}
+                    </p>
+                </div>
+
+                <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        @click="closeReimbursementOverflowModal"
+                    >
+                        {{ tr('Cerrar', 'Close') }}
+                    </button>
+                    <button
+                        type="submit"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800"
+                    >
+                        {{ tr('Guardar receptor', 'Save recipient') }}
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div
             v-if="showConceptModal"
             class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
             @click.self="closeConceptModal"
@@ -1135,7 +1809,7 @@ onMounted(() => loadCaja())
                             v-model="conceptForm.pay_to"
                             class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
                         >
-                            <option v-for="account in accountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
+                            <option v-for="account in operatingAccountOptions" :key="account.value" :value="account.value">{{ account.label }}</option>
                         </select>
                         <p v-if="firstError(conceptErrors, 'pay_to')" class="mt-1 text-xs text-rose-600">{{ firstError(conceptErrors, 'pay_to') }}</p>
                     </div>

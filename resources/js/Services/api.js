@@ -350,6 +350,47 @@ export const createFinanceEngineExpense = async (payload) => {
     return data;
 };
 
+export const uploadFinanceEngineExpenseReceipt = async (expenseId, payload) => {
+    const { data } = await axios.post(
+        route('club.finance-engine.expenses.receipt.upload', { expense: expenseId }),
+        financeEngineFormData(payload),
+        { headers: financeEngineFormHeaders }
+    );
+    return data;
+};
+
+export const removeFinanceEngineExpenseReceipt = async (expenseId) => {
+    const { data } = await axios.delete(route('club.finance-engine.expenses.receipt.remove', { expense: expenseId }), {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const uploadFinanceEngineReimbursementReceipt = async (expenseId, payload) => {
+    const { data } = await axios.post(
+        route('club.finance-engine.expenses.reimbursement-receipt.upload', { expense: expenseId }),
+        financeEngineFormData(payload),
+        { headers: financeEngineFormHeaders }
+    );
+    return data;
+};
+
+export const removeFinanceEngineReimbursementReceipt = async (expenseId) => {
+    const { data } = await axios.delete(route('club.finance-engine.expenses.reimbursement-receipt.remove', { expense: expenseId }), {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const reimburseFinanceEngineExpense = async (expenseId, payload) => {
+    const { data } = await axios.post(
+        route('club.finance-engine.expenses.reimburse', { expense: expenseId }),
+        financeEngineFormData(payload),
+        { headers: financeEngineFormHeaders }
+    );
+    return data;
+};
+
 export const createFinanceEngineTransfer = async (payload) => {
     const { data } = await axios.post(route('club.finance-engine.transfers.store'), financeEngineFormData(payload), {
         headers: financeEngineFormHeaders,

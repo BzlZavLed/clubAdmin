@@ -79,6 +79,31 @@ class FinanceEngine
         return $this->writer->storeExpense($request);
     }
 
+    public function uploadExpenseReceipt(Request $request, Expense $expense)
+    {
+        return $this->writer->uploadExpenseReceipt($request, $expense);
+    }
+
+    public function removeExpenseReceipt(Request $request, Expense $expense)
+    {
+        return $this->writer->removeExpenseReceipt($request, $expense);
+    }
+
+    public function uploadReimbursementReceipt(Request $request, Expense $expense)
+    {
+        return $this->writer->uploadReimbursementReceipt($request, $expense);
+    }
+
+    public function removeReimbursementReceipt(Request $request, Expense $expense)
+    {
+        return $this->writer->removeReimbursementReceipt($request, $expense);
+    }
+
+    public function markExpenseReimbursed(Request $request, Expense $expense)
+    {
+        return $this->writer->markExpenseReimbursed($request, $expense);
+    }
+
     public function storeTransfer(Request $request)
     {
         return $this->writer->storeTransfer($request);

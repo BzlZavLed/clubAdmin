@@ -5,18 +5,23 @@ namespace App\Services\Finance;
 use App\Models\Account;
 use App\Models\Club;
 use App\Models\Expense;
+use App\Models\FinanceReimbursementPayee;
 use App\Models\PaymentConcept;
 use App\Models\Staff;
-use App\Models\User;
 use App\Services\ClubTreasuryService;
+use App\Services\PaymentReceiptService;
 use App\Support\ClubHelper;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class FinanceExpenseWriter
 {
-    public function __construct(private readonly ClubTreasuryService $treasuryService)
-    {
+    public function __construct(
+        private readonly ClubTreasuryService $treasuryService,
+        private readonly PaymentReceiptService $paymentReceiptService,
+    ) {
     }
 
     public function store(Request $request)
@@ -28,6 +33,12 @@ class FinanceExpenseWriter
             'amount' => ['required', 'numeric', 'min:0.01'],
             'expense_date' => ['required', 'date'],
             'description' => ['nullable', 'string', 'max:2000'],
+            'reimbursed_to' => ['nullable', 'string', 'max:255'],
+            'reimbursement_target_mode' => ['nullable', 'in:existing,new'],
+            'reimbursement_payee_id' => ['nullable', 'integer', 'exists:finance_reimbursement_payees,id'],
+            'reimbursement_payee_name' => ['nullable', 'string', 'max:255'],
+            'reimbursement_payee_phone' => ['nullable', 'string', 'max:50'],
+            'reimbursement_payee_email' => ['nullable', 'email', 'max:255'],
             'receipt_image' => ['nullable', 'image', 'max:5120'],
         ]);
 
@@ -52,12 +63,13 @@ class FinanceExpenseWriter
             $fromAccount = $amount;
             $shortfall = 0.0;
             $reimbursementConcept = null;
-            $reimburseTo = null;
+            $reimbursementPayee = null;
 
             if ($amount > $available) {
                 $fromAccount = $available;
                 $shortfall = max($amount - $available, 0.0);
-                [$reimbursementConcept, $reimburseTo] = $this->reimbursementConceptFor($club, $request);
+                $reimbursementPayee = $this->resolveReimbursementPayee($club, $request, $validated);
+                $reimbursementConcept = $this->reimbursementConceptFor($club, $request, $reimbursementPayee);
             }
 
             $receiptPath = $request->hasFile('receipt_image')
@@ -92,10 +104,11 @@ class FinanceExpenseWriter
                     'funds_location' => null,
                     'payment_concept_id' => $reimbursementConcept->id,
                     'payee_id' => $reimbursementConcept->payee_id,
+                    'reimbursement_payee_id' => $reimbursementPayee?->id,
                     'amount' => $shortfall,
                     'expense_date' => $validated['expense_date'],
                     'description' => 'Reembolso pendiente por gasto con saldo insuficiente.',
-                    'reimbursed_to' => $reimburseTo,
+                    'reimbursed_to' => $reimbursementPayee?->name,
                     'created_by_user_id' => $request->user()->id,
                     'status' => 'pending_reimbursement',
                     'receipt_path' => null,
@@ -114,45 +127,214 @@ class FinanceExpenseWriter
         ], 201);
     }
 
-    private function reimbursementConceptFor(Club $club, Request $request): array
+    public function uploadReceipt(Request $request, Expense $expense): JsonResponse
     {
-        $staff = Staff::query()
-            ->where('user_id', $request->user()->id)
-            ->where('club_id', $club->id)
-            ->first();
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
 
-        if ($staff) {
-            $reimburseTo = ClubHelper::staffDetail($staff)['name'] ?? $request->user()->name;
-            $concept = PaymentConcept::query()->firstOrCreate(
-                [
-                    'club_id' => $club->id,
-                    'pay_to' => 'reimbursement_to',
-                    'payee_type' => Staff::class,
-                    'payee_id' => $staff->id,
-                ],
-                [
-                    'concept' => 'Reembolso a ' . ($reimburseTo ?? 'Personal'),
-                    'payment_expected_by' => null,
-                    'type' => 'optional',
-                    'status' => 'active',
-                    'amount' => 0,
-                    'created_by' => $request->user()->id,
-                ]
-            );
+        $request->validate([
+            'receipt_image' => ['required', 'image', 'max:5120'],
+        ]);
 
-            return [$concept, $reimburseTo];
+        $path = $request->file('receipt_image')->store('expense-receipts', 'public');
+
+        if ($expense->receipt_path) {
+            Storage::disk('public')->delete($expense->receipt_path);
         }
 
-        $reimburseTo = $request->user()->name ?? 'Director';
-        $concept = PaymentConcept::query()->firstOrCreate(
+        $expense->update([
+            'receipt_path' => $path,
+            'status' => 'completed',
+        ]);
+
+        return response()->json([
+            'message' => 'Receipt uploaded',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
+    public function removeReceipt(Request $request, Expense $expense): JsonResponse
+    {
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
+
+        if (!$expense->receipt_path) {
+            return response()->json(['message' => 'No receipt to remove.'], 422);
+        }
+
+        Storage::disk('public')->delete($expense->receipt_path);
+
+        $expense->update([
+            'receipt_path' => null,
+            'status' => 'working',
+        ]);
+
+        return response()->json([
+            'message' => 'Receipt removed',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
+    public function uploadReimbursementReceipt(Request $request, Expense $expense): JsonResponse
+    {
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
+
+        if ($expense->pay_to !== 'reimbursement_to') {
+            return response()->json(['message' => 'Only reimbursements can accept this receipt.'], 422);
+        }
+
+        $request->validate([
+            'receipt_image' => ['required', 'image', 'max:5120'],
+        ]);
+
+        $path = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
+
+        if ($expense->reimbursement_receipt_path) {
+            Storage::disk('public')->delete($expense->reimbursement_receipt_path);
+        }
+
+        $expense->update([
+            'reimbursement_receipt_path' => $path,
+        ]);
+
+        if ($settlementExpense = $expense->settlementExpense()->first()) {
+            $settlementExpense->update([
+                'receipt_path' => $path,
+                'status' => 'completed',
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Reimbursement receipt uploaded',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
+    public function removeReimbursementReceipt(Request $request, Expense $expense): JsonResponse
+    {
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
+
+        if (!$expense->reimbursement_receipt_path) {
+            return response()->json(['message' => 'No reimbursement receipt to remove.'], 422);
+        }
+
+        $oldPath = $expense->reimbursement_receipt_path;
+        Storage::disk('public')->delete($oldPath);
+
+        $expense->update([
+            'reimbursement_receipt_path' => null,
+        ]);
+
+        if ($settlementExpense = $expense->settlementExpense()->first()) {
+            $settlementExpense->update(['receipt_path' => null]);
+        }
+
+        return response()->json([
+            'message' => 'Reimbursement receipt removed',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
+    public function markReimbursed(Request $request, Expense $expense): JsonResponse
+    {
+        $this->ensureExpenseBelongsToUser($request->user(), $expense);
+
+        $validated = $request->validate([
+            'pay_to' => ['required', 'string', 'max:255'],
+            'funds_location' => ['nullable', 'in:cash,bank'],
+            'receipt_image' => ['nullable', 'image', 'max:5120'],
+            'reimbursement_date' => ['nullable', 'date'],
+        ]);
+
+        if ($expense->pay_to !== 'reimbursement_to' || $expense->status !== 'pending_reimbursement') {
+            return response()->json(['message' => 'Only pending reimbursements can be marked as reimbursed.'], 422);
+        }
+
+        if ($validated['pay_to'] === 'reimbursement_to') {
+            return response()->json(['message' => 'Invalid funding account.'], 422);
+        }
+
+        $account = $this->resolveAccount($expense->club_id, $validated['pay_to']);
+        $fundsLocation = $validated['funds_location'] ?? 'cash';
+        $club = Club::withoutGlobalScopes()->findOrFail($expense->club_id);
+
+        if ($this->locationBalanceFor($club, $validated['pay_to'], $fundsLocation) < (float) $expense->amount) {
+            return response()->json([
+                'message' => 'Saldo insuficiente en la ubicación seleccionada para reembolsar.',
+                'errors' => ['funds_location' => ['Saldo insuficiente en la ubicación seleccionada para reembolsar.']]
+            ], 422);
+        }
+
+        $receiptPath = $expense->reimbursement_receipt_path;
+        if ($request->hasFile('receipt_image')) {
+            $receiptPath = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
+
+            if ($expense->reimbursement_receipt_path) {
+                Storage::disk('public')->delete($expense->reimbursement_receipt_path);
+            }
+        }
+
+        $reimbursementDate = $validated['reimbursement_date'] ?? now()->toDateString();
+
+        DB::transaction(function () use ($expense, $account, $receiptPath, $request, $fundsLocation, $reimbursementDate) {
+            $reimbursementAccount = $this->resolveAccount($expense->club_id, 'reimbursement_to');
+
+            $settlementPayment = \App\Models\Payment::query()->create([
+                'club_id' => $expense->club_id,
+                'payment_concept_id' => $expense->payment_concept_id,
+                'concept_text' => 'Liquidacion de reembolso',
+                'pay_to' => 'reimbursement_to',
+                'account_id' => $reimbursementAccount->id,
+                'settles_expense_id' => $expense->id,
+                'amount_paid' => (float) $expense->amount,
+                'expected_amount' => null,
+                'balance_due_after' => null,
+                'payment_date' => $reimbursementDate,
+                'payment_type' => 'internal',
+                'received_by_user_id' => $request->user()->id,
+                'notes' => 'Credito automatico para saldar reembolso pendiente.',
+            ]);
+            $this->paymentReceiptService->syncForPayment($settlementPayment);
+
+            Expense::query()->create([
+                'club_id' => $expense->club_id,
+                'pay_to' => $account->pay_to,
+                'funds_location' => $fundsLocation,
+                'amount' => (float) $expense->amount,
+                'expense_date' => $reimbursementDate,
+                'description' => 'Reembolso a ' . ($expense->reimbursed_to ?? 'persona'),
+                'reimbursed_to' => $expense->reimbursed_to,
+                'reimbursement_payee_id' => $expense->reimbursement_payee_id,
+                'created_by_user_id' => $request->user()->id,
+                'status' => 'completed',
+                'receipt_path' => $receiptPath,
+                'settles_expense_id' => $expense->id,
+            ]);
+
+            $account->decrement('balance', (float) $expense->amount);
+            $reimbursementAccount->increment('balance', (float) $expense->amount);
+
+            $expense->update([
+                'status' => 'completed',
+                'reimbursement_receipt_path' => $receiptPath,
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Reimbursement recorded',
+            'data' => $expense->refresh(),
+        ]);
+    }
+
+    private function reimbursementConceptFor(Club $club, Request $request, FinanceReimbursementPayee $payee): PaymentConcept
+    {
+        return PaymentConcept::query()->firstOrCreate(
             [
                 'club_id' => $club->id,
                 'pay_to' => 'reimbursement_to',
-                'payee_type' => User::class,
-                'payee_id' => $request->user()->id,
+                'payee_type' => FinanceReimbursementPayee::class,
+                'payee_id' => $payee->id,
             ],
             [
-                'concept' => 'Reembolso a ' . ($reimburseTo ?? 'Director'),
+                'concept' => 'Reembolso a ' . $payee->name,
                 'payment_expected_by' => null,
                 'type' => 'optional',
                 'status' => 'active',
@@ -160,8 +342,74 @@ class FinanceExpenseWriter
                 'created_by' => $request->user()->id,
             ]
         );
+    }
 
-        return [$concept, $reimburseTo];
+    private function resolveReimbursementPayee(Club $club, Request $request, array $validated): FinanceReimbursementPayee
+    {
+        if (($validated['reimbursement_target_mode'] ?? null) === 'existing' && !empty($validated['reimbursement_payee_id'])) {
+            return FinanceReimbursementPayee::query()
+                ->where('club_id', $club->id)
+                ->findOrFail((int) $validated['reimbursement_payee_id']);
+        }
+
+        $name = $this->normalizeText($validated['reimbursement_payee_name'] ?? null)
+            ?: $this->normalizeText($validated['reimbursed_to'] ?? null);
+        $phone = $this->normalizeText($validated['reimbursement_payee_phone'] ?? null);
+        $email = $this->normalizeEmail($validated['reimbursement_payee_email'] ?? null);
+
+        if ($name) {
+            return $this->storeReimbursementPayee($club, $request, $name, $phone, $email);
+        }
+
+        $staff = Staff::query()
+            ->where('user_id', $request->user()->id)
+            ->where('club_id', $club->id)
+            ->first();
+
+        $name = $staff
+            ? (ClubHelper::staffDetail($staff)['name'] ?? $request->user()->name ?? 'Personal')
+            : ($request->user()->name ?? 'Director');
+
+        return $this->storeReimbursementPayee(
+            $club,
+            $request,
+            $name,
+            null,
+            $this->normalizeEmail($request->user()->email ?? null)
+        );
+    }
+
+    private function storeReimbursementPayee(Club $club, Request $request, string $name, ?string $phone, ?string $email): FinanceReimbursementPayee
+    {
+        $identity = $email
+            ? ['club_id' => $club->id, 'email' => $email]
+            : ['club_id' => $club->id, 'name' => $name, 'phone' => $phone];
+
+        $payee = FinanceReimbursementPayee::query()->firstOrNew($identity);
+        $payee->fill([
+            'club_id' => $club->id,
+            'name' => $name,
+            'phone' => $phone,
+            'email' => $email,
+            'created_by_user_id' => $payee->created_by_user_id ?: $request->user()->id,
+        ]);
+        $payee->save();
+
+        return $payee;
+    }
+
+    private function normalizeText(?string $value): ?string
+    {
+        $normalized = trim((string) $value);
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function normalizeEmail(?string $value): ?string
+    {
+        $normalized = $this->normalizeText($value);
+
+        return $normalized ? strtolower($normalized) : null;
     }
 
     private function resolveAccount(int $clubId, string $payTo): Account
@@ -179,5 +427,10 @@ class FinanceExpenseWriter
             ->firstWhere('account', $payTo);
 
         return max((float) ($row[$fundsLocation . '_balance'] ?? 0), 0.0);
+    }
+
+    private function ensureExpenseBelongsToUser($user, Expense $expense): void
+    {
+        abort_unless(ClubHelper::clubIdsForUser($user)->contains((int) $expense->club_id), 403, 'Unauthorized.');
     }
 }

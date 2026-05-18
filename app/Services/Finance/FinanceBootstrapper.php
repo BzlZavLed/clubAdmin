@@ -9,6 +9,7 @@ use App\Models\ClubClass;
 use App\Models\Event;
 use App\Models\EventClubSettlement;
 use App\Models\Expense;
+use App\Models\FinanceReimbursementPayee;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
 use App\Models\Staff;
@@ -99,7 +100,10 @@ class FinanceBootstrapper
         $expenses = Expense::query()
             ->where('club_id', $club->id)
             ->whereNull('settles_expense_id')
-            ->with(['settlementExpense:id,pay_to,settles_expense_id,amount,expense_date'])
+            ->with([
+                'reimbursementPayee:id,club_id,name,phone,email',
+                'settlementExpense:id,pay_to,settles_expense_id,amount,expense_date',
+            ])
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
             ->get([
@@ -113,6 +117,7 @@ class FinanceBootstrapper
                 'expense_date',
                 'description',
                 'reimbursed_to',
+                'reimbursement_payee_id',
                 'created_by_user_id',
                 'status',
                 'receipt_path',
@@ -131,6 +136,7 @@ class FinanceBootstrapper
             'concepts' => $concepts,
             'accounts' => $accounts->values(),
             'expenses' => $expenses,
+            'reimbursement_payees' => $this->reimbursementPayeesForClub($club),
             'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
             'engine_report' => $this->movementReport($club, [
                 'limit' => $filters['limit'] ?? 80,
@@ -209,6 +215,23 @@ class FinanceBootstrapper
             ->whereIn('club_id', collect($clubIds)->map(fn ($id) => (int) $id)->values())
             ->orderBy('label')
             ->get(['id', 'club_id', 'pay_to', 'label', 'balance']);
+    }
+
+    private function reimbursementPayeesForClub(Club $club): array
+    {
+        return FinanceReimbursementPayee::query()
+            ->where('club_id', $club->id)
+            ->orderBy('name')
+            ->get(['id', 'club_id', 'name', 'phone', 'email'])
+            ->map(fn (FinanceReimbursementPayee $payee) => [
+                'id' => (int) $payee->id,
+                'club_id' => (int) $payee->club_id,
+                'name' => $payee->name,
+                'phone' => $payee->phone,
+                'email' => $payee->email,
+            ])
+            ->values()
+            ->all();
     }
 
     private function treasuryMovementRows(Club $club): array

@@ -184,6 +184,31 @@ class FinanceEngineController extends Controller
         return $this->financeEngine->storeExpense($request);
     }
 
+    public function uploadExpenseReceipt(Request $request, Expense $expense)
+    {
+        return $this->financeEngine->uploadExpenseReceipt($request, $expense);
+    }
+
+    public function removeExpenseReceipt(Request $request, Expense $expense)
+    {
+        return $this->financeEngine->removeExpenseReceipt($request, $expense);
+    }
+
+    public function uploadReimbursementReceipt(Request $request, Expense $expense)
+    {
+        return $this->financeEngine->uploadReimbursementReceipt($request, $expense);
+    }
+
+    public function removeReimbursementReceipt(Request $request, Expense $expense)
+    {
+        return $this->financeEngine->removeReimbursementReceipt($request, $expense);
+    }
+
+    public function markExpenseReimbursed(Request $request, Expense $expense)
+    {
+        return $this->financeEngine->markExpenseReimbursed($request, $expense);
+    }
+
     public function storeTransfer(Request $request)
     {
         return $this->financeEngine->storeTransfer($request);

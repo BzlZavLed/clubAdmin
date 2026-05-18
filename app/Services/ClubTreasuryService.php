@@ -118,7 +118,10 @@ class ClubTreasuryService
             'expenses',
             ['reversed_expense_id']
         )
-            ->where('pay_to', '!=', 'reimbursement_to')
+            ->where(function ($query) {
+                $query->where('pay_to', '!=', 'reimbursement_to')
+                    ->orWhere('status', 'pending_reimbursement');
+            })
             ->selectRaw("COALESCE(pay_to, 'unassigned') as pay_to, COALESCE(funds_location, 'cash') as funds_location, COALESCE(SUM(amount), 0) as total")
             ->groupBy('pay_to', 'funds_location')
             ->get()
@@ -189,6 +192,8 @@ class ClubTreasuryService
             $cashBalance = round($cashIncome + $cashWithdrawals + $transferInCash - $cashDeposits - $cashExpenses - $transferOutCash, 2);
             $bankBalance = round($bankIncome + $cashDeposits + $transferInBank - $cashWithdrawals - $eventSettlements - $bankExpenses - $transferOutBank, 2);
 
+            $isReimbursementAccount = $payTo === 'reimbursement_to';
+
             return [
                 'account' => $payTo,
                 'cash_income' => $cashIncome,
@@ -204,9 +209,9 @@ class ClubTreasuryService
                 'transfer_out_bank' => $transferOutBank,
                 'transfer_in_total' => round($transferInCash + $transferInBank, 2),
                 'transfer_out_total' => round($transferOutCash + $transferOutBank, 2),
-                'cash_balance' => max($cashBalance, 0),
-                'bank_balance' => max($bankBalance, 0),
-                'total_available' => max(round($cashBalance + $bankBalance, 2), 0),
+                'cash_balance' => $isReimbursementAccount ? $cashBalance : max($cashBalance, 0),
+                'bank_balance' => $isReimbursementAccount ? $bankBalance : max($bankBalance, 0),
+                'total_available' => $isReimbursementAccount ? round($cashBalance + $bankBalance, 2) : max(round($cashBalance + $bankBalance, 2), 0),
             ];
         });
     }

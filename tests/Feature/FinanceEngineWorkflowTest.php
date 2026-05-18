@@ -13,6 +13,7 @@ use App\Models\Event;
 use App\Models\EventClubSettlement;
 use App\Models\EventParticipant;
 use App\Models\Expense;
+use App\Models\FinanceReimbursementPayee;
 use App\Models\Member;
 use App\Models\MemberPathfinder;
 use App\Models\Payment;
@@ -289,6 +290,266 @@ class FinanceEngineWorkflowTest extends TestCase
         $movement = collect($engine->json('data.movements'))->firstWhere('concept', 'Club supplies');
         $this->assertSame('expense_receipt', $movement['proof']['type']);
         $this->assertSame('cash', $movement['location']);
+    }
+
+    public function test_cashbox_manages_late_expense_proofs_and_reimbursement_settlement_through_engine(): void
+    {
+        Storage::fake('public');
+
+        [$director, $club] = $this->makeDirectorAndClub();
+        $account = $this->createAccount($club, 'club_budget', 'Club Budget', 40);
+        Payment::create([
+            'club_id' => $club->id,
+            'concept_text' => 'Cash reserve',
+            'pay_to' => 'club_budget',
+            'account_id' => $account->id,
+            'amount_paid' => 40,
+            'payment_date' => '2026-05-01',
+            'payment_type' => 'cash',
+            'received_by_user_id' => $director->id,
+        ]);
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.expenses.store'), [
+                'club_id' => $club->id,
+                'pay_to' => 'club_budget',
+                'funds_location' => 'cash',
+                'amount' => 65,
+                'expense_date' => '2026-05-13',
+                'description' => 'Out of pocket supplies',
+                'reimbursement_target_mode' => 'new',
+                'reimbursement_payee_name' => 'Guest Sponsor',
+                'reimbursement_payee_phone' => '555-0199',
+                'reimbursement_payee_email' => 'sponsor@example.com',
+            ])
+            ->assertCreated();
+
+        $normalExpense = Expense::query()->where('pay_to', 'club_budget')->firstOrFail();
+        $pendingReimbursement = Expense::query()->where('pay_to', 'reimbursement_to')->firstOrFail();
+        $this->assertSame('working', $normalExpense->status);
+        $this->assertSame('pending_reimbursement', $pendingReimbursement->status);
+        $this->assertSame('Guest Sponsor', $pendingReimbursement->reimbursed_to);
+        $payee = FinanceReimbursementPayee::query()->firstOrFail();
+        $this->assertSame('Guest Sponsor', $payee->name);
+        $this->assertSame('555-0199', $payee->phone);
+        $this->assertSame('sponsor@example.com', $payee->email);
+        $this->assertSame($payee->id, $pendingReimbursement->reimbursement_payee_id);
+        $this->assertDatabaseHas('payment_concepts', [
+            'id' => $pendingReimbursement->payment_concept_id,
+            'concept' => 'Reembolso a Guest Sponsor',
+            'payee_type' => FinanceReimbursementPayee::class,
+            'payee_id' => $payee->id,
+        ]);
+
+        $cashbox = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', ['club_id' => $club->id]))
+            ->assertOk()
+            ->assertJsonPath('data.reimbursement_payees.0.id', $payee->id)
+            ->assertJsonPath('data.reimbursement_payees.0.name', 'Guest Sponsor')
+            ->assertJsonPath('data.reimbursement_payees.0.phone', '555-0199')
+            ->assertJsonPath('data.reimbursement_payees.0.email', 'sponsor@example.com');
+        $cashboxAccounts = collect($cashbox->json('data.engine_report.summary.accounts'));
+        $clubBudgetSummary = $cashboxAccounts->firstWhere('account', 'club_budget');
+        $reimbursementSummary = $cashboxAccounts->firstWhere('account', 'reimbursement_to');
+        $this->assertSame(0.0, (float) $clubBudgetSummary['cash_balance']);
+        $this->assertSame(-25.0, (float) $reimbursementSummary['cash_balance']);
+        $this->assertSame(-25.0, (float) $reimbursementSummary['total_available']);
+        $this->assertSame(-25.0, (float) $cashbox->json('data.engine_report.summary.total_available'));
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.receipt.upload', $normalExpense), [
+                'receipt_image' => UploadedFile::fake()->image('late-proof.jpg'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Receipt uploaded');
+
+        $normalExpense->refresh();
+        $normalReceiptPath = $normalExpense->receipt_path;
+        $this->assertSame('completed', $normalExpense->status);
+        Storage::disk('public')->assertExists($normalReceiptPath);
+
+        $this->actingAs($director)
+            ->deleteJson(route('club.finance-engine.expenses.receipt.remove', $normalExpense))
+            ->assertOk()
+            ->assertJsonPath('message', 'Receipt removed');
+
+        $normalExpense->refresh();
+        $this->assertSame('working', $normalExpense->status);
+        $this->assertNull($normalExpense->receipt_path);
+        Storage::disk('public')->assertMissing($normalReceiptPath);
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.reimbursement-receipt.upload', $pendingReimbursement), [
+                'receipt_image' => UploadedFile::fake()->image('reimbursement-proof.jpg'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Reimbursement receipt uploaded');
+
+        $pendingReimbursement->refresh();
+        $uploadedReimbursementPath = $pendingReimbursement->reimbursement_receipt_path;
+        $this->assertNotNull($uploadedReimbursementPath);
+        Storage::disk('public')->assertExists($uploadedReimbursementPath);
+
+        $this->actingAs($director)
+            ->deleteJson(route('club.finance-engine.expenses.reimbursement-receipt.remove', $pendingReimbursement))
+            ->assertOk()
+            ->assertJsonPath('message', 'Reimbursement receipt removed');
+
+        $pendingReimbursement->refresh();
+        $this->assertNull($pendingReimbursement->reimbursement_receipt_path);
+        Storage::disk('public')->assertMissing($uploadedReimbursementPath);
+
+        Payment::create([
+            'club_id' => $club->id,
+            'concept_text' => 'Later cash',
+            'pay_to' => 'club_budget',
+            'account_id' => $account->id,
+            'amount_paid' => 30,
+            'payment_date' => '2026-05-15',
+            'payment_type' => 'cash',
+            'received_by_user_id' => $director->id,
+        ]);
+        $account->increment('balance', 30);
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.reimburse', $pendingReimbursement), [
+                'pay_to' => 'club_budget',
+                'funds_location' => 'cash',
+                'reimbursement_date' => '2026-05-16',
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Reimbursement recorded');
+
+        $pendingReimbursement->refresh();
+        $this->assertSame('completed', $pendingReimbursement->status);
+        $this->assertNull($pendingReimbursement->reimbursement_receipt_path);
+
+        $settledCashbox = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', ['club_id' => $club->id]))
+            ->assertOk();
+        $settledAccounts = collect($settledCashbox->json('data.engine_report.summary.accounts'));
+        $settledClubBudgetSummary = $settledAccounts->firstWhere('account', 'club_budget');
+        $settledReimbursementSummary = $settledAccounts->firstWhere('account', 'reimbursement_to');
+        $this->assertSame(5.0, (float) $settledClubBudgetSummary['cash_balance']);
+        $this->assertSame(0.0, (float) $settledReimbursementSummary['cash_balance']);
+        $this->assertSame(5.0, (float) $settledCashbox->json('data.engine_report.summary.total_available'));
+
+        $settlementPayment = Payment::query()
+            ->where('settles_expense_id', $pendingReimbursement->id)
+            ->where('payment_type', 'internal')
+            ->firstOrFail();
+        $settlementExpense = Expense::query()
+            ->where('settles_expense_id', $pendingReimbursement->id)
+            ->firstOrFail();
+
+        $this->assertSame('Liquidacion de reembolso', $settlementPayment->concept_text);
+        $this->assertNull($settlementExpense->receipt_path);
+        $this->assertDatabaseHas('payment_receipts', [
+            'payment_id' => $settlementPayment->id,
+        ]);
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.reimbursement-receipt.upload', $pendingReimbursement), [
+                'receipt_image' => UploadedFile::fake()->image('settlement-proof-late.jpg'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Reimbursement receipt uploaded');
+
+        $pendingReimbursement->refresh();
+        $settlementExpense->refresh();
+        $this->assertNotNull($pendingReimbursement->reimbursement_receipt_path);
+        Storage::disk('public')->assertExists($pendingReimbursement->reimbursement_receipt_path);
+        $this->assertSame($pendingReimbursement->reimbursement_receipt_path, $settlementExpense->receipt_path);
+        $this->assertSame('completed', $settlementExpense->status);
+
+        $engine = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.movements', [
+                'club_id' => $club->id,
+                'domain' => 'expense',
+            ]))
+            ->assertOk();
+
+        $reimbursementMovement = collect($engine->json('data.movements'))->firstWhere('movement_id', "expense:{$pendingReimbursement->id}");
+        $this->assertSame('reimbursement', $reimbursementMovement['correction_type']);
+        $this->assertTrue((bool) $reimbursementMovement['can_reverse']);
+    }
+
+    public function test_reimbursements_can_settle_from_source_account_even_when_overall_total_is_negative(): void
+    {
+        [$director, $club] = $this->makeDirectorAndClub();
+        $account = $this->createAccount($club, 'club_budget', 'Club Budget');
+
+        foreach ([500, 250] as $amount) {
+            $this->actingAs($director)
+                ->postJson(route('club.finance-engine.expenses.store'), [
+                    'club_id' => $club->id,
+                    'pay_to' => 'club_budget',
+                    'funds_location' => 'cash',
+                    'amount' => $amount,
+                    'expense_date' => '2026-05-13',
+                    'description' => "Overflow expense {$amount}",
+                    'reimbursement_target_mode' => 'new',
+                    'reimbursement_payee_name' => "Sponsor {$amount}",
+                ])
+                ->assertCreated();
+        }
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.income.store'), [
+                'club_id' => $club->id,
+                'concept_text' => 'Fund income after overflow',
+                'pay_to' => 'club_budget',
+                'amount_paid' => 600,
+                'payment_date' => '2026-05-14',
+                'payment_type' => 'cash',
+                'payer_name' => 'Guest donor',
+            ])
+            ->assertCreated();
+        $account->increment('balance', 600);
+
+        $cashbox = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', ['club_id' => $club->id]))
+            ->assertOk();
+        $accounts = collect($cashbox->json('data.engine_report.summary.accounts'));
+        $this->assertSame(600.0, (float) $accounts->firstWhere('account', 'club_budget')['cash_balance']);
+        $this->assertSame(-750.0, (float) $accounts->firstWhere('account', 'reimbursement_to')['cash_balance']);
+        $this->assertSame(-150.0, (float) $cashbox->json('data.engine_report.summary.total_available'));
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.income.store'), [
+                'club_id' => $club->id,
+                'concept_text' => 'Wrong liability income',
+                'pay_to' => 'reimbursement_to',
+                'amount_paid' => 10,
+                'payment_date' => '2026-05-14',
+                'payment_type' => 'cash',
+                'payer_name' => 'Guest donor',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('pay_to');
+
+        $reimbursement = Expense::query()
+            ->where('club_id', $club->id)
+            ->where('pay_to', 'reimbursement_to')
+            ->where('amount', 500)
+            ->firstOrFail();
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.reimburse', $reimbursement), [
+                'pay_to' => 'club_budget',
+                'funds_location' => 'cash',
+                'reimbursement_date' => '2026-05-15',
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Reimbursement recorded');
+
+        $settledCashbox = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', ['club_id' => $club->id]))
+            ->assertOk();
+        $settledAccounts = collect($settledCashbox->json('data.engine_report.summary.accounts'));
+        $this->assertSame(100.0, (float) $settledAccounts->firstWhere('account', 'club_budget')['cash_balance']);
+        $this->assertSame(-250.0, (float) $settledAccounts->firstWhere('account', 'reimbursement_to')['cash_balance']);
+        $this->assertSame(-150.0, (float) $settledCashbox->json('data.engine_report.summary.total_available'));
     }
 
     public function test_treasury_transfers_cover_cash_bank_origin_matrix_and_reports(): void

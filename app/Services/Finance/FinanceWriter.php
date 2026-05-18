@@ -40,6 +40,41 @@ class FinanceWriter
         return $this->expenseWriter->store($request);
     }
 
+    public function uploadExpenseReceipt(Request $request, Expense $expense)
+    {
+        $this->forceJson($request);
+
+        return $this->expenseWriter->uploadReceipt($request, $expense);
+    }
+
+    public function removeExpenseReceipt(Request $request, Expense $expense)
+    {
+        $this->forceJson($request);
+
+        return $this->expenseWriter->removeReceipt($request, $expense);
+    }
+
+    public function uploadReimbursementReceipt(Request $request, Expense $expense)
+    {
+        $this->forceJson($request);
+
+        return $this->expenseWriter->uploadReimbursementReceipt($request, $expense);
+    }
+
+    public function removeReimbursementReceipt(Request $request, Expense $expense)
+    {
+        $this->forceJson($request);
+
+        return $this->expenseWriter->removeReimbursementReceipt($request, $expense);
+    }
+
+    public function markExpenseReimbursed(Request $request, Expense $expense)
+    {
+        $this->forceJson($request);
+
+        return $this->expenseWriter->markReimbursed($request, $expense);
+    }
+
     public function storeTransfer(Request $request)
     {
         $this->forceJson($request);

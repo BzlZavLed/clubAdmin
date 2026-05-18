@@ -153,7 +153,13 @@ class FinanceMovementReader
 
         return Expense::query()
             ->where('club_id', $club->id)
-            ->with(['createdBy:id,name', 'event:id,title', 'reversalExpense:id,reversed_expense_id', 'settlementExpense:id,settles_expense_id'])
+            ->with([
+                'createdBy:id,name',
+                'event:id,title',
+                'reimbursementPayee:id,club_id,name,phone,email',
+                'reversalExpense:id,reversed_expense_id',
+                'settlementExpense:id,settles_expense_id',
+            ])
             ->when(!empty($filters['date_from']), fn ($query) => $query->whereDate('expense_date', '>=', $filters['date_from']))
             ->when(!empty($filters['date_to']), fn ($query) => $query->whereDate('expense_date', '<=', $filters['date_to']))
             ->get()
@@ -162,7 +168,7 @@ class FinanceMovementReader
                 $signedAmount = -1 * $amount;
                 $payTo = $expense->pay_to ?: 'club_budget';
                 $isReimbursementMain = $expense->pay_to === 'reimbursement_to' && !$expense->settles_expense_id;
-                $isReimbursementRelated = (bool) $expense->settles_expense_id || $expense->settlementExpense !== null;
+                $isReimbursementRelated = (bool) $expense->settles_expense_id;
                 $cancellation = [
                     'is_cancelled' => (bool) $expense->is_cancelled,
                     'related_canceled_movement_id' => $expense->related_canceled_movement_id,
@@ -203,6 +209,12 @@ class FinanceMovementReader
                     'proof' => $expense->receipt_url ? [
                         'type' => 'expense_receipt',
                         'url' => $expense->receipt_url,
+                    ] : null,
+                    'reimbursement_payee' => $expense->reimbursementPayee ? [
+                        'id' => (int) $expense->reimbursementPayee->id,
+                        'name' => $expense->reimbursementPayee->name,
+                        'phone' => $expense->reimbursementPayee->phone,
+                        'email' => $expense->reimbursementPayee->email,
                     ] : null,
                     'created_by' => $expense->createdBy?->name,
                     'custody' => null,
