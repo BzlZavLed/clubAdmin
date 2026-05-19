@@ -97,6 +97,21 @@ Route::get('/documents/validate/{checksum}', [DocumentValidationController::clas
     ->name('documents.validate');
 Route::get('/carpeta-investidura/validate/{checksum}', [DocumentValidationController::class, 'show'])
     ->name('carpeta-investidura.validate');
+Route::get('/payment-receipts/{receipt}/public-download', [PaymentReceiptController::class, 'publicDownload'])
+    ->middleware('signed')
+    ->name('payment-receipts.public-download');
+Route::get('/payment-receipts/{receipt}/qr', [PaymentReceiptController::class, 'publicQr'])
+    ->middleware('signed')
+    ->name('payment-receipts.public-qr');
+Route::get('/fundraisers/{fundraiserEvent}/kitchen', [FinanceEngineController::class, 'fundraiserKitchen'])
+    ->middleware('signed')
+    ->name('fundraisers.kitchen.show');
+Route::get('/fundraisers/{fundraiserEvent}/kitchen/orders', [FinanceEngineController::class, 'fundraiserKitchenOrders'])
+    ->middleware('signed')
+    ->name('fundraisers.kitchen.orders');
+Route::post('/fundraisers/{fundraiserEvent}/kitchen/orders/{fundraiserSale}/finish', [FinanceEngineController::class, 'finishFundraiserKitchenOrder'])
+    ->middleware('signed')
+    ->name('fundraisers.kitchen.orders.finish');
 Route::get('/evidence/{code}', [PublicMemberEvidenceController::class, 'show'])
     ->middleware('throttle:30,1')
     ->name('public.member-evidence.show');
@@ -584,6 +599,11 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         fn() =>
         Inertia::render('ClubDirector/Finance/Accounting', ['auth_user' => auth()->user()])
     )->name('club.director.finance.accounting');
+    Route::get(
+        '/club-director/finance/fundraisers',
+        fn() =>
+        Inertia::render('ClubDirector/Finance/Fundraisers', ['auth_user' => auth()->user()])
+    )->name('club.director.finance.fundraisers');
     Route::get('/club-director/event-settlements', [EventClubSettlementController::class, 'indexForClub'])
         ->name('club.director.event-settlements.index');
     Route::get('/club-director/treasury', fn(Request $request) =>
@@ -604,6 +624,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.cashbox');
     Route::get('/club-director/finance-engine/accounting', [FinanceEngineController::class, 'accounting'])
         ->name('club.finance-engine.accounting');
+    Route::get('/club-director/finance-engine/fundraisers', [FinanceEngineController::class, 'fundraisers'])
+        ->name('club.finance-engine.fundraisers');
     Route::get('/club-director/finance-engine/movements/pdf', [FinanceEngineController::class, 'movementsPdf'])
         ->name('club.finance-engine.movements.pdf');
     Route::get('/club-director/finance-engine/accounting/pdf', [FinanceEngineController::class, 'accountingPdf'])
@@ -612,6 +634,14 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.concepts.store');
     Route::post('/club-director/finance-engine/income', [FinanceEngineController::class, 'storeIncome'])
         ->name('club.finance-engine.income.store');
+    Route::post('/club-director/finance-engine/fundraisers', [FinanceEngineController::class, 'storeFundraiserEvent'])
+        ->name('club.finance-engine.fundraisers.store');
+    Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/products', [FinanceEngineController::class, 'storeFundraiserProduct'])
+        ->name('club.finance-engine.fundraisers.products.store');
+    Route::patch('/club-director/finance-engine/fundraisers/products/{fundraiserProduct}', [FinanceEngineController::class, 'updateFundraiserProduct'])
+        ->name('club.finance-engine.fundraisers.products.update');
+    Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/sales', [FinanceEngineController::class, 'storeFundraiserSale'])
+        ->name('club.finance-engine.fundraisers.sales.store');
     Route::post('/club-director/finance-engine/expenses', [FinanceEngineController::class, 'storeExpense'])
         ->name('club.finance-engine.expenses.store');
     Route::post('/club-director/finance-engine/expenses/{expense}/receipt', [FinanceEngineController::class, 'uploadExpenseReceipt'])

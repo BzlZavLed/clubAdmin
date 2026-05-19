@@ -103,6 +103,8 @@ class FinanceBootstrapper
             ->with([
                 'reimbursementPayee:id,club_id,name,phone,email',
                 'settlementExpense:id,pay_to,settles_expense_id,amount,expense_date',
+                'reimbursementOriginExpense:id,pay_to,amount,expense_date,description,status',
+                'generatedReimbursementExpense:id,pay_to,amount,expense_date,description,status,reimbursement_origin_expense_id',
             ])
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
@@ -123,6 +125,7 @@ class FinanceBootstrapper
                 'receipt_path',
                 'reimbursement_receipt_path',
                 'settles_expense_id',
+                'reimbursement_origin_expense_id',
                 'created_at',
             ]);
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -74,6 +74,8 @@ const correctionForm = ref({
 const selectedSettlement = ref(null)
 const settlementSaving = ref(false)
 const settlementError = ref('')
+const ledgerPage = ref(1)
+const LEDGER_PAGE_SIZE = 25
 const settlementForm = ref({
     deposited_at: new Date().toISOString().slice(0, 16),
     reference: '',
@@ -98,6 +100,14 @@ const summaryTotals = computed(() => ({
 const pendingStaffRemittances = computed(() => treasury.value.pending_staff_remittances || [])
 const recentTreasuryMovements = computed(() => treasury.value.movements || [])
 const ledgerMovements = computed(() => engineReport.value?.movements || [])
+const ledgerPageCount = computed(() => Math.max(Math.ceil(ledgerMovements.value.length / LEDGER_PAGE_SIZE), 1))
+const paginatedLedgerMovements = computed(() => {
+    const start = (ledgerPage.value - 1) * LEDGER_PAGE_SIZE
+
+    return ledgerMovements.value.slice(start, start + LEDGER_PAGE_SIZE)
+})
+const ledgerPageStart = computed(() => ledgerMovements.value.length ? ((ledgerPage.value - 1) * LEDGER_PAGE_SIZE) + 1 : 0)
+const ledgerPageEnd = computed(() => Math.min(ledgerPage.value * LEDGER_PAGE_SIZE, ledgerMovements.value.length))
 const moduleNavItems = computed(() => [
     { href: '#accounting-transfers', label: tr('Transferencias', 'Transfers'), meta: recentTreasuryMovements.value.length },
     { href: '#accounting-balances', label: tr('Saldos', 'Balances'), meta: accountBalanceRows.value.length },
@@ -231,7 +241,16 @@ const linkedMovementKey = (movement, type) => {
         ? (movement?.related_canceled_movement_key || cancellation.related_canceled_movement_key)
         : (movement?.canceling_movement_key || cancellation.canceling_movement_key || cancellation.reversed_movement_key)
 }
-const scrollToLedgerMovement = (movementKey) => {
+const setLedgerPage = (page) => {
+    ledgerPage.value = Math.min(Math.max(Number(page) || 1, 1), ledgerPageCount.value)
+}
+const scrollToLedgerMovement = async (movementKey) => {
+    const index = ledgerMovements.value.findIndex((movement) => movement.movement_id === movementKey)
+    if (index >= 0) {
+        setLedgerPage(Math.floor(index / LEDGER_PAGE_SIZE) + 1)
+        await nextTick()
+    }
+
     const target = Array.from(document.querySelectorAll('[data-ledger-movement]'))
         .find((element) => element.dataset.ledgerMovement === movementKey && element.offsetParent !== null)
 
@@ -293,6 +312,7 @@ const syncMovementDefaults = () => {
 async function loadLedger() {
     ledgerLoading.value = true
     try {
+        ledgerPage.value = 1
         const params = {
             club_id: selectedClubId.value || undefined,
             limit: 200,
@@ -506,6 +526,12 @@ watch(() => movementForm.value.movement_type, (type) => {
 
 watch(() => movementForm.value.from_pay_to, (fromPayTo) => {
     if (movementForm.value.to_pay_to === fromPayTo) movementForm.value.to_pay_to = ''
+})
+
+watch(ledgerMovements, () => {
+    if (ledgerPage.value > ledgerPageCount.value) {
+        setLedgerPage(ledgerPageCount.value)
+    }
 })
 
 onMounted(loadData)
@@ -865,7 +891,7 @@ onMounted(loadData)
 
                 <div v-else class="space-y-3 lg:hidden">
                     <article
-                        v-for="movement in ledgerMovements"
+                        v-for="movement in paginatedLedgerMovements"
                         :key="movement.movement_id"
                         :data-ledger-movement="movement.movement_id"
                         class="rounded-xl border border-gray-200 p-3 scroll-mt-24"
@@ -949,7 +975,7 @@ onMounted(loadData)
                         </thead>
                         <tbody class="divide-y divide-gray-200">
                             <tr
-                                v-for="movement in ledgerMovements"
+                                v-for="movement in paginatedLedgerMovements"
                                 :key="movement.movement_id"
                                 :data-ledger-movement="movement.movement_id"
                                 class="scroll-mt-24"
@@ -1021,6 +1047,40 @@ onMounted(loadData)
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <div
+                    v-if="ledgerMovements.length > LEDGER_PAGE_SIZE"
+                    class="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                    <p class="text-sm text-gray-600">
+                        {{ tr('Mostrando', 'Showing') }}
+                        <span class="font-semibold text-gray-900">{{ ledgerPageStart }}-{{ ledgerPageEnd }}</span>
+                        {{ tr('de', 'of') }}
+                        <span class="font-semibold text-gray-900">{{ ledgerMovements.length }}</span>
+                        {{ tr('movimientos', 'movements') }}
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="ledgerPage <= 1"
+                            @click="setLedgerPage(ledgerPage - 1)"
+                        >
+                            {{ tr('Anterior', 'Previous') }}
+                        </button>
+                        <span class="rounded-xl bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
+                            {{ tr('Pagina', 'Page') }} {{ ledgerPage }} / {{ ledgerPageCount }}
+                        </span>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="ledgerPage >= ledgerPageCount"
+                            @click="setLedgerPage(ledgerPage + 1)"
+                        >
+                            {{ tr('Siguiente', 'Next') }}
+                        </button>
+                    </div>
                 </div>
             </section>
 

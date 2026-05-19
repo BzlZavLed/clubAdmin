@@ -179,6 +179,10 @@ export const generalTranslations = {
         es: 'Caja y contabilidad son las entradas principales del modulo financiero.',
         en: 'Cashbox and accounting are the main finance module entries.',
     },
+    fundraiser_pos: {
+        es: 'Fundraisers',
+        en: 'Fundraisers',
+    },
     folder_requirements: {
         es: 'Requisitos de carpeta',
         en: 'Folder requirements',

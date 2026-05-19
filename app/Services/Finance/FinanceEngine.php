@@ -5,6 +5,9 @@ namespace App\Services\Finance;
 use App\Models\Club;
 use App\Models\Event;
 use App\Models\Expense;
+use App\Models\FundraiserEvent;
+use App\Models\FundraiserProduct;
+use App\Models\FundraiserSale;
 use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -16,6 +19,7 @@ class FinanceEngine
         private readonly FinanceMovementReader $movements,
         private readonly FinanceWriter $writer,
         private readonly FinanceBootstrapper $bootstrapper,
+        private readonly FinanceFundraiserService $fundraisers,
     ) {
     }
 
@@ -64,6 +68,26 @@ class FinanceEngine
         return $this->bootstrapper->accountingData($user, $club, $filters);
     }
 
+    public function fundraiserData(User $user, Club $club): array
+    {
+        return $this->fundraisers->data($user, $club);
+    }
+
+    public function fundraiserKitchenEvent(FundraiserEvent $fundraiserEvent): array
+    {
+        return $this->fundraisers->kitchenEvent($fundraiserEvent);
+    }
+
+    public function fundraiserKitchenData(FundraiserEvent $fundraiserEvent): array
+    {
+        return $this->fundraisers->kitchenData($fundraiserEvent);
+    }
+
+    public function finishFundraiserKitchenOrder(Request $request, FundraiserEvent $fundraiserEvent, FundraiserSale $fundraiserSale)
+    {
+        return $this->fundraisers->finishKitchenOrder($request, $fundraiserEvent, $fundraiserSale);
+    }
+
     public function storeConcept(Request $request)
     {
         return $this->writer->storeConcept($request);
@@ -72,6 +96,26 @@ class FinanceEngine
     public function storeIncome(Request $request)
     {
         return $this->writer->storeIncome($request);
+    }
+
+    public function storeFundraiserEvent(Request $request)
+    {
+        return $this->fundraisers->storeEvent($request);
+    }
+
+    public function storeFundraiserProduct(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->fundraisers->storeProduct($request, $fundraiserEvent);
+    }
+
+    public function updateFundraiserProduct(Request $request, FundraiserProduct $fundraiserProduct)
+    {
+        return $this->fundraisers->updateProduct($request, $fundraiserProduct);
+    }
+
+    public function storeFundraiserSale(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->fundraisers->storeSale($request, $fundraiserEvent);
     }
 
     public function storeExpense(Request $request)

@@ -26,6 +26,7 @@ class Expense extends Model
         'receipt_path',
         'reimbursement_receipt_path',
         'settles_expense_id',
+        'reimbursement_origin_expense_id',
         'reversed_expense_id',
         'is_cancelled',
         'related_canceled_movement_id',
@@ -68,6 +69,18 @@ class Expense extends Model
     public function settledReimbursement()
     {
         return $this->belongsTo(self::class, 'settles_expense_id');
+    }
+
+    public function reimbursementOriginExpense()
+    {
+        return $this->belongsTo(self::class, 'reimbursement_origin_expense_id');
+    }
+
+    public function generatedReimbursementExpense()
+    {
+        return $this->hasOne(self::class, 'reimbursement_origin_expense_id')
+            ->where('pay_to', 'reimbursement_to')
+            ->whereNull('settles_expense_id');
     }
 
     public function reversedExpense()

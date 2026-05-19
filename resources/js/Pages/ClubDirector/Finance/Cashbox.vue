@@ -50,7 +50,11 @@ const expenses = ref([])
 const reimbursementPayees = ref([])
 const engineReport = ref(null)
 const movementDomain = ref('all')
+const movementSort = ref('date')
+const movementPage = ref(1)
+const movementPageSize = ref(10)
 const balanceAccountFilter = ref('all')
+const expenseFollowUpPage = ref(1)
 const incomeErrors = ref({})
 const expenseErrors = ref({})
 const conceptErrors = ref({})
@@ -66,6 +70,8 @@ const savingConcept = ref(false)
 const showReimbursementOverflowModal = ref(false)
 const CREATE_CONCEPT_OPTION = '__create_concept__'
 const CUSTOM_PAYER_OPTION = '__custom_payer__'
+const EXPENSE_FOLLOW_UP_PAGE_SIZE = 25
+const MOVEMENT_PAGE_SIZE_OPTIONS = [10, 15, 20]
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -118,10 +124,71 @@ const activeClubName = computed(() => currentClub.value?.club_name || clubs.valu
 const summary = computed(() => engineReport.value?.summary || {})
 const summaryAccounts = computed(() => summary.value?.accounts || [])
 const allMovements = computed(() => engineReport.value?.movements || [])
+const movementNumericId = (movement) => {
+    const match = String(movement?.movement_id || movement?.id || '').match(/(\d+)(?!.*\d)/)
+
+    return match ? Number(match[1]) : 0
+}
+const movementDateValue = (movement) => {
+    const raw = movement?.occurred_at || movement?.created_at || movement?.date || ''
+    const timestamp = new Date(String(raw).replace(' ', 'T')).getTime()
+
+    return Number.isNaN(timestamp) ? 0 : timestamp
+}
+const movementStatusValue = (movement) => String(movement?.status || 'posted').toLowerCase()
 const recentMovements = computed(() => {
-    if (movementDomain.value === 'all') return allMovements.value
-    return allMovements.value.filter((movement) => movement.domain === movementDomain.value)
+    const rows = movementDomain.value === 'all'
+        ? allMovements.value
+        : allMovements.value.filter((movement) => movement.domain === movementDomain.value)
+
+    return rows.slice().sort((a, b) => {
+        if (movementSort.value === 'status') {
+            const statusCompare = movementStatusValue(a).localeCompare(movementStatusValue(b))
+            if (statusCompare !== 0) return statusCompare
+        }
+
+        if (movementSort.value === 'id') {
+            const idCompare = movementNumericId(b) - movementNumericId(a)
+            if (idCompare !== 0) return idCompare
+        }
+
+        const dateCompare = movementDateValue(b) - movementDateValue(a)
+        if (dateCompare !== 0) return dateCompare
+
+        return movementNumericId(b) - movementNumericId(a)
+    })
 })
+const recentMovementGroups = computed(() => {
+    const groups = []
+    const index = new Map()
+
+    recentMovements.value.forEach((movement) => {
+        const reimbursementGroup = movement.reimbursement_group || null
+        const key = reimbursementGroup?.key || `movement:${movement.movement_id}`
+
+        if (!index.has(key)) {
+            const group = {
+                key,
+                reimbursementGroup,
+                movements: [],
+            }
+            index.set(key, group)
+            groups.push(group)
+        }
+
+        index.get(key).movements.push(movement)
+    })
+
+    return groups
+})
+const movementPageCount = computed(() => Math.max(Math.ceil(recentMovementGroups.value.length / movementPageSize.value), 1))
+const paginatedMovementGroups = computed(() => {
+    const start = (movementPage.value - 1) * movementPageSize.value
+
+    return recentMovementGroups.value.slice(start, start + movementPageSize.value)
+})
+const movementPageStart = computed(() => recentMovementGroups.value.length ? ((movementPage.value - 1) * movementPageSize.value) + 1 : 0)
+const movementPageEnd = computed(() => Math.min(movementPage.value * movementPageSize.value, recentMovementGroups.value.length))
 
 const filteredConcepts = computed(() => {
     if (!selectedClubId.value) return concepts.value
@@ -180,6 +247,7 @@ const accountOptions = computed(() => {
 })
 const isOperatingAccount = (payTo) => payTo !== 'reimbursement_to'
 const operatingAccountOptions = computed(() => accountOptions.value.filter((account) => isOperatingAccount(account.value)))
+const operatingSummaryAccounts = computed(() => summaryAccounts.value.filter((account) => isOperatingAccount(account.account)))
 const reimbursementFundingOptions = computed(() => operatingAccountOptions.value)
 const reimbursementPayeeOptions = computed(() => reimbursementPayees.value.map((payee) => ({
     value: payee.id,
@@ -191,7 +259,7 @@ const reimbursementPayeeOptions = computed(() => reimbursementPayees.value.map((
 })))
 const balanceAccountOptions = computed(() => [
     { value: 'all', label: tr('Todas las cuentas', 'All accounts') },
-    ...summaryAccounts.value.map((account) => ({
+    ...operatingSummaryAccounts.value.map((account) => ({
         value: account.account,
         label: accountOptions.value.find((option) => option.value === account.account)?.label || account.account,
     })),
@@ -199,7 +267,7 @@ const balanceAccountOptions = computed(() => [
 const selectedBalanceAccountSummary = computed(() => {
     if (balanceAccountFilter.value === 'all') return null
 
-    return summaryAccounts.value.find((account) => account.account === balanceAccountFilter.value) || null
+    return operatingSummaryAccounts.value.find((account) => account.account === balanceAccountFilter.value) || null
 })
 const balanceSummary = computed(() => {
     const row = selectedBalanceAccountSummary.value
@@ -213,9 +281,18 @@ const balanceSummary = computed(() => {
     }
 
     return {
-        cash_balance: Number(summary.value.cash_balance || 0),
-        bank_balance: Number(summary.value.bank_balance || 0),
-        total_available: Number(summary.value.total_available ?? (Number(summary.value.cash_balance || 0) + Number(summary.value.bank_balance || 0))),
+        cash_balance: operatingSummaryAccounts.value.reduce((sum, account) => sum + Number(account.cash_balance || 0), 0),
+        bank_balance: operatingSummaryAccounts.value.reduce((sum, account) => sum + Number(account.bank_balance || 0), 0),
+        total_available: operatingSummaryAccounts.value.reduce((sum, account) => sum + Number(account.total_available ?? (Number(account.cash_balance || 0) + Number(account.bank_balance || 0))), 0),
+    }
+})
+const reimbursementBalanceSummary = computed(() => {
+    const row = summaryAccounts.value.find((account) => account.account === 'reimbursement_to')
+
+    return {
+        cash_balance: Number(row?.cash_balance || 0),
+        bank_balance: Number(row?.bank_balance || 0),
+        total_available: Number(row?.total_available ?? (Number(row?.cash_balance || 0) + Number(row?.bank_balance || 0))),
     }
 })
 const selectedExpenseAccountSummary = computed(() =>
@@ -227,8 +304,21 @@ const expenseSelectedLocationBalance = computed(() => {
 
     return Math.max(Number(summaryRow?.[`${fundsLocation}_balance`] || 0), 0)
 })
+const expenseSelectedAccountTotalBalance = computed(() => {
+    const summaryRow = selectedExpenseAccountSummary.value
+
+    return Math.max(Number(summaryRow?.total_available ?? (Number(summaryRow?.cash_balance || 0) + Number(summaryRow?.bank_balance || 0))), 0)
+})
 const expenseAmount = computed(() => Number(expenseForm.value.amount || 0))
-const expenseOverflowAmount = computed(() => Math.max(expenseAmount.value - expenseSelectedLocationBalance.value, 0))
+const expenseTransferAmount = computed(() => Math.max(
+    Math.min(
+        roundCurrency(expenseAmount.value - expenseSelectedLocationBalance.value),
+        roundCurrency(expenseSelectedAccountTotalBalance.value - expenseSelectedLocationBalance.value),
+    ),
+    0,
+))
+const expenseNeedsInternalTransfer = computed(() => expenseAmount.value > 0 && expenseTransferAmount.value > 0)
+const expenseOverflowAmount = computed(() => Math.max(expenseAmount.value - expenseSelectedAccountTotalBalance.value, 0))
 const expenseHasOverflow = computed(() => expenseAmount.value > 0 && expenseOverflowAmount.value > 0)
 const selectedReimbursementPayee = computed(() =>
     reimbursementPayees.value.find((payee) => Number(payee.id) === Number(expenseForm.value.reimbursement_payee_id)) || null
@@ -242,7 +332,20 @@ const reimbursementTargetLabel = computed(() => {
 })
 const regularExpenseRows = computed(() => expenses.value.filter((expense) => expense.pay_to !== 'reimbursement_to'))
 const reimbursementExpenseRows = computed(() => expenses.value.filter((expense) => expense.pay_to === 'reimbursement_to'))
-const hasExpenseFollowUp = computed(() => regularExpenseRows.value.length > 0 || reimbursementExpenseRows.value.length > 0)
+const expenseFollowUpRows = computed(() => expenses.value.map((expense) => ({
+    key: `${expense.pay_to === 'reimbursement_to' ? 'reimbursement' : 'expense'}-${expense.id}`,
+    type: expense.pay_to === 'reimbursement_to' ? 'reimbursement' : 'expense',
+    expense,
+})))
+const expenseFollowUpPageCount = computed(() => Math.max(Math.ceil(expenseFollowUpRows.value.length / EXPENSE_FOLLOW_UP_PAGE_SIZE), 1))
+const paginatedExpenseFollowUpRows = computed(() => {
+    const start = (expenseFollowUpPage.value - 1) * EXPENSE_FOLLOW_UP_PAGE_SIZE
+
+    return expenseFollowUpRows.value.slice(start, start + EXPENSE_FOLLOW_UP_PAGE_SIZE)
+})
+const expenseFollowUpPageStart = computed(() => expenseFollowUpRows.value.length ? ((expenseFollowUpPage.value - 1) * EXPENSE_FOLLOW_UP_PAGE_SIZE) + 1 : 0)
+const expenseFollowUpPageEnd = computed(() => Math.min(expenseFollowUpPage.value * EXPENSE_FOLLOW_UP_PAGE_SIZE, expenseFollowUpRows.value.length))
+const hasExpenseFollowUp = computed(() => expenseFollowUpRows.value.length > 0)
 
 const isEventConcept = (concept) => Boolean(concept?.event_id && concept?.event_fee_component_id)
 const eventComponent = (concept) => concept?.event_fee_component || concept?.eventFeeComponent || null
@@ -346,7 +449,47 @@ const formatMoney = (value) => {
 
     return `${amount < 0 ? '-' : ''}$${Math.abs(amount).toFixed(2)}`
 }
-const formatDate = (value) => value ? String(value).slice(0, 10) : '—'
+const roundCurrency = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
+const padDatePart = (value) => String(value).padStart(2, '0')
+const dateParts = (value) => {
+    if (!value) return null
+
+    const raw = String(value)
+    const normalizedMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/)
+    if (normalizedMatch) {
+        return {
+            year: normalizedMatch[1],
+            month: normalizedMatch[2],
+            day: normalizedMatch[3],
+            hour: normalizedMatch[4] || null,
+            minute: normalizedMatch[5] || null,
+        }
+    }
+
+    const parsed = new Date(raw.replace(' ', 'T'))
+    if (Number.isNaN(parsed.getTime())) return null
+
+    return {
+        year: parsed.getFullYear(),
+        month: padDatePart(parsed.getMonth() + 1),
+        day: padDatePart(parsed.getDate()),
+        hour: padDatePart(parsed.getHours()),
+        minute: padDatePart(parsed.getMinutes()),
+    }
+}
+const formatDate = (value) => {
+    const parts = dateParts(value)
+
+    return parts ? `${parts.year}-${parts.month}-${parts.day}` : '—'
+}
+const formatDateTime = (value) => {
+    const parts = dateParts(value)
+    if (!parts) return '—'
+
+    const date = `${parts.year}-${parts.month}-${parts.day}`
+
+    return parts.hour && parts.minute ? `${date} ${parts.hour}:${parts.minute}` : date
+}
 const accountLabel = (payTo) => accountOptions.value.find((account) => account.value === payTo)?.label || payTo || '—'
 const locationLabel = (location) => {
     if (location === 'cash') return tr('Efectivo', 'Cash')
@@ -372,11 +515,41 @@ const movementAmountLabel = (movement) => {
     if (movement.domain === 'expense') return `-${formatMoney(movement.amount)}`
     return formatMoney(movement.amount)
 }
+const movementGroupTitle = (group) => group.reimbursementGroup?.label || group.movements[0]?.concept || group.movements[0]?.kind || tr('Movimiento', 'Movement')
+const movementGroupSummary = (group) => {
+    const reimbursementGroup = group.reimbursementGroup
+    if (!reimbursementGroup) return null
+
+    return [
+        reimbursementGroup.origin_expense_id ? `${tr('Gasto origen', 'Origin expense')} #${reimbursementGroup.origin_expense_id}` : null,
+        reimbursementGroup.reimbursement_expense_id ? `${tr('Reembolso', 'Reimbursement')} #${reimbursementGroup.reimbursement_expense_id}` : null,
+        reimbursementGroup.reimbursed_to ? `${tr('A', 'To')} ${reimbursementGroup.reimbursed_to}` : null,
+    ].filter(Boolean).join(' · ')
+}
+const movementGroupAmountSummary = (group) => {
+    const reimbursementGroup = group.reimbursementGroup
+    if (!reimbursementGroup) return null
+
+    return [
+        reimbursementGroup.origin_amount !== null && reimbursementGroup.origin_amount !== undefined
+            ? `${tr('Cuenta', 'Account')} ${formatMoney(reimbursementGroup.origin_amount)}`
+            : null,
+        reimbursementGroup.reimbursement_amount !== null && reimbursementGroup.reimbursement_amount !== undefined
+            ? `${tr('Reembolso', 'Reimbursement')} ${formatMoney(reimbursementGroup.reimbursement_amount)}`
+            : null,
+    ].filter(Boolean).join(' · ')
+}
 const normalizeErrors = (error) => {
     const errors = error?.response?.data?.errors || {}
     return Object.fromEntries(Object.entries(errors).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]))
 }
 const firstError = (errors, key) => errors?.[key] || null
+const setExpenseFollowUpPage = (page) => {
+    expenseFollowUpPage.value = Math.min(Math.max(Number(page) || 1, 1), expenseFollowUpPageCount.value)
+}
+const setMovementPage = (page) => {
+    movementPage.value = Math.min(Math.max(Number(page) || 1, 1), movementPageCount.value)
+}
 const reimbursementTargetError = computed(() =>
     firstError(expenseErrors.value, 'reimbursement_payee_id')
     || firstError(expenseErrors.value, 'reimbursement_payee_name')
@@ -391,13 +564,30 @@ const accountLocationBalance = (payTo, fundsLocation = 'cash') => {
 
     return Math.max(Number(row?.[`${fundsLocation || 'cash'}_balance`] || 0), 0)
 }
+const accountTotalBalance = (payTo) => {
+    const row = summaryAccounts.value.find((account) => account.account === payTo)
+
+    return Math.max(Number(row?.total_available ?? (Number(row?.cash_balance || 0) + Number(row?.bank_balance || 0))), 0)
+}
 const reimbursementSourceBalance = (expense) => {
     const form = reimbursementForms.value[expense.id] || {}
 
     return accountLocationBalance(form.pay_to, form.funds_location || 'cash')
 }
+const reimbursementSourceTotalBalance = (expense) => {
+    const form = reimbursementForms.value[expense.id] || {}
+
+    return accountTotalBalance(form.pay_to)
+}
+const reimbursementSettlementTransferAmount = (expense) => {
+    const selectedBalance = reimbursementSourceBalance(expense)
+    const totalBalance = reimbursementSourceTotalBalance(expense)
+    const amount = Number(expense.amount || 0)
+
+    return Math.max(Math.min(roundCurrency(amount - selectedBalance), roundCurrency(totalBalance - selectedBalance)), 0)
+}
 const canSettleReimbursement = (expense) =>
-    reimbursementSourceBalance(expense) + 0.0001 >= Number(expense.amount || 0)
+    reimbursementSourceTotalBalance(expense) + 0.0001 >= Number(expense.amount || 0)
 
 const mergeAccounts = (paymentAccounts, expenseAccounts) => {
     const rows = new Map()
@@ -498,6 +688,8 @@ const onClubChange = () => {
     incomeForm.value.concept_key = ''
     incomeForm.value.payer_key = ''
     incomeForm.value.payer_name = ''
+    expenseFollowUpPage.value = 1
+    movementPage.value = 1
     loadCaja(selectedClubId.value)
 }
 
@@ -925,9 +1117,25 @@ watch(expenseHasOverflow, (hasOverflow) => {
     showReimbursementOverflowModal.value = hasOverflow
 })
 
-watch(summaryAccounts, (accounts) => {
+watch(operatingSummaryAccounts, (accounts) => {
     if (balanceAccountFilter.value !== 'all' && !accounts.some((account) => account.account === balanceAccountFilter.value)) {
         balanceAccountFilter.value = 'all'
+    }
+})
+
+watch(expenseFollowUpRows, () => {
+    if (expenseFollowUpPage.value > expenseFollowUpPageCount.value) {
+        setExpenseFollowUpPage(expenseFollowUpPageCount.value)
+    }
+})
+
+watch([movementDomain, movementSort, movementPageSize], () => {
+    movementPage.value = 1
+})
+
+watch(recentMovementGroups, () => {
+    if (movementPage.value > movementPageCount.value) {
+        setMovementPage(movementPageCount.value)
     }
 })
 
@@ -989,7 +1197,7 @@ onMounted(() => loadCaja())
                     </div>
                 </div>
 
-                <div class="grid gap-3 sm:grid-cols-3">
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div class="rounded-lg border border-gray-200 bg-white p-4">
                         <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
                             <BanknotesIcon class="h-5 w-5 text-emerald-600" />
@@ -1010,6 +1218,15 @@ onMounted(() => loadCaja())
                             {{ tr('Disponible', 'Available') }}
                         </div>
                         <p class="mt-3 text-2xl font-semibold" :class="balanceSummary.total_available < 0 ? 'text-rose-700' : 'text-gray-950'">{{ formatMoney(balanceSummary.total_available) }}</p>
+                    </div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                        <div class="flex items-center gap-2 text-sm font-semibold text-amber-900">
+                            <ExclamationTriangleIcon class="h-5 w-5 text-amber-700" />
+                            {{ tr('Reembolsos pendientes', 'Reimbursements owed') }}
+                        </div>
+                        <p class="mt-3 text-2xl font-semibold" :class="reimbursementBalanceSummary.total_available < 0 ? 'text-rose-700' : 'text-gray-950'">
+                            {{ formatMoney(reimbursementBalanceSummary.total_available) }}
+                        </p>
                     </div>
                 </div>
             </section>
@@ -1261,6 +1478,31 @@ onMounted(() => loadCaja())
                             />
                         </div>
 
+                        <div v-if="expenseAmount > 0" class="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                            <div class="grid gap-3 text-xs text-gray-600 sm:grid-cols-3">
+                                <div>
+                                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Origen seleccionado', 'Selected origin') }}</p>
+                                    <p class="mt-1 text-sm font-semibold text-gray-900">{{ locationLabel(expenseForm.funds_location) }} · {{ formatMoney(expenseSelectedLocationBalance) }}</p>
+                                </div>
+                                <div>
+                                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Balance de cuenta', 'Account balance') }}</p>
+                                    <p class="mt-1 text-sm font-semibold text-gray-900">{{ formatMoney(expenseSelectedAccountTotalBalance) }}</p>
+                                </div>
+                                <div>
+                                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Resultado', 'Result') }}</p>
+                                    <p v-if="expenseHasOverflow" class="mt-1 text-sm font-semibold text-amber-800">
+                                        {{ tr('Reembolso pendiente', 'Pending reimbursement') }} {{ formatMoney(expenseOverflowAmount) }}
+                                    </p>
+                                    <p v-else-if="expenseNeedsInternalTransfer" class="mt-1 text-sm font-semibold text-blue-700">
+                                        {{ tr('Transferencia interna', 'Internal transfer') }} {{ formatMoney(expenseTransferAmount) }}
+                                    </p>
+                                    <p v-else class="mt-1 text-sm font-semibold text-emerald-700">
+                                        {{ tr('Cubierto por la cuenta', 'Covered by account') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="sm:col-span-2">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Descripcion', 'Description') }}</label>
                             <textarea
@@ -1275,8 +1517,11 @@ onMounted(() => loadCaja())
                                 <div>
                                     <p class="text-sm font-semibold text-amber-900">{{ tr('Excedente detectado', 'Overflow detected') }}</p>
                                     <p class="mt-1 text-xs text-amber-800">
-                                        {{ tr('Disponible', 'Available') }}: {{ formatMoney(expenseSelectedLocationBalance) }}
+                                        {{ tr('Balance de cuenta', 'Account balance') }}: {{ formatMoney(expenseSelectedAccountTotalBalance) }}
                                         · {{ tr('Excedente', 'Overflow') }}: {{ formatMoney(expenseOverflowAmount) }}
+                                    </p>
+                                    <p v-if="expenseNeedsInternalTransfer" class="mt-1 text-xs text-amber-800">
+                                        {{ tr('Tambien se registrara transferencia interna hacia', 'An internal transfer will also be recorded to') }} {{ locationLabel(expenseForm.funds_location) }} {{ tr('por', 'for') }} {{ formatMoney(expenseTransferAmount) }}.
                                     </p>
                                     <p class="mt-1 text-xs text-amber-800">
                                         {{ tr('Reembolso a', 'Reimbursement to') }}: {{ reimbursementTargetLabel }}
@@ -1323,12 +1568,13 @@ onMounted(() => loadCaja())
                 <div class="border-b border-gray-200 p-4">
                     <h3 class="text-base font-semibold text-gray-900">{{ tr('Seguimiento de gastos', 'Expense follow-up') }}</h3>
                     <p class="mt-1 text-sm text-gray-500">
-                        {{ tr('Completa comprobantes pendientes y liquida reembolsos desde Caja.', 'Complete pending proofs and settle reimbursements from Cashbox.') }}
+                        {{ tr('Aqui encontraras gastos registrados que necesitan comprobante y reembolsos generados por gastos con excedente, para ver a quien se debe, subir comprobantes y liquidarlos cuando la cuenta tenga el monto completo.', 'Here you will find recorded expenses that need proof and reimbursements created by overflow expenses, so you can see who is owed, upload proofs, and settle them when the account has the full amount.') }}
                     </p>
                 </div>
 
                 <div class="divide-y divide-gray-100">
-                    <article v-for="expense in regularExpenseRows" :key="`expense-${expense.id}`" class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+                    <template v-for="{ key, type, expense } in paginatedExpenseFollowUpRows" :key="key">
+                    <article v-if="type === 'expense'" class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
@@ -1348,6 +1594,12 @@ onMounted(() => loadCaja())
                                 <a v-if="expense.receipt_url" :href="expense.receipt_url" target="_blank" rel="noopener" class="font-semibold text-gray-700 hover:underline">
                                     {{ tr('Ver comprobante', 'View proof') }}
                                 </a>
+                            </div>
+                            <div v-if="expense.generated_reimbursement_expense" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                {{ tr('Este gasto genero reembolso pendiente', 'This expense generated a pending reimbursement') }}
+                                #{{ expense.generated_reimbursement_expense.id }}
+                                {{ tr('por', 'for') }}
+                                <span class="font-semibold">{{ formatMoney(expense.generated_reimbursement_expense.amount) }}</span>.
                             </div>
                         </div>
 
@@ -1383,7 +1635,7 @@ onMounted(() => loadCaja())
                         </div>
                     </article>
 
-                    <article v-for="expense in reimbursementExpenseRows" :key="`reimbursement-${expense.id}`" class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+                    <article v-else class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
@@ -1401,6 +1653,16 @@ onMounted(() => loadCaja())
                             <div v-if="expense.reimbursement_payee?.phone || expense.reimbursement_payee?.email" class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
                                 <span v-if="expense.reimbursement_payee?.phone">{{ expense.reimbursement_payee.phone }}</span>
                                 <span v-if="expense.reimbursement_payee?.email">{{ expense.reimbursement_payee.email }}</span>
+                            </div>
+                            <div v-if="expense.reimbursement_origin_expense" class="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                                <p class="font-semibold text-gray-900">
+                                    {{ tr('Relacionado con gasto', 'Related to expense') }} #{{ expense.reimbursement_origin_expense.id }}
+                                </p>
+                                <p class="mt-1">
+                                    {{ expense.reimbursement_origin_expense.description || tr('Sin descripcion', 'No description') }}
+                                    · {{ formatDate(expense.reimbursement_origin_expense.expense_date) }}
+                                    · {{ formatMoney(expense.reimbursement_origin_expense.amount) }}
+                                </p>
                             </div>
                             <div class="mt-2 flex flex-wrap gap-3 text-sm">
                                 <a v-if="expense.reimbursement_receipt_url" :href="expense.reimbursement_receipt_url" target="_blank" rel="noopener" class="font-semibold text-gray-700 hover:underline">
@@ -1445,8 +1707,12 @@ onMounted(() => loadCaja())
                                     {{ tr('Liquida el reembolso solo cuando la cuenta origen tenga el monto completo. No se registran reembolsos parciales.', 'Settle reimbursement only when the source account has the full amount. Partial reimbursements are not tracked.') }}
                                 </p>
                                 <p class="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700">
-                                    {{ tr('Disponible en cuenta origen', 'Available in source account') }}: {{ formatMoney(reimbursementSourceBalance(expense)) }}
+                                    {{ tr('Disponible en origen', 'Available in origin') }}: {{ formatMoney(reimbursementSourceBalance(expense)) }}
+                                    · {{ tr('Balance de cuenta', 'Account balance') }}: {{ formatMoney(reimbursementSourceTotalBalance(expense)) }}
                                     · {{ tr('Reembolso completo', 'Full reimbursement') }}: {{ formatMoney(expense.amount) }}
+                                </p>
+                                <p v-if="reimbursementSettlementTransferAmount(expense) > 0" class="sm:col-span-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
+                                    {{ tr('Se registrara transferencia interna hacia', 'Internal transfer will be recorded to') }} {{ locationLabel(reimbursementForms[expense.id].funds_location) }} {{ tr('por', 'for') }} {{ formatMoney(reimbursementSettlementTransferAmount(expense)) }}.
                                 </p>
                                 <p v-if="!canSettleReimbursement(expense)" class="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
                                     {{ tr('La cuenta seleccionada aun no tiene el monto completo para este reembolso.', 'The selected account does not yet have the full amount for this reimbursement.') }}
@@ -1497,24 +1763,78 @@ onMounted(() => loadCaja())
                             <p v-if="expenseActionError(expense.id)" class="text-xs text-rose-600">{{ expenseActionError(expense.id) }}</p>
                         </div>
                     </article>
+                    </template>
+                </div>
+
+                <div
+                    v-if="expenseFollowUpRows.length > EXPENSE_FOLLOW_UP_PAGE_SIZE"
+                    class="flex flex-col gap-3 border-t border-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                    <p class="text-sm text-gray-600">
+                        {{ tr('Mostrando', 'Showing') }}
+                        <span class="font-semibold text-gray-900">{{ expenseFollowUpPageStart }}-{{ expenseFollowUpPageEnd }}</span>
+                        {{ tr('de', 'of') }}
+                        <span class="font-semibold text-gray-900">{{ expenseFollowUpRows.length }}</span>
+                        {{ tr('movimientos', 'movements') }}
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="expenseFollowUpPage <= 1"
+                            @click="setExpenseFollowUpPage(expenseFollowUpPage - 1)"
+                        >
+                            {{ tr('Anterior', 'Previous') }}
+                        </button>
+                        <span class="rounded-lg bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
+                            {{ tr('Pagina', 'Page') }} {{ expenseFollowUpPage }} / {{ expenseFollowUpPageCount }}
+                        </span>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="expenseFollowUpPage >= expenseFollowUpPageCount"
+                            @click="setExpenseFollowUpPage(expenseFollowUpPage + 1)"
+                        >
+                            {{ tr('Siguiente', 'Next') }}
+                        </button>
+                    </div>
                 </div>
             </section>
 
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div class="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                        <h3 class="text-base font-semibold text-gray-900">{{ tr('Movimientos del motor financiero', 'Finance engine movements') }}</h3>
-                        <p class="text-sm text-gray-500">{{ tr('Lectura normalizada de ingresos, gastos y transferencias.', 'Normalized readout of income, expenses, and transfers.') }}</p>
+                        <h3 class="text-base font-semibold text-gray-900">{{ tr('Movimientos', 'Movements') }}</h3>
+                        <p class="text-sm text-gray-500">{{ tr('Aqui veras la lectura del motor financiero: ingresos, gastos, transferencias, reembolsos, recibos y comprobantes, con estado, cuenta, fecha y monto.', 'Here you will see the finance engine readout: income, expenses, transfers, reimbursements, receipts, and proofs, with status, account, date, and amount.') }}</p>
                     </div>
                     <div class="flex flex-col gap-2 sm:flex-row">
                         <select
                             v-model="movementDomain"
+                            :aria-label="tr('Filtrar movimientos', 'Filter movements')"
                             class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
                         >
                             <option value="all">{{ tr('Todos', 'All') }}</option>
                             <option value="income">{{ tr('Ingresos', 'Income') }}</option>
                             <option value="expense">{{ tr('Gastos', 'Expenses') }}</option>
                             <option value="transfer">{{ tr('Transferencias', 'Transfers') }}</option>
+                        </select>
+                        <select
+                            v-model="movementSort"
+                            :aria-label="tr('Ordenar movimientos', 'Sort movements')"
+                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                        >
+                            <option value="date">{{ tr('Ordenar por fecha y hora', 'Sort by date and time') }}</option>
+                            <option value="status">{{ tr('Ordenar por estado', 'Sort by status') }}</option>
+                            <option value="id">{{ tr('Ordenar por ID', 'Sort by ID') }}</option>
+                        </select>
+                        <select
+                            v-model.number="movementPageSize"
+                            :aria-label="tr('Movimientos por pagina', 'Movements per page')"
+                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                        >
+                            <option v-for="size in MOVEMENT_PAGE_SIZE_OPTIONS" :key="size" :value="size">
+                                {{ size }} {{ tr('por pagina', 'per page') }}
+                            </option>
                         </select>
                         <button
                             type="button"
@@ -1535,72 +1855,104 @@ onMounted(() => loadCaja())
                 </div>
 
                 <div v-else class="divide-y divide-gray-100">
-                    <article v-for="movement in recentMovements" :key="movement.movement_id" class="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                        <div class="min-w-0">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="rounded-full border px-2 py-1 text-xs font-semibold" :class="movementTone(movement)">
-                                    {{ movement.domain }}
-                                </span>
-                                <span class="text-sm font-semibold text-gray-900">{{ movement.concept || movement.kind }}</span>
-                                <span class="text-xs text-gray-500">#{{ movement.movement_id }}</span>
-                            </div>
-                            <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
-                                <span>{{ tr('Fecha', 'Date') }}: {{ formatDate(movement.date) }}</span>
-                                <span>{{ tr('Cuenta', 'Account') }}: {{ movement.account_label || accountLabel(movement.account) }}</span>
-                                <span>{{ tr('Ubicacion', 'Location') }}: {{ locationLabel(movement.location) }}</span>
-                                <span>{{ tr('Estado', 'Status') }}: {{ movement.status || 'posted' }}</span>
-                            </div>
-                            <div v-if="movement.receipt || movement.proof" class="mt-2 flex flex-wrap gap-2 text-xs">
-                                <a
-                                    v-if="movement.receipt?.url"
-                                    :href="movement.receipt.url"
-                                    target="_blank"
-                                    class="font-semibold text-red-700 hover:underline"
-                                >
-                                    {{ movement.receipt.number || tr('Recibo', 'Receipt') }}
-                                </a>
-                                <a
-                                    v-if="movement.proof?.url"
-                                    :href="movement.proof.url"
-                                    target="_blank"
-                                    class="font-semibold text-gray-700 hover:underline"
-                                >
-                                    {{ movement.proof.name || tr('Comprobante', 'Proof') }}
-                                </a>
+                    <article v-for="group in paginatedMovementGroups" :key="group.key" class="p-4">
+                        <div v-if="group.reimbursementGroup" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                            <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold text-amber-950">{{ movementGroupTitle(group) }}</p>
+                                    <p v-if="movementGroupSummary(group)" class="mt-1 text-xs text-amber-800">{{ movementGroupSummary(group) }}</p>
+                                </div>
+                                <p v-if="movementGroupAmountSummary(group)" class="text-xs font-semibold text-amber-900">
+                                    {{ movementGroupAmountSummary(group) }}
+                                </p>
                             </div>
                         </div>
-                        <div class="text-left lg:text-right">
-                            <p class="text-lg font-semibold" :class="movement.domain === 'expense' ? 'text-rose-700' : movement.domain === 'income' ? 'text-emerald-700' : 'text-blue-700'">
-                                {{ movementAmountLabel(movement) }}
-                            </p>
-                            <p class="text-xs text-gray-500">{{ movement.kind }}</p>
+
+                        <div class="space-y-3">
+                            <div
+                                v-for="movement in group.movements"
+                                :key="movement.movement_id"
+                                class="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center"
+                            >
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="rounded-full border px-2 py-1 text-xs font-semibold" :class="movementTone(movement)">
+                                            {{ movement.domain }}
+                                        </span>
+                                        <span class="text-sm font-semibold text-gray-900">{{ movement.concept || movement.kind }}</span>
+                                        <span class="text-xs text-gray-500">#{{ movement.movement_id }}</span>
+                                    </div>
+                                    <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
+                                        <span>{{ tr('Fecha y hora', 'Date and time') }}: {{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</span>
+                                        <span>{{ tr('Cuenta', 'Account') }}: {{ movement.account_label || accountLabel(movement.account) }}</span>
+                                        <span>{{ tr('Ubicacion', 'Location') }}: {{ locationLabel(movement.location) }}</span>
+                                        <span>{{ tr('Estado', 'Status') }}: {{ movement.status || 'posted' }}</span>
+                                    </div>
+                                    <div v-if="movement.receipt || movement.proof" class="mt-2 flex flex-wrap gap-2 text-xs">
+                                        <a
+                                            v-if="movement.receipt?.url"
+                                            :href="movement.receipt.url"
+                                            target="_blank"
+                                            class="font-semibold text-red-700 hover:underline"
+                                        >
+                                            {{ movement.receipt.number || tr('Recibo', 'Receipt') }}
+                                        </a>
+                                        <a
+                                            v-if="movement.proof?.url"
+                                            :href="movement.proof.url"
+                                            target="_blank"
+                                            class="font-semibold text-gray-700 hover:underline"
+                                        >
+                                            {{ movement.proof.name || tr('Comprobante', 'Proof') }}
+                                        </a>
+                                    </div>
+                                </div>
+                                <div class="text-left lg:text-right">
+                                    <p class="text-lg font-semibold" :class="movement.domain === 'expense' ? 'text-rose-700' : movement.domain === 'income' ? 'text-emerald-700' : 'text-blue-700'">
+                                        {{ movementAmountLabel(movement) }}
+                                    </p>
+                                    <p class="text-xs text-gray-500">{{ movement.kind }}</p>
+                                </div>
+                            </div>
                         </div>
                     </article>
                 </div>
-            </section>
 
-            <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <h3 class="text-base font-semibold text-gray-900">{{ tr('Balances por cuenta', 'Balances by account') }}</h3>
-                <div class="mt-3 grid gap-3 md:grid-cols-2">
-                    <div v-for="account in summaryAccounts" :key="account.account" class="rounded-lg border border-gray-200 p-3">
-                        <p class="font-semibold text-gray-900">{{ accountLabel(account.account) }}</p>
-                        <div class="mt-2 grid grid-cols-3 gap-2 text-sm">
-                            <div>
-                                <p class="text-xs text-gray-500">{{ tr('Efectivo', 'Cash') }}</p>
-                                <p class="font-semibold text-gray-800">{{ formatMoney(account.cash_balance) }}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500">{{ tr('Banco', 'Bank') }}</p>
-                                <p class="font-semibold text-gray-800">{{ formatMoney(account.bank_balance) }}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500">{{ tr('Total', 'Total') }}</p>
-                                <p class="font-semibold text-gray-800">{{ formatMoney(account.total_available) }}</p>
-                            </div>
-                        </div>
+                <div
+                    v-if="recentMovementGroups.length > movementPageSize"
+                    class="flex flex-col gap-3 border-t border-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                    <p class="text-sm text-gray-600">
+                        {{ tr('Mostrando', 'Showing') }}
+                        <span class="font-semibold text-gray-900">{{ movementPageStart }}-{{ movementPageEnd }}</span>
+                        {{ tr('de', 'of') }}
+                        <span class="font-semibold text-gray-900">{{ recentMovementGroups.length }}</span>
+                        {{ tr('movimientos', 'movements') }}
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="movementPage <= 1"
+                            @click="setMovementPage(movementPage - 1)"
+                        >
+                            {{ tr('Anterior', 'Previous') }}
+                        </button>
+                        <span class="rounded-lg bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
+                            {{ tr('Pagina', 'Page') }} {{ movementPage }} / {{ movementPageCount }}
+                        </span>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="movementPage >= movementPageCount"
+                            @click="setMovementPage(movementPage + 1)"
+                        >
+                            {{ tr('Siguiente', 'Next') }}
+                        </button>
                     </div>
                 </div>
             </section>
+
         </div>
 
         <div
@@ -1616,7 +1968,7 @@ onMounted(() => loadCaja())
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900">{{ tr('Reembolsar excedente', 'Reimburse overflow') }}</h3>
                         <p class="mt-1 text-sm text-gray-500">
-                            {{ tr('El gasto excede el saldo seleccionado. Registra quien cubrio el excedente para dejar el reembolso pendiente.', 'This expense exceeds the selected balance. Register who covered the overflow so the reimbursement remains pending.') }}
+                            {{ tr('El gasto excede el balance total de la cuenta. Registra quien cubrio el excedente para dejar el reembolso pendiente.', 'This expense exceeds the account total balance. Register who covered the overflow so the reimbursement remains pending.') }}
                         </p>
                     </div>
                     <button
@@ -1632,11 +1984,11 @@ onMounted(() => loadCaja())
                     <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cuenta', 'Account') }}</p>
                         <p class="mt-1 text-sm font-semibold text-gray-900">{{ accountLabel(expenseForm.pay_to) }}</p>
-                        <p class="mt-1 text-xs text-gray-500">{{ locationLabel(expenseForm.funds_location) }}</p>
+                        <p class="mt-1 text-xs text-gray-500">{{ locationLabel(expenseForm.funds_location) }} · {{ formatMoney(expenseSelectedLocationBalance) }}</p>
                     </div>
                     <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Disponible', 'Available') }}</p>
-                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ formatMoney(expenseSelectedLocationBalance) }}</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Balance de cuenta', 'Account balance') }}</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ formatMoney(expenseSelectedAccountTotalBalance) }}</p>
                     </div>
                     <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">{{ tr('Excedente', 'Overflow') }}</p>

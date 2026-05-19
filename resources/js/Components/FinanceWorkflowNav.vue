@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import {
     BanknotesIcon,
     ChartBarIcon,
+    ShoppingCartIcon,
 } from '@heroicons/vue/24/outline'
 import { useLocale } from '@/Composables/useLocale'
 
@@ -29,6 +30,13 @@ const groups = computed(() => [
                 href: '/club-director/finance/accounting',
                 route: 'club.director.finance.accounting',
                 icon: ChartBarIcon,
+            },
+            {
+                id: 'fundraiser_pos',
+                name: t('fundraiser_pos'),
+                href: '/club-director/finance/fundraisers',
+                route: 'club.director.finance.fundraisers',
+                icon: ShoppingCartIcon,
             },
         ],
     },

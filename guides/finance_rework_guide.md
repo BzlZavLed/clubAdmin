@@ -1,7 +1,7 @@
 # Guia de reacomodo de finanzas
 
 Fecha de referencia inicial: 2026-05-08
-Ultima actualizacion documentada: 2026-05-18
+Ultima actualizacion documentada: 2026-05-19
 Rama actual de trabajo: `feature/frontend-finance-reorg`
 Commit base del primer reacomodo: `edbf498 first rework`
 
@@ -26,6 +26,7 @@ Commit base del primer reacomodo: `edbf498 first rework`
 | Escrituras principales extraidas a servicios del motor | Hecho inicial | 2026-05-14 |
 | Redireccion de vistas historicas financieras al motor | Hecho inicial | 2026-05-14 |
 | Comprobantes tardios y liquidacion de reembolsos en el motor | Hecho inicial | 2026-05-18 |
+| POS de fundraisers con recibos e ingreso al ledger | Hecho inicial | 2026-05-19 |
 | Refactor backend del motor financiero | Pendiente | Sin fecha |
 | Cierre total de la rama | Pendiente | Sin fecha |
 
@@ -526,6 +527,7 @@ Cambios hechos:
 - La liquidacion de reembolsos genera el pago interno de cierre, el gasto de salida desde la cuenta origen y el recibo del pago interno. El comprobante de reembolso es opcional y puede cargarse despues; si se carga tarde, se enlaza tambien al gasto de salida.
 - Los reembolsos pendientes se exponen en los saldos como cuenta `reimbursement_to` con balance negativo hasta su liquidacion, para que `Caja` y `Contabilidad` muestren el estado real de obligaciones.
 - `reimbursement_to` es una cuenta de obligacion, no una cuenta operativa: se muestra en saldos, pero se excluye de ingresos, gastos, conceptos manuales y cuentas origen de liquidacion. La liquidacion valida el saldo de la cuenta origen seleccionada, aunque el total global siga negativo por otros reembolsos pendientes.
+- En `Caja`, las tarjetas superiores separan saldos operativos de obligaciones: efectivo, banco y disponible suman solo cuentas reales, mientras una cuarta tarjeta muestra `Reembolsos pendientes` como balance negativo.
 - Se elimino `app/Http/Controllers/ExpenseController.php`.
 - El libro normalizado vuelve a exponer como reversible el movimiento principal de un reembolso liquidado, para que `Contabilidad` pueda corregirlo desde el flujo de correcciones.
 
@@ -645,6 +647,39 @@ Estado actual:
 - La nueva vista `Contabilidad` tambien lo muestra y lo escribe por el motor financiero.
 - El usuario final deberia terminar usando `Contabilidad` como punto principal para transferencias y auditoria.
 
+### 2026-05-19, POS de fundraisers
+
+Se agrego una vista nueva para ventas de recaudacion sin adaptar el modulo de eventos.
+
+Ruta nueva:
+
+- `/club-director/finance/fundraisers`
+
+Endpoints nuevos del motor:
+
+- `GET /club-director/finance-engine/fundraisers`
+- `POST /club-director/finance-engine/fundraisers`
+- `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/products`
+- `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/sales`
+
+Tablas nuevas:
+
+- `fundraiser_events`
+- `fundraiser_products`
+- `fundraiser_sales`
+- `fundraiser_sale_items`
+
+Reglas actuales:
+
+- Cada fundraiser define una sola cuenta destino (`pay_to`) para todos sus ingresos.
+- Cada venta crea un `payments` normal, incrementa la cuenta, genera recibo con `PaymentReceiptService` y queda enlazada con `payments.source_type = fundraiser_sale`.
+- El inventario es opcional por producto.
+- Toda inversion registrada en un fundraiser se guarda tambien como `expenses`, descuenta efectivo o banco de la cuenta elegida y puede llevar comprobante opcional.
+- Todos los tipos de fundraiser usan la misma tabla de productos vendibles: producto/plato, cantidad preparada o comprada, inversion de materiales, comprobante opcional, precio de venta y costo unitario calculado.
+- El inventario se puede activar por producto cuando se quiere bloquear ventas por encima de la cantidad disponible.
+- Los totales del fundraiser se calculan por ventas agrupadas: ingresos, costo vendido, margen vendido, ganancia neta contra inversion, inventario restante y recibos.
+- La inversion sirve como base de utilidad; si el dinero salio de una cuenta del club, el gasto operativo debe registrarse tambien en `Caja` para afectar saldos reales.
+
 ## Objetivo funcional final
 
 El destino deseado es que finanzas trabaje como un flujo simple:
@@ -655,6 +690,7 @@ El destino deseado es que finanzas trabaje como un flujo simple:
 4. `Contabilidad` permite mover dinero entre efectivo y banco.
 5. `Contabilidad` permite transferir hacia arriba cuando el dinero corresponde a eventos o conceptos que deben salir del club.
 6. Los reportes muestran saldos, movimientos, conceptos, cuentas, recibos, comprobantes y correcciones.
+7. `Fundraisers` permite vender productos o comida con recibos, costos, inventario opcional y resumen por evento.
 
 ## Lo que si puede hacerse solo en frontend
 
@@ -737,12 +773,14 @@ Cuando se vuelva a trabajar este modulo:
 2. Confirmar rama con `git status --short --branch`.
 3. Revisar `resources/js/Pages/ClubDirector/Finance/Cashbox.vue`.
 4. Revisar `resources/js/Pages/ClubDirector/Finance/Accounting.vue`.
-5. Revisar `app/Services/Finance/FinanceEngine.php` y `app/Services/Finance/FinanceWriter.php`.
-6. Revisar `resources/js/Components/FinanceWorkflowNav.vue` si el cambio afecta navegacion financiera.
-7. Revisar `resources/js/Components/Nav/ClubDirectorNav.vue`.
-8. Revisar rutas historicas en `routes/web.php` si el cambio afecta compatibilidad o redirecciones.
-9. Si el trabajo es solo visual, mantenerlo en frontend.
-10. Si el trabajo cambia saldos, recibos, transferencias o cancelaciones, tratarlo como cambio backend y cubrirlo con pruebas.
+5. Revisar `resources/js/Pages/ClubDirector/Finance/Fundraisers.vue` si el cambio afecta ventas de recaudacion.
+6. Revisar `app/Services/Finance/FinanceEngine.php` y `app/Services/Finance/FinanceWriter.php`.
+7. Revisar `app/Services/Finance/FinanceFundraiserService.php` si el cambio afecta fundraisers.
+8. Revisar `resources/js/Components/FinanceWorkflowNav.vue` si el cambio afecta navegacion financiera.
+9. Revisar `resources/js/Components/Nav/ClubDirectorNav.vue`.
+10. Revisar rutas historicas en `routes/web.php` si el cambio afecta compatibilidad o redirecciones.
+11. Si el trabajo es solo visual, mantenerlo en frontend.
+12. Si el trabajo cambia saldos, recibos, transferencias o cancelaciones, tratarlo como cambio backend y cubrirlo con pruebas.
 
 ## Frase corta de contexto para Codex
 

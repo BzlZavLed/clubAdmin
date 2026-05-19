@@ -57,6 +57,16 @@ class DocumentValidationService
 
     public function qrCodeDataUri(string $data): string
     {
+        return (new SvgWriter())->write($this->qrCode($data))->getDataUri();
+    }
+
+    public function qrCodeSvg(string $data): string
+    {
+        return (new SvgWriter())->write($this->qrCode($data))->getString();
+    }
+
+    private function qrCode(string $data): QrCode
+    {
         $qrCode = new QrCode(
             data: $data,
             errorCorrectionLevel: ErrorCorrectionLevel::High,
@@ -65,6 +75,6 @@ class DocumentValidationService
             roundBlockSizeMode: RoundBlockSizeMode::Margin,
         );
 
-        return (new SvgWriter())->write($qrCode)->getDataUri();
+        return $qrCode;
     }
 }

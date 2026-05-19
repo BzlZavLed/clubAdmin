@@ -57,17 +57,15 @@ class FinanceExpenseWriter
 
         DB::transaction(function () use ($club, $validated, $request, &$expense, &$splitExpense) {
             $account = $this->resolveAccount($club->id, $validated['pay_to']);
-            $amount = (float) $validated['amount'];
+            $amount = round((float) $validated['amount'], 2);
             $fundsLocation = $validated['funds_location'] ?? 'cash';
-            $available = $this->locationBalanceFor($club, $validated['pay_to'], $fundsLocation);
-            $fromAccount = $amount;
-            $shortfall = 0.0;
+            $fundingPlan = $this->treasuryService->expenseFundingPlan($club, $validated['pay_to'], $fundsLocation, $amount);
+            $fromAccount = (float) $fundingPlan['amount_from_account'];
+            $shortfall = (float) $fundingPlan['reimbursement_shortfall'];
             $reimbursementConcept = null;
             $reimbursementPayee = null;
 
-            if ($amount > $available) {
-                $fromAccount = $available;
-                $shortfall = max($amount - $available, 0.0);
+            if ($shortfall > 0) {
                 $reimbursementPayee = $this->resolveReimbursementPayee($club, $request, $validated);
                 $reimbursementConcept = $this->reimbursementConceptFor($club, $request, $reimbursementPayee);
             }
@@ -77,6 +75,14 @@ class FinanceExpenseWriter
                 : null;
 
             if ($fromAccount > 0) {
+                $this->treasuryService->recordAutomaticExpenseFundingTransfer(
+                    $club,
+                    $fundingPlan,
+                    $request->user()?->id,
+                    $validated['expense_date'],
+                    'Transferencia automatica para registrar gasto desde ' . $fundsLocation . '.'
+                );
+
                 $expense = Expense::query()->create([
                     'club_id' => $club->id,
                     'pay_to' => $validated['pay_to'],
@@ -97,6 +103,9 @@ class FinanceExpenseWriter
 
             if ($shortfall > 0 && $reimbursementConcept) {
                 $reimbursementAccount = $this->resolveAccount($club->id, 'reimbursement_to');
+                $reimbursementDescription = $this->normalizeText($validated['description'] ?? null)
+                    ? 'Reembolso pendiente por: ' . $this->normalizeText($validated['description'] ?? null)
+                    : 'Reembolso pendiente por gasto con saldo insuficiente.';
 
                 $splitExpense = Expense::query()->create([
                     'club_id' => $club->id,
@@ -107,11 +116,12 @@ class FinanceExpenseWriter
                     'reimbursement_payee_id' => $reimbursementPayee?->id,
                     'amount' => $shortfall,
                     'expense_date' => $validated['expense_date'],
-                    'description' => 'Reembolso pendiente por gasto con saldo insuficiente.',
+                    'description' => $reimbursementDescription,
                     'reimbursed_to' => $reimbursementPayee?->name,
                     'created_by_user_id' => $request->user()->id,
                     'status' => 'pending_reimbursement',
                     'receipt_path' => null,
+                    'reimbursement_origin_expense_id' => $expense?->id,
                 ]);
 
                 $reimbursementAccount->decrement('balance', $shortfall);
@@ -255,11 +265,12 @@ class FinanceExpenseWriter
         $account = $this->resolveAccount($expense->club_id, $validated['pay_to']);
         $fundsLocation = $validated['funds_location'] ?? 'cash';
         $club = Club::withoutGlobalScopes()->findOrFail($expense->club_id);
+        $fundingPlan = $this->treasuryService->expenseFundingPlan($club, $validated['pay_to'], $fundsLocation, (float) $expense->amount);
 
-        if ($this->locationBalanceFor($club, $validated['pay_to'], $fundsLocation) < (float) $expense->amount) {
+        if ((float) $fundingPlan['reimbursement_shortfall'] > 0) {
             return response()->json([
-                'message' => 'Saldo insuficiente en la ubicación seleccionada para reembolsar.',
-                'errors' => ['funds_location' => ['Saldo insuficiente en la ubicación seleccionada para reembolsar.']]
+                'message' => 'La cuenta seleccionada no tiene el monto completo para este reembolso.',
+                'errors' => ['pay_to' => ['La cuenta seleccionada no tiene el monto completo para este reembolso.']]
             ], 422);
         }
 
@@ -274,8 +285,16 @@ class FinanceExpenseWriter
 
         $reimbursementDate = $validated['reimbursement_date'] ?? now()->toDateString();
 
-        DB::transaction(function () use ($expense, $account, $receiptPath, $request, $fundsLocation, $reimbursementDate) {
+        DB::transaction(function () use ($expense, $account, $receiptPath, $request, $fundsLocation, $reimbursementDate, $club, $fundingPlan) {
             $reimbursementAccount = $this->resolveAccount($expense->club_id, 'reimbursement_to');
+
+            $this->treasuryService->recordAutomaticExpenseFundingTransfer(
+                $club,
+                $fundingPlan,
+                $request->user()?->id,
+                $reimbursementDate,
+                'Transferencia automatica para liquidar reembolso desde ' . $fundsLocation . '.'
+            );
 
             $settlementPayment = \App\Models\Payment::query()->create([
                 'club_id' => $expense->club_id,
@@ -307,6 +326,7 @@ class FinanceExpenseWriter
                 'status' => 'completed',
                 'receipt_path' => $receiptPath,
                 'settles_expense_id' => $expense->id,
+                'reimbursement_origin_expense_id' => $expense->reimbursement_origin_expense_id,
             ]);
 
             $account->decrement('balance', (float) $expense->amount);
@@ -418,15 +438,6 @@ class FinanceExpenseWriter
             ['club_id' => $clubId, 'pay_to' => $payTo],
             ['label' => $payTo, 'balance' => 0]
         );
-    }
-
-    private function locationBalanceFor(Club $club, string $payTo, string $fundsLocation): float
-    {
-        $row = $this->treasuryService
-            ->locationBalancesByAccount($club)
-            ->firstWhere('account', $payTo);
-
-        return max((float) ($row[$fundsLocation . '_balance'] ?? 0), 0.0);
     }
 
     private function ensureExpenseBelongsToUser($user, Expense $expense): void

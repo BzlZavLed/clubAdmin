@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\TreasuryMovement;
 use App\Services\AttendanceDuesPaymentService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 class ClubTreasuryService
@@ -79,6 +80,67 @@ class ClubTreasuryService
             'total_available' => $totals['total_available'],
             'accounts' => $accountBalances->values()->all(),
         ];
+    }
+
+    public function expenseFundingPlan(Club $club, string $payTo, string $fundsLocation, float $amount): array
+    {
+        $fundsLocation = $fundsLocation === TreasuryMovement::LOCATION_BANK
+            ? TreasuryMovement::LOCATION_BANK
+            : TreasuryMovement::LOCATION_CASH;
+        $otherLocation = $fundsLocation === TreasuryMovement::LOCATION_BANK
+            ? TreasuryMovement::LOCATION_CASH
+            : TreasuryMovement::LOCATION_BANK;
+        $amount = round($amount, 2);
+
+        $row = $this->locationBalancesByAccount($club)->firstWhere('account', $payTo);
+        $selectedBalance = max(round((float) ($row[$fundsLocation . '_balance'] ?? 0), 2), 0.0);
+        $otherBalance = max(round((float) ($row[$otherLocation . '_balance'] ?? 0), 2), 0.0);
+        $totalAvailable = round($selectedBalance + $otherBalance, 2);
+        $amountFromAccount = min($amount, $totalAvailable);
+        $neededFromOtherLocation = max(round($amountFromAccount - $selectedBalance, 2), 0.0);
+        $transferAmount = min($neededFromOtherLocation, $otherBalance);
+
+        return [
+            'pay_to' => $payTo,
+            'funds_location' => $fundsLocation,
+            'other_location' => $otherLocation,
+            'selected_location_balance' => $selectedBalance,
+            'other_location_balance' => $otherBalance,
+            'total_available' => $totalAvailable,
+            'amount_from_account' => round($amountFromAccount, 2),
+            'reimbursement_shortfall' => max(round($amount - $totalAvailable, 2), 0.0),
+            'transfer_amount' => round($transferAmount, 2),
+        ];
+    }
+
+    public function recordAutomaticExpenseFundingTransfer(
+        Club $club,
+        array $fundingPlan,
+        ?int $userId,
+        string $movementDate,
+        ?string $notes = null
+    ): ?TreasuryMovement {
+        $amount = round((float) ($fundingPlan['transfer_amount'] ?? 0), 2);
+        if ($amount <= 0) {
+            return null;
+        }
+
+        $payTo = $fundingPlan['pay_to'] ?? 'club_budget';
+
+        return TreasuryMovement::query()->create([
+            'club_id' => $club->id,
+            'pay_to' => $payTo,
+            'from_pay_to' => $payTo,
+            'to_pay_to' => $payTo,
+            'created_by_user_id' => $userId,
+            'movement_type' => TreasuryMovement::TYPE_ACCOUNT_TRANSFER,
+            'from_location' => $fundingPlan['other_location'],
+            'to_location' => $fundingPlan['funds_location'],
+            'amount' => $amount,
+            'movement_date' => Carbon::parse($movementDate)->toDateString(),
+            'reference' => 'AUTO-EXPENSE-FUNDING',
+            'notes' => $notes ?: 'Transferencia automatica para cubrir gasto desde la ubicacion seleccionada.',
+        ]);
     }
 
     public function locationBalancesByAccount(Club $club): Collection

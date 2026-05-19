@@ -5,12 +5,17 @@ namespace App\Http\Controllers;
 use App\Services\Finance\FinanceEngine;
 use App\Models\Event;
 use App\Models\Expense;
+use App\Models\FundraiserEvent;
+use App\Models\FundraiserProduct;
+use App\Models\FundraiserSale;
 use App\Models\Payment;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
 use App\Support\ClubHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\URL;
+use Inertia\Inertia;
 
 class FinanceEngineController extends Controller
 {
@@ -115,6 +120,39 @@ class FinanceEngineController extends Controller
         ]);
     }
 
+    public function fundraisers(Request $request)
+    {
+        $validated = $request->validate([
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+        ]);
+
+        $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
+
+        return response()->json([
+            'data' => $this->financeEngine->fundraiserData($request->user(), $club),
+        ]);
+    }
+
+    public function fundraiserKitchen(FundraiserEvent $fundraiserEvent)
+    {
+        return Inertia::render('ClubDirector/Finance/FundraiserKitchen', [
+            'event' => $this->financeEngine->fundraiserKitchenEvent($fundraiserEvent),
+            'data_url' => URL::signedRoute('fundraisers.kitchen.orders', ['fundraiserEvent' => $fundraiserEvent]),
+        ]);
+    }
+
+    public function fundraiserKitchenOrders(FundraiserEvent $fundraiserEvent)
+    {
+        return response()->json([
+            'data' => $this->financeEngine->fundraiserKitchenData($fundraiserEvent),
+        ]);
+    }
+
+    public function finishFundraiserKitchenOrder(Request $request, FundraiserEvent $fundraiserEvent, FundraiserSale $fundraiserSale)
+    {
+        return $this->financeEngine->finishFundraiserKitchenOrder($request, $fundraiserEvent, $fundraiserSale);
+    }
+
     public function accountingPdf(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
     {
         $validated = $request->validate([
@@ -177,6 +215,26 @@ class FinanceEngineController extends Controller
     public function storeIncome(Request $request)
     {
         return $this->financeEngine->storeIncome($request);
+    }
+
+    public function storeFundraiserEvent(Request $request)
+    {
+        return $this->financeEngine->storeFundraiserEvent($request);
+    }
+
+    public function storeFundraiserProduct(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->financeEngine->storeFundraiserProduct($request, $fundraiserEvent);
+    }
+
+    public function updateFundraiserProduct(Request $request, FundraiserProduct $fundraiserProduct)
+    {
+        return $this->financeEngine->updateFundraiserProduct($request, $fundraiserProduct);
+    }
+
+    public function storeFundraiserSale(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->financeEngine->storeFundraiserSale($request, $fundraiserEvent);
     }
 
     public function storeExpense(Request $request)

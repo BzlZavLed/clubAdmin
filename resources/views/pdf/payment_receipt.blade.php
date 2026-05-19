@@ -220,6 +220,69 @@
             vertical-align: middle;
         }
 
+        .order-panel {
+            margin-top: 18px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .order-title {
+            background: #f3f4f6;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-weight: bold;
+            letter-spacing: .35px;
+            text-transform: uppercase;
+            color: #374151;
+        }
+
+        .order-support {
+            margin-top: 2px;
+            color: #6b7280;
+            font-size: 9.5px;
+            font-weight: normal;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
+        .order-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .order-table th {
+            background: #f9fafb;
+            color: #6b7280;
+            font-size: 9.5px;
+            letter-spacing: .35px;
+            padding: 8px 10px;
+            text-align: left;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .order-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: top;
+        }
+
+        .order-table tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .order-number {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .order-total-row td {
+            background: #f9fafb;
+            font-weight: bold;
+        }
+
         .total-label {
             color: #1e3a8a;
             font-size: 11px;
@@ -438,6 +501,41 @@
                         </tr>
                     </table>
                 </div>
+
+                @if(!empty($fundraiserOrder['items']))
+                    <div class="order-panel">
+                        <div class="order-title">
+                            Detalle del pedido
+                            @if(!empty($fundraiserOrder['event_name']))
+                                <div class="order-support">{{ $fundraiserOrder['event_name'] }}</div>
+                            @endif
+                        </div>
+                        <table class="order-table">
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th class="order-number">Cantidad</th>
+                                    <th class="order-number">Precio</th>
+                                    <th class="order-number">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($fundraiserOrder['items'] as $item)
+                                    <tr>
+                                        <td>{{ $item['name'] ?? 'Producto' }}</td>
+                                        <td class="order-number">{{ (int) ($item['quantity'] ?? 0) }}</td>
+                                        <td class="order-number">${{ number_format((float) ($item['unit_price'] ?? 0), 2) }}</td>
+                                        <td class="order-number">${{ number_format((float) ($item['line_total'] ?? 0), 2) }}</td>
+                                    </tr>
+                                @endforeach
+                                <tr class="order-total-row">
+                                    <td colspan="3" class="order-number">Total del pedido</td>
+                                    <td class="order-number">${{ number_format((float) ($fundraiserOrder['total_amount'] ?? $payment?->amount_paid ?? 0), 2) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
 
                 @if(!empty($payment?->notes))
                     <div class="note-box">

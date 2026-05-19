@@ -4,8 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\PaymentReceipt;
 use App\Models\Member;
+use App\Models\FundraiserSale;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
+use App\Services\Finance\FinanceFundraiserService;
+use App\Services\PaymentReceiptService;
 use App\Support\ClubHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
@@ -21,6 +24,25 @@ class PaymentReceiptController extends Controller
         $this->markAsDownloaded(collect([$receipt]));
 
         return $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService, $request->user())->download("{$receipt->receipt_number}.pdf");
+    }
+
+    public function publicDownload(PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
+    {
+        $receipt = $this->loadReceiptContext($receipt);
+        $this->markAsDownloaded(collect([$receipt]));
+
+        return $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService)->download("{$receipt->receipt_number}.pdf");
+    }
+
+    public function publicQr(PaymentReceipt $receipt, PaymentReceiptService $paymentReceiptService, DocumentValidationService $documentValidationService)
+    {
+        $receipt = $this->loadReceiptContext($receipt);
+
+        return response($documentValidationService->qrCodeSvg($paymentReceiptService->publicDownloadUrl($receipt)), 200, [
+            'Content-Type' => 'image/svg+xml',
+            'Cache-Control' => 'private, max-age=86400',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     public function downloadBulk(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
@@ -248,6 +270,7 @@ class PaymentReceiptController extends Controller
         $club = $receipt->club ?? $payment?->club;
         $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name ?? '—';
         $conceptName = $this->receiptConceptName($payment);
+        $fundraiserOrder = $this->fundraiserOrderForPayment($payment);
         $isCancellationReceipt = $payment && (
             (float) $payment->amount_paid < 0
             || !empty($payment->canceling_id)
@@ -276,6 +299,7 @@ class PaymentReceiptController extends Controller
                 'member_name' => $memberDetail['name'] ?? null,
                 'staff_name' => $staffDetail['name'] ?? null,
                 'payer_name' => $payment?->payer_name,
+                'fundraiser_order' => $fundraiserOrder,
             ],
             metadata: [
                 'Recibo' => $receipt->receipt_number,
@@ -300,9 +324,46 @@ class PaymentReceiptController extends Controller
             'receiptTitle' => $receiptTitle,
             'isCancellationReceipt' => $isCancellationReceipt,
             'originalPaymentId' => $payment?->canceling_id ?: $payment?->reversed_payment_id,
+            'fundraiserOrder' => $fundraiserOrder,
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
             'qrCodeDataUri' => $validation['qr_code_data_uri'],
         ])->setPaper('a4');
+    }
+
+    protected function fundraiserOrderForPayment($payment): ?array
+    {
+        if (
+            !$payment
+            || $payment->source_type !== FinanceFundraiserService::SOURCE_TYPE
+            || !$payment->source_id
+        ) {
+            return null;
+        }
+
+        $sale = FundraiserSale::query()
+            ->with(['fundraiserEvent:id,name,fundraiser_type', 'items'])
+            ->whereKey($payment->source_id)
+            ->where('payment_id', $payment->id)
+            ->first();
+
+        if (!$sale) {
+            return null;
+        }
+
+        return [
+            'event_name' => $sale->fundraiserEvent?->name,
+            'event_type' => $sale->fundraiserEvent?->fundraiser_type,
+            'customer_name' => $sale->customer_name,
+            'sale_date' => optional($sale->sale_date)->toDateString(),
+            'payment_type' => $sale->payment_type,
+            'total_amount' => (float) $sale->total_amount,
+            'items' => $sale->items->map(fn ($item) => [
+                'name' => $item->item_name,
+                'quantity' => (int) $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+                'line_total' => (float) $item->line_total,
+            ])->values()->all(),
+        ];
     }
 }

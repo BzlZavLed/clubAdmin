@@ -8,6 +8,7 @@ use App\Models\PaymentReceipt;
 use App\Models\User;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\URL;
 
 class PaymentReceiptService
 {
@@ -95,6 +96,16 @@ class PaymentReceiptService
         PaymentReceipt::query()
             ->where('payment_id', $payment->id)
             ->delete();
+    }
+
+    public function publicDownloadUrl(PaymentReceipt $receipt): string
+    {
+        return URL::signedRoute('payment-receipts.public-download', ['receipt' => $receipt]);
+    }
+
+    public function publicQrUrl(PaymentReceipt $receipt): string
+    {
+        return URL::signedRoute('payment-receipts.public-qr', ['receipt' => $receipt]);
     }
 
     protected function receiptNumber($issuedAt, string $clubCode, int $clubSequence): string

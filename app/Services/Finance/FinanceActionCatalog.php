@@ -39,6 +39,17 @@ class FinanceActionCatalog
                     $this->action('correction.reverse_reimbursement', 'Revertir reembolso', 'Reverse reimbursement', 'club.finance-engine.corrections.reimbursements.reverse', 'POST', 'correction', true, true),
                 ],
             ],
+            'fundraisers' => [
+                'label' => 'Fundraisers',
+                'description' => 'Eventos de venta, productos, inventario opcional e ingresos con recibo.',
+                'actions' => [
+                    $this->action('fundraiser.open', 'Abrir fundraisers', 'Open fundraisers', 'club.director.finance.fundraisers', 'GET', 'fundraiser'),
+                    $this->action('fundraiser.bootstrap', 'Datos de fundraisers', 'Fundraiser data', 'club.finance-engine.fundraisers', 'GET', 'fundraiser'),
+                    $this->action('fundraiser.event_store', 'Crear fundraiser', 'Create fundraiser', 'club.finance-engine.fundraisers.store', 'POST', 'fundraiser', writesLedger: false),
+                    $this->action('fundraiser.product_store', 'Guardar producto', 'Save product', 'club.finance-engine.fundraisers.products.store', 'POST', 'fundraiser', needsTarget: true, writesLedger: false),
+                    $this->action('fundraiser.sale_store', 'Registrar venta', 'Record sale', 'club.finance-engine.fundraisers.sales.store', 'POST', 'fundraiser', needsTarget: true, writesLedger: true),
+                ],
+            ],
             'reports' => [
                 'label' => 'Reportes financieros',
                 'description' => 'Lecturas por cuenta, concepto, rango de fecha y comprobantes.',
