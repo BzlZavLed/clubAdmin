@@ -6,6 +6,7 @@ use App\Models\Club;
 use App\Models\Event;
 use App\Models\Expense;
 use App\Models\FundraiserEvent;
+use App\Models\FundraiserEventPartner;
 use App\Models\FundraiserProduct;
 use App\Models\FundraiserSale;
 use App\Models\Payment;
@@ -116,6 +117,26 @@ class FinanceEngine
     public function storeFundraiserSale(Request $request, FundraiserEvent $fundraiserEvent)
     {
         return $this->fundraisers->storeSale($request, $fundraiserEvent);
+    }
+
+    public function closeFundraiserEvent(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->fundraisers->closeEvent($request, $fundraiserEvent);
+    }
+
+    public function storeFundraiserPartner(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->fundraisers->storePartner($request, $fundraiserEvent);
+    }
+
+    public function recordFundraiserPartnerContribution(Request $request, FundraiserEventPartner $fundraiserEventPartner)
+    {
+        return $this->fundraisers->recordPartnerContribution($request, $fundraiserEventPartner);
+    }
+
+    public function recordFundraiserPartnerDistribution(Request $request, FundraiserEventPartner $fundraiserEventPartner)
+    {
+        return $this->fundraisers->recordPartnerDistribution($request, $fundraiserEventPartner);
     }
 
     public function storeExpense(Request $request)

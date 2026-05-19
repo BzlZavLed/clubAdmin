@@ -27,6 +27,7 @@ Commit base del primer reacomodo: `edbf498 first rework`
 | Redireccion de vistas historicas financieras al motor | Hecho inicial | 2026-05-14 |
 | Comprobantes tardios y liquidacion de reembolsos en el motor | Hecho inicial | 2026-05-18 |
 | POS de fundraisers con recibos e ingreso al ledger | Hecho inicial | 2026-05-19 |
+| Fundraisers con clubes asociados y traslados entre ledgers | Hecho inicial | 2026-05-19 |
 | Refactor backend del motor financiero | Pendiente | Sin fecha |
 | Cierre total de la rama | Pendiente | Sin fecha |
 
@@ -661,6 +662,10 @@ Endpoints nuevos del motor:
 - `POST /club-director/finance-engine/fundraisers`
 - `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/products`
 - `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/sales`
+- `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/close`
+- `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/partners`
+- `POST /club-director/finance-engine/fundraisers/partners/{fundraiserEventPartner}/contribution`
+- `POST /club-director/finance-engine/fundraisers/partners/{fundraiserEventPartner}/distribution`
 
 Tablas nuevas:
 
@@ -668,6 +673,8 @@ Tablas nuevas:
 - `fundraiser_products`
 - `fundraiser_sales`
 - `fundraiser_sale_items`
+- `fundraiser_event_partners`
+- `fundraiser_partner_transfers`
 
 Reglas actuales:
 
@@ -679,6 +686,22 @@ Reglas actuales:
 - El inventario se puede activar por producto cuando se quiere bloquear ventas por encima de la cantidad disponible.
 - Los totales del fundraiser se calculan por ventas agrupadas: ingresos, costo vendido, margen vendido, ganancia neta contra inversion, inventario restante y recibos.
 - La inversion sirve como base de utilidad; si el dinero salio de una cuenta del club, el gasto operativo debe registrarse tambien en `Caja` para afectar saldos reales.
+- Los clubes de una misma iglesia pueden asociarse opcionalmente a un fundraiser desde la creacion o despues, con porcentaje de inversion y porcentaje de recaudacion.
+- Asociar un club no mueve dinero por si solo; el traslado contable ocurre cuando se registra el aporte asociado.
+- Un aporte de inversion asociado crea un `expenses` en el club asociado y un `payments` con recibo en el club operativo. Si el club asociado no tiene fondos suficientes, el sistema crea el reembolso pendiente por el faltante en ese club y aun registra el ingreso completo en el club operativo.
+- Al cerrar un fundraiser, las distribuciones asociadas pendientes se calculan sobre el total recaudado, sin restar inversion inicial, y crean un `expenses` en el club operativo y un `payments` con recibo en el club asociado.
+- El cierre exige que los aportes de inversion asociados esten registrados antes de distribuir la recaudacion.
+- Los traslados asociados quedan enlazados por `fundraiser_partner_transfers` y los ingresos usan `payments.source_type = fundraiser_partner_transfer`.
+
+### Reset de ledger en desarrollo
+
+Para limpiar movimientos financieros en ambiente local/desarrollo/testing:
+
+```bash
+php artisan finance:dev-reset-ledger --force
+```
+
+Este comando elimina filas de ledger financiero (`payments`, `expenses`, recibos, fundraisers, transferencias de tesoreria, liquidaciones, aportes asociados y comprobaciones financieras), reinicia balances de `accounts` a 0 y conserva clubes, usuarios, miembros, conceptos, cuentas configuradas, bancos y archivos subidos.
 
 ## Objetivo funcional final
 
@@ -690,7 +713,7 @@ El destino deseado es que finanzas trabaje como un flujo simple:
 4. `Contabilidad` permite mover dinero entre efectivo y banco.
 5. `Contabilidad` permite transferir hacia arriba cuando el dinero corresponde a eventos o conceptos que deben salir del club.
 6. Los reportes muestran saldos, movimientos, conceptos, cuentas, recibos, comprobantes y correcciones.
-7. `Fundraisers` permite vender productos o comida con recibos, costos, inventario opcional y resumen por evento.
+7. `Fundraisers` permite vender productos o comida con recibos, costos, inventario opcional, clubes asociados y resumen por evento.
 
 ## Lo que si puede hacerse solo en frontend
 

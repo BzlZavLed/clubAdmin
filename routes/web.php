@@ -642,6 +642,14 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.fundraisers.products.update');
     Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/sales', [FinanceEngineController::class, 'storeFundraiserSale'])
         ->name('club.finance-engine.fundraisers.sales.store');
+    Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/close', [FinanceEngineController::class, 'closeFundraiserEvent'])
+        ->name('club.finance-engine.fundraisers.close');
+    Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/partners', [FinanceEngineController::class, 'storeFundraiserPartner'])
+        ->name('club.finance-engine.fundraisers.partners.store');
+    Route::post('/club-director/finance-engine/fundraisers/partners/{fundraiserEventPartner}/contribution', [FinanceEngineController::class, 'recordFundraiserPartnerContribution'])
+        ->name('club.finance-engine.fundraisers.partners.contribution');
+    Route::post('/club-director/finance-engine/fundraisers/partners/{fundraiserEventPartner}/distribution', [FinanceEngineController::class, 'recordFundraiserPartnerDistribution'])
+        ->name('club.finance-engine.fundraisers.partners.distribution');
     Route::post('/club-director/finance-engine/expenses', [FinanceEngineController::class, 'storeExpense'])
         ->name('club.finance-engine.expenses.store');
     Route::post('/club-director/finance-engine/expenses/{expense}/receipt', [FinanceEngineController::class, 'uploadExpenseReceipt'])

@@ -48,6 +48,10 @@ class FinanceActionCatalog
                     $this->action('fundraiser.event_store', 'Crear fundraiser', 'Create fundraiser', 'club.finance-engine.fundraisers.store', 'POST', 'fundraiser', writesLedger: false),
                     $this->action('fundraiser.product_store', 'Guardar producto', 'Save product', 'club.finance-engine.fundraisers.products.store', 'POST', 'fundraiser', needsTarget: true, writesLedger: false),
                     $this->action('fundraiser.sale_store', 'Registrar venta', 'Record sale', 'club.finance-engine.fundraisers.sales.store', 'POST', 'fundraiser', needsTarget: true, writesLedger: true),
+                    $this->action('fundraiser.close', 'Cerrar fundraiser', 'Close fundraiser', 'club.finance-engine.fundraisers.close', 'POST', 'fundraiser', needsTarget: true, writesLedger: true),
+                    $this->action('fundraiser.partner_store', 'Asociar club', 'Add partner club', 'club.finance-engine.fundraisers.partners.store', 'POST', 'fundraiser', needsTarget: true, writesLedger: false),
+                    $this->action('fundraiser.partner_contribution', 'Registrar aporte asociado', 'Record partner contribution', 'club.finance-engine.fundraisers.partners.contribution', 'POST', 'fundraiser', needsTarget: true, writesLedger: true),
+                    $this->action('fundraiser.partner_distribution', 'Transferir ganancia asociada', 'Transfer partner earnings', 'club.finance-engine.fundraisers.partners.distribution', 'POST', 'fundraiser', needsTarget: true, writesLedger: true),
                 ],
             ],
             'reports' => [

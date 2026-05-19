@@ -7,6 +7,8 @@ use App\Models\Club;
 use App\Models\Expense;
 use App\Models\FinanceReimbursementPayee;
 use App\Models\FundraiserEvent;
+use App\Models\FundraiserEventPartner;
+use App\Models\FundraiserPartnerTransfer;
 use App\Models\FundraiserProduct;
 use App\Models\FundraiserSale;
 use App\Models\Payment;
@@ -26,6 +28,7 @@ use Illuminate\Validation\ValidationException;
 class FinanceFundraiserService
 {
     public const SOURCE_TYPE = 'fundraiser_sale';
+    public const PARTNER_TRANSFER_SOURCE_TYPE = 'fundraiser_partner_transfer';
 
     public function __construct(
         private readonly PaymentReceiptService $paymentReceiptService,
@@ -39,6 +42,13 @@ class FinanceFundraiserService
             ->map(fn (Club $allowedClub) => [
                 'id' => (int) $allowedClub->id,
                 'club_name' => $allowedClub->club_name,
+            ])
+            ->values();
+        $partnerClubs = $this->partnerClubOptionsFor($club)
+            ->map(fn (Club $sameChurchClub) => [
+                'id' => (int) $sameChurchClub->id,
+                'club_name' => $sameChurchClub->club_name,
+                'club_type' => $sameChurchClub->club_type,
             ])
             ->values();
 
@@ -67,6 +77,11 @@ class FinanceFundraiserService
                 'sales' => fn ($query) => $query->latest('sale_date')->latest('id'),
                 'sales.items',
                 'sales.payment.receipt:id,payment_id,receipt_number',
+                'partners' => fn ($query) => $query->where('status', 'active')->orderBy('id'),
+                'partners.partnerClub:id,club_name,club_type,church_id',
+                'partners.transfers' => fn ($query) => $query->orderBy('id'),
+                'partners.transfers.fromExpense:id,receipt_path,status',
+                'partners.transfers.toPayment.receipt:id,payment_id,receipt_number',
             ])
             ->latest('event_date')
             ->latest('id')
@@ -80,6 +95,7 @@ class FinanceFundraiserService
             'engine_version' => 'finance_engine_v1_fundraisers',
             'club' => ['id' => (int) $club->id, 'club_name' => $club->club_name],
             'clubs' => $clubs,
+            'partner_clubs' => $partnerClubs,
             'accounts' => $accounts->values(),
             'account_balances' => $accountBalances,
             'events' => $events,
@@ -99,6 +115,10 @@ class FinanceFundraiserService
             'investment_pay_to' => ['nullable', 'string', 'max:255'],
             'investment_funds_location' => ['nullable', Rule::in(['cash', 'bank'])],
             'investment_receipt_image' => ['nullable', 'image', 'max:5120'],
+            'partner_club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'partner_investment_share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'partner_earnings_share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'partner_notes' => ['nullable', 'string', 'max:2000'],
             'planned_units' => ['nullable', 'integer', 'min:1'],
             'description' => ['nullable', 'string', 'max:2000'],
             'status' => ['nullable', Rule::in(['active', 'closed'])],
@@ -142,12 +162,42 @@ class FinanceFundraiserService
                 'status' => $validated['status'] ?? 'active',
                 'created_by_user_id' => $request->user()?->id,
             ]);
+
+            if (!empty($validated['partner_club_id'])) {
+                $partnerClub = $this->partnerClubForEvent($event, (int) $validated['partner_club_id']);
+                $investmentShare = round((float) ($validated['partner_investment_share_percent'] ?? 0), 2);
+                $earningsShare = round((float) ($validated['partner_earnings_share_percent'] ?? 0), 2);
+
+                if ($investmentShare <= 0 && $earningsShare <= 0) {
+                    throw ValidationException::withMessages([
+                        'partner_investment_share_percent' => ['Registra al menos un porcentaje de inversion o recaudacion para el club asociado.'],
+                    ]);
+                }
+
+                FundraiserEventPartner::query()->create([
+                    'fundraiser_event_id' => $event->id,
+                    'partner_club_id' => $partnerClub->id,
+                    'investment_share_percent' => $investmentShare,
+                    'earnings_share_percent' => $earningsShare,
+                    'notes' => $validated['partner_notes'] ?? null,
+                    'status' => 'active',
+                    'created_by_user_id' => $request->user()?->id,
+                ]);
+            }
         });
 
         return response()->json([
             'message' => 'Fundraiser event created',
             'data' => $this->data($request->user(), $club),
-            'event' => $this->eventPayload($event->fresh(['products.investmentExpense', 'investmentExpense', 'sales.items', 'sales.payment.receipt'])),
+            'event' => $this->eventPayload($event->fresh([
+                'products.investmentExpense',
+                'investmentExpense',
+                'sales.items',
+                'sales.payment.receipt',
+                'partners.partnerClub',
+                'partners.transfers.fromExpense',
+                'partners.transfers.toPayment.receipt',
+            ])),
         ], 201);
     }
 
@@ -222,6 +272,7 @@ class FinanceFundraiserService
     public function storeProduct(Request $request, FundraiserEvent $fundraiserEvent)
     {
         $event = $this->authorizedEvent($request, $fundraiserEvent);
+        $this->assertEventActive($event);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -299,6 +350,7 @@ class FinanceFundraiserService
     {
         $fundraiserProduct->loadMissing(['fundraiserEvent.club', 'investmentExpense']);
         $event = $this->authorizedEvent($request, $fundraiserProduct->fundraiserEvent);
+        $this->assertEventActive($event);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -575,6 +627,185 @@ class FinanceFundraiserService
         ], 201);
     }
 
+    public function storePartner(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        $event = $this->authorizedEvent($request, $fundraiserEvent);
+        $this->assertEventActive($event);
+        $event->loadMissing(['club', 'partners']);
+
+        $validated = $request->validate([
+            'partner_club_id' => ['required', 'integer', 'exists:clubs,id'],
+            'investment_share_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'earnings_share_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $partnerClub = $this->partnerClubForEvent($event, (int) $validated['partner_club_id']);
+        $investmentShare = round((float) $validated['investment_share_percent'], 2);
+        $earningsShare = round((float) $validated['earnings_share_percent'], 2);
+
+        if ($investmentShare <= 0 && $earningsShare <= 0) {
+            throw ValidationException::withMessages([
+                'investment_share_percent' => ['Registra al menos un porcentaje de inversion o ganancias para el club asociado.'],
+            ]);
+        }
+
+        if ($event->partners()->where('partner_club_id', $partnerClub->id)->exists()) {
+            throw ValidationException::withMessages([
+                'partner_club_id' => ['Este club ya esta asociado a este fundraiser.'],
+            ]);
+        }
+
+        $this->assertShareCapacity($event, 'investment_share_percent', $investmentShare, 'investment_share_percent');
+        $this->assertShareCapacity($event, 'earnings_share_percent', $earningsShare, 'earnings_share_percent');
+
+        FundraiserEventPartner::query()->create([
+            'fundraiser_event_id' => $event->id,
+            'partner_club_id' => $partnerClub->id,
+            'investment_share_percent' => $investmentShare,
+            'earnings_share_percent' => $earningsShare,
+            'notes' => $validated['notes'] ?? null,
+            'status' => 'active',
+            'created_by_user_id' => $request->user()?->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Fundraiser partner saved',
+            'data' => $this->data($request->user(), $event->club),
+        ], 201);
+    }
+
+    public function recordPartnerContribution(Request $request, FundraiserEventPartner $fundraiserEventPartner)
+    {
+        $partner = $this->authorizedPartner($request, $fundraiserEventPartner);
+        $validated = $this->validatePartnerTransfer($request);
+
+        return $this->recordPartnerTransfer(
+            $request,
+            $partner,
+            FundraiserPartnerTransfer::TYPE_INVESTMENT_CONTRIBUTION,
+            $validated,
+            $this->partnerInvestmentDue($partner),
+            $partner->partnerClub,
+            $partner->fundraiserEvent->club,
+            $validated['from_pay_to'] ?? 'club_budget',
+            $validated['to_pay_to'] ?? $partner->fundraiserEvent->pay_to,
+            $validated['funds_location'] ?? 'cash',
+            $validated['payment_type'] ?? 'transfer',
+            "Aporte de inversion fundraiser: {$partner->fundraiserEvent->name} a {$partner->fundraiserEvent->club->club_name}",
+            "Aporte de {$partner->partnerClub->club_name} para fundraiser: {$partner->fundraiserEvent->name}",
+            $partner->partnerClub->club_name
+        );
+    }
+
+    public function recordPartnerDistribution(Request $request, FundraiserEventPartner $fundraiserEventPartner)
+    {
+        $partner = $this->authorizedPartner($request, $fundraiserEventPartner);
+        $validated = $this->validatePartnerTransfer($request);
+
+        return $this->recordPartnerTransfer(
+            $request,
+            $partner,
+            FundraiserPartnerTransfer::TYPE_EARNINGS_DISTRIBUTION,
+            $validated,
+            $this->partnerEarningsDue($partner),
+            $partner->fundraiserEvent->club,
+            $partner->partnerClub,
+            $validated['from_pay_to'] ?? $partner->fundraiserEvent->pay_to,
+            $validated['to_pay_to'] ?? 'club_budget',
+            $validated['funds_location'] ?? 'cash',
+            $validated['payment_type'] ?? 'transfer',
+            "Distribucion de ganancia fundraiser: {$partner->fundraiserEvent->name} a {$partner->partnerClub->club_name}",
+            "Ganancia recibida fundraiser {$partner->fundraiserEvent->name} de {$partner->fundraiserEvent->club->club_name}",
+            $partner->fundraiserEvent->club->club_name
+        );
+    }
+
+    public function closeEvent(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        $event = $this->authorizedEvent($request, $fundraiserEvent);
+        $validated = $request->validate([
+            'close_date' => ['nullable', 'date'],
+            'funds_location' => ['nullable', Rule::in(['cash', 'bank'])],
+            'payment_type' => ['nullable', Rule::in(['cash', 'check', 'transfer'])],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $transfers = [];
+
+        DB::transaction(function () use ($request, $event, $validated, &$transfers) {
+            $lockedEvent = FundraiserEvent::query()
+                ->whereKey($event->id)
+                ->lockForUpdate()
+                ->with([
+                    'club',
+                    'sales',
+                    'products',
+                    'partners.partnerClub',
+                    'partners.transfers',
+                ])
+                ->firstOrFail();
+
+            $this->assertEventActive($lockedEvent);
+
+            $partners = $lockedEvent->partners
+                ->where('status', 'active')
+                ->values();
+            $revenue = $this->eventRevenue($lockedEvent);
+            $closeDate = $validated['close_date'] ?? now()->toDateString();
+            $fundsLocation = $validated['funds_location'] ?? 'cash';
+            $paymentType = $validated['payment_type'] ?? ($fundsLocation === 'cash' ? 'cash' : 'transfer');
+            $notes = $validated['notes'] ?? 'Cierre de fundraiser con distribucion automatica.';
+
+            foreach ($partners as $partner) {
+                $investmentDue = $this->partnerInvestmentDue($partner);
+                $contribution = $partner->transfers->firstWhere('transfer_type', FundraiserPartnerTransfer::TYPE_INVESTMENT_CONTRIBUTION);
+
+                if ($investmentDue > 0 && !$contribution) {
+                    throw ValidationException::withMessages([
+                        'partners' => ['Registra los aportes de inversion pendientes antes de cerrar el fundraiser.'],
+                    ]);
+                }
+            }
+
+            foreach ($partners as $partner) {
+                $amount = $this->partnerRevenueShareDue($partner, $revenue);
+                if ($amount <= 0 || $partner->transfers->firstWhere('transfer_type', FundraiserPartnerTransfer::TYPE_EARNINGS_DISTRIBUTION)) {
+                    continue;
+                }
+
+                $transfers[] = $this->createPartnerTransfer(
+                    $request,
+                    $partner,
+                    FundraiserPartnerTransfer::TYPE_EARNINGS_DISTRIBUTION,
+                    $amount,
+                    $lockedEvent->club,
+                    $partner->partnerClub,
+                    $lockedEvent->pay_to,
+                    'club_budget',
+                    $fundsLocation,
+                    $paymentType,
+                    "Distribucion de ingresos fundraiser: {$lockedEvent->name} a {$partner->partnerClub->club_name}",
+                    "Ingresos compartidos fundraiser {$lockedEvent->name} de {$lockedEvent->club->club_name}",
+                    $lockedEvent->club->club_name,
+                    $closeDate,
+                    $notes
+                );
+            }
+
+            $lockedEvent->update(['status' => 'closed']);
+        });
+
+        return response()->json([
+            'message' => 'Fundraiser event closed',
+            'data' => $this->data($request->user(), $event->club),
+            'transfers' => collect($transfers)
+                ->map(fn (FundraiserPartnerTransfer $transfer) => $this->partnerTransferPayload($transfer->fresh(['fromExpense', 'toPayment.receipt'])))
+                ->values()
+                ->all(),
+        ]);
+    }
+
     private function authorizedEvent(Request $request, FundraiserEvent $event): FundraiserEvent
     {
         $event->loadMissing('club');
@@ -585,6 +816,358 @@ class FinanceFundraiserService
         }
 
         return $event;
+    }
+
+    private function assertEventActive(FundraiserEvent $event): void
+    {
+        if ($event->status !== 'active') {
+            throw ValidationException::withMessages([
+                'fundraiser_event_id' => ['Este fundraiser esta cerrado.'],
+            ]);
+        }
+    }
+
+    private function authorizedPartner(Request $request, FundraiserEventPartner $partner): FundraiserEventPartner
+    {
+        $partner->loadMissing([
+            'fundraiserEvent.club',
+            'fundraiserEvent.products',
+            'fundraiserEvent.sales.items',
+            'partnerClub',
+            'transfers',
+        ]);
+
+        $event = $this->authorizedEvent($request, $partner->fundraiserEvent);
+        $partner->setRelation('fundraiserEvent', $event);
+
+        return $partner;
+    }
+
+    private function partnerClubForEvent(FundraiserEvent $event, int $partnerClubId): Club
+    {
+        $event->loadMissing('club');
+
+        if ((int) $event->club_id === $partnerClubId) {
+            throw ValidationException::withMessages([
+                'partner_club_id' => ['Selecciona un club asociado diferente al club operativo.'],
+            ]);
+        }
+
+        $eventChurchName = $this->normalizeText($event->club?->church_name);
+        if (!$event->club?->church_id && !$eventChurchName) {
+            throw ValidationException::withMessages([
+                'partner_club_id' => ['El club operativo necesita estar vinculado a una iglesia para asociar otros clubes.'],
+            ]);
+        }
+
+        $partnerClub = Club::query()->findOrFail($partnerClubId);
+        $sameChurchById = $event->club?->church_id
+            && (int) $partnerClub->church_id === (int) $event->club->church_id;
+        $sameChurchByName = !$sameChurchById
+            && $eventChurchName
+            && strcasecmp((string) $partnerClub->church_name, $eventChurchName) === 0;
+
+        if (!$sameChurchById && !$sameChurchByName) {
+            throw ValidationException::withMessages([
+                'partner_club_id' => ['El club asociado debe pertenecer a la misma iglesia.'],
+            ]);
+        }
+
+        return $partnerClub;
+    }
+
+    private function partnerClubOptionsFor(Club $club)
+    {
+        if ($club->church_id) {
+            return ClubHelper::churchClubs((int) $club->church_id)
+                ->reject(fn (Club $sameChurchClub) => (int) $sameChurchClub->id === (int) $club->id)
+                ->values();
+        }
+
+        $churchName = $this->normalizeText($club->church_name);
+        if (!$churchName) {
+            return collect();
+        }
+
+        return Club::query()
+            ->where('church_name', $churchName)
+            ->where('id', '!=', $club->id)
+            ->orderBy('club_name')
+            ->get(['id', 'club_name', 'club_type', 'church_id']);
+    }
+
+    private function assertShareCapacity(FundraiserEvent $event, string $column, float $newShare, string $field): void
+    {
+        $currentShare = round((float) $event->partners()
+            ->where('status', 'active')
+            ->sum($column), 2);
+
+        if (round($currentShare + $newShare, 2) > 100.0) {
+            throw ValidationException::withMessages([
+                $field => ['La suma de porcentajes asociados no puede exceder 100%.'],
+            ]);
+        }
+    }
+
+    private function validatePartnerTransfer(Request $request): array
+    {
+        return $request->validate([
+            'amount' => ['nullable', 'numeric', 'min:0.01'],
+            'transfer_date' => ['nullable', 'date'],
+            'from_pay_to' => ['nullable', 'string', 'max:255'],
+            'to_pay_to' => ['nullable', 'string', 'max:255'],
+            'funds_location' => ['nullable', Rule::in(['cash', 'bank'])],
+            'payment_type' => ['nullable', Rule::in(['cash', 'check', 'transfer'])],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+    }
+
+    private function recordPartnerTransfer(
+        Request $request,
+        FundraiserEventPartner $partner,
+        string $transferType,
+        array $validated,
+        float $defaultAmount,
+        Club $fromClub,
+        Club $toClub,
+        string $fromPayTo,
+        string $toPayTo,
+        string $fundsLocation,
+        string $paymentType,
+        string $expenseDescription,
+        string $paymentConcept,
+        string $payerName
+    ) {
+        $this->assertOperatingAccount($fromPayTo);
+        $this->assertOperatingAccount($toPayTo);
+
+        $amount = round((float) ($validated['amount'] ?? $defaultAmount), 2);
+        if ($defaultAmount <= 0) {
+            throw ValidationException::withMessages([
+                'amount' => ['No hay monto pendiente para registrar en este traslado.'],
+            ]);
+        }
+
+        if ($amount <= 0 || abs($amount - $defaultAmount) > 0.0001) {
+            throw ValidationException::withMessages([
+                'amount' => ['El monto debe coincidir con el monto calculado por el porcentaje acordado.'],
+            ]);
+        }
+
+        $transfer = null;
+        DB::transaction(function () use ($request, $partner, $transferType, $amount, $fromClub, $toClub, $fromPayTo, $toPayTo, $fundsLocation, $paymentType, $expenseDescription, $paymentConcept, $payerName, $validated, &$transfer) {
+            $transfer = $this->createPartnerTransfer(
+                $request,
+                $partner,
+                $transferType,
+                $amount,
+                $fromClub,
+                $toClub,
+                $fromPayTo,
+                $toPayTo,
+                $fundsLocation,
+                $paymentType,
+                $expenseDescription,
+                $paymentConcept,
+                $payerName,
+                $validated['transfer_date'] ?? now()->toDateString(),
+                $validated['notes'] ?? null
+            );
+        });
+
+        $partner->loadMissing('fundraiserEvent.club');
+
+        return response()->json([
+            'message' => 'Fundraiser partner transfer recorded',
+            'data' => $this->data($request->user(), $partner->fundraiserEvent->club),
+            'transfer' => $this->partnerTransferPayload($transfer->fresh(['fromExpense', 'toPayment.receipt'])),
+        ], 201);
+    }
+
+    private function createPartnerTransfer(
+        Request $request,
+        FundraiserEventPartner $partner,
+        string $transferType,
+        float $amount,
+        Club $fromClub,
+        Club $toClub,
+        string $fromPayTo,
+        string $toPayTo,
+        string $fundsLocation,
+        string $paymentType,
+        string $expenseDescription,
+        string $paymentConcept,
+        string $payerName,
+        string $transferDate,
+        ?string $notes
+    ): FundraiserPartnerTransfer {
+        $lockedPartner = FundraiserEventPartner::query()
+            ->whereKey($partner->id)
+            ->lockForUpdate()
+            ->with(['fundraiserEvent.club', 'partnerClub', 'transfers'])
+            ->firstOrFail();
+
+        if ($lockedPartner->transfers->firstWhere('transfer_type', $transferType)) {
+            throw ValidationException::withMessages([
+                'amount' => ['Este traslado ya fue registrado para el club asociado.'],
+            ]);
+        }
+
+        $transfer = FundraiserPartnerTransfer::query()->create([
+            'fundraiser_event_partner_id' => $lockedPartner->id,
+            'transfer_type' => $transferType,
+            'from_club_id' => $fromClub->id,
+            'to_club_id' => $toClub->id,
+            'from_pay_to' => $fromPayTo,
+            'to_pay_to' => $toPayTo,
+            'funds_location' => $fundsLocation,
+            'payment_type' => $paymentType,
+            'amount' => $amount,
+            'transfer_date' => $transferDate,
+            'notes' => $notes,
+            'created_by_user_id' => $request->user()?->id,
+        ]);
+
+        $expense = $this->recordPartnerTransferExpense(
+            $request,
+            $fromClub,
+            $fromPayTo,
+            $fundsLocation,
+            $amount,
+            $transferDate,
+            $expenseDescription
+        );
+
+        $payment = $this->recordPartnerTransferPayment(
+            $request,
+            $toClub,
+            $toPayTo,
+            $amount,
+            $transferDate,
+            $paymentType,
+            $paymentConcept,
+            $payerName,
+            $notes,
+            $transfer
+        );
+
+        $transfer->update([
+            'from_expense_id' => $expense->id,
+            'to_payment_id' => $payment->id,
+        ]);
+
+        return $transfer;
+    }
+
+    private function recordPartnerTransferExpense(
+        Request $request,
+        Club $club,
+        string $payTo,
+        string $fundsLocation,
+        float $amount,
+        string $expenseDate,
+        string $description
+    ): Expense {
+        $amount = round($amount, 2);
+        $fundingPlan = $this->treasuryService->expenseFundingPlan($club, $payTo, $fundsLocation, $amount);
+        $fromAccount = round((float) $fundingPlan['amount_from_account'], 2);
+        $shortfall = round((float) $fundingPlan['reimbursement_shortfall'], 2);
+        $account = $this->ensureAccount($club, $payTo);
+        $expense = null;
+
+        if ($fromAccount > 0) {
+            $this->treasuryService->recordAutomaticExpenseFundingTransfer(
+                $club,
+                $fundingPlan,
+                $request->user()?->id,
+                $expenseDate,
+                'Transferencia automatica para traslado de fundraiser entre clubes.'
+            );
+
+            $expense = Expense::query()->create([
+                'club_id' => $club->id,
+                'pay_to' => $payTo,
+                'funds_location' => $fundsLocation,
+                'payment_concept_id' => null,
+                'payee_id' => null,
+                'amount' => $fromAccount,
+                'expense_date' => $expenseDate,
+                'description' => $description,
+                'reimbursed_to' => null,
+                'created_by_user_id' => $request->user()?->id,
+                'status' => 'completed',
+                'receipt_path' => null,
+            ]);
+
+            $account->decrement('balance', $fromAccount);
+        }
+
+        if ($shortfall > 0) {
+            $reimbursementPayee = $this->resolveFundraiserReimbursementPayee($club, $request);
+            $reimbursementConcept = $this->reimbursementConceptFor($club, $request, $reimbursementPayee);
+            $reimbursementAccount = $this->resolveAccount($club->id, 'reimbursement_to');
+
+            $reimbursementExpense = Expense::query()->create([
+                'club_id' => $club->id,
+                'pay_to' => 'reimbursement_to',
+                'funds_location' => null,
+                'payment_concept_id' => $reimbursementConcept->id,
+                'payee_id' => $reimbursementConcept->payee_id,
+                'reimbursement_payee_id' => $reimbursementPayee->id,
+                'amount' => $shortfall,
+                'expense_date' => $expenseDate,
+                'description' => 'Reembolso pendiente por traslado de fundraiser entre clubes: ' . $description,
+                'reimbursed_to' => $reimbursementPayee->name,
+                'created_by_user_id' => $request->user()?->id,
+                'status' => 'pending_reimbursement',
+                'receipt_path' => null,
+                'reimbursement_origin_expense_id' => $expense?->id,
+            ]);
+
+            $reimbursementAccount->decrement('balance', $shortfall);
+
+            return $expense ?: $reimbursementExpense;
+        }
+
+        return $expense;
+    }
+
+    private function recordPartnerTransferPayment(
+        Request $request,
+        Club $club,
+        string $payTo,
+        float $amount,
+        string $paymentDate,
+        string $paymentType,
+        string $concept,
+        string $payerName,
+        ?string $notes,
+        FundraiserPartnerTransfer $transfer
+    ): Payment {
+        $account = $this->ensureAccount($club, $payTo);
+        $payment = Payment::query()->create([
+            'club_id' => $club->id,
+            'payment_concept_id' => null,
+            'concept_text' => $concept,
+            'pay_to' => $payTo,
+            'account_id' => $account->id,
+            'payer_name' => $payerName,
+            'amount_paid' => $amount,
+            'expected_amount' => $amount,
+            'balance_due_after' => 0,
+            'payment_date' => $paymentDate,
+            'payment_type' => $paymentType,
+            'zelle_phone' => null,
+            'received_by_user_id' => $request->user()?->id,
+            'notes' => $notes,
+            'source_type' => self::PARTNER_TRANSFER_SOURCE_TYPE,
+            'source_id' => $transfer->id,
+        ]);
+
+        $account->increment('balance', $amount);
+        $this->paymentReceiptService->syncForPayment($payment);
+
+        return $payment;
     }
 
     private function assertOperatingAccount(string $payTo): void
@@ -640,6 +1223,9 @@ class FinanceFundraiserService
             'investmentExpense:id,receipt_path,status',
             'sales.items',
             'sales.payment.receipt:id,payment_id,receipt_number',
+            'partners.partnerClub:id,club_name,club_type,church_id',
+            'partners.transfers.fromExpense:id,receipt_path,status',
+            'partners.transfers.toPayment.receipt:id,payment_id,receipt_number',
         ]);
 
         $sales = $event->sales->sortByDesc(fn (FundraiserSale $sale) => sprintf('%s-%010d', optional($sale->sale_date)->toDateString(), $sale->id));
@@ -654,6 +1240,14 @@ class FinanceFundraiserService
         $productInvestmentTotal = round((float) $products->sum(fn (FundraiserProduct $product) => (float) $product->investment_amount), 2);
         $investmentTotal = round((float) $event->investment_total + $productInvestmentTotal, 2);
         $costBasis = max($investmentTotal, $totalCost);
+        $netGain = round($totalRevenue - $costBasis, 2);
+        $partners = $event->partners
+            ->where('status', 'active')
+            ->sortBy('id')
+            ->values();
+        $partnerPayloads = $partners
+            ->map(fn (FundraiserEventPartner $partner) => $this->partnerPayload($partner, $investmentTotal, $totalRevenue))
+            ->values();
         $remainingInventory = $products
             ->filter(fn (FundraiserProduct $product) => $product->quantity_available !== null)
             ->sum(fn (FundraiserProduct $product) => max((int) $product->quantity_available - (int) $product->quantity_sold, 0));
@@ -677,6 +1271,7 @@ class FinanceFundraiserService
             'planned_units' => $event->planned_units,
             'description' => $event->description,
             'status' => $event->status,
+            'partners' => $partnerPayloads->all(),
             'products' => $products->map(fn (FundraiserProduct $product) => $this->productPayload($product))->values()->all(),
             'sales' => $sales->take(40)->map(fn (FundraiserSale $sale) => $this->salePayload($sale, $unitCostsByProduct))->values()->all(),
             'totals' => [
@@ -687,12 +1282,17 @@ class FinanceFundraiserService
                 'event_investment' => (float) $event->investment_total,
                 'product_investment' => $productInvestmentTotal,
                 'cost_basis' => $costBasis,
-                'net_gain' => round($totalRevenue - $costBasis, 2),
+                'net_gain' => $netGain,
                 'unallocated_investment' => max(round($investmentTotal - $totalCost, 2), 0),
                 'items_sold' => (int) $sales->sum(fn (FundraiserSale $sale) => $sale->items->sum('quantity')),
                 'remaining_inventory' => (int) $remainingInventory,
                 'receipt_count' => (int) $sales->filter(fn (FundraiserSale $sale) => $sale->payment?->receipt)->count(),
                 'sale_count' => (int) $sales->count(),
+                'partner_split_base' => $totalRevenue,
+                'partner_investment_due' => round($partnerPayloads->sum('investment_due'), 2),
+                'partner_contributions_recorded' => round($partnerPayloads->sum('contribution_recorded'), 2),
+                'partner_earnings_due' => round($partnerPayloads->sum('earnings_due'), 2),
+                'partner_earnings_distributed' => round($partnerPayloads->sum('earnings_distributed'), 2),
             ],
         ];
     }
@@ -718,6 +1318,68 @@ class FinanceFundraiserService
             'quantity_sold' => (int) $product->quantity_sold,
             'quantity_remaining' => $remaining,
             'is_active' => (bool) $product->is_active,
+        ];
+    }
+
+    private function partnerPayload(FundraiserEventPartner $partner, float $investmentTotal, float $totalRevenue): array
+    {
+        $partner->loadMissing([
+            'partnerClub:id,club_name,club_type,church_id',
+            'transfers.fromExpense:id,receipt_path,status',
+            'transfers.toPayment.receipt:id,payment_id,receipt_number',
+        ]);
+
+        $investmentDue = round($investmentTotal * ((float) $partner->investment_share_percent / 100), 2);
+        $earningsDue = $this->partnerRevenueShareDue($partner, $totalRevenue);
+        $contribution = $partner->transfers->firstWhere('transfer_type', FundraiserPartnerTransfer::TYPE_INVESTMENT_CONTRIBUTION);
+        $distribution = $partner->transfers->firstWhere('transfer_type', FundraiserPartnerTransfer::TYPE_EARNINGS_DISTRIBUTION);
+
+        return [
+            'id' => (int) $partner->id,
+            'fundraiser_event_id' => (int) $partner->fundraiser_event_id,
+            'partner_club_id' => (int) $partner->partner_club_id,
+            'partner_club_name' => $partner->partnerClub?->club_name,
+            'partner_club_type' => $partner->partnerClub?->club_type,
+            'investment_share_percent' => (float) $partner->investment_share_percent,
+            'earnings_share_percent' => (float) $partner->earnings_share_percent,
+            'investment_due' => $investmentDue,
+            'earnings_due' => $earningsDue,
+            'contribution_recorded' => $contribution ? (float) $contribution->amount : 0.0,
+            'earnings_distributed' => $distribution ? (float) $distribution->amount : 0.0,
+            'contribution_pending' => max(round($investmentDue - (float) ($contribution?->amount ?? 0), 2), 0),
+            'earnings_pending' => max(round($earningsDue - (float) ($distribution?->amount ?? 0), 2), 0),
+            'contribution_transfer' => $this->partnerTransferPayload($contribution),
+            'distribution_transfer' => $this->partnerTransferPayload($distribution),
+            'status' => $partner->status,
+            'notes' => $partner->notes,
+        ];
+    }
+
+    private function partnerTransferPayload(?FundraiserPartnerTransfer $transfer): ?array
+    {
+        if (!$transfer) {
+            return null;
+        }
+
+        $transfer->loadMissing(['fromExpense:id,receipt_path,status', 'toPayment.receipt:id,payment_id,receipt_number']);
+
+        return [
+            'id' => (int) $transfer->id,
+            'fundraiser_event_partner_id' => (int) $transfer->fundraiser_event_partner_id,
+            'transfer_type' => $transfer->transfer_type,
+            'from_club_id' => (int) $transfer->from_club_id,
+            'to_club_id' => (int) $transfer->to_club_id,
+            'from_expense_id' => $transfer->from_expense_id ? (int) $transfer->from_expense_id : null,
+            'to_payment_id' => $transfer->to_payment_id ? (int) $transfer->to_payment_id : null,
+            'from_pay_to' => $transfer->from_pay_to,
+            'to_pay_to' => $transfer->to_pay_to,
+            'funds_location' => $transfer->funds_location,
+            'payment_type' => $transfer->payment_type,
+            'amount' => (float) $transfer->amount,
+            'transfer_date' => optional($transfer->transfer_date)->toDateString(),
+            'expense' => $this->expensePayload($transfer->fromExpense),
+            'receipt' => $transfer->toPayment?->receipt ? $this->receiptPayload($transfer->toPayment->receipt) : null,
+            'notes' => $transfer->notes,
         ];
     }
 
@@ -760,6 +1422,37 @@ class FinanceFundraiserService
             (int) $product->quantity_sold,
             (int) ($quantityOverrides[(int) $product->id] ?? 0),
         );
+    }
+
+    private function partnerInvestmentDue(FundraiserEventPartner $partner): float
+    {
+        $event = $partner->fundraiserEvent;
+        $event->loadMissing('products');
+
+        $productInvestmentTotal = round((float) $event->products->sum(fn (FundraiserProduct $product) => (float) $product->investment_amount), 2);
+        $investmentTotal = round((float) $event->investment_total + $productInvestmentTotal, 2);
+
+        return round($investmentTotal * ((float) $partner->investment_share_percent / 100), 2);
+    }
+
+    private function partnerEarningsDue(FundraiserEventPartner $partner): float
+    {
+        $event = $partner->fundraiserEvent;
+        $event->loadMissing('sales');
+
+        return $this->partnerRevenueShareDue($partner, $this->eventRevenue($event));
+    }
+
+    private function eventRevenue(FundraiserEvent $event): float
+    {
+        $event->loadMissing('sales');
+
+        return round((float) $event->sales->sum(fn (FundraiserSale $sale) => (float) $sale->total_amount), 2);
+    }
+
+    private function partnerRevenueShareDue(FundraiserEventPartner $partner, float $revenue): float
+    {
+        return round(max($revenue, 0) * ((float) $partner->earnings_share_percent / 100), 2);
     }
 
     private function recordInvestmentExpense(

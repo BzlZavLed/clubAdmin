@@ -6,6 +6,7 @@ use App\Services\Finance\FinanceEngine;
 use App\Models\Event;
 use App\Models\Expense;
 use App\Models\FundraiserEvent;
+use App\Models\FundraiserEventPartner;
 use App\Models\FundraiserProduct;
 use App\Models\FundraiserSale;
 use App\Models\Payment;
@@ -235,6 +236,26 @@ class FinanceEngineController extends Controller
     public function storeFundraiserSale(Request $request, FundraiserEvent $fundraiserEvent)
     {
         return $this->financeEngine->storeFundraiserSale($request, $fundraiserEvent);
+    }
+
+    public function closeFundraiserEvent(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->financeEngine->closeFundraiserEvent($request, $fundraiserEvent);
+    }
+
+    public function storeFundraiserPartner(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->financeEngine->storeFundraiserPartner($request, $fundraiserEvent);
+    }
+
+    public function recordFundraiserPartnerContribution(Request $request, FundraiserEventPartner $fundraiserEventPartner)
+    {
+        return $this->financeEngine->recordFundraiserPartnerContribution($request, $fundraiserEventPartner);
+    }
+
+    public function recordFundraiserPartnerDistribution(Request $request, FundraiserEventPartner $fundraiserEventPartner)
+    {
+        return $this->financeEngine->recordFundraiserPartnerDistribution($request, $fundraiserEventPartner);
     }
 
     public function storeExpense(Request $request)

@@ -385,6 +385,34 @@ export const createFinanceEngineFundraiserSale = async (fundraiserEventId, paylo
     return data;
 };
 
+export const closeFinanceEngineFundraiserEvent = async (fundraiserEventId, payload = {}) => {
+    const { data } = await axios.post(route('club.finance-engine.fundraisers.close', { fundraiserEvent: fundraiserEventId }), payload, {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const createFinanceEngineFundraiserPartner = async (fundraiserEventId, payload) => {
+    const { data } = await axios.post(route('club.finance-engine.fundraisers.partners.store', { fundraiserEvent: fundraiserEventId }), payload, {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const recordFinanceEngineFundraiserPartnerContribution = async (fundraiserEventPartnerId, payload = {}) => {
+    const { data } = await axios.post(route('club.finance-engine.fundraisers.partners.contribution', { fundraiserEventPartner: fundraiserEventPartnerId }), payload, {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const recordFinanceEngineFundraiserPartnerDistribution = async (fundraiserEventPartnerId, payload = {}) => {
+    const { data } = await axios.post(route('club.finance-engine.fundraisers.partners.distribution', { fundraiserEventPartner: fundraiserEventPartnerId }), payload, {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
 export const createFinanceEngineExpense = async (payload) => {
     const { data } = await axios.post(route('club.finance-engine.expenses.store'), financeEngineFormData(payload), {
         headers: financeEngineFormHeaders,

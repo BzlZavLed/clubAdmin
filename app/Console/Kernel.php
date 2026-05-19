@@ -13,6 +13,7 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
+        \App\Console\Commands\DevResetFinanceLedger::class,
         \App\Console\Commands\RebuildAccountBalances::class,
         \App\Console\Commands\SyncMembersAndStaff::class,
         \App\Console\Commands\SeedPayToOptions::class,

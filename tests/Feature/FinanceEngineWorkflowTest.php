@@ -15,6 +15,8 @@ use App\Models\EventClubSettlement;
 use App\Models\EventParticipant;
 use App\Models\Expense;
 use App\Models\FinanceReimbursementPayee;
+use App\Models\FundraiserEventPartner;
+use App\Models\FundraiserPartnerTransfer;
 use App\Models\FundraiserProduct;
 use App\Models\Member;
 use App\Models\MemberPathfinder;
@@ -536,6 +538,188 @@ class FinanceEngineWorkflowTest extends TestCase
         $movementConcepts = $fundraiserMovements->pluck('concept')->sort()->values()->all();
         $this->assertSame(['Fundraiser: Lunch sale', 'Fundraiser: Lunch sale', 'Fundraiser: Merch sale'], $movementConcepts);
         $this->assertTrue($fundraiserMovements->every(fn (array $movement) => !empty($movement['receipt']['number'])));
+    }
+
+    public function test_fundraiser_partnership_records_contributions_and_earnings_between_clubs(): void
+    {
+        [$director, $club] = $this->makeDirectorAndClub();
+        $church = Church::create(['church_name' => 'Partner Finance Church']);
+        $club->update([
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+        ]);
+
+        $partnerDirector = User::factory()->create([
+            'profile_type' => 'club_director',
+            'role_key' => 'club_director',
+            'scope_type' => 'club',
+            'sub_role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+        $partnerClub = Club::create([
+            'user_id' => $partnerDirector->id,
+            'club_name' => 'Partner Finance Club',
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'director_name' => $partnerDirector->name,
+            'creation_date' => now()->toDateString(),
+            'pastor_name' => 'Pastor Test',
+            'conference_name' => 'Test Association',
+            'conference_region' => '1',
+            'club_type' => 'adventurers',
+            'status' => 'active',
+        ]);
+        $partnerDirector->update([
+            'club_id' => $partnerClub->id,
+            'scope_id' => $partnerClub->id,
+        ]);
+
+        $operativeAccount = $this->createAccount($club->fresh(), 'club_budget', 'Club Budget', 200);
+        Payment::create([
+            'club_id' => $club->id,
+            'concept_text' => 'Opening operative cash',
+            'pay_to' => 'club_budget',
+            'account_id' => $operativeAccount->id,
+            'amount_paid' => 200,
+            'payment_date' => '2026-05-18',
+            'payment_type' => 'cash',
+            'received_by_user_id' => $director->id,
+        ]);
+
+        $partnerAccount = $this->createAccount($partnerClub, 'club_budget', 'Club Budget', 0);
+
+        $fundraiserBootstrap = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.fundraisers', ['club_id' => $club->id]))
+            ->assertOk();
+        $this->assertSame('Partner Finance Club', $fundraiserBootstrap->json('data.partner_clubs.0.club_name'));
+
+        $eventResponse = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.store'), [
+                'club_id' => $club->id,
+                'name' => 'Shared food sale',
+                'fundraiser_type' => 'food',
+                'event_date' => '2026-05-19',
+                'pay_to' => 'club_budget',
+                'investment_total' => 250,
+                'investment_pay_to' => 'club_budget',
+                'investment_funds_location' => 'cash',
+                'partner_club_id' => $partnerClub->id,
+                'partner_investment_share_percent' => 50,
+                'partner_earnings_share_percent' => 50,
+                'partner_notes' => 'Split food fundraiser',
+            ])
+            ->assertCreated();
+        $eventId = $eventResponse->json('event.id');
+
+        $partnerId = FundraiserEventPartner::query()->where('partner_club_id', $partnerClub->id)->value('id');
+        $this->assertNotNull($partnerId);
+        $this->assertSame(125.0, (float) ($eventResponse->json('event.partners.0.investment_due') ?? 0));
+        $this->assertDatabaseHas('expenses', [
+            'club_id' => $club->id,
+            'pay_to' => 'reimbursement_to',
+            'status' => 'pending_reimbursement',
+            'amount' => 50,
+        ]);
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.products.store', $eventId), [
+                'name' => 'Shared plate',
+                'sale_price' => 20,
+                'quantity_available' => 10,
+            ])
+            ->assertCreated();
+
+        $plate = FundraiserProduct::query()->firstWhere('name', 'Shared plate');
+
+        $contribution = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.partners.contribution', $partnerId), [
+                'transfer_date' => '2026-05-19',
+                'funds_location' => 'cash',
+                'payment_type' => 'transfer',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('transfer.transfer_type', FundraiserPartnerTransfer::TYPE_INVESTMENT_CONTRIBUTION)
+            ->assertJsonPath('transfer.amount', 125);
+
+        $this->assertNotNull($contribution->json('transfer.receipt.number'));
+        $this->assertSame('0.00', Account::findOrFail($partnerAccount->id)->balance);
+        $this->assertSame('125.00', Account::findOrFail($operativeAccount->id)->balance);
+        $this->assertSame('-125.00', Account::query()->where('club_id', $partnerClub->id)->where('pay_to', 'reimbursement_to')->value('balance'));
+        $this->assertSame('-50.00', Account::query()->where('club_id', $club->id)->where('pay_to', 'reimbursement_to')->value('balance'));
+        $this->assertDatabaseHas('expenses', [
+            'club_id' => $partnerClub->id,
+            'pay_to' => 'reimbursement_to',
+            'status' => 'pending_reimbursement',
+            'amount' => 125,
+        ]);
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.store', $eventId), [
+                'sale_date' => '2026-05-19',
+                'payment_type' => 'cash',
+                'items' => [
+                    ['fundraiser_product_id' => $plate->id, 'quantity' => 10],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('sale.total_amount', 200)
+            ->assertJsonPath('sale.total_cost', 250)
+            ->assertJsonPath('sale.gain_amount', -50);
+
+        $closeResponse = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.close', $eventId), [
+                'close_date' => '2026-05-19',
+                'funds_location' => 'cash',
+                'payment_type' => 'cash',
+            ])
+            ->assertOk()
+            ->assertJsonPath('transfers.0.transfer_type', FundraiserPartnerTransfer::TYPE_EARNINGS_DISTRIBUTION)
+            ->assertJsonPath('transfers.0.amount', 100);
+
+        $this->assertNotNull($closeResponse->json('transfers.0.receipt.number'));
+        $this->assertSame('225.00', Account::findOrFail($operativeAccount->id)->balance);
+        $this->assertSame('100.00', Account::findOrFail($partnerAccount->id)->balance);
+        $this->assertDatabaseCount('fundraiser_partner_transfers', 2);
+        $this->assertDatabaseHas('payments', [
+            'club_id' => $club->id,
+            'source_type' => FinanceFundraiserService::PARTNER_TRANSFER_SOURCE_TYPE,
+            'concept_text' => 'Aporte de Partner Finance Club para fundraiser: Shared food sale',
+            'amount_paid' => 125,
+        ]);
+        $this->assertDatabaseHas('payments', [
+            'club_id' => $partnerClub->id,
+            'source_type' => FinanceFundraiserService::PARTNER_TRANSFER_SOURCE_TYPE,
+            'concept_text' => 'Ingresos compartidos fundraiser Shared food sale de Finance Test Club',
+            'amount_paid' => 100,
+        ]);
+        $this->assertDatabaseHas('fundraiser_events', [
+            'id' => $eventId,
+            'status' => 'closed',
+        ]);
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.store', $eventId), [
+                'sale_date' => '2026-05-19',
+                'payment_type' => 'cash',
+                'items' => [
+                    ['fundraiser_product_id' => $plate->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertStatus(422);
+
+        $fundraisers = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.fundraisers', ['club_id' => $club->id]))
+            ->assertOk();
+        $event = collect($fundraisers->json('data.events'))->firstWhere('id', $eventId);
+        $partner = $event['partners'][0];
+        $this->assertSame(125.0, (float) $partner['investment_due']);
+        $this->assertSame(125.0, (float) $partner['contribution_recorded']);
+        $this->assertSame(100.0, (float) $partner['earnings_due']);
+        $this->assertSame(100.0, (float) $partner['earnings_distributed']);
+        $this->assertSame(125.0, (float) $event['totals']['partner_contributions_recorded']);
+        $this->assertSame(100.0, (float) $event['totals']['partner_earnings_distributed']);
+        $this->assertSame(200.0, (float) $event['totals']['partner_split_base']);
     }
 
     public function test_fundraiser_investments_use_total_account_balance_before_reimbursement(): void
