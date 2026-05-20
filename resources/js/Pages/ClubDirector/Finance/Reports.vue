@@ -170,8 +170,8 @@ const downloadLedgerPdf = async () => {
         if (!data.url) {
             throw new Error('No PDF URL returned.')
         }
-
-        window.location.href = data.url
+        window.open(data.url, '_blank') 
+       
     } catch (error) {
         console.error(error)
         alert('Could not download the ledger PDF. Please try again.')
