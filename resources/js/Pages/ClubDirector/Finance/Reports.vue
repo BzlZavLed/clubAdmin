@@ -145,6 +145,46 @@ const ledgerPdfUrl = computed(() => {
     return route('club.finance-engine.movements.pdf', params)
 })
 
+
+
+const downloadingLedgerPdf = ref(false)
+
+const downloadLedgerPdf = async () => {
+    downloadingLedgerPdf.value = true
+
+    try {
+        const response = await fetch(ledgerPdfUrl.value, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+            },
+            credentials: 'same-origin',
+        })
+
+        if (!response.ok) {
+            throw new Error('Could not generate ledger PDF.')
+        }
+
+        const data = await response.json()
+
+        if (!data.url) {
+            throw new Error('No PDF URL returned.')
+        }
+
+        window.location.href = data.url
+    } catch (error) {
+        console.error(error)
+        alert('Could not download the ledger PDF. Please try again.')
+    } finally {
+        downloadingLedgerPdf.value = false
+    }
+}
+
+
+
+
+
+
 const formatMoney = (value) => {
     const amount = Number(value || 0)
     const sign = amount < 0 ? '-' : ''
@@ -499,13 +539,31 @@ onMounted(loadData)
                                 {{ tr('Filtra por cuenta o rango de fechas. Las correcciones y movimientos cancelados se muestran junto al movimiento original.', 'Filter by account or date range. Corrections and cancelled movements are shown with the original movement.') }}
                             </p>
                         </div>
-                        <a
+                        <!-- <a
                             :href="ledgerPdfUrl"
                             class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
                         >
                             <ArrowDownTrayIcon class="h-4 w-4" />
                             {{ tr('PDF libro', 'Ledger PDF') }}
-                        </a>
+                        </a> -->
+
+                        <button
+                            type="button"
+                            @click="downloadLedgerPdf"
+                            :disabled="downloadingLedgerPdf"
+                            class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            <ArrowDownTrayIcon class="h-4 w-4" />
+
+                            <span v-if="downloadingLedgerPdf">
+                                {{ tr('Generando...', 'Generating...') }}
+                            </span>
+
+                            <span v-else>
+                                {{ tr('PDF libro', 'Ledger PDF') }}
+                            </span>
+                        </button>
+
                     </div>
 
                     <div class="mt-4 grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(150px,0.75fr)_minmax(150px,0.75fr)_auto_auto] lg:items-end">
