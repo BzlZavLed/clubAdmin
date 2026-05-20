@@ -14,6 +14,7 @@ use App\Services\EventClubSettlementService;
 use App\Services\EventFinanceService;
 use App\Support\BankInfoFormatter;
 use App\Support\ClubHelper;
+use App\Support\GeneratedPdfResponse;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -192,8 +193,13 @@ class EventClubSettlementController extends Controller
 
         $settlement->update(['last_downloaded_at' => now()]);
 
-        return $this->makePdf($settlement, $documentValidationService, $clubLogoService, $request->user())
-            ->download("{$settlement->receipt_number}.pdf");
+        return GeneratedPdfResponse::fromDomPdf(
+            $this->makePdf($settlement, $documentValidationService, $clubLogoService, $request->user()),
+            'generated/event-settlement-receipts',
+            $settlement->receipt_number,
+            "{$settlement->receipt_number}.pdf",
+            $request
+        );
     }
 
     protected function authorizeSettlement($user, EventClubSettlement $settlement): void

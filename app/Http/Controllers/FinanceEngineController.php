@@ -13,6 +13,7 @@ use App\Models\Payment;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
 use App\Support\ClubHelper;
+use App\Support\GeneratedPdfResponse;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
@@ -102,25 +103,13 @@ class FinanceEngineController extends Controller
             'receiptAnnexes' => $receiptAnnexes,
         ])->setPaper('a4', 'landscape');
 
-        $directory = public_path('generated/finance-ledgers');
-
-        if (!is_dir($directory)) {
-            mkdir($directory, 0755, true);
-        }
-
-        $fileName = 'finance-ledger-' . $club->id . '-' . now()->format('YmdHis') . '-' . uniqid() . '.pdf';
-        $path = $directory . DIRECTORY_SEPARATOR . $fileName;
-
-        file_put_contents($path, $pdf->output());
-
-        $url = asset('generated/finance-ledgers/' . $fileName);
-
-        return response()->json([
-            'success' => true,
-            'file_name' => 'finance-ledger.pdf',
-            'url' => $url,
-            'size' => filesize($path),
-        ]);
+        return GeneratedPdfResponse::fromDomPdf(
+            $pdf,
+            'generated/finance-ledgers',
+            'finance-ledger-' . $club->id,
+            'finance-ledger.pdf',
+            $request
+        );
     }
 
     private function ledgerReceiptAnnexes(array $report): array
@@ -376,15 +365,22 @@ class FinanceEngineController extends Controller
             generatedAt: $generatedAt,
         );
 
-        return Pdf::loadView('reports.finance_engine_accounting', [
+        $pdf = Pdf::loadView('reports.finance_engine_accounting', [
             'club' => $club,
             'data' => $data,
             'generatedAt' => $generatedAt,
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
             'qrCodeDataUri' => $validation['qr_code_data_uri'],
-        ])->setPaper('a4', 'landscape')
-            ->download('account-balances.pdf');
+        ])->setPaper('a4', 'landscape');
+
+        return GeneratedPdfResponse::fromDomPdf(
+            $pdf,
+            'generated/finance-accounting',
+            'account-balances-' . $club->id,
+            'account-balances.pdf',
+            $request
+        );
     }
 
     public function storeConcept(Request $request)

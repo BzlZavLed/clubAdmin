@@ -64,10 +64,11 @@ class AccountingCorrectionTest extends TestCase
         ]);
         $this->assertNotNull($receipt);
         $this->assertStringStartsWith('RCPT-', $receipt->receipt_number);
-        $receiptResponse = $this->actingAs($director)
-            ->get(route('payment-receipts.download', $receipt))
-            ->assertOk();
-        $this->assertStringContainsString('application/pdf', $receiptResponse->headers->get('content-type'));
+        $this->actingAs($director)
+            ->getJson(route('payment-receipts.download', $receipt))
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('file_name', "{$receipt->receipt_number}.pdf");
         $this->assertDatabaseHas('payments', [
             'id' => $payment->id,
             'is_cancelled' => true,

@@ -10,6 +10,7 @@ use App\Services\DocumentValidationService;
 use App\Services\Finance\FinanceFundraiserService;
 use App\Services\PaymentReceiptService;
 use App\Support\ClubHelper;
+use App\Support\GeneratedPdfResponse;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
@@ -23,15 +24,27 @@ class PaymentReceiptController extends Controller
         $this->authorizeReceipt($request->user(), $receipt);
         $this->markAsDownloaded(collect([$receipt]));
 
-        return $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService, $request->user())->download("{$receipt->receipt_number}.pdf");
+        return GeneratedPdfResponse::fromDomPdf(
+            $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService, $request->user()),
+            'generated/payment-receipts',
+            $receipt->receipt_number,
+            "{$receipt->receipt_number}.pdf",
+            $request
+        );
     }
 
-    public function publicDownload(PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
+    public function publicDownload(Request $request, PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
     {
         $receipt = $this->loadReceiptContext($receipt);
         $this->markAsDownloaded(collect([$receipt]));
 
-        return $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService)->download("{$receipt->receipt_number}.pdf");
+        return GeneratedPdfResponse::fromDomPdf(
+            $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService),
+            'generated/payment-receipts',
+            $receipt->receipt_number,
+            "{$receipt->receipt_number}.pdf",
+            $request
+        );
     }
 
     public function publicQr(PaymentReceipt $receipt, PaymentReceiptService $paymentReceiptService, DocumentValidationService $documentValidationService)

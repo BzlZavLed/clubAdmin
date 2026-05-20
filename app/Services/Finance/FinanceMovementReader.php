@@ -193,6 +193,7 @@ class FinanceMovementReader
                 'receivedBy:id,name',
                 'heldBy:id,name',
                 'custodyValidatedBy:id,name',
+                'reversedPayment:id,payment_type,custody_status',
                 'reversalPayment:id,reversed_payment_id',
                 'settledExpense:id,pay_to,amount,expense_date,description,reimbursed_to,reimbursement_payee_id,status,reimbursement_origin_expense_id',
                 'settledExpense.reimbursementPayee:id,club_id,name,phone,email',
@@ -227,6 +228,16 @@ class FinanceMovementReader
                     && !$payment->is_cancelled
                     && !$payment->related_canceled_movement_id
                     && $payment->reversalPayment === null;
+                $isCancellationPayment = $payment->reversed_payment_id && $payment->canceling_id;
+                $balancePaymentType = $isCancellationPayment && $payment->reversedPayment
+                    ? $payment->reversedPayment->payment_type
+                    : $payment->payment_type;
+                $isCountedInBalance = $isCancellationPayment && $payment->reversedPayment
+                    ? !in_array($payment->reversedPayment->custody_status, [
+                        AttendanceDuesPaymentService::CUSTODY_HELD_BY_STAFF,
+                        AttendanceDuesPaymentService::CUSTODY_REMITTED_PENDING,
+                    ], true)
+                    : !$isCustodyHeld;
 
                 return [
                     'movement_id' => "payment:{$payment->id}",
@@ -242,17 +253,18 @@ class FinanceMovementReader
                     'account_label' => $payment->account?->label,
                     'from_account' => null,
                     'to_account' => $payment->pay_to ?: 'club_budget',
-                    'location' => $isCustodyHeld ? 'staff_custody' : $this->treasuryService->paymentLocation($payment->payment_type),
+                    'location' => $isCountedInBalance ? $this->treasuryService->paymentLocation($balancePaymentType) : 'staff_custody',
                     'amount' => abs($amount),
                     'signed_amount' => $amount,
                     'concept' => $conceptName,
                     'counterparty' => $member['name'] ?? $staff['name'] ?? $payment->payer_name,
                     'payment_type' => $payment->payment_type,
+                    'balance_payment_type' => $balancePaymentType,
                     'source_type' => $payment->source_type,
                     'source_id' => $payment->source_id,
                     'settles_expense_id' => $payment->settles_expense_id,
                     'status' => $this->paymentStatus($payment),
-                    'is_counted_in_balance' => !$isCustodyHeld,
+                    'is_counted_in_balance' => $isCountedInBalance,
                     'receipt' => $payment->receipt ? [
                         'id' => (int) $payment->receipt->id,
                         'number' => $payment->receipt->receipt_number,

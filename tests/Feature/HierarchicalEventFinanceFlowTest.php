@@ -849,8 +849,10 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $this->assertSame($receipt->receipt_number, collect($parentPaymentProps['receipts'])->firstWhere('id', $receipt->id)['receipt_number']);
 
         $this->actingAs($parent)
-            ->get(route('payment-receipts.download', $receipt))
-            ->assertOk();
+            ->getJson(route('payment-receipts.download', $receipt))
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('file_name', "{$receipt->receipt_number}.pdf");
 
         $settlementResponse = $this->actingAs($clubDirector)
             ->getJson(route('club.director.event-settlements.index', ['club_id' => $club->id]))

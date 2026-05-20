@@ -63,14 +63,16 @@ class FinanceEngineWorkflowTest extends TestCase
         }
 
         $this->actingAs($director)
-            ->get(route('financial.report.pdf', ['club_id' => $club->id]))
+            ->getJson(route('financial.report.pdf', ['club_id' => $club->id]))
             ->assertOk()
-            ->assertHeader('content-type', 'application/pdf');
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('file_name', 'finance-ledger.pdf');
 
         $this->actingAs($director)
-            ->get(route('club.finance-engine.accounting.pdf', ['club_id' => $club->id]))
+            ->getJson(route('club.finance-engine.accounting.pdf', ['club_id' => $club->id]))
             ->assertOk()
-            ->assertHeader('content-type', 'application/pdf');
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('file_name', 'account-balances.pdf');
     }
 
     public function test_cashbox_records_income_with_precreated_and_manual_concepts_and_reports_receipts(): void
@@ -344,9 +346,10 @@ class FinanceEngineWorkflowTest extends TestCase
         $qrResponse = $this->get($saleResponse->json('receipt.qr_url'))->assertOk();
         $this->assertStringContainsString('image/svg+xml', $qrResponse->headers->get('content-type'));
         $this->assertStringContainsString('<svg', $qrResponse->getContent());
-        $this->get($saleResponse->json('receipt.public_url'))
+        $this->getJson($saleResponse->json('receipt.public_url'))
             ->assertOk()
-            ->assertHeader('content-type', 'application/pdf');
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('file_name', $saleResponse->json('receipt.number') . '.pdf');
         $receiptValidation = DocumentValidation::query()->latest('id')->first();
         $this->assertNotNull($receiptValidation);
         $fundraiserOrderSnapshot = $receiptValidation->document_snapshot['snapshot']['fundraiser_order'] ?? [];
@@ -1798,10 +1801,11 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertTrue((bool) $expenseRows->firstWhere('id', $expense->id)['is_cancelled']);
         $this->assertSame($expense->id, $expenseRows->firstWhere('id', $expenseReverse)['canceling_id']);
 
-        $pdfResponse = $this->actingAs($director)
-            ->get(route('financial.accounts.pdf', ['club_id' => $club->id]))
-            ->assertOk();
-        $this->assertStringContainsString('application/pdf', $pdfResponse->headers->get('content-type'));
+        $this->actingAs($director)
+            ->getJson(route('financial.accounts.pdf', ['club_id' => $club->id]))
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('file_name', 'account-balances.pdf');
 
         $engine = $this->actingAs($director)
             ->getJson(route('club.finance-engine.movements', ['club_id' => $club->id]))
@@ -1815,6 +1819,17 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertSame("payment:{$payment->id}", $movements->firstWhere('movement_id', "payment:{$paymentReverse}")['canceling_movement_key']);
         $this->assertSame("expense:{$expenseReverse}", $movements->firstWhere('movement_id', "expense:{$expense->id}")['related_canceled_movement_key']);
         $this->assertSame("expense:{$expense->id}", $movements->firstWhere('movement_id', "expense:{$expenseReverse}")['canceling_movement_key']);
+        $paymentCancellationMovement = $movements->firstWhere('movement_id', "payment:{$paymentReverse}");
+        $this->assertSame('cash', $paymentCancellationMovement['location']);
+        $this->assertSame('cash', $paymentCancellationMovement['balance_payment_type']);
+        $this->assertNotNull($paymentCancellationMovement['balance_after']);
+        $finalMovement = $movements->sortBy(fn (array $movement) => sprintf(
+            '%s-%010d-%s',
+            $movement['occurred_at'] ?? $movement['date'] ?? '0000-00-00 00:00:00',
+            $movement['id'] ?? 0,
+            $movement['movement_id'] ?? ''
+        ))->last();
+        $this->assertSame(0.0, (float) ($finalMovement['balance_after']['account_balance'] ?? 0));
 
         $treasury = $this->actingAs($director)
             ->getJson(route('club.director.treasury.data', ['club_id' => $club->id]))
