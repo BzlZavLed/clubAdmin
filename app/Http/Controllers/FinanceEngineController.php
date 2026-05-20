@@ -120,11 +120,14 @@ class FinanceEngineController extends Controller
         foreach (($report['movements'] ?? []) as $movement) {
             $receipt = $movement['receipt'] ?? null;
             if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
+                $isIncomeReceipt = ($movement['domain'] ?? null) === 'income';
                 $this->pushLedgerAnnex($annexes, $seen, [
                     'key' => 'receipt:' . ($receipt['url'] ?? $receipt['number']),
                     'reference' => $receipt['number'] ?? $this->movementReference($movement),
                     'title' => 'Recibo ' . ($receipt['number'] ?? $this->movementReference($movement)),
                     'url' => $receipt['url'] ?? null,
+                    'render_inline_receipt' => $isIncomeReceipt,
+                    'receipt' => $isIncomeReceipt ? $this->annexIncomeReceiptPayload($movement, $receipt) : null,
                     'movement' => $this->annexMovementContext($movement),
                 ]);
             }
@@ -217,6 +220,35 @@ class FinanceEngineController extends Controller
             'concept' => $movement['concept'] ?? $movement['reference'] ?? null,
             'counterparty' => $movement['counterparty'] ?? $movement['created_by'] ?? null,
             'amount' => $movement['amount'] ?? null,
+            'signed_amount' => $movement['signed_amount'] ?? null,
+            'direction' => $movement['direction'] ?? null,
+            'account' => $movement['account_label'] ?? $movement['account'] ?? null,
+            'location' => $movement['location'] ?? $movement['from_location'] ?? null,
+            'payment_type' => $movement['payment_type'] ?? null,
+            'created_by' => $movement['created_by'] ?? null,
+            'status' => $movement['status'] ?? null,
+        ];
+    }
+
+    private function annexIncomeReceiptPayload(array $movement, array $receipt): array
+    {
+        return [
+            'number' => $receipt['number'] ?? $this->movementReference($movement),
+            'issued_at' => $receipt['issued_at'] ?? null,
+            'issued_to_email' => $receipt['issued_to_email'] ?? null,
+            'issued_to_type' => $receipt['issued_to_type'] ?? null,
+            'date' => $movement['date'] ?? null,
+            'concept' => $movement['concept'] ?? $movement['reference'] ?? null,
+            'payer' => $movement['counterparty'] ?? null,
+            'received_by' => $movement['created_by'] ?? null,
+            'account' => $movement['account_label'] ?? $movement['account'] ?? null,
+            'location' => $movement['location'] ?? null,
+            'payment_type' => $movement['payment_type'] ?? null,
+            'amount' => $movement['amount'] ?? null,
+            'signed_amount' => $movement['signed_amount'] ?? null,
+            'direction' => $movement['direction'] ?? null,
+            'status' => $movement['status'] ?? null,
+            'movement_id' => $movement['movement_id'] ?? null,
         ];
     }
 

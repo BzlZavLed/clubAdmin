@@ -189,7 +189,7 @@ class FinanceMovementReader
                 'concept:id,concept,event_id,event_fee_component_id',
                 'concept.event:id,title',
                 'account:id,club_id,pay_to,label',
-                'receipt:id,payment_id,receipt_number',
+                'receipt:id,payment_id,receipt_number,issued_at,issued_to_email,issued_to_type',
                 'receivedBy:id,name',
                 'heldBy:id,name',
                 'custodyValidatedBy:id,name',
@@ -267,7 +267,11 @@ class FinanceMovementReader
                     'is_counted_in_balance' => $isCountedInBalance,
                     'receipt' => $payment->receipt ? [
                         'id' => (int) $payment->receipt->id,
+                        'type' => 'payment_receipt',
                         'number' => $payment->receipt->receipt_number,
+                        'issued_at' => optional($payment->receipt->issued_at)->toDateTimeString(),
+                        'issued_to_email' => $payment->receipt->issued_to_email,
+                        'issued_to_type' => $payment->receipt->issued_to_type,
                         'url' => route('payment-receipts.download', $payment->receipt),
                     ] : null,
                     'proof' => $payment->check_image_path ? [

@@ -251,6 +251,15 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertSame(45.0, (float) $guestDonationMovement['balance_after']['account_balance']);
         $this->assertMatchesRegularExpression('/^2026-05-14T\d{2}:\d{2}:\d{2}\\+00:00$/', $guestDonationMovement['occurred_at']);
         $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\\+00:00$/', $guestDonationMovement['created_at']);
+
+        $this->actingAs($director)
+            ->getJson(route('club.finance-engine.movements.pdf', [
+                'club_id' => $club->id,
+                'domain' => 'income',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('file_name', 'finance-ledger.pdf');
     }
 
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void

@@ -38,6 +38,22 @@
         .annex-image { max-width: 100%; max-height: 410px; object-fit: contain; }
         .annex-link-box { border: 1px dashed #94a3b8; background: #f8fafc; padding: 18px; text-align: center; }
         .annex-link-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+        .inline-receipt { border: 1px solid #d1d5db; background: #fff; }
+        .inline-receipt-top { border-bottom: 1px solid #d1d5db; padding: 14px 16px; }
+        .inline-receipt-header { width: 100%; border-collapse: collapse; }
+        .inline-receipt-header td { border: 0; padding: 0; vertical-align: middle; }
+        .inline-receipt-logo { width: 48px; height: 48px; object-fit: contain; border: 1px solid #d1d5db; padding: 3px; }
+        .inline-receipt-club { font-size: 14px; font-weight: 700; }
+        .inline-receipt-subtitle { color: #6b7280; font-size: 9px; margin-top: 2px; }
+        .inline-receipt-title { text-align: right; font-size: 18px; font-weight: 700; text-transform: uppercase; }
+        .inline-receipt-number { display: inline-block; margin-top: 5px; padding: 4px 8px; color: #1d4ed8; border: 1px solid #bfdbfe; background: #eff6ff; font-size: 10px; font-weight: 700; }
+        .inline-receipt-body { padding: 14px 16px; }
+        .inline-receipt-grid { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+        .inline-receipt-grid td { width: 33.333%; border: 1px solid #e5e7eb; padding: 8px; }
+        .inline-receipt-detail { width: 100%; border-collapse: collapse; }
+        .inline-receipt-detail td { border: 1px solid #e5e7eb; padding: 8px; vertical-align: top; }
+        .inline-receipt-total { margin-top: 12px; border: 1px solid #bfdbfe; background: #eff6ff; padding: 10px 12px; text-align: right; }
+        .inline-receipt-total-value { color: #1d4ed8; font-size: 22px; font-weight: 700; }
         a { color: #0369a1; text-decoration: underline; }
         .footer { position: fixed; bottom: -12mm; left: 0; right: 0; border-top: 1px solid #d1d5db; padding-top: 4px; font-size: 8px; color: #6b7280; }
         .footer img { height: 34px; float: right; }
@@ -46,6 +62,9 @@
 <body>
 @php
     $money = fn ($value) => '$' . number_format((float) ($value ?? 0), 2);
+    $signedMoney = fn ($value) => ((float) ($value ?? 0)) < 0
+        ? '-$' . number_format(abs((float) $value), 2)
+        : '$' . number_format((float) ($value ?? 0), 2);
     $movements = collect($report['movements'] ?? []);
     $summary = $report['summary'] ?? [];
     $receiptAnnexes = collect($receiptAnnexes ?? [])->values()->map(function (array $annex, int $index) {
@@ -80,8 +99,17 @@
         'fundraiser_investment_receipt' => 'Comprobante de inversion',
         'treasury_proof' => 'Comprobante de transferencia',
     ];
+    $paymentTypeLabels = [
+        'cash' => 'Efectivo',
+        'zelle' => 'Zelle',
+        'check' => 'Cheque',
+        'transfer' => 'Transferencia',
+        'internal' => 'Interno',
+        'initial' => 'Inicial',
+    ];
     $isTransfer = fn (array $movement) => ($movement['direction'] ?? null) === 'transfer' || ($movement['domain'] ?? null) === 'transfer';
     $locationLabel = fn ($value) => $value ? ($locationLabels[$value] ?? $value) : '-';
+    $paymentTypeLabel = fn ($value) => $value ? ($paymentTypeLabels[$value] ?? $value) : '-';
     $movementAccountText = function (array $movement) use ($isTransfer, $locationLabel) {
         if ($isTransfer($movement)) {
             $from = $movement['from_account_label'] ?? $movement['from_account'] ?? $movement['account_label'] ?? $movement['account'] ?? '-';
@@ -357,53 +385,136 @@
 @foreach($receiptAnnexes as $annex)
     @php
         $movement = $annex['movement'] ?? [];
+        $receipt = $annex['receipt'] ?? [];
         $title = $annex['title'] ?? ('Anexo ' . ($annex['reference'] ?? $loop->iteration));
         $reference = $annex['reference'] ?? '-';
+        $receiptAmount = (float) ($receipt['signed_amount'] ?? (($receipt['direction'] ?? null) === 'out' ? -1 * ($receipt['amount'] ?? 0) : ($receipt['amount'] ?? 0)));
+        $receiptTitle = $receiptAmount < 0 || ($receipt['status'] ?? null) === 'cancellation'
+            ? 'Recibo de cancelacion'
+            : 'Recibo de ingreso';
     @endphp
     <div class="annex-page">
         <a name="{{ $annex['anchor'] }}"></a>
         <h2 class="annex-title">{{ $title }}</h2>
         <div class="annex-subtitle">Anexo del libro contable financiero - Referencia {{ $reference }}</div>
 
-        <table class="annex-meta">
-            <tr>
-                <td>
-                    <div class="annex-label">Movimiento</div>
-                    <div class="annex-value">{{ $movement['movement_id'] ?? '-' }}</div>
-                </td>
-                <td>
-                    <div class="annex-label">Fecha</div>
-                    <div class="annex-value">{{ $movement['date'] ?? '-' }}</div>
-                </td>
-                <td>
-                    <div class="annex-label">Monto</div>
-                    <div class="annex-value">{{ $money($movement['amount'] ?? 0) }}</div>
-                </td>
-                <td>
-                    <div class="annex-label">Contraparte</div>
-                    <div class="annex-value">{{ $movement['counterparty'] ?? '-' }}</div>
-                </td>
-                <td>
-                    <div class="annex-label">Referencia</div>
-                    <div class="annex-value">{{ $reference }}</div>
-                </td>
-            </tr>
-        </table>
+        @if(!empty($annex['render_inline_receipt']) && !empty($receipt))
+            <div class="inline-receipt">
+                <div class="inline-receipt-top">
+                    <table class="inline-receipt-header">
+                        <tr>
+                            <td style="width:58px;">
+                                @if(!empty($clubLogoDataUri))
+                                    <img src="{{ $clubLogoDataUri }}" class="inline-receipt-logo" alt="Logo">
+                                @endif
+                            </td>
+                            <td>
+                                <div class="inline-receipt-club">{{ $club->club_name ?? 'Club' }}</div>
+                                <div class="inline-receipt-subtitle">{{ $club->church_name ?? '' }}</div>
+                            </td>
+                            <td style="text-align:right;">
+                                <div class="inline-receipt-title">{{ $receiptTitle }}</div>
+                                <div class="inline-receipt-number">{{ $receipt['number'] ?? $reference }}</div>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="inline-receipt-body">
+                    <table class="inline-receipt-grid">
+                        <tr>
+                            <td>
+                                <div class="annex-label">Fecha de pago</div>
+                                <div class="annex-value">{{ $receipt['date'] ?? '-' }}</div>
+                            </td>
+                            <td>
+                                <div class="annex-label">Emitido</div>
+                                <div class="annex-value">{{ !empty($receipt['issued_at']) ? substr((string) $receipt['issued_at'], 0, 16) : '-' }}</div>
+                            </td>
+                            <td>
+                                <div class="annex-label">Metodo</div>
+                                <div class="annex-value">{{ $paymentTypeLabel($receipt['payment_type'] ?? null) }}</div>
+                            </td>
+                        </tr>
+                    </table>
+                    <table class="inline-receipt-detail">
+                        <tr>
+                            <td style="width:50%;">
+                                <div class="annex-label">Recibido de</div>
+                                <div class="annex-value">{{ $receipt['payer'] ?? '-' }}</div>
+                            </td>
+                            <td style="width:50%;">
+                                <div class="annex-label">Registrado por</div>
+                                <div class="annex-value">{{ $receipt['received_by'] ?? '-' }}</div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="annex-label">Concepto</div>
+                                <div class="annex-value">{{ $receipt['concept'] ?? '-' }}</div>
+                            </td>
+                            <td>
+                                <div class="annex-label">Cuenta / ubicacion</div>
+                                <div class="annex-value">{{ $receipt['account'] ?? '-' }} / {{ $locationLabel($receipt['location'] ?? null) }}</div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="annex-label">Movimiento</div>
+                                <div class="annex-value">{{ $receipt['movement_id'] ?? '-' }}</div>
+                            </td>
+                            <td>
+                                <div class="annex-label">Email emitido</div>
+                                <div class="annex-value">{{ $receipt['issued_to_email'] ?? '-' }}</div>
+                            </td>
+                        </tr>
+                    </table>
+                    <div class="inline-receipt-total">
+                        <div class="annex-label">Total recibido</div>
+                        <div class="inline-receipt-total-value">{{ $signedMoney($receiptAmount) }}</div>
+                    </div>
+                </div>
+            </div>
+        @else
+            <table class="annex-meta">
+                <tr>
+                    <td>
+                        <div class="annex-label">Movimiento</div>
+                        <div class="annex-value">{{ $movement['movement_id'] ?? '-' }}</div>
+                    </td>
+                    <td>
+                        <div class="annex-label">Fecha</div>
+                        <div class="annex-value">{{ $movement['date'] ?? '-' }}</div>
+                    </td>
+                    <td>
+                        <div class="annex-label">Monto</div>
+                        <div class="annex-value">{{ $money($movement['amount'] ?? 0) }}</div>
+                    </td>
+                    <td>
+                        <div class="annex-label">Contraparte</div>
+                        <div class="annex-value">{{ $movement['counterparty'] ?? '-' }}</div>
+                    </td>
+                    <td>
+                        <div class="annex-label">Referencia</div>
+                        <div class="annex-value">{{ $reference }}</div>
+                    </td>
+                </tr>
+            </table>
 
-        <table class="annex-meta">
-            <tr>
-                <td style="width:100%;">
-                    <div class="annex-label">Concepto</div>
-                    <div class="annex-value">{{ $movement['concept'] ?? '-' }}</div>
-                </td>
-            </tr>
-        </table>
+            <table class="annex-meta">
+                <tr>
+                    <td style="width:100%;">
+                        <div class="annex-label">Concepto</div>
+                        <div class="annex-value">{{ $movement['concept'] ?? '-' }}</div>
+                    </td>
+                </tr>
+            </table>
+        @endif
 
         @if(!empty($annex['data_uri']))
             <div class="annex-preview">
                 <img class="annex-image" src="{{ $annex['data_uri'] }}" alt="{{ $reference }}">
             </div>
-        @else
+        @elseif(empty($annex['render_inline_receipt']))
             <div class="annex-link-box">
                 <div class="annex-link-title">{{ $annex['filename'] ?? $title }}</div>
                 @if(!empty($annex['url']))
