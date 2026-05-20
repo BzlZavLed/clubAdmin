@@ -43,6 +43,7 @@ const ledgerFilters = ref({
     date_to: '',
 })
 
+const ledgerIsAllAccounts = computed(() => ledgerFilters.value.account === 'all')
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin' || clubs.value.length > 1)
 const currentClub = computed(() => treasury.value.club || clubs.value.find((club) => Number(club.id) === Number(selectedClubId.value)) || null)
 const summary = computed(() => treasury.value.summary || {})
@@ -89,14 +90,23 @@ const accountBalanceRows = computed(() => (summary.value.accounts || []).map((ro
 })).sort((a, b) => String(a.label).localeCompare(String(b.label))))
 
 const ledgerMovements = computed(() => engineReport.value?.movements || [])
-const ledgerPageCount = computed(() => Math.max(Math.ceil(ledgerMovements.value.length / LEDGER_PAGE_SIZE), 1))
+const ledgerPageCount = computed(() => ledgerIsAllAccounts.value ? 1 : Math.max(Math.ceil(ledgerMovements.value.length / LEDGER_PAGE_SIZE), 1))
 const paginatedLedgerMovements = computed(() => {
+    if (ledgerIsAllAccounts.value) return ledgerMovements.value
+
     const start = (ledgerPage.value - 1) * LEDGER_PAGE_SIZE
 
     return ledgerMovements.value.slice(start, start + LEDGER_PAGE_SIZE)
 })
-const ledgerPageStart = computed(() => ledgerMovements.value.length ? ((ledgerPage.value - 1) * LEDGER_PAGE_SIZE) + 1 : 0)
-const ledgerPageEnd = computed(() => Math.min(ledgerPage.value * LEDGER_PAGE_SIZE, ledgerMovements.value.length))
+const ledgerPageStart = computed(() => {
+    if (!ledgerMovements.value.length) return 0
+    if (ledgerIsAllAccounts.value) return 1
+
+    return ((ledgerPage.value - 1) * LEDGER_PAGE_SIZE) + 1
+})
+const ledgerPageEnd = computed(() => ledgerIsAllAccounts.value
+    ? ledgerMovements.value.length
+    : Math.min(ledgerPage.value * LEDGER_PAGE_SIZE, ledgerMovements.value.length))
 
 const ledgerIncomeAmount = (movement) => {
     if (movement?.domain !== 'income') return null
@@ -133,12 +143,6 @@ const ledgerPdfUrl = computed(() => {
     if (ledgerFilters.value.date_to) params.date_to = ledgerFilters.value.date_to
 
     return route('club.finance-engine.movements.pdf', params)
-})
-const balancesPdfUrl = computed(() => {
-    const params = { limit: 5000 }
-    if (selectedClubId.value) params.club_id = selectedClubId.value
-
-    return route('club.finance-engine.accounting.pdf', params)
 })
 
 const formatMoney = (value) => {
@@ -215,6 +219,91 @@ const movementAccountText = (movement) => {
         locationLabel(movement?.location),
     ].filter(Boolean).join(' · ')
 }
+const movementBalanceText = (movement) => {
+    const balance = movement?.balance_after
+    if (!balance) return '—'
+
+    if (movement?.domain === 'transfer') {
+        const from = balance.from
+        const to = balance.to
+        if (!from && !to) return '—'
+
+        if (from?.account && from.account === to?.account) {
+            return formatMoney(from.account_balance)
+        }
+
+        return [
+            `${tr('Origen', 'From')} ${formatMoney(from?.account_balance)}`,
+            `${tr('Destino', 'To')} ${formatMoney(to?.account_balance)}`,
+        ].join(' · ')
+    }
+
+    return balance.account_balance === null || balance.account_balance === undefined
+        ? '—'
+        : formatMoney(balance.account_balance)
+}
+const movementAccountKeys = (movement) => {
+    if (!movement) return []
+
+    if (movement.domain === 'transfer') {
+        return Array.from(new Set([
+            movement.from_account || movement.account,
+            movement.to_account || movement.account,
+        ].filter(Boolean)))
+    }
+
+    return [movement.account || movement.from_account || movement.to_account].filter(Boolean)
+}
+const movementBalanceTextForAccount = (movement, account = null) => {
+    if (!account || account === 'all') return movementBalanceText(movement)
+
+    const balance = movement?.balance_after
+    if (!balance) return '—'
+
+    if (movement?.domain === 'transfer') {
+        if (balance.from?.account === account) return formatMoney(balance.from.account_balance)
+        if (balance.to?.account === account) return formatMoney(balance.to.account_balance)
+
+        return '—'
+    }
+
+    const movementAccount = movement.account || movement.from_account || movement.to_account
+    if (movementAccount && movementAccount !== account) return '—'
+
+    return balance.account_balance === null || balance.account_balance === undefined
+        ? '—'
+        : formatMoney(balance.account_balance)
+}
+const ledgerAccountGroups = computed(() => {
+    const groups = new Map()
+
+    ledgerMovements.value.forEach((movement) => {
+        movementAccountKeys(movement).forEach((account) => {
+            if (!groups.has(account)) {
+                groups.set(account, {
+                    key: account,
+                    account,
+                    label: accountLabels.value[account] || account,
+                    rows: [],
+                })
+            }
+
+            groups.get(account).rows.push(movement)
+        })
+    })
+
+    return Array.from(groups.values())
+        .filter((group) => group.rows.length)
+        .sort((a, b) => String(a.label).localeCompare(String(b.label)))
+})
+const ledgerDisplaySections = computed(() => ledgerIsAllAccounts.value
+    ? ledgerAccountGroups.value
+    : [{
+        key: ledgerFilters.value.account,
+        account: ledgerFilters.value.account,
+        label: null,
+        rows: paginatedLedgerMovements.value,
+    }])
 const receiptLinks = (movement) => {
     const links = []
 
@@ -477,7 +566,7 @@ onMounted(loadData)
                 </div>
 
                 <div class="divide-y divide-gray-100">
-                    <div class="hidden border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:grid lg:grid-cols-[5.25rem_minmax(0,1.2fr)_minmax(0,0.95fr)_minmax(0,0.75fr)_minmax(4.8rem,0.45fr)_minmax(4.8rem,0.45fr)_minmax(4.8rem,0.45fr)] lg:gap-2">
+                    <div class="hidden border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:grid lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:gap-2">
                         <span>{{ tr('Fecha', 'Date') }}</span>
                         <span>{{ tr('Concepto', 'Concept') }}</span>
                         <span>{{ tr('Cuenta / ubicacion', 'Account / location') }}</span>
@@ -485,77 +574,90 @@ onMounted(loadData)
                         <span class="text-right">{{ tr('Ingresos', 'Income') }}</span>
                         <span class="text-right">{{ tr('Gastos', 'Expenses') }}</span>
                         <span class="text-right">{{ tr('Mov.', 'Mov.') }}</span>
+                        <span class="text-right">{{ tr('Balance', 'Balance') }}</span>
                     </div>
 
-                    <article
-                        v-for="movement in paginatedLedgerMovements"
-                        :key="movement.movement_id"
-                        class="grid min-w-0 gap-2 px-3 py-2.5 text-xs sm:grid-cols-[5.25rem_minmax(0,1fr)] lg:grid-cols-[5.25rem_minmax(0,1.2fr)_minmax(0,0.95fr)_minmax(0,0.75fr)_minmax(4.8rem,0.45fr)_minmax(4.8rem,0.45fr)_minmax(4.8rem,0.45fr)] lg:items-start"
-                    >
-                        <div class="min-w-0">
-                            <p class="font-semibold text-gray-900">{{ formatDate(movement.date) }}</p>
-                            <div class="mt-1 flex flex-wrap gap-1">
-                                <span class="inline-flex rounded-full border px-1.5 py-0.5 text-[11px] font-semibold leading-4" :class="typeBadgeClass(movement)">
-                                    {{ typeLabel(movement) }}
-                                </span>
-                                <span class="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-gray-700">
-                                    {{ statusLabel(movement) }}
-                                </span>
+                    <template v-for="section in ledgerDisplaySections" :key="section.key">
+                        <div v-if="section.label" class="bg-gray-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
+                            {{ section.label }}
+                        </div>
+
+                        <article
+                            v-for="movement in section.rows"
+                            :key="`${section.key}-${movement.movement_id}`"
+                            class="grid min-w-0 gap-2 px-3 py-2.5 text-xs sm:grid-cols-[5.25rem_minmax(0,1fr)] lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:items-start"
+                        >
+                            <div class="min-w-0">
+                                <p class="font-semibold text-gray-900">{{ formatDate(movement.date) }}</p>
+                                <div class="mt-1 flex flex-wrap gap-1">
+                                    <span class="inline-flex rounded-full border px-1.5 py-0.5 text-[11px] font-semibold leading-4" :class="typeBadgeClass(movement)">
+                                        {{ typeLabel(movement) }}
+                                    </span>
+                                    <span class="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-gray-700">
+                                        {{ statusLabel(movement) }}
+                                    </span>
+                                </div>
                             </div>
-                        </div>
 
-                        <div class="min-w-0">
-                            <p class="break-words text-sm font-semibold leading-5 text-gray-950">
-                                {{ movement.concept || movement.reference || '—' }}
-                            </p>
-                            <p v-if="correctionText(movement)" class="mt-1 text-xs font-medium text-purple-700">{{ correctionText(movement) }}</p>
-                            <div v-if="receiptLinks(movement).length" class="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
-                                <a
-                                    v-for="link in receiptLinks(movement)"
-                                    :key="`${movement.movement_id}-${link.url}`"
-                                    :href="link.url"
-                                    target="_blank"
-                                    rel="noopener"
-                                    class="break-words text-[11px] font-semibold text-red-700 hover:text-red-800"
-                                >
-                                    {{ link.label }}
-                                </a>
-                            </div>
-                            <span v-else-if="receiptFallback(movement)" class="mt-1 inline-flex text-[11px] font-medium text-gray-700">{{ receiptFallback(movement) }}</span>
-                        </div>
-
-                        <div class="min-w-0">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:hidden">{{ tr('Cuenta / ubicacion', 'Account / location') }}</p>
-                            <p class="break-words leading-5 text-gray-700">{{ movementAccountText(movement) }}</p>
-                        </div>
-
-                        <div class="min-w-0">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:hidden">{{ tr('Quien pago / tercero', 'Payer / counterparty') }}</p>
-                            <p class="break-words leading-5 text-gray-700">{{ movement.counterparty || '—' }}</p>
-                            <p class="text-[11px] text-gray-500">{{ paymentTypeLabel(movement.payment_type) }}</p>
-                        </div>
-
-                        <div class="grid min-w-0 grid-cols-3 gap-1 sm:col-span-2 lg:contents">
-                            <div class="rounded-md bg-emerald-50 px-2 py-1 lg:bg-transparent lg:p-0">
-                                <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 lg:hidden">{{ tr('Ingresos', 'Income') }}</p>
-                                <p class="text-right font-semibold leading-5 text-emerald-700">
-                                    {{ ledgerIncomeAmount(movement) === null ? '—' : formatMoney(ledgerIncomeAmount(movement)) }}
+                            <div class="min-w-0">
+                                <p class="break-words text-sm font-semibold leading-5 text-gray-950">
+                                    {{ movement.concept || movement.reference || '—' }}
                                 </p>
+                                <p v-if="correctionText(movement)" class="mt-1 text-xs font-medium text-purple-700">{{ correctionText(movement) }}</p>
+                                <div v-if="receiptLinks(movement).length" class="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
+                                    <a
+                                        v-for="link in receiptLinks(movement)"
+                                        :key="`${movement.movement_id}-${link.url}`"
+                                        :href="link.url"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="break-words text-[11px] font-semibold text-red-700 hover:text-red-800"
+                                    >
+                                        {{ link.label }}
+                                    </a>
+                                </div>
+                                <span v-else-if="receiptFallback(movement)" class="mt-1 inline-flex text-[11px] font-medium text-gray-700">{{ receiptFallback(movement) }}</span>
                             </div>
-                            <div class="rounded-md bg-rose-50 px-2 py-1 lg:bg-transparent lg:p-0">
-                                <p class="text-[11px] font-semibold uppercase tracking-wide text-rose-700 lg:hidden">{{ tr('Gastos', 'Expenses') }}</p>
-                                <p class="text-right font-semibold leading-5 text-rose-700">
-                                    {{ ledgerExpenseAmount(movement) === null ? '—' : formatMoney(ledgerExpenseAmount(movement)) }}
-                                </p>
+
+                            <div class="min-w-0">
+                                <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:hidden">{{ tr('Cuenta / ubicacion', 'Account / location') }}</p>
+                                <p class="break-words leading-5 text-gray-700">{{ movementAccountText(movement) }}</p>
                             </div>
-                            <div class="rounded-md bg-sky-50 px-2 py-1 lg:bg-transparent lg:p-0">
-                                <p class="text-[11px] font-semibold uppercase tracking-wide text-sky-700 lg:hidden">{{ tr('Mov.', 'Mov.') }}</p>
-                                <p class="text-right font-semibold leading-5 text-sky-700">
-                                    {{ ledgerTransferAmount(movement) === null ? '—' : formatMoney(ledgerTransferAmount(movement)) }}
-                                </p>
+
+                            <div class="min-w-0">
+                                <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:hidden">{{ tr('Quien pago / tercero', 'Payer / counterparty') }}</p>
+                                <p class="break-words leading-5 text-gray-700">{{ movement.counterparty || '—' }}</p>
+                                <p class="text-[11px] text-gray-500">{{ paymentTypeLabel(movement.payment_type) }}</p>
                             </div>
-                        </div>
-                    </article>
+
+                            <div class="grid min-w-0 grid-cols-2 gap-1 sm:col-span-2 sm:grid-cols-4 lg:contents">
+                                <div class="rounded-md bg-emerald-50 px-2 py-1 lg:bg-transparent lg:p-0">
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 lg:hidden">{{ tr('Ingresos', 'Income') }}</p>
+                                    <p class="text-right font-semibold leading-5 text-emerald-700">
+                                        {{ ledgerIncomeAmount(movement) === null ? '—' : formatMoney(ledgerIncomeAmount(movement)) }}
+                                    </p>
+                                </div>
+                                <div class="rounded-md bg-rose-50 px-2 py-1 lg:bg-transparent lg:p-0">
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-rose-700 lg:hidden">{{ tr('Gastos', 'Expenses') }}</p>
+                                    <p class="text-right font-semibold leading-5 text-rose-700">
+                                        {{ ledgerExpenseAmount(movement) === null ? '—' : formatMoney(ledgerExpenseAmount(movement)) }}
+                                    </p>
+                                </div>
+                                <div class="rounded-md bg-sky-50 px-2 py-1 lg:bg-transparent lg:p-0">
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-sky-700 lg:hidden">{{ tr('Mov.', 'Mov.') }}</p>
+                                    <p class="text-right font-semibold leading-5 text-sky-700">
+                                        {{ ledgerTransferAmount(movement) === null ? '—' : formatMoney(ledgerTransferAmount(movement)) }}
+                                    </p>
+                                </div>
+                                <div class="rounded-md bg-gray-50 px-2 py-1 lg:bg-transparent lg:p-0">
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-600 lg:hidden">{{ tr('Balance', 'Balance') }}</p>
+                                    <p class="text-right font-semibold leading-5 text-gray-900">
+                                        {{ movementBalanceTextForAccount(movement, section.account) }}
+                                    </p>
+                                </div>
+                            </div>
+                        </article>
+                    </template>
 
                     <div v-if="!ledgerLoading && ledgerMovements.length === 0" class="px-3 py-8 text-center text-sm text-gray-500">
                         {{ tr('No hay movimientos para estos filtros.', 'No movements match these filters.') }}
@@ -566,10 +668,13 @@ onMounted(loadData)
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
-                    <span>
+                    <span v-if="ledgerIsAllAccounts">
+                        {{ ledgerMovements.length }} {{ tr('movimientos agrupados en', 'movements grouped into') }} {{ ledgerAccountGroups.length }} {{ tr('cuentas', 'accounts') }}
+                    </span>
+                    <span v-else>
                         {{ tr('Mostrando', 'Showing') }} {{ ledgerPageStart }}-{{ ledgerPageEnd }} {{ tr('de', 'of') }} {{ ledgerMovements.length }}
                     </span>
-                    <div class="flex items-center gap-2">
+                    <div v-if="!ledgerIsAllAccounts" class="flex items-center gap-2">
                         <button
                             type="button"
                             class="rounded-lg border border-gray-200 px-3 py-1.5 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -592,20 +697,13 @@ onMounted(loadData)
             </section>
 
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
-                <div class="flex flex-col gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-start lg:justify-between">
+                <div class="border-b border-gray-100 p-4">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-950">{{ tr('Saldos por cuenta', 'Balances by account') }}</h2>
                         <p class="mt-1 text-sm text-gray-500">
                             {{ tr('Cada cuenta muestra donde esta el dinero: efectivo, banco y balance total disponible.', 'Each account shows where the money is: cash, bank, and total available balance.') }}
                         </p>
                     </div>
-                    <a
-                        :href="balancesPdfUrl"
-                        class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                    >
-                        <ArrowDownTrayIcon class="h-4 w-4" />
-                        {{ tr('PDF saldos', 'Balances PDF') }}
-                    </a>
                 </div>
 
                 <div class="overflow-x-auto">

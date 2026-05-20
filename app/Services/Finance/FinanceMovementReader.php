@@ -21,9 +21,19 @@ class FinanceMovementReader
     public function movementsForClub(Club $club, array $filters = []): Collection
     {
         $movements = collect()
-            ->merge($this->paymentMovements($club, $filters))
-            ->merge($this->expenseMovements($club, $filters))
-            ->merge($this->treasuryMovements($club, $filters));
+            ->merge($this->paymentMovements($club, []))
+            ->merge($this->expenseMovements($club, []))
+            ->merge($this->treasuryMovements($club, []));
+
+        $movements = $this->withRunningBalances($movements);
+
+        if (!empty($filters['date_from'])) {
+            $movements = $movements->filter(fn (array $row) => ($row['date'] ?? null) >= $filters['date_from']);
+        }
+
+        if (!empty($filters['date_to'])) {
+            $movements = $movements->filter(fn (array $row) => ($row['date'] ?? null) <= $filters['date_to']);
+        }
 
         if (!empty($filters['account'])) {
             $account = $filters['account'];
@@ -42,6 +52,125 @@ class FinanceMovementReader
             ->sortByDesc(fn (array $row) => sprintf('%s-%010d', $row['occurred_at'] ?? $row['date'] ?? '0000-00-00 00:00:00', $row['id'] ?? 0))
             ->values()
             ->when(!empty($filters['limit']), fn (Collection $rows) => $rows->take((int) $filters['limit']));
+    }
+
+    private function withRunningBalances(Collection $movements): Collection
+    {
+        $balances = [];
+        $annotated = [];
+
+        $movements
+            ->sortBy(fn (array $row) => sprintf(
+                '%s-%010d-%s',
+                $row['occurred_at'] ?? $row['date'] ?? '0000-00-00 00:00:00',
+                $row['id'] ?? 0,
+                $row['movement_id'] ?? ''
+            ))
+            ->each(function (array $row) use (&$balances, &$annotated) {
+                $row['balance_after'] = $this->runningBalanceAfterMovement($row, $balances);
+                $annotated[$row['movement_id'] ?? spl_object_id((object) $row)] = $row;
+            });
+
+        return $movements->map(fn (array $row) => $annotated[$row['movement_id'] ?? ''] ?? $row);
+    }
+
+    private function runningBalanceAfterMovement(array $movement, array &$balances): ?array
+    {
+        if (array_key_exists('is_counted_in_balance', $movement) && !$movement['is_counted_in_balance']) {
+            return null;
+        }
+
+        if (($movement['domain'] ?? null) === 'transfer') {
+            $amount = round((float) ($movement['amount'] ?? 0), 2);
+            $fromAccount = $movement['from_account'] ?? $movement['account'] ?? 'club_budget';
+            $toAccount = $movement['to_account'] ?? $movement['account'] ?? $fromAccount;
+            $fromLocation = $this->balanceLocation($movement['from_location'] ?? null);
+            $toLocation = $this->balanceLocation($movement['to_location'] ?? null);
+
+            if ($fromLocation) {
+                $this->applyBalanceDelta($balances, $fromAccount, $fromLocation, -1 * $amount);
+            } else {
+                $this->ensureBalanceAccount($balances, $fromAccount);
+            }
+
+            if ($toLocation) {
+                $this->applyBalanceDelta($balances, $toAccount, $toLocation, $amount);
+            } else {
+                $this->ensureBalanceAccount($balances, $toAccount);
+            }
+
+            $from = $this->balanceSnapshot(
+                $balances,
+                $fromAccount,
+                $fromLocation,
+                $movement['from_account_label'] ?? $movement['account_label'] ?? null
+            );
+            $to = $this->balanceSnapshot(
+                $balances,
+                $toAccount,
+                $toLocation,
+                $movement['to_account_label'] ?? $movement['account_label'] ?? null
+            );
+
+            return [
+                'from' => $from,
+                'to' => $to,
+                'account_balance' => $fromAccount === $toAccount ? $from['account_balance'] : null,
+            ];
+        }
+
+        $account = $movement['account'] ?? $movement['to_account'] ?? $movement['from_account'] ?? 'club_budget';
+        $location = $this->balanceLocation($movement['location'] ?? $movement['from_location'] ?? null);
+
+        if (!$location) {
+            $this->ensureBalanceAccount($balances, $account);
+
+            return null;
+        }
+
+        $this->applyBalanceDelta($balances, $account, $location, round((float) ($movement['signed_amount'] ?? 0), 2));
+
+        return $this->balanceSnapshot($balances, $account, $location, $movement['account_label'] ?? null);
+    }
+
+    private function balanceLocation(?string $location): ?string
+    {
+        return in_array($location, [TreasuryMovement::LOCATION_CASH, TreasuryMovement::LOCATION_BANK], true)
+            ? $location
+            : null;
+    }
+
+    private function applyBalanceDelta(array &$balances, string $account, string $location, float $delta): void
+    {
+        $this->ensureBalanceAccount($balances, $account);
+        $balances[$account][$location] = round((float) $balances[$account][$location] + $delta, 2);
+    }
+
+    private function ensureBalanceAccount(array &$balances, string $account): void
+    {
+        if (!isset($balances[$account])) {
+            $balances[$account] = [
+                TreasuryMovement::LOCATION_CASH => 0.0,
+                TreasuryMovement::LOCATION_BANK => 0.0,
+            ];
+        }
+    }
+
+    private function balanceSnapshot(array &$balances, string $account, ?string $location, ?string $label = null): array
+    {
+        $this->ensureBalanceAccount($balances, $account);
+        $cash = round((float) $balances[$account][TreasuryMovement::LOCATION_CASH], 2);
+        $bank = round((float) $balances[$account][TreasuryMovement::LOCATION_BANK], 2);
+
+        return [
+            'account' => $account,
+            'account_label' => $label,
+            'location' => $location,
+            'location_balance' => $location ? round((float) $balances[$account][$location], 2) : null,
+            'cash_balance' => $cash,
+            'bank_balance' => $bank,
+            'account_balance' => round($cash + $bank, 2),
+        ];
     }
 
     public function summaryForClub(Club $club): array
@@ -132,6 +261,7 @@ class FinanceMovementReader
                     'proof' => $payment->check_image_path ? [
                         'type' => 'check_image',
                         'url' => asset('storage/' . $payment->check_image_path),
+                        'path' => $payment->check_image_path,
                     ] : null,
                     'created_by' => $payment->receivedBy?->name,
                     'reimbursement_group' => $this->reimbursementGroupForPayment($payment),
@@ -201,14 +331,15 @@ class FinanceMovementReader
                     && $expense->reversalExpense === null
                     && !$isReimbursementRelated;
                 $proofs = [];
-                $addProof = function (?string $type, ?string $url, ?string $name = null) use (&$proofs): void {
-                    if (!$type && !$url && !$name) {
+                $addProof = function (?string $type, ?string $url, ?string $name = null, ?string $path = null) use (&$proofs): void {
+                    if (!$type && !$url && !$name && !$path) {
                         return;
                     }
 
-                    if ($url) {
+                    $dedupeKey = $path ?: $url;
+                    if ($dedupeKey) {
                         foreach ($proofs as $proof) {
-                            if (($proof['url'] ?? null) === $url) {
+                            if (($proof['path'] ?? $proof['url'] ?? null) === $dedupeKey) {
                                 return;
                             }
                         }
@@ -218,15 +349,16 @@ class FinanceMovementReader
                         'type' => $type,
                         'url' => $url,
                         'name' => $name,
+                        'path' => $path,
                     ];
 
                     $proofs[] = array_filter($proof, fn ($value) => $value !== null && $value !== '');
                 };
 
-                $addProof('expense_receipt', $expense->receipt_url);
-                $addProof('reimbursement_receipt', $expense->reimbursement_receipt_url);
+                $addProof('expense_receipt', $expense->receipt_url, null, $expense->receipt_path);
+                $addProof('reimbursement_receipt', $expense->reimbursement_receipt_url, null, $expense->reimbursement_receipt_path);
                 foreach ($expense->fundraiserInvestmentReceipts as $receipt) {
-                    $addProof('fundraiser_investment_receipt', $receipt->url, $receipt->original_name);
+                    $addProof('fundraiser_investment_receipt', $receipt->url, $receipt->original_name, $receipt->path);
                 }
 
                 return [
@@ -419,6 +551,7 @@ class FinanceMovementReader
                         'type' => 'treasury_proof',
                         'url' => asset('storage/' . $movement->proof_path),
                         'name' => $movement->proof_original_name,
+                        'path' => $movement->proof_path,
                     ] : null,
                     'created_by' => $movement->creator?->name,
                     'custody' => null,

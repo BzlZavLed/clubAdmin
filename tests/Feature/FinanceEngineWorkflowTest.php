@@ -246,6 +246,7 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertSame(7.50, (float) $movements->firstWhere('concept', 'Manual snack donation')['amount']);
         $guestDonationMovement = $movements->firstWhere('concept', 'Guest donation');
         $this->assertSame('Donante Invitado', $guestDonationMovement['counterparty']);
+        $this->assertSame(45.0, (float) $guestDonationMovement['balance_after']['account_balance']);
         $this->assertMatchesRegularExpression('/^2026-05-14T\d{2}:\d{2}:\d{2}\\+00:00$/', $guestDonationMovement['occurred_at']);
         $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\\+00:00$/', $guestDonationMovement['created_at']);
     }
@@ -1620,7 +1621,10 @@ class FinanceEngineWorkflowTest extends TestCase
             ->assertOk();
         $this->assertCount(6, $engine->json('data.movements'));
         $this->assertNotNull(collect($engine->json('data.movements'))->firstWhere('kind', 'cash_deposit'));
-        $this->assertNotNull(collect($engine->json('data.movements'))->firstWhere('reference', 'LOCAL-BANK-CASH'));
+        $bankCashMovement = collect($engine->json('data.movements'))->firstWhere('reference', 'LOCAL-BANK-CASH');
+        $this->assertNotNull($bankCashMovement);
+        $this->assertSame(140.0, (float) $bankCashMovement['balance_after']['from']['account_balance']);
+        $this->assertSame(100.0, (float) $bankCashMovement['balance_after']['to']['account_balance']);
     }
 
     public function test_upstream_event_transfer_creates_settlement_receipt_and_engine_transfer_movement(): void

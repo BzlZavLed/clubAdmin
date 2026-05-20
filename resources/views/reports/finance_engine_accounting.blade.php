@@ -8,9 +8,13 @@
         body { font-family: DejaVu Sans, sans-serif; color: #111827; font-size: 10px; }
         h1 { font-size: 18px; margin: 0; }
         h2 { font-size: 12px; margin: 14px 0 6px; }
+        h3 { font-size: 11px; margin: 12px 0 5px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
         th, td { border: 1px solid #d1d5db; padding: 5px; vertical-align: top; }
         th { background: #f3f4f6; text-align: left; font-weight: 700; }
+        .section-title { page-break-after: avoid; }
         .header { display: table; width: 100%; margin-bottom: 12px; }
         .header-left, .header-right { display: table-cell; vertical-align: top; }
         .header-right { text-align: right; width: 180px; }
@@ -21,6 +25,8 @@
         .amount-in { color: #047857; font-weight: 700; }
         .amount-out { color: #be123c; font-weight: 700; }
         .amount-transfer { color: #0369a1; font-weight: 700; }
+        .amount-cell { white-space: nowrap; }
+        .balance-cell { white-space: pre-line; }
         a { color: #0369a1; text-decoration: underline; }
         .footer { position: fixed; bottom: -12mm; left: 0; right: 0; border-top: 1px solid #d1d5db; padding-top: 4px; font-size: 8px; color: #6b7280; }
         .footer img { height: 34px; float: right; }
@@ -34,6 +40,10 @@
     $movements = collect($data['engine_report']['movements'] ?? []);
     $eventSettlements = collect($data['event_settlements'] ?? []);
     $staffRemittances = collect($data['treasury']['pending_staff_remittances'] ?? []);
+    $accountLabels = $accounts
+        ->mapWithKeys(fn ($row) => [$row['account'] ?? '' => $row['label'] ?? $row['account'] ?? ''])
+        ->filter(fn ($label, $account) => $account !== '')
+        ->all();
     $locationLabels = [
         'cash' => 'Efectivo',
         'bank' => 'Banco',
@@ -105,6 +115,102 @@
 
         return ($movement['direction'] ?? null) === 'out' ? 'amount-out' : 'amount-in';
     };
+    $movementBalanceText = function (array $movement, ?string $account = null) use ($money, $isTransfer) {
+        $balance = $movement['balance_after'] ?? null;
+        if (!$balance || !is_array($balance)) {
+            return '-';
+        }
+
+        if ($isTransfer($movement)) {
+            $from = $balance['from'] ?? null;
+            $to = $balance['to'] ?? null;
+
+            if (!$from && !$to) {
+                return '-';
+            }
+
+            if ($account) {
+                if (($from['account'] ?? null) === $account) {
+                    return $money($from['account_balance'] ?? 0);
+                }
+                if (($to['account'] ?? null) === $account) {
+                    return $money($to['account_balance'] ?? 0);
+                }
+
+                return '-';
+            }
+
+            if (($from['account'] ?? null) && ($from['account'] ?? null) === ($to['account'] ?? null)) {
+                return $money($from['account_balance'] ?? 0);
+            }
+
+            return 'Origen: ' . $money($from['account_balance'] ?? 0)
+                . "\n" . 'Destino: ' . $money($to['account_balance'] ?? 0);
+        }
+
+        return array_key_exists('account_balance', $balance)
+            ? $money($balance['account_balance'])
+            : '-';
+    };
+    $movementAccounts = function (array $movement) use ($isTransfer) {
+        if ($isTransfer($movement)) {
+            return collect([
+                $movement['from_account'] ?? $movement['account'] ?? null,
+                $movement['to_account'] ?? $movement['account'] ?? null,
+            ])->filter()->unique()->values()->all();
+        }
+
+        return collect([
+            $movement['account'] ?? $movement['from_account'] ?? $movement['to_account'] ?? null,
+        ])->filter()->values()->all();
+    };
+    $accountName = fn (?string $account, ?string $fallback = null) => $account
+        ? ($accountLabels[$account] ?? $fallback ?? $account)
+        : ($fallback ?? '-');
+    $movementAccountLabel = function (array $movement, string $account) use ($isTransfer, $accountName) {
+        if ($isTransfer($movement)) {
+            if (($movement['from_account'] ?? $movement['account'] ?? null) === $account) {
+                return $movement['from_account_label'] ?? $movement['account_label'] ?? $accountName($account);
+            }
+
+            if (($movement['to_account'] ?? $movement['account'] ?? null) === $account) {
+                return $movement['to_account_label'] ?? $movement['account_label'] ?? $accountName($account);
+            }
+        }
+
+        if (($movement['account'] ?? null) === $account) {
+            return $movement['account_label'] ?? $accountName($account);
+        }
+
+        return $accountName($account);
+    };
+    $isAllAccountsReport = empty($data['engine_report']['filters']['account'] ?? null);
+    $movementSections = $isAllAccountsReport
+        ? $movements->reduce(function ($sections, array $movement) use ($movementAccounts, $movementAccountLabel) {
+            foreach ($movementAccounts($movement) as $account) {
+                $label = $movementAccountLabel($movement, $account);
+                if (!isset($sections[$account])) {
+                    $sections[$account] = [
+                        'account' => $account,
+                        'label' => $label,
+                        'movements' => [],
+                    ];
+                } elseif (($sections[$account]['label'] ?? $account) === $account && $label !== $account) {
+                    $sections[$account]['label'] = $label;
+                }
+
+                $sections[$account]['movements'][] = $movement;
+            }
+
+            return $sections;
+        }, [])
+        : [[
+            'account' => $data['engine_report']['filters']['account'] ?? null,
+            'label' => null,
+            'movements' => $movements->all(),
+        ]];
+    $movementSections = collect($movementSections)->sortBy('label')->values();
+    $pdfMovementChunkSize = 7;
 @endphp
 
 <div class="footer">
@@ -167,61 +273,74 @@
 </table>
 
 <h2>Libro contable</h2>
-<table>
-    <thead>
-        <tr>
-            <th>Fecha</th>
-            <th>Dominio</th>
-            <th>Cuenta</th>
-            <th>Concepto</th>
-            <th>Recibo / comprobante</th>
-            <th>Estado</th>
-            <th style="text-align:right;">Monto</th>
-        </tr>
-    </thead>
-    <tbody>
-        @forelse($movements as $movement)
-            @php
-                $direction = $movement['direction'] ?? null;
-                $documents = $documentLinks($movement);
-            @endphp
-            <tr>
-                <td>{{ $movement['date'] ?? '-' }}</td>
-                <td>{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
-                <td>{{ $movementAccountText($movement) }}</td>
-                <td>{{ $movement['concept'] ?? '-' }}</td>
-                <td>
-                    @if(empty($documents))
-                        -
-                    @else
-                        @foreach($documents as $document)
-                            @if(!empty($document['url']))
-                                <a href="{{ $document['url'] }}">{{ $document['label'] }}</a>
+@forelse($movementSections as $section)
+    @foreach(collect($section['movements'])->chunk($pdfMovementChunkSize) as $chunkIndex => $movementChunk)
+        @if($isAllAccountsReport)
+            <h3 class="section-title">{{ $section['label'] }}{{ $chunkIndex > 0 ? ' (cont.)' : '' }}</h3>
+        @endif
+        <table>
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Dominio</th>
+                    <th>Cuenta</th>
+                    <th>Concepto</th>
+                    <th>Recibo / comprobante</th>
+                    <th>Estado</th>
+                    <th style="text-align:right;">Monto</th>
+                    <th style="text-align:right;">Balance cuenta</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($movementChunk as $movement)
+                    @php
+                        $direction = $movement['direction'] ?? null;
+                        $documents = $documentLinks($movement);
+                    @endphp
+                    <tr>
+                        <td>{{ $movement['date'] ?? '-' }}</td>
+                        <td>{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
+                        <td>{{ $movementAccountText($movement) }}</td>
+                        <td>{{ $movement['concept'] ?? '-' }}</td>
+                        <td>
+                            @if(empty($documents))
+                                -
                             @else
-                                {{ $document['label'] }}
+                                @foreach($documents as $document)
+                                    @if(!empty($document['url']))
+                                        <a href="{{ $document['url'] }}">{{ $document['label'] }}</a>
+                                    @else
+                                        {{ $document['label'] }}
+                                    @endif
+                                    @if(!$loop->last)<br>@endif
+                                @endforeach
                             @endif
-                            @if(!$loop->last)<br>@endif
-                        @endforeach
-                    @endif
-                </td>
-                <td>
-                    {{ $movement['status'] ?? 'posted' }}
-                    @if(!empty($movement['related_canceled_movement_key']))
-                        <br><span class="muted">Cancelado por {{ $movement['related_canceled_movement_key'] }}</span>
-                    @endif
-                    @if(!empty($movement['canceling_movement_key']))
-                        <br><span class="muted">Cancela {{ $movement['canceling_movement_key'] }}</span>
-                    @endif
-                </td>
-                <td style="text-align:right;" class="{{ $amountClass($movement) }}">
-                    {{ $direction === 'out' ? '-' : '' }}{{ $money($movement['amount'] ?? 0) }}
-                </td>
-            </tr>
-        @empty
-            <tr><td colspan="7" style="text-align:center;">No hay movimientos.</td></tr>
-        @endforelse
-    </tbody>
-</table>
+                        </td>
+                        <td>
+                            {{ $movement['status'] ?? 'posted' }}
+                            @if(!empty($movement['related_canceled_movement_key']))
+                                <br><span class="muted">Cancelado por {{ $movement['related_canceled_movement_key'] }}</span>
+                            @endif
+                            @if(!empty($movement['canceling_movement_key']))
+                                <br><span class="muted">Cancela {{ $movement['canceling_movement_key'] }}</span>
+                            @endif
+                        </td>
+                        <td style="text-align:right;" class="amount-cell {{ $amountClass($movement) }}">
+                            {{ $direction === 'out' ? '-' : '' }}{{ $money($movement['amount'] ?? 0) }}
+                        </td>
+                        <td style="text-align:right;" class="balance-cell">{{ $movementBalanceText($movement, $section['account']) }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endforeach
+@empty
+    <table>
+        <tbody>
+            <tr><td style="text-align:center;">No hay movimientos.</td></tr>
+        </tbody>
+    </table>
+@endforelse
 
 @if($eventSettlements->isNotEmpty())
     <h2>Transferencias de eventos pendientes</h2>

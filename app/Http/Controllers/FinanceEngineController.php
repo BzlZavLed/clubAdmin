@@ -52,6 +52,7 @@ class FinanceEngineController extends Controller
             ...$validated,
             'limit' => $validated['limit'] ?? 5000,
         ]);
+        $receiptAnnexes = $this->ledgerReceiptAnnexes($report);
         $generatedAt = now();
 
         $validation = $documentValidationService->create(
@@ -69,6 +70,7 @@ class FinanceEngineController extends Controller
                     'account' => $movement['account'] ?? null,
                     'amount' => $movement['amount'] ?? null,
                     'signed_amount' => $movement['signed_amount'] ?? null,
+                    'balance_after' => $movement['balance_after'] ?? null,
                     'receipt' => $movement['receipt']['number'] ?? null,
                     'status' => $movement['status'] ?? null,
                 ])->all(),
@@ -77,6 +79,7 @@ class FinanceEngineController extends Controller
                 'Club' => $club->club_name,
                 'Documento' => 'Libro contable financiero',
                 'Movimientos' => (string) count($report['movements'] ?? []),
+                'Anexos' => (string) count($receiptAnnexes),
             ],
             generatedBy: $request->user(),
             generatedAt: $generatedAt,
@@ -89,8 +92,157 @@ class FinanceEngineController extends Controller
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
             'qrCodeDataUri' => $validation['qr_code_data_uri'],
+            'receiptAnnexes' => $receiptAnnexes,
         ])->setPaper('a4', 'landscape')
             ->download('finance-ledger.pdf');
+    }
+
+    private function ledgerReceiptAnnexes(array $report): array
+    {
+        $annexes = [];
+        $seen = [];
+
+        foreach (($report['movements'] ?? []) as $movement) {
+            $receipt = $movement['receipt'] ?? null;
+            if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
+                $this->pushLedgerAnnex($annexes, $seen, [
+                    'key' => 'receipt:' . ($receipt['url'] ?? $receipt['number']),
+                    'reference' => $receipt['number'] ?? $this->movementReference($movement),
+                    'title' => 'Recibo ' . ($receipt['number'] ?? $this->movementReference($movement)),
+                    'url' => $receipt['url'] ?? null,
+                    'movement' => $this->annexMovementContext($movement),
+                ]);
+            }
+
+            $proofs = $this->movementProofs($movement);
+            $proofTypeTotals = [];
+            foreach ($proofs as $proof) {
+                $type = $proof['type'] ?? 'proof';
+                $proofTypeTotals[$type] = ($proofTypeTotals[$type] ?? 0) + 1;
+            }
+
+            $proofTypeCounts = [];
+            foreach ($proofs as $proof) {
+                $type = $proof['type'] ?? 'proof';
+                $proofTypeCounts[$type] = ($proofTypeCounts[$type] ?? 0) + 1;
+                $reference = $this->proofReference($movement, $proof);
+                if (($proofTypeTotals[$type] ?? 0) > 1) {
+                    $reference .= '-' . $proofTypeCounts[$type];
+                }
+
+                $path = $proof['path'] ?? null;
+                $url = $proof['url'] ?? null;
+                $file = $this->annexFilePayload($path);
+
+                $this->pushLedgerAnnex($annexes, $seen, [
+                    'key' => 'proof:' . ($path ?: $url ?: $reference),
+                    'reference' => $reference,
+                    'title' => $this->proofLabel($proof['type'] ?? null) . ' ' . $reference,
+                    'url' => $url,
+                    'filename' => $proof['name'] ?? ($path ? basename($path) : null),
+                    'data_uri' => $file['data_uri'] ?? null,
+                    'mime_type' => $file['mime_type'] ?? null,
+                    'movement' => $this->annexMovementContext($movement),
+                ]);
+            }
+        }
+
+        return array_values($annexes);
+    }
+
+    private function pushLedgerAnnex(array &$annexes, array &$seen, array $annex): void
+    {
+        $key = $annex['key'] ?? null;
+        if (!$key || isset($seen[$key])) {
+            return;
+        }
+
+        $seen[$key] = true;
+        $annexes[] = $annex;
+    }
+
+    private function movementProofs(array $movement): array
+    {
+        if (!empty($movement['proofs']) && is_array($movement['proofs'])) {
+            return array_values(array_filter($movement['proofs'], fn ($proof) => is_array($proof)));
+        }
+
+        return !empty($movement['proof']) && is_array($movement['proof'])
+            ? [$movement['proof']]
+            : [];
+    }
+
+    private function annexFilePayload(?string $path): array
+    {
+        if (!$path) {
+            return [];
+        }
+
+        $fullPath = storage_path('app/public/' . ltrim($path, '/'));
+        if (!is_file($fullPath)) {
+            return [];
+        }
+
+        $mime = mime_content_type($fullPath) ?: 'application/octet-stream';
+        if (!str_starts_with($mime, 'image/')) {
+            return ['mime_type' => $mime];
+        }
+
+        return [
+            'mime_type' => $mime,
+            'data_uri' => 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($fullPath)),
+        ];
+    }
+
+    private function annexMovementContext(array $movement): array
+    {
+        return [
+            'movement_id' => $movement['movement_id'] ?? null,
+            'date' => $movement['date'] ?? null,
+            'concept' => $movement['concept'] ?? $movement['reference'] ?? null,
+            'counterparty' => $movement['counterparty'] ?? $movement['created_by'] ?? null,
+            'amount' => $movement['amount'] ?? null,
+        ];
+    }
+
+    private function movementReference(array $movement): string
+    {
+        $movementId = (string) ($movement['movement_id'] ?? '');
+        [$type, $id] = array_pad(explode(':', $movementId, 2), 2, null);
+
+        return match ($type) {
+            'payment' => 'PAY-' . $id,
+            'expense' => 'EXP-' . $id,
+            'treasury' => 'TREAS-' . $id,
+            default => strtoupper($movementId ?: 'MOV'),
+        };
+    }
+
+    private function proofReference(array $movement, array $proof): string
+    {
+        $movementId = (string) ($movement['movement_id'] ?? '');
+        [, $id] = array_pad(explode(':', $movementId, 2), 2, null);
+
+        return match ($proof['type'] ?? null) {
+            'check_image' => 'PAY-' . $id,
+            'expense_receipt' => 'EXP-' . $id,
+            'reimbursement_receipt' => 'REIMB-' . $id,
+            'fundraiser_investment_receipt' => 'INV-' . $id,
+            'treasury_proof' => 'TREAS-' . $id,
+            default => $this->movementReference($movement),
+        };
+    }
+
+    private function proofLabel(?string $type): string
+    {
+        return match ($type) {
+            'check_image' => 'Cheque',
+            'expense_receipt' => 'Comprobante de gasto',
+            'reimbursement_receipt' => 'Comprobante de reembolso',
+            'fundraiser_investment_receipt' => 'Comprobante de inversion',
+            'treasury_proof' => 'Comprobante de transferencia',
+            default => 'Comprobante',
+        };
     }
 
     public function cashbox(Request $request)
@@ -183,6 +335,7 @@ class FinanceEngineController extends Controller
                     'domain' => $movement['domain'] ?? null,
                     'account' => $movement['account'] ?? null,
                     'amount' => $movement['amount'] ?? null,
+                    'balance_after' => $movement['balance_after'] ?? null,
                     'receipt' => $movement['receipt']['number'] ?? null,
                     'status' => $movement['status'] ?? null,
                 ])->all(),

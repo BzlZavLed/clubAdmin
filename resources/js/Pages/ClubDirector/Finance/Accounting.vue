@@ -89,6 +89,7 @@ const ledgerFilters = ref({
     date_from: '',
     date_to: '',
 })
+const ledgerIsAllAccounts = computed(() => ledgerFilters.value.account === 'all')
 
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin' || clubs.value.length > 1)
 const currentClub = computed(() => treasury.value.club || clubs.value.find((club) => Number(club.id) === Number(selectedClubId.value)) || null)
@@ -113,14 +114,23 @@ const reimbursementBalanceSummary = computed(() => {
 const pendingStaffRemittances = computed(() => treasury.value.pending_staff_remittances || [])
 const recentTreasuryMovements = computed(() => treasury.value.movements || [])
 const ledgerMovements = computed(() => engineReport.value?.movements || [])
-const ledgerPageCount = computed(() => Math.max(Math.ceil(ledgerMovements.value.length / LEDGER_PAGE_SIZE), 1))
+const ledgerPageCount = computed(() => ledgerIsAllAccounts.value ? 1 : Math.max(Math.ceil(ledgerMovements.value.length / LEDGER_PAGE_SIZE), 1))
 const paginatedLedgerMovements = computed(() => {
+    if (ledgerIsAllAccounts.value) return ledgerMovements.value
+
     const start = (ledgerPage.value - 1) * LEDGER_PAGE_SIZE
 
     return ledgerMovements.value.slice(start, start + LEDGER_PAGE_SIZE)
 })
-const ledgerPageStart = computed(() => ledgerMovements.value.length ? ((ledgerPage.value - 1) * LEDGER_PAGE_SIZE) + 1 : 0)
-const ledgerPageEnd = computed(() => Math.min(ledgerPage.value * LEDGER_PAGE_SIZE, ledgerMovements.value.length))
+const ledgerPageStart = computed(() => {
+    if (!ledgerMovements.value.length) return 0
+    if (ledgerIsAllAccounts.value) return 1
+
+    return ((ledgerPage.value - 1) * LEDGER_PAGE_SIZE) + 1
+})
+const ledgerPageEnd = computed(() => ledgerIsAllAccounts.value
+    ? ledgerMovements.value.length
+    : Math.min(ledgerPage.value * LEDGER_PAGE_SIZE, ledgerMovements.value.length))
 const moduleNavItems = computed(() => [
     { href: '#accounting-transfers', label: tr('Transferencias', 'Transfers'), meta: recentTreasuryMovements.value.length },
     { href: '#accounting-balances', label: tr('Saldos', 'Balances'), meta: accountBalanceRows.value.length },
@@ -308,6 +318,91 @@ const movementDescription = (movement) => {
         locationLabel(movement.location),
     ].filter(Boolean).join(' · ')
 }
+const movementBalanceText = (movement) => {
+    const balance = movement?.balance_after
+    if (!balance) return '—'
+
+    if (movement?.domain === 'transfer') {
+        const from = balance.from
+        const to = balance.to
+        if (!from && !to) return '—'
+
+        if (from?.account && from.account === to?.account) {
+            return formatMoney(from.account_balance)
+        }
+
+        return [
+            `${tr('Origen', 'From')} ${formatMoney(from?.account_balance)}`,
+            `${tr('Destino', 'To')} ${formatMoney(to?.account_balance)}`,
+        ].join(' · ')
+    }
+
+    return balance.account_balance === null || balance.account_balance === undefined
+        ? '—'
+        : formatMoney(balance.account_balance)
+}
+const movementAccountKeys = (movement) => {
+    if (!movement) return []
+
+    if (movement.domain === 'transfer') {
+        return Array.from(new Set([
+            movement.from_account || movement.account,
+            movement.to_account || movement.account,
+        ].filter(Boolean)))
+    }
+
+    return [movement.account || movement.from_account || movement.to_account].filter(Boolean)
+}
+const movementBalanceTextForAccount = (movement, account = null) => {
+    if (!account || account === 'all') return movementBalanceText(movement)
+
+    const balance = movement?.balance_after
+    if (!balance) return '—'
+
+    if (movement?.domain === 'transfer') {
+        if (balance.from?.account === account) return formatMoney(balance.from.account_balance)
+        if (balance.to?.account === account) return formatMoney(balance.to.account_balance)
+
+        return '—'
+    }
+
+    const movementAccount = movement.account || movement.from_account || movement.to_account
+    if (movementAccount && movementAccount !== account) return '—'
+
+    return balance.account_balance === null || balance.account_balance === undefined
+        ? '—'
+        : formatMoney(balance.account_balance)
+}
+const ledgerAccountGroups = computed(() => {
+    const groups = new Map()
+
+    ledgerMovements.value.forEach((movement) => {
+        movementAccountKeys(movement).forEach((account) => {
+            if (!groups.has(account)) {
+                groups.set(account, {
+                    key: account,
+                    account,
+                    label: accountLabel(account),
+                    rows: [],
+                })
+            }
+
+            groups.get(account).rows.push(movement)
+        })
+    })
+
+    return Array.from(groups.values())
+        .filter((group) => group.rows.length)
+        .sort((a, b) => String(a.label).localeCompare(String(b.label)))
+})
+const ledgerDisplaySections = computed(() => ledgerIsAllAccounts.value
+    ? ledgerAccountGroups.value
+    : [{
+        key: ledgerFilters.value.account,
+        account: ledgerFilters.value.account,
+        label: null,
+        rows: paginatedLedgerMovements.value,
+    }])
 
 const normalizeClubs = (payload) => {
     const rows = payload?.clubs || []
@@ -844,17 +939,6 @@ onMounted(loadData)
                         </article>
                     </div>
 
-                    <div class="mt-4 flex flex-wrap gap-2">
-                        <a
-                            v-if="selectedClubId"
-                            :href="route('club.finance-engine.accounting.pdf', { club_id: selectedClubId })"
-                            target="_blank"
-                            rel="noopener"
-                            class="inline-flex items-center justify-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                            {{ tr('PDF de saldos', 'Balances PDF') }}
-                        </a>
-                    </div>
                 </article>
             </section>
 
@@ -912,72 +996,80 @@ onMounted(loadData)
                 </div>
 
                 <div v-else class="space-y-3 lg:hidden">
-                    <article
-                        v-for="movement in paginatedLedgerMovements"
-                        :key="movement.movement_id"
-                        :data-ledger-movement="movement.movement_id"
-                        class="rounded-xl border border-gray-200 p-3 scroll-mt-24"
-                    >
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0">
-                                <p class="font-semibold text-gray-900">{{ movement.concept || movementTypeLabel(movement.kind) }}</p>
-                                <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
+                    <template v-for="section in ledgerDisplaySections" :key="section.key">
+                        <div v-if="section.label" class="rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
+                            {{ section.label }}
+                        </div>
+                        <article
+                            v-for="movement in section.rows"
+                            :key="`${section.key}-${movement.movement_id}`"
+                            :data-ledger-movement="movement.movement_id"
+                            class="rounded-xl border border-gray-200 p-3 scroll-mt-24"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <p class="font-semibold text-gray-900">{{ movement.concept || movementTypeLabel(movement.kind) }}</p>
+                                    <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
+                                </div>
+                                <p
+                                    class="shrink-0 font-semibold"
+                                    :class="Number(movement.signed_amount) < 0 ? 'text-red-700' : Number(movement.signed_amount) > 0 ? 'text-emerald-700' : 'text-gray-900'"
+                                >
+                                    {{ formatMoney(movement.amount) }}
+                                </p>
                             </div>
-                            <p
-                                class="shrink-0 font-semibold"
-                                :class="Number(movement.signed_amount) < 0 ? 'text-red-700' : Number(movement.signed_amount) > 0 ? 'text-emerald-700' : 'text-gray-900'"
-                            >
-                                {{ formatMoney(movement.amount) }}
+                            <p class="mt-2 text-sm text-gray-600">{{ movementDescription(movement) }}</p>
+                            <p class="mt-1 text-sm font-semibold text-gray-800">
+                                {{ tr('Balance', 'Balance') }}: {{ movementBalanceTextForAccount(movement, section.account) }}
                             </p>
-                        </div>
-                        <p class="mt-2 text-sm text-gray-600">{{ movementDescription(movement) }}</p>
-                        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                            <span class="text-gray-500">{{ rowCounterparty(movement) }}</span>
-                            <span
-                                class="rounded-full px-2 py-0.5 font-semibold"
-                                :class="movement.status === 'cancelled' ? 'bg-amber-50 text-amber-700' : movement.status === 'cancellation' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700'"
-                            >
-                                {{ correctionStatusLabel(movement) }}
-                            </span>
-                        </div>
-                        <div v-if="cancellationSummary(movement)" class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                            <span class="font-semibold text-amber-700">{{ cancellationSummary(movement) }}</span>
-                            <button
-                                v-if="linkedMovementKey(movement, 'correction')"
-                                type="button"
-                                class="font-semibold text-red-700 hover:text-red-800"
-                                @click="scrollToLedgerMovement(linkedMovementKey(movement, 'correction'))"
-                            >
-                                {{ tr('Ver correccion', 'View correction') }}
-                            </button>
-                            <button
-                                v-if="linkedMovementKey(movement, 'original')"
-                                type="button"
-                                class="font-semibold text-red-700 hover:text-red-800"
-                                @click="scrollToLedgerMovement(linkedMovementKey(movement, 'original'))"
-                            >
-                                {{ tr('Ver original', 'View original') }}
-                            </button>
-                        </div>
-                        <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                            <a v-if="movement.receipt?.url" :href="movement.receipt.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
-                                {{ tr('Recibo', 'Receipt') }} {{ movement.receipt.number ? `#${movement.receipt.number}` : '' }}
-                            </a>
-                            <a v-if="movement.proof?.url" :href="movement.proof.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
-                                {{ tr('Comprobante', 'Proof') }}
-                            </a>
-                        </div>
-                        <div class="mt-3">
-                            <button
-                                v-if="canCorrectMovement(movement)"
-                                type="button"
-                                class="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50"
-                                @click="openCorrectionModal(movement)"
-                            >
-                                {{ tr('Corregir', 'Correct') }}
-                            </button>
-                        </div>
-                    </article>
+                            <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                <span class="text-gray-500">{{ rowCounterparty(movement) }}</span>
+                                <span
+                                    class="rounded-full px-2 py-0.5 font-semibold"
+                                    :class="movement.status === 'cancelled' ? 'bg-amber-50 text-amber-700' : movement.status === 'cancellation' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700'"
+                                >
+                                    {{ correctionStatusLabel(movement) }}
+                                </span>
+                            </div>
+                            <div v-if="cancellationSummary(movement)" class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                <span class="font-semibold text-amber-700">{{ cancellationSummary(movement) }}</span>
+                                <button
+                                    v-if="linkedMovementKey(movement, 'correction')"
+                                    type="button"
+                                    class="font-semibold text-red-700 hover:text-red-800"
+                                    @click="scrollToLedgerMovement(linkedMovementKey(movement, 'correction'))"
+                                >
+                                    {{ tr('Ver correccion', 'View correction') }}
+                                </button>
+                                <button
+                                    v-if="linkedMovementKey(movement, 'original')"
+                                    type="button"
+                                    class="font-semibold text-red-700 hover:text-red-800"
+                                    @click="scrollToLedgerMovement(linkedMovementKey(movement, 'original'))"
+                                >
+                                    {{ tr('Ver original', 'View original') }}
+                                </button>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                                <a v-if="movement.receipt?.url" :href="movement.receipt.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
+                                    {{ tr('Recibo', 'Receipt') }} {{ movement.receipt.number ? `#${movement.receipt.number}` : '' }}
+                                </a>
+                                <a v-if="movement.proof?.url" :href="movement.proof.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
+                                    {{ tr('Comprobante', 'Proof') }}
+                                </a>
+                            </div>
+                            <div class="mt-3">
+                                <button
+                                    v-if="canCorrectMovement(movement)"
+                                    type="button"
+                                    class="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                    @click="openCorrectionModal(movement)"
+                                >
+                                    {{ tr('Corregir', 'Correct') }}
+                                </button>
+                            </div>
+                        </article>
+                    </template>
                 </div>
 
                 <div v-if="ledgerMovements.length" class="hidden overflow-x-auto lg:block">
@@ -990,99 +1082,116 @@ onMounted(loadData)
                                 <th class="px-3 py-2 text-left font-semibold">{{ tr('Cuenta / ubicacion', 'Account / location') }}</th>
                                 <th class="px-3 py-2 text-left font-semibold">{{ tr('Tercero', 'Counterparty') }}</th>
                                 <th class="px-3 py-2 text-right font-semibold">{{ tr('Monto', 'Amount') }}</th>
+                                <th class="px-3 py-2 text-right font-semibold">{{ tr('Balance', 'Balance') }}</th>
                                 <th class="px-3 py-2 text-left font-semibold">{{ tr('Estatus', 'Status') }}</th>
                                 <th class="px-3 py-2 text-left font-semibold">{{ tr('Soportes', 'Files') }}</th>
                                 <th class="px-3 py-2 text-right font-semibold">{{ tr('Accion', 'Action') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
-                            <tr
-                                v-for="movement in paginatedLedgerMovements"
-                                :key="movement.movement_id"
-                                :data-ledger-movement="movement.movement_id"
-                                class="scroll-mt-24"
-                            >
-                                <td class="whitespace-nowrap px-3 py-2">{{ formatDate(movement.date) }}</td>
-                                <td class="px-3 py-2">{{ domainLabel(movement.domain) }}</td>
-                                <td class="max-w-xs px-3 py-2">
-                                    <div class="font-medium text-gray-900">{{ movement.concept || movementTypeLabel(movement.kind) }}</div>
-                                    <div v-if="movement.reference" class="text-xs text-gray-500">{{ movement.reference }}</div>
-                                </td>
-                                <td class="px-3 py-2">{{ movementDescription(movement) }}</td>
-                                <td class="px-3 py-2">{{ rowCounterparty(movement) }}</td>
-                                <td
-                                    class="whitespace-nowrap px-3 py-2 text-right font-semibold"
-                                    :class="Number(movement.signed_amount) < 0 ? 'text-red-700' : Number(movement.signed_amount) > 0 ? 'text-emerald-700' : 'text-gray-900'"
+                            <template v-for="section in ledgerDisplaySections" :key="section.key">
+                                <tr v-if="section.label" class="bg-gray-100">
+                                    <td colspan="10" class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
+                                        {{ section.label }}
+                                    </td>
+                                </tr>
+                                <tr
+                                    v-for="movement in section.rows"
+                                    :key="`${section.key}-${movement.movement_id}`"
+                                    :data-ledger-movement="movement.movement_id"
+                                    class="scroll-mt-24"
                                 >
-                                    {{ formatMoney(movement.amount) }}
-                                </td>
-                                <td class="px-3 py-2">
-                                    <div>
-                                        <span
-                                            class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                                            :class="movement.status === 'cancelled' ? 'bg-amber-50 text-amber-700' : movement.status === 'cancellation' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700'"
-                                        >
-                                            {{ correctionStatusLabel(movement) }}
-                                        </span>
-                                    </div>
-                                    <div v-if="cancellationSummary(movement)" class="mt-1 space-y-1 text-xs">
-                                        <div class="font-semibold text-amber-700">{{ cancellationSummary(movement) }}</div>
-                                        <button
-                                            v-if="linkedMovementKey(movement, 'correction')"
-                                            type="button"
-                                            class="font-semibold text-red-700 hover:text-red-800"
-                                            @click="scrollToLedgerMovement(linkedMovementKey(movement, 'correction'))"
-                                        >
-                                            {{ tr('Ver correccion', 'View correction') }}
-                                        </button>
-                                        <button
-                                            v-if="linkedMovementKey(movement, 'original')"
-                                            type="button"
-                                            class="font-semibold text-red-700 hover:text-red-800"
-                                            @click="scrollToLedgerMovement(linkedMovementKey(movement, 'original'))"
-                                        >
-                                            {{ tr('Ver original', 'View original') }}
-                                        </button>
-                                    </div>
-                                </td>
-                                <td class="px-3 py-2">
-                                    <div class="flex flex-wrap gap-2">
-                                        <a v-if="movement.receipt?.url" :href="movement.receipt.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
-                                            {{ tr('Recibo', 'Receipt') }}
-                                        </a>
-                                        <a v-if="movement.proof?.url" :href="movement.proof.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
-                                            {{ tr('Comprobante', 'Proof') }}
-                                        </a>
-                                    </div>
-                                </td>
-                                <td class="whitespace-nowrap px-3 py-2 text-right">
-                                    <button
-                                        v-if="canCorrectMovement(movement)"
-                                        type="button"
-                                        class="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50"
-                                        @click="openCorrectionModal(movement)"
+                                    <td class="whitespace-nowrap px-3 py-2">{{ formatDate(movement.date) }}</td>
+                                    <td class="px-3 py-2">{{ domainLabel(movement.domain) }}</td>
+                                    <td class="max-w-xs px-3 py-2">
+                                        <div class="font-medium text-gray-900">{{ movement.concept || movementTypeLabel(movement.kind) }}</div>
+                                        <div v-if="movement.reference" class="text-xs text-gray-500">{{ movement.reference }}</div>
+                                    </td>
+                                    <td class="px-3 py-2">{{ movementDescription(movement) }}</td>
+                                    <td class="px-3 py-2">{{ rowCounterparty(movement) }}</td>
+                                    <td
+                                        class="whitespace-nowrap px-3 py-2 text-right font-semibold"
+                                        :class="Number(movement.signed_amount) < 0 ? 'text-red-700' : Number(movement.signed_amount) > 0 ? 'text-emerald-700' : 'text-gray-900'"
                                     >
-                                        {{ tr('Corregir', 'Correct') }}
-                                    </button>
-                                    <span v-else class="text-xs text-gray-400">—</span>
-                                </td>
-                            </tr>
+                                        {{ formatMoney(movement.amount) }}
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900">
+                                        {{ movementBalanceTextForAccount(movement, section.account) }}
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div>
+                                            <span
+                                                class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                                                :class="movement.status === 'cancelled' ? 'bg-amber-50 text-amber-700' : movement.status === 'cancellation' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700'"
+                                            >
+                                                {{ correctionStatusLabel(movement) }}
+                                            </span>
+                                        </div>
+                                        <div v-if="cancellationSummary(movement)" class="mt-1 space-y-1 text-xs">
+                                            <div class="font-semibold text-amber-700">{{ cancellationSummary(movement) }}</div>
+                                            <button
+                                                v-if="linkedMovementKey(movement, 'correction')"
+                                                type="button"
+                                                class="font-semibold text-red-700 hover:text-red-800"
+                                                @click="scrollToLedgerMovement(linkedMovementKey(movement, 'correction'))"
+                                            >
+                                                {{ tr('Ver correccion', 'View correction') }}
+                                            </button>
+                                            <button
+                                                v-if="linkedMovementKey(movement, 'original')"
+                                                type="button"
+                                                class="font-semibold text-red-700 hover:text-red-800"
+                                                @click="scrollToLedgerMovement(linkedMovementKey(movement, 'original'))"
+                                            >
+                                                {{ tr('Ver original', 'View original') }}
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div class="flex flex-wrap gap-2">
+                                            <a v-if="movement.receipt?.url" :href="movement.receipt.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
+                                                {{ tr('Recibo', 'Receipt') }}
+                                            </a>
+                                            <a v-if="movement.proof?.url" :href="movement.proof.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
+                                                {{ tr('Comprobante', 'Proof') }}
+                                            </a>
+                                        </div>
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-right">
+                                        <button
+                                            v-if="canCorrectMovement(movement)"
+                                            type="button"
+                                            class="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                            @click="openCorrectionModal(movement)"
+                                        >
+                                            {{ tr('Corregir', 'Correct') }}
+                                        </button>
+                                        <span v-else class="text-xs text-gray-400">—</span>
+                                    </td>
+                                </tr>
+                            </template>
                         </tbody>
                     </table>
                 </div>
 
                 <div
-                    v-if="ledgerMovements.length > LEDGER_PAGE_SIZE"
+                    v-if="ledgerMovements.length && (ledgerIsAllAccounts || ledgerMovements.length > LEDGER_PAGE_SIZE)"
                     class="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between"
                 >
-                    <p class="text-sm text-gray-600">
+                    <p v-if="ledgerIsAllAccounts" class="text-sm text-gray-600">
+                        <span class="font-semibold text-gray-900">{{ ledgerMovements.length }}</span>
+                        {{ tr('movimientos agrupados en', 'movements grouped into') }}
+                        <span class="font-semibold text-gray-900">{{ ledgerAccountGroups.length }}</span>
+                        {{ tr('cuentas', 'accounts') }}
+                    </p>
+                    <p v-else class="text-sm text-gray-600">
                         {{ tr('Mostrando', 'Showing') }}
                         <span class="font-semibold text-gray-900">{{ ledgerPageStart }}-{{ ledgerPageEnd }}</span>
                         {{ tr('de', 'of') }}
                         <span class="font-semibold text-gray-900">{{ ledgerMovements.length }}</span>
                         {{ tr('movimientos', 'movements') }}
                     </p>
-                    <div class="flex items-center gap-2">
+                    <div v-if="!ledgerIsAllAccounts" class="flex items-center gap-2">
                         <button
                             type="button"
                             class="inline-flex min-h-10 items-center justify-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
