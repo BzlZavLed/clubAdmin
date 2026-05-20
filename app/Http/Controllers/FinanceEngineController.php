@@ -45,57 +45,78 @@ class FinanceEngineController extends Controller
     }
 
     public function movementsPdf(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
-    {
-        $validated = $this->validateMovementFilters($request);
-        $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
-        $report = $this->financeEngine->movementReport($club, [
-            ...$validated,
-            'limit' => $validated['limit'] ?? 5000,
-        ]);
-        $receiptAnnexes = $this->ledgerReceiptAnnexes($report);
-        $generatedAt = now();
+{
+    @ini_set('memory_limit', '512M');
+    @ini_set('max_execution_time', '180');
+    @ini_set('zlib.output_compression', '0');
 
-        $validation = $documentValidationService->create(
-            documentType: 'finance_engine_movements',
-            title: 'Libro contable financiero',
-            snapshot: [
-                'club_id' => $club->id,
-                'filters' => $report['filters'] ?? [],
-                'summary' => $report['summary'] ?? [],
-                'movements' => collect($report['movements'] ?? [])->map(fn (array $movement) => [
-                    'movement_id' => $movement['movement_id'] ?? null,
-                    'date' => $movement['date'] ?? null,
-                    'domain' => $movement['domain'] ?? null,
-                    'kind' => $movement['kind'] ?? null,
-                    'account' => $movement['account'] ?? null,
-                    'amount' => $movement['amount'] ?? null,
-                    'signed_amount' => $movement['signed_amount'] ?? null,
-                    'balance_after' => $movement['balance_after'] ?? null,
-                    'receipt' => $movement['receipt']['number'] ?? null,
-                    'status' => $movement['status'] ?? null,
-                ])->all(),
-            ],
-            metadata: [
-                'Club' => $club->club_name,
-                'Documento' => 'Libro contable financiero',
-                'Movimientos' => (string) count($report['movements'] ?? []),
-                'Anexos' => (string) count($receiptAnnexes),
-            ],
-            generatedBy: $request->user(),
-            generatedAt: $generatedAt,
-        );
+    $validated = $this->validateMovementFilters($request);
 
-        return Pdf::loadView('reports.finance_engine_movements', [
-            'club' => $club,
-            'report' => $report,
-            'generatedAt' => $generatedAt,
-            'clubLogoDataUri' => $clubLogoService->dataUri($club),
-            'validationUrl' => $validation['url'],
-            'qrCodeDataUri' => $validation['qr_code_data_uri'],
-            'receiptAnnexes' => $receiptAnnexes,
-        ])->setPaper('a4', 'landscape')
-            ->download('finance-ledger.pdf');
+    $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
+
+    $report = $this->financeEngine->movementReport($club, [
+        ...$validated,
+        'limit' => $validated['limit'] ?? 5000,
+    ]);
+
+    $receiptAnnexes = $this->ledgerReceiptAnnexes($report);
+    $generatedAt = now();
+
+    $validation = $documentValidationService->create(
+        documentType: 'finance_engine_movements',
+        title: 'Libro contable financiero',
+        snapshot: [
+            'club_id' => $club->id,
+            'filters' => $report['filters'] ?? [],
+            'summary' => $report['summary'] ?? [],
+            'movements' => collect($report['movements'] ?? [])->map(fn (array $movement) => [
+                'movement_id' => $movement['movement_id'] ?? null,
+                'date' => $movement['date'] ?? null,
+                'domain' => $movement['domain'] ?? null,
+                'kind' => $movement['kind'] ?? null,
+                'account' => $movement['account'] ?? null,
+                'amount' => $movement['amount'] ?? null,
+                'signed_amount' => $movement['signed_amount'] ?? null,
+                'balance_after' => $movement['balance_after'] ?? null,
+                'receipt' => $movement['receipt']['number'] ?? null,
+                'status' => $movement['status'] ?? null,
+            ])->all(),
+        ],
+        metadata: [
+            'Club' => $club->club_name,
+            'Documento' => 'Libro contable financiero',
+            'Movimientos' => (string) count($report['movements'] ?? []),
+            'Anexos' => (string) count($receiptAnnexes),
+        ],
+        generatedBy: $request->user(),
+        generatedAt: $generatedAt,
+    );
+
+    $pdf = Pdf::loadView('reports.finance_engine_movements', [
+        'club' => $club,
+        'report' => $report,
+        'generatedAt' => $generatedAt,
+        'clubLogoDataUri' => $clubLogoService->dataUri($club),
+        'validationUrl' => $validation['url'],
+        'qrCodeDataUri' => $validation['qr_code_data_uri'],
+        'receiptAnnexes' => $receiptAnnexes,
+    ])->setPaper('a4', 'landscape');
+
+    $fileName = 'finance-ledger-' . now()->format('YmdHis') . '.pdf';
+    $path = storage_path("app/tmp/{$fileName}");
+
+    if (! is_dir(dirname($path))) {
+        mkdir(dirname($path), 0755, true);
     }
+
+    file_put_contents($path, $pdf->output());
+
+    return response()->download($path, 'finance-ledger.pdf', [
+        'Content-Type' => 'application/pdf',
+        'Content-Length' => filesize($path),
+        'Cache-Control' => 'no-store, no-cache, must-revalidate',
+    ])->deleteFileAfterSend(true);
+}
 
     private function ledgerReceiptAnnexes(array $report): array
     {
