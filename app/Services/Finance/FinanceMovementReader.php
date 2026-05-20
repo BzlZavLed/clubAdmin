@@ -174,6 +174,7 @@ class FinanceMovementReader
                 'reimbursementOriginExpense:id,pay_to,amount,expense_date,description',
                 'generatedReimbursementExpense:id,pay_to,amount,status,reimbursed_to,reimbursement_payee_id,reimbursement_origin_expense_id',
                 'generatedReimbursementExpense.reimbursementPayee:id,club_id,name,phone,email',
+                'fundraiserInvestmentReceipts:id,expense_id,path,original_name,mime_type',
             ])
             ->when(!empty($filters['date_from']), fn ($query) => $query->whereDate('expense_date', '>=', $filters['date_from']))
             ->when(!empty($filters['date_to']), fn ($query) => $query->whereDate('expense_date', '<=', $filters['date_to']))
@@ -199,6 +200,34 @@ class FinanceMovementReader
                     && !$expense->related_canceled_movement_id
                     && $expense->reversalExpense === null
                     && !$isReimbursementRelated;
+                $proofs = [];
+                $addProof = function (?string $type, ?string $url, ?string $name = null) use (&$proofs): void {
+                    if (!$type && !$url && !$name) {
+                        return;
+                    }
+
+                    if ($url) {
+                        foreach ($proofs as $proof) {
+                            if (($proof['url'] ?? null) === $url) {
+                                return;
+                            }
+                        }
+                    }
+
+                    $proof = [
+                        'type' => $type,
+                        'url' => $url,
+                        'name' => $name,
+                    ];
+
+                    $proofs[] = array_filter($proof, fn ($value) => $value !== null && $value !== '');
+                };
+
+                $addProof('expense_receipt', $expense->receipt_url);
+                $addProof('reimbursement_receipt', $expense->reimbursement_receipt_url);
+                foreach ($expense->fundraiserInvestmentReceipts as $receipt) {
+                    $addProof('fundraiser_investment_receipt', $receipt->url, $receipt->original_name);
+                }
 
                 return [
                     'movement_id' => "expense:{$expense->id}",
@@ -225,10 +254,8 @@ class FinanceMovementReader
                     'settles_expense_id' => $expense->settles_expense_id,
                     'reimbursement_origin_expense_id' => $expense->reimbursement_origin_expense_id,
                     'receipt' => null,
-                    'proof' => $expense->receipt_url ? [
-                        'type' => 'expense_receipt',
-                        'url' => $expense->receipt_url,
-                    ] : null,
+                    'proof' => $proofs[0] ?? null,
+                    'proofs' => $proofs,
                     'reimbursement_payee' => $expense->reimbursementPayee ? [
                         'id' => (int) $expense->reimbursementPayee->id,
                         'name' => $expense->reimbursementPayee->name,
@@ -386,6 +413,7 @@ class FinanceMovementReader
                     'is_counted_in_balance' => true,
                     'receipt' => $movement->eventClubSettlement ? [
                         'number' => $movement->eventClubSettlement->receipt_number,
+                        'url' => route('event-club-settlements.download', $movement->eventClubSettlement),
                     ] : null,
                     'proof' => $movement->proof_path ? [
                         'type' => 'treasury_proof',

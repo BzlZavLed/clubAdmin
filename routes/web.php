@@ -600,6 +600,11 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         Inertia::render('ClubDirector/Finance/Accounting', ['auth_user' => auth()->user()])
     )->name('club.director.finance.accounting');
     Route::get(
+        '/club-director/finance/reports',
+        fn() =>
+        Inertia::render('ClubDirector/Finance/Reports', ['auth_user' => auth()->user()])
+    )->name('club.director.finance.reports');
+    Route::get(
         '/club-director/finance/fundraisers',
         fn() =>
         Inertia::render('ClubDirector/Finance/Fundraisers', ['auth_user' => auth()->user()])
@@ -644,6 +649,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.fundraisers.sales.store');
     Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/close', [FinanceEngineController::class, 'closeFundraiserEvent'])
         ->name('club.finance-engine.fundraisers.close');
+    Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/investment-receipts', [FinanceEngineController::class, 'uploadFundraiserInvestmentReceipts'])
+        ->name('club.finance-engine.fundraisers.investment-receipts.store');
     Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/partners', [FinanceEngineController::class, 'storeFundraiserPartner'])
         ->name('club.finance-engine.fundraisers.partners.store');
     Route::post('/club-director/finance-engine/fundraisers/partners/{fundraiserEventPartner}/contribution', [FinanceEngineController::class, 'recordFundraiserPartnerContribution'])
@@ -789,7 +796,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     })->name('club.reports.assistance');
 
     Route::get('/club-director/reports/finances', fn(Request $request) =>
-        redirect()->route('club.director.finance.accounting', $request->query())
+        redirect()->route('club.director.finance.reports', $request->query())
     )->name('club.reports.finances');
 
     Route::get('/club-director/reports/accounts', fn(Request $request) =>

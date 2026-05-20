@@ -56,6 +56,11 @@ class Expense extends Model
         return $this->belongsTo(FinanceReimbursementPayee::class, 'reimbursement_payee_id');
     }
 
+    public function fundraiserInvestmentReceipts()
+    {
+        return $this->hasMany(FundraiserInvestmentReceipt::class);
+    }
+
     public function event()
     {
         return $this->belongsTo(Event::class);

@@ -8,6 +8,7 @@ import {
     ChartBarIcon,
     CogIcon,
     DocumentTextIcon,
+    DocumentChartBarIcon,
     BanknotesIcon,
     CalendarDaysIcon,
     ShoppingCartIcon,
@@ -73,6 +74,13 @@ const menuItems = computed(() => [
                 href: '/club-director/finance/accounting',
                 route: 'club.director.finance.accounting',
                 icon: ChartBarIcon
+            },
+            {
+                id: 'finance_reports',
+                name: t('financial_reports'),
+                href: '/club-director/finance/reports',
+                route: 'club.director.finance.reports',
+                icon: DocumentChartBarIcon
             },
             {
                 id: 'fundraiser_pos',

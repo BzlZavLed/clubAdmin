@@ -18,6 +18,7 @@ import {
     BanknotesIcon,
     BuildingLibraryIcon,
     ChartBarIcon,
+    ExclamationTriangleIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -92,11 +93,23 @@ const ledgerFilters = ref({
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin' || clubs.value.length > 1)
 const currentClub = computed(() => treasury.value.club || clubs.value.find((club) => Number(club.id) === Number(selectedClubId.value)) || null)
 const summary = computed(() => treasury.value.summary || {})
+const summaryAccounts = computed(() => summary.value.accounts || [])
+const isOperatingAccount = (account) => account !== 'reimbursement_to'
+const operatingSummaryAccounts = computed(() => summaryAccounts.value.filter((account) => isOperatingAccount(account.account)))
 const summaryTotals = computed(() => ({
-    cash_balance: Number(summary.value.cash_balance || 0),
-    bank_balance: Number(summary.value.bank_balance || 0),
-    total_balance: Number(summary.value.total_available ?? (Number(summary.value.cash_balance || 0) + Number(summary.value.bank_balance || 0))),
+    cash_balance: operatingSummaryAccounts.value.reduce((sum, account) => sum + Number(account.cash_balance || 0), 0),
+    bank_balance: operatingSummaryAccounts.value.reduce((sum, account) => sum + Number(account.bank_balance || 0), 0),
+    total_balance: operatingSummaryAccounts.value.reduce((sum, account) => sum + Number(account.total_available ?? (Number(account.cash_balance || 0) + Number(account.bank_balance || 0))), 0),
 }))
+const reimbursementBalanceSummary = computed(() => {
+    const row = summaryAccounts.value.find((account) => account.account === 'reimbursement_to')
+
+    return {
+        cash_balance: Number(row?.cash_balance || 0),
+        bank_balance: Number(row?.bank_balance || 0),
+        total_available: Number(row?.total_available ?? (Number(row?.cash_balance || 0) + Number(row?.bank_balance || 0))),
+    }
+})
 const pendingStaffRemittances = computed(() => treasury.value.pending_staff_remittances || [])
 const recentTreasuryMovements = computed(() => treasury.value.movements || [])
 const ledgerMovements = computed(() => engineReport.value?.movements || [])
@@ -124,7 +137,7 @@ const accountOptions = computed(() => {
             label: account.label || account.value,
         })
     })
-    ;(summary.value.accounts || []).forEach((account) => {
+    ;(summaryAccounts.value || []).forEach((account) => {
         if (!rows.has(account.account)) {
             rows.set(account.account, {
                 value: account.account,
@@ -140,8 +153,8 @@ const accountOptions = computed(() => {
 
 const accountBalanceRows = computed(() => {
     const labels = Object.fromEntries(accountOptions.value.map((account) => [account.value, account.label]))
-    const source = summary.value.accounts?.length
-        ? summary.value.accounts
+    const source = summaryAccounts.value.length
+        ? summaryAccounts.value
         : (accountReport.value?.accounts || [])
 
     return (source || []).map((row) => ({
@@ -600,27 +613,36 @@ onMounted(loadData)
                 {{ loadError }}
             </div>
 
-            <section class="grid gap-4 md:grid-cols-3">
+            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <article class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="flex items-center justify-between gap-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Efectivo', 'Cash') }}</p>
                         <span class="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{{ tr('Disponible', 'Available') }}</span>
                     </div>
-                    <p class="mt-2 text-2xl font-bold text-gray-900">{{ formatMoney(summaryTotals.cash_balance) }}</p>
+                    <p class="mt-2 text-2xl font-bold" :class="summaryTotals.cash_balance < 0 ? 'text-rose-700' : 'text-gray-900'">{{ formatMoney(summaryTotals.cash_balance) }}</p>
                 </article>
                 <article class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="flex items-center justify-between gap-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Banco', 'Bank') }}</p>
                         <span class="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{{ tr('Electronico', 'Electronic') }}</span>
                     </div>
-                    <p class="mt-2 text-2xl font-bold text-gray-900">{{ formatMoney(summaryTotals.bank_balance) }}</p>
+                    <p class="mt-2 text-2xl font-bold" :class="summaryTotals.bank_balance < 0 ? 'text-rose-700' : 'text-gray-900'">{{ formatMoney(summaryTotals.bank_balance) }}</p>
                 </article>
                 <article class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="flex items-center justify-between gap-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Balance total', 'Total balance') }}</p>
-                        <span class="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700">{{ accountBalanceRows.length }} {{ tr('cuentas', 'accounts') }}</span>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Disponible', 'Available') }}</p>
+                        <span class="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700">{{ operatingSummaryAccounts.length }} {{ tr('cuentas', 'accounts') }}</span>
                     </div>
-                    <p class="mt-2 text-2xl font-bold text-gray-900">{{ formatMoney(summaryTotals.total_balance) }}</p>
+                    <p class="mt-2 text-2xl font-bold" :class="summaryTotals.total_balance < 0 ? 'text-rose-700' : 'text-gray-900'">{{ formatMoney(summaryTotals.total_balance) }}</p>
+                </article>
+                <article class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-amber-900">{{ tr('Reembolsos pendientes', 'Reimbursements owed') }}</p>
+                        <ExclamationTriangleIcon class="h-5 w-5 text-amber-700" />
+                    </div>
+                    <p class="mt-2 text-2xl font-bold" :class="reimbursementBalanceSummary.total_available < 0 ? 'text-rose-700' : 'text-gray-900'">
+                        {{ formatMoney(reimbursementBalanceSummary.total_available) }}
+                    </p>
                 </article>
             </section>
 

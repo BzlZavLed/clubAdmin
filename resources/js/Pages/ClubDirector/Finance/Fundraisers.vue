@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import {
     ArrowDownTrayIcon,
     ArrowPathIcon,
+    ArrowUpTrayIcon,
     BanknotesIcon,
     ChartBarIcon,
     CheckCircleIcon,
@@ -28,6 +29,7 @@ import {
     recordFinanceEngineFundraiserPartnerContribution,
     recordFinanceEngineFundraiserPartnerDistribution,
     updateFinanceEngineFundraiserProduct,
+    uploadFinanceEngineFundraiserInvestmentReceipts,
 } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -50,8 +52,10 @@ const savingPartnerTransfer = ref(null)
 const savingProduct = ref(false)
 const savingProductEdit = ref(false)
 const savingSale = ref(false)
+const savingInvestmentReceipts = ref(false)
 const loadError = ref('')
 const eventErrors = ref({})
+const investmentReceiptErrors = ref({})
 const closeErrors = ref({})
 const partnerErrors = ref({})
 const partnerTransferErrors = ref({})
@@ -68,10 +72,14 @@ const events = ref([])
 const paymentTypes = ref(['cash', 'zelle', 'check', 'transfer'])
 const selectedEventId = ref(null)
 const editingProductId = ref(null)
+const eventWorkspace = ref(null)
 const cajaSection = ref(null)
+const investmentReceiptInput = ref(null)
 const receiptPreviewSale = ref(null)
 const showFundraiserGuide = ref(false)
 const showCloseModal = ref(false)
+const showCreateEventForm = ref(false)
+const eventSelectionBeforeCreate = ref(null)
 
 const eventForm = ref({
     name: '',
@@ -81,7 +89,7 @@ const eventForm = ref({
     investment_total: '',
     investment_pay_to: 'club_budget',
     investment_funds_location: 'cash',
-    investment_receipt_image: null,
+    investment_receipt_images: [],
     partner_club_id: '',
     partner_investment_share_percent: '',
     partner_earnings_share_percent: '',
@@ -119,6 +127,8 @@ const closeForm = ref({
     notes: '',
 })
 
+const investmentReceiptFiles = ref([])
+
 const saleForm = ref({
     customer_name: '',
     sale_date: today(),
@@ -146,13 +156,36 @@ const operatingAccounts = computed(() => {
 
     return rows
 })
-const selectedEvent = computed(() => events.value.find((event) => Number(event.id) === Number(selectedEventId.value)) || events.value[0] || null)
+const activeEvents = computed(() => events.value.filter((event) => event.status !== 'closed'))
+const closedEvents = computed(() => events.value.filter((event) => event.status === 'closed'))
+const selectedEvent = computed(() => events.value.find((event) => Number(event.id) === Number(selectedEventId.value)) || null)
+const selectedActiveEventId = computed(() => selectedEvent.value?.status === 'closed' ? '' : selectedEventId.value || '')
+const selectedClosedEventId = computed(() => selectedEvent.value?.status === 'closed' ? selectedEventId.value || '' : '')
+const showEventSetup = computed(() => events.value.length === 0 || showCreateEventForm.value)
 const selectedEventPartners = computed(() => selectedEvent.value?.partners || [])
 const selectedEventIsClosed = computed(() => selectedEvent.value?.status === 'closed')
+const selectedEventReport = computed(() => selectedEvent.value?.report || {})
+const selectedEventSummary = computed(() => selectedEventReport.value.summary || {
+    total_sales: selectedEvent.value?.totals?.revenue || 0,
+    total_expenses: selectedEvent.value?.investment_total || 0,
+    total_earnings: selectedEvent.value?.totals?.net_gain || 0,
+    sale_count: selectedEvent.value?.totals?.sale_count || 0,
+    receipt_count: selectedEvent.value?.totals?.receipt_count || 0,
+})
+const selectedEventIncomeBreakdown = computed(() => selectedEventReport.value.income_breakdown || selectedEvent.value?.totals?.income_breakdown || {
+    cash: 0,
+    bank: 0,
+    total: 0,
+    payment_types: {},
+})
+const selectedEventInitialExpenses = computed(() => selectedEventReport.value.initial_expenses || [])
+const selectedEventSaleReceipts = computed(() => selectedEventReport.value.sale_receipts || selectedEvent.value?.sales || [])
+const selectedEventCanUseKitchen = computed(() => !selectedEventIsClosed.value && selectedEvent.value?.fundraiser_type === 'food' && selectedEvent.value?.kitchen_url)
 const selectedEventPartnerDistributionTotal = computed(() => selectedEventPartners.value.reduce(
     (total, partner) => roundCurrency(total + Number(partner.earnings_due || 0)),
     0,
 ))
+const selectedEventHasPartnerClubs = computed(() => selectedEventPartners.value.length > 0)
 const selectedEventHasPendingPartnerContributions = computed(() => selectedEventPartners.value.some((partner) => Number(partner.contribution_pending || 0) > 0))
 const eventPartnerClubOptions = computed(() => partnerClubs.value || [])
 const partnerClubOptions = computed(() => {
@@ -170,25 +203,18 @@ const saleRows = computed(() => saleForm.value.items.map((item) => {
     const unitPrice = item.unit_price === '' || item.unit_price === null || item.unit_price === undefined
         ? Number(product?.sale_price || 0)
         : Number(item.unit_price || 0)
-    const unitCost = Number(product?.unit_cost || 0)
     const lineTotal = roundCurrency(quantity * unitPrice)
-    const lineCost = roundCurrency(quantity * unitCost)
 
     return {
         product,
         quantity,
         unitPrice,
-        unitCost,
         lineTotal,
-        lineCost,
-        lineGain: roundCurrency(lineTotal - lineCost),
     }
 }))
 const saleTotals = computed(() => saleRows.value.reduce((totals, row) => ({
     total: roundCurrency(totals.total + row.lineTotal),
-    cost: roundCurrency(totals.cost + row.lineCost),
-    gain: roundCurrency(totals.gain + row.lineGain),
-}), { total: 0, cost: 0, gain: 0 }))
+}), { total: 0 }))
 const formatMoney = (value) => {
     const amount = Number(value || 0)
 
@@ -216,6 +242,23 @@ const paymentTypeLabel = (type) => {
     return type
 }
 const locationLabel = (location) => location === 'bank' ? tr('Banco', 'Bank') : tr('Efectivo', 'Cash')
+const initialExpenseReceipts = (expense) => {
+    const receipts = []
+    const seenUrls = new Set()
+
+    if (expense?.receipt_url) {
+        receipts.push({ id: `expense-${expense.id || 'receipt'}`, url: expense.receipt_url, name: tr('Comprobante principal', 'Primary receipt') })
+        seenUrls.add(expense.receipt_url)
+    }
+
+    for (const receipt of expense?.receipts || []) {
+        if (!receipt?.url || seenUrls.has(receipt.url)) continue
+        receipts.push(receipt)
+        seenUrls.add(receipt.url)
+    }
+
+    return receipts
+}
 const partnerTransferKey = (partner, type) => `${type}_${partner?.id || 'new'}`
 const partnerTransferForm = (partner, type) => {
     const key = partnerTransferKey(partner, type)
@@ -327,7 +370,7 @@ const applyData = (response) => {
     }
 
     if (!selectedEventId.value || !events.value.some((event) => Number(event.id) === Number(selectedEventId.value))) {
-        selectedEventId.value = events.value[0]?.id || null
+        selectedEventId.value = events.value.find((event) => event.status !== 'closed')?.id || null
     }
 }
 
@@ -369,6 +412,44 @@ const openReceiptPreview = (sale) => {
 
 const closeReceiptPreview = () => {
     receiptPreviewSale.value = null
+}
+
+const scrollToEventWorkspace = async () => {
+    await nextTick()
+    eventWorkspace.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const selectEvent = (eventId) => {
+    showCreateEventForm.value = false
+    eventSelectionBeforeCreate.value = null
+    selectedEventId.value = eventId ? Number(eventId) : null
+}
+
+const openEventForm = () => {
+    eventSelectionBeforeCreate.value = selectedEventId.value
+    selectedEventId.value = null
+    resetFundraiserWorkspaceState()
+    resetEventForm()
+    eventErrors.value = {}
+    showCreateEventForm.value = true
+}
+
+const cancelEventForm = () => {
+    if (savingEvent.value) return
+
+    const restoreEventId = eventSelectionBeforeCreate.value
+
+    resetEventForm()
+    eventErrors.value = {}
+    showCreateEventForm.value = false
+    eventSelectionBeforeCreate.value = null
+
+    if (restoreEventId && events.value.some((event) => Number(event.id) === Number(restoreEventId))) {
+        selectedEventId.value = Number(restoreEventId)
+        return
+    }
+
+    selectedEventId.value = activeEvents.value[0]?.id || null
 }
 
 const openFundraiserGuide = () => {
@@ -432,7 +513,7 @@ const resetEventForm = () => {
         investment_total: '',
         investment_pay_to: operatingAccounts.value[0]?.value || 'club_budget',
         investment_funds_location: 'cash',
-        investment_receipt_image: null,
+        investment_receipt_images: [],
         partner_club_id: '',
         partner_investment_share_percent: '',
         partner_earnings_share_percent: '',
@@ -469,6 +550,8 @@ const resetSaleForm = () => {
 
 const onClubChange = async () => {
     selectedEventId.value = null
+    showCreateEventForm.value = false
+    eventSelectionBeforeCreate.value = null
     await loadFundraisers()
     resetEventForm()
     resetPartnerForm()
@@ -488,6 +571,9 @@ const submitEvent = async () => {
         applyData(response.data)
         selectedEventId.value = response.event?.id || selectedEventId.value
         resetEventForm()
+        showCreateEventForm.value = false
+        eventSelectionBeforeCreate.value = null
+        await scrollToEventWorkspace()
         showToast(tr('Fundraiser creado.', 'Fundraiser created.'), 'success')
     } catch (error) {
         eventErrors.value = normalizeErrors(error)
@@ -571,7 +657,36 @@ const submitProductEdit = async (product) => {
 }
 
 const onEventInvestmentReceiptChange = (event) => {
-    eventForm.value.investment_receipt_image = event.target.files?.[0] || null
+    eventForm.value.investment_receipt_images = Array.from(event.target.files || [])
+}
+
+const onInvestmentReceiptUploadChange = (event) => {
+    investmentReceiptFiles.value = Array.from(event.target.files || [])
+}
+
+const submitInvestmentReceipts = async () => {
+    if (!selectedEvent.value || investmentReceiptFiles.value.length === 0) return
+
+    savingInvestmentReceipts.value = true
+    investmentReceiptErrors.value = {}
+
+    try {
+        const response = await uploadFinanceEngineFundraiserInvestmentReceipts(selectedEvent.value.id, {
+            investment_receipt_images: investmentReceiptFiles.value,
+        })
+        applyData(response.data)
+        investmentReceiptFiles.value = []
+        if (investmentReceiptInput.value) {
+            investmentReceiptInput.value.value = ''
+        }
+        showToast(tr('Comprobantes adjuntados.', 'Receipts attached.'), 'success')
+    } catch (error) {
+        investmentReceiptErrors.value = normalizeErrors(error)
+        showToast(actionErrorMessage(error, tr('No se pudieron adjuntar los comprobantes.', 'Could not attach receipts.')), 'error')
+        console.error(error)
+    } finally {
+        savingInvestmentReceipts.value = false
+    }
 }
 
 const submitSale = async () => {
@@ -597,12 +712,26 @@ const submitSale = async () => {
 const submitCloseEvent = async () => {
     if (!selectedEvent.value) return
 
+    const closedEventId = selectedEvent.value.id
     closingEvent.value = true
     closeErrors.value = {}
 
     try {
-        const response = await closeFinanceEngineFundraiserEvent(selectedEvent.value.id, closeForm.value)
+        const closePayload = {
+            close_date: closeForm.value.close_date,
+            notes: closeForm.value.notes,
+        }
+
+        if (selectedEventHasPartnerClubs.value) {
+            closePayload.funds_location = closeForm.value.funds_location
+            closePayload.payment_type = closeForm.value.payment_type
+        }
+
+        const response = await closeFinanceEngineFundraiserEvent(selectedEvent.value.id, closePayload)
         applyData(response.data)
+        if (Number(selectedEventId.value) === Number(closedEventId)) {
+            selectedEventId.value = activeEvents.value[0]?.id || null
+        }
         showCloseModal.value = false
         closeErrors.value = {}
         showToast(tr('Fundraiser cerrado.', 'Fundraiser closed.'), 'success')
@@ -631,7 +760,7 @@ const recordPartnerTransfer = async (partner, type) => {
         showToast(
             isContribution
                 ? tr('Aporte asociado registrado.', 'Partner contribution recorded.')
-                : tr('Ganancia asociada transferida.', 'Partner earnings transferred.'),
+                : tr('Distribucion asociada transferida.', 'Partner distribution transferred.'),
             'success'
         )
     } catch (error) {
@@ -659,16 +788,23 @@ const removeSaleItem = (index) => {
     saleForm.value.items.splice(index, 1)
 }
 
-watch(selectedEventId, () => {
+const resetFundraiserWorkspaceState = () => {
     cancelProductEdit()
     closeErrors.value = {}
+    investmentReceiptErrors.value = {}
+    investmentReceiptFiles.value = []
+    if (investmentReceiptInput.value) {
+        investmentReceiptInput.value.value = ''
+    }
     showCloseModal.value = false
     partnerErrors.value = {}
     partnerTransferErrors.value = {}
     resetProductForm()
     resetPartnerForm()
     resetSaleForm()
-})
+}
+
+watch(selectedEventId, resetFundraiserWorkspaceState)
 
 onMounted(() => loadFundraisers())
 </script>
@@ -711,59 +847,90 @@ onMounted(() => loadFundraisers())
                 {{ loadError }}
             </div>
 
-            <div class="flex justify-end gap-2">
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100"
-                    @click="openFundraiserGuide"
-                >
-                    <QuestionMarkCircleIcon class="h-4 w-4" />
-                    {{ tr('Guia', 'Guide') }}
-                </button>
-                <a
-                    v-if="selectedEvent?.fundraiser_type === 'food' && selectedEvent.kitchen_url"
-                    :href="selectedEvent.kitchen_url"
-                    target="_blank"
-                    rel="noopener"
-                    class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
-                >
-                    <ShoppingBagIcon class="h-4 w-4" />
-                    {{ tr('Cocina', 'Kitchen') }}
-                </a>
-                <button
-                    v-if="selectedEvent?.fundraiser_type === 'food' && selectedEvent.kitchen_url"
-                    type="button"
-                    class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
-                    @click="copyKitchenUrl"
-                >
-                    <ClipboardDocumentIcon class="h-4 w-4" />
-                    {{ tr('Copiar enlace', 'Copy link') }}
-                </button>
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                    :disabled="!selectedEvent"
-                    @click="scrollToCaja"
-                >
-                    <CurrencyDollarIcon class="h-4 w-4" />
-                    {{ tr('Caja', 'Register') }}
-                </button>
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                    :disabled="loading || refreshing"
-                    @click="refreshFundraisers"
-                >
-                    <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': refreshing }" />
-                    {{ tr('Actualizar', 'Refresh') }}
-                </button>
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div v-if="events.length > 0" class="grid gap-3 sm:min-w-[24rem] sm:max-w-2xl md:grid-cols-2">
+                        <div v-if="activeEvents.length > 0" class="flex flex-col gap-1">
+                            <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                {{ tr('Fundraiser activo', 'Active fundraiser') }}
+                            </label>
+                            <select :value="selectedActiveEventId" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500" @change="selectEvent($event.target.value)">
+                                <option value="" disabled>{{ tr('Seleccionar activo', 'Select active') }}</option>
+                                <option v-for="event in activeEvents" :key="event.id" :value="event.id">
+                                    {{ event.name }} - {{ formatDate(event.event_date) }}
+                                </option>
+                            </select>
+                        </div>
+                        <div v-if="closedEvents.length > 0" class="flex flex-col gap-1">
+                            <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                {{ tr('Resumen de fundraisers cerrados', 'Closed fundraiser summary') }}
+                            </label>
+                            <select :value="selectedClosedEventId" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500" @change="selectEvent($event.target.value)">
+                                <option value="">{{ tr('Seleccionar cerrado', 'Select closed') }}</option>
+                                <option v-for="event in closedEvents" :key="event.id" :value="event.id">
+                                    {{ event.name }} - {{ formatDate(event.event_date) }}
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                    <div v-else class="hidden lg:block"></div>
+
+                    <div class="flex flex-wrap justify-end gap-2">
+                        <button
+                            v-if="events.length > 0 && !showCreateEventForm"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                            @click="openEventForm"
+                    >
+                        <PlusIcon class="h-4 w-4" />
+                        {{ tr('Nuevo fundraiser', 'New fundraiser') }}
+                    </button>
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100"
+                        @click="openFundraiserGuide"
+                    >
+                        <QuestionMarkCircleIcon class="h-4 w-4" />
+                        {{ tr('Guia', 'Guide') }}
+                    </button>
+                    <button
+                        v-if="selectedEvent && !selectedEventIsClosed"
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        @click="scrollToCaja"
+                    >
+                        <CurrencyDollarIcon class="h-4 w-4" />
+                        {{ tr('Caja', 'Register') }}
+                        </button>
+                        <button
+                            v-if="!showCreateEventForm && !selectedEventIsClosed"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                            :disabled="loading || refreshing"
+                        @click="refreshFundraisers"
+                    >
+                        <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': refreshing }" />
+                        {{ tr('Actualizar', 'Refresh') }}
+                    </button>
+                </div>
             </div>
 
-            <section class="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+            <section v-if="showEventSetup" class="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
                 <form class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitEvent">
-                    <div class="mb-4 flex items-center gap-2">
-                        <ShoppingCartIcon class="h-5 w-5 text-emerald-600" />
-                        <h3 class="text-base font-semibold text-gray-900">{{ tr('Registrar fundraiser', 'Register fundraiser') }}</h3>
+                    <div class="mb-4 flex items-start justify-between gap-3">
+                        <div class="flex items-center gap-2">
+                            <ShoppingCartIcon class="h-5 w-5 text-emerald-600" />
+                            <h3 class="text-base font-semibold text-gray-900">{{ tr('Registrar fundraiser', 'Register fundraiser') }}</h3>
+                        </div>
+                        <button
+                            v-if="events.length > 0"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                            :disabled="savingEvent"
+                            @click="cancelEventForm"
+                        >
+                            <XMarkIcon class="h-4 w-4" />
+                            {{ tr('Cancelar', 'Cancel') }}
+                        </button>
                     </div>
 
                     <div class="grid gap-3 md:grid-cols-2">
@@ -833,7 +1000,10 @@ onMounted(() => loadFundraisers())
 
                         <div v-if="Number(eventForm.investment_total || 0) > 0">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Comprobante de inversion', 'Investment proof') }}</label>
-                            <input type="file" accept="image/*" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-gray-700" @change="onEventInvestmentReceiptChange">
+                            <input type="file" accept="image/*,.pdf" multiple class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-gray-700" @change="onEventInvestmentReceiptChange">
+                            <p v-if="eventForm.investment_receipt_images.length > 0" class="mt-1 text-xs text-gray-500">
+                                {{ eventForm.investment_receipt_images.length }} {{ tr('comprobante(s) seleccionados', 'receipt(s) selected') }}
+                            </p>
                         </div>
 
                         <div v-if="eventPartnerClubOptions.length > 0" class="md:col-span-2 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
@@ -892,17 +1062,20 @@ onMounted(() => loadFundraisers())
                     <div v-if="loading" class="rounded-lg border border-dashed border-gray-300 p-5 text-sm text-gray-500">
                         {{ tr('Cargando...', 'Loading...') }}
                     </div>
-                    <div v-else-if="events.length === 0" class="rounded-lg border border-dashed border-gray-300 p-5 text-sm text-gray-500">
-                        {{ tr('Aun no hay fundraisers registrados.', 'No fundraisers registered yet.') }}
-                    </div>
-                    <div v-else class="grid gap-3 md:grid-cols-2">
-                        <button
-                            v-for="event in events"
+                        <div v-else-if="events.length === 0" class="rounded-lg border border-dashed border-gray-300 p-5 text-sm text-gray-500">
+                            {{ tr('Aun no hay fundraisers registrados.', 'No fundraisers registered yet.') }}
+                        </div>
+                        <div v-else-if="activeEvents.length === 0" class="rounded-lg border border-dashed border-gray-300 p-5 text-sm text-gray-500">
+                            {{ tr('No hay fundraisers activos. Usa el selector de cerrados para revisar fundraisers pasados.', 'There are no active fundraisers. Use the closed selector to review past fundraisers.') }}
+                        </div>
+                        <div v-else class="grid gap-3 md:grid-cols-2">
+                            <button
+                                v-for="event in activeEvents"
                             :key="event.id"
                             type="button"
                             class="rounded-lg border p-4 text-left transition"
                             :class="Number(selectedEventId) === Number(event.id) ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'"
-                            @click="selectedEventId = event.id"
+                            @click="selectEvent(event.id)"
                         >
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
@@ -918,7 +1091,7 @@ onMounted(() => loadFundraisers())
                                 </div>
                                 <div>
                                     <p class="text-gray-500">{{ tr('Inversion', 'Investment') }}</p>
-                                    <p class="font-semibold text-gray-900">{{ formatMoney(event.totals?.investment_total) }}</p>
+                                    <p class="font-semibold text-gray-900">{{ formatMoney(event.investment_total) }}</p>
                                 </div>
                                 <div>
                                     <p class="text-gray-500">{{ tr('Neta', 'Net') }}</p>
@@ -927,58 +1100,283 @@ onMounted(() => loadFundraisers())
                             </div>
                         </button>
                     </div>
-                </div>
-            </section>
+                    </div>
+                </section>
 
-            <template v-if="selectedEvent">
-                <section class="space-y-3">
+                <div v-if="!selectedEvent && events.length > 0 && !showEventSetup" class="rounded-lg border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-600">
+                    {{ tr('Selecciona un fundraiser activo para trabajar o un fundraiser cerrado para ver el resumen completo.', 'Select an active fundraiser to work on or a closed fundraiser to see the full summary.') }}
+                </div>
+
+                <template v-if="selectedEvent">
+                    <section ref="eventWorkspace" class="scroll-mt-5 space-y-3">
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900">{{ selectedEvent.name }}</h3>
                             <p class="mt-1 text-sm text-gray-500">{{ selectedEvent.account_label }} · {{ fundraiserTypeLabel(selectedEvent.fundraiser_type) }}</p>
                         </div>
-                        <button
-                            v-if="!selectedEventIsClosed"
-                            type="button"
-                            class="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-                            @click="openCloseModal"
-                        >
-                            <CheckCircleIcon class="h-4 w-4" />
-                            {{ tr('Cerrar fundraiser', 'Close fundraiser') }}
-                        </button>
-                        <span v-else class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
-                            <CheckCircleIcon class="h-4 w-4" />
-                            {{ tr('Fundraiser cerrado', 'Fundraiser closed') }}
-                        </span>
+                        <div class="flex flex-wrap gap-2">
+                            <a
+                                v-if="selectedEventCanUseKitchen"
+                                :href="selectedEvent.kitchen_url"
+                                target="_blank"
+                                rel="noopener"
+                                class="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+                            >
+                                <ShoppingBagIcon class="h-4 w-4" />
+                                {{ tr('Cocina', 'Kitchen') }}
+                            </a>
+                            <button
+                                v-if="selectedEventCanUseKitchen"
+                                type="button"
+                                class="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
+                                @click="copyKitchenUrl"
+                            >
+                                <ClipboardDocumentIcon class="h-4 w-4" />
+                                {{ tr('Copiar enlace', 'Copy link') }}
+                            </button>
+                            <button
+                                v-if="!selectedEventIsClosed"
+                                type="button"
+                                class="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                                @click="openCloseModal"
+                            >
+                                <CheckCircleIcon class="h-4 w-4" />
+                                {{ tr('Cerrar fundraiser', 'Close fundraiser') }}
+                            </button>
+                            <span v-else class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                                <CheckCircleIcon class="h-4 w-4" />
+                                {{ tr('Fundraiser cerrado', 'Fundraiser closed') }}
+                            </span>
+                        </div>
                     </div>
 
-                    <div class="grid gap-3 sm:grid-cols-3">
-                        <div class="rounded-lg border border-gray-200 bg-white p-4">
-                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                                <BanknotesIcon class="h-5 w-5 text-emerald-600" />
-                                {{ tr('Ingresos', 'Revenue') }}
+                        <div class="grid gap-3 sm:grid-cols-3">
+                            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                                <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                    <BanknotesIcon class="h-5 w-5 text-emerald-600" />
+                                    {{ tr('Ventas totales', 'Total sales') }}
+                                </div>
+                                <p class="mt-3 text-2xl font-semibold text-gray-950">{{ formatMoney(selectedEventSummary.total_sales) }}</p>
                             </div>
-                            <p class="mt-3 text-2xl font-semibold text-gray-950">{{ formatMoney(selectedEvent.totals?.revenue) }}</p>
-                        </div>
-                        <div class="rounded-lg border border-gray-200 bg-white p-4">
-                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                                <ChartBarIcon class="h-5 w-5 text-blue-600" />
-                                {{ tr('Ganancia neta', 'Net gain') }}
+                            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                                <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                    <ClipboardDocumentListIcon class="h-5 w-5 text-amber-600" />
+                                    {{ tr('Gastos iniciales', 'Initial expenses') }}
+                                </div>
+                                <p class="mt-3 text-2xl font-semibold text-gray-950">{{ formatMoney(selectedEventSummary.total_expenses) }}</p>
                             </div>
-                            <p class="mt-3 text-2xl font-semibold" :class="Number(selectedEvent.totals?.net_gain || 0) < 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatMoney(selectedEvent.totals?.net_gain) }}</p>
-                            <p class="mt-1 text-xs text-gray-500">{{ tr('Margen vendido', 'Sold margin') }} {{ formatMoney(selectedEvent.totals?.gross_gain) }}</p>
-                        </div>
-                        <div class="rounded-lg border border-gray-200 bg-white p-4">
-                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                                <ClipboardDocumentListIcon class="h-5 w-5 text-gray-600" />
-                                {{ tr('Ventas / recibos', 'Sales / receipts') }}
+                            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                                <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                    <ChartBarIcon class="h-5 w-5 text-blue-600" />
+                                    {{ tr('Ganancia total', 'Total earnings') }}
+                                </div>
+                                <p class="mt-3 text-2xl font-semibold" :class="Number(selectedEventSummary.total_earnings || 0) < 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatMoney(selectedEventSummary.total_earnings) }}</p>
+                                <p class="mt-1 text-xs font-medium text-gray-700">
+                                    {{ tr('Ventas menos gastos iniciales', 'Sales minus initial expenses') }}:
+                                    {{ formatMoney(selectedEventSummary.total_sales) }} - {{ formatMoney(selectedEventSummary.total_expenses) }}
+                                </p>
                             </div>
-                            <p class="mt-3 text-2xl font-semibold text-gray-950">{{ selectedEvent.totals?.sale_count || 0 }} / {{ selectedEvent.totals?.receipt_count || 0 }}</p>
                         </div>
-                    </div>
                 </section>
 
-                <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <section v-if="selectedEventIsClosed" class="space-y-4">
+                        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                            <div class="mb-4 flex items-center gap-2">
+                                <ClipboardDocumentListIcon class="h-5 w-5 text-gray-600" />
+                                <h3 class="text-base font-semibold text-gray-900">{{ tr('Reporte del fundraiser', 'Fundraiser report') }}</h3>
+                            </div>
+
+                            <div class="grid gap-3 md:grid-cols-3">
+                                <div class="rounded-lg bg-gray-50 p-3">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Total ventas', 'Total sales') }}</p>
+                                    <p class="mt-1 text-lg font-semibold text-gray-950">{{ formatMoney(selectedEventSummary.total_sales) }}</p>
+                                </div>
+                                <div class="rounded-lg bg-gray-50 p-3">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Gastos', 'Expenses') }}</p>
+                                    <p class="mt-1 text-lg font-semibold text-gray-950">{{ formatMoney(selectedEventSummary.total_expenses) }}</p>
+                                </div>
+                                <div class="rounded-lg bg-gray-50 p-3">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Ganancia total', 'Total earnings') }}</p>
+                                    <p class="mt-1 text-lg font-semibold" :class="Number(selectedEventSummary.total_earnings || 0) < 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatMoney(selectedEventSummary.total_earnings) }}</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                                <div class="rounded-lg border border-gray-200 p-4">
+                                    <h4 class="text-sm font-semibold text-gray-900">{{ tr('Ubicacion de ingresos', 'Income location') }}</h4>
+                                    <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                                        <div class="rounded-lg bg-emerald-50 p-3">
+                                            <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">{{ tr('Banco', 'Bank') }}</p>
+                                            <p class="mt-1 text-xl font-semibold text-emerald-950">{{ formatMoney(selectedEventIncomeBreakdown.bank) }}</p>
+                                            <p class="mt-1 text-xs text-emerald-800">Zelle + {{ tr('Transferencia', 'Transfer') }}</p>
+                                        </div>
+                                        <div class="rounded-lg bg-amber-50 p-3">
+                                            <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">{{ tr('Efectivo', 'Cash') }}</p>
+                                            <p class="mt-1 text-xl font-semibold text-amber-950">{{ formatMoney(selectedEventIncomeBreakdown.cash) }}</p>
+                                            <p class="mt-1 text-xs text-amber-800">{{ tr('Efectivo', 'Cash') }} + {{ tr('Cheque', 'Check') }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 divide-y divide-gray-100 text-sm">
+                                        <div v-for="type in paymentTypes" :key="`closed-payment-${type}`" class="flex items-center justify-between gap-3 py-2">
+                                            <span class="text-gray-600">{{ paymentTypeLabel(type) }}</span>
+                                            <span class="font-semibold text-gray-900">{{ formatMoney(selectedEventIncomeBreakdown.payment_types?.[type]) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-lg border border-gray-200 p-4">
+                                    <h4 class="text-sm font-semibold text-gray-900">{{ tr('Gastos iniciales y comprobantes', 'Initial expenses and receipts') }}</h4>
+                                    <form v-if="selectedEventInitialExpenses.length > 0" class="mt-3 rounded-lg border border-dashed border-gray-300 bg-white p-3" @submit.prevent="submitInvestmentReceipts">
+                                        <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Adjuntar comprobantes', 'Attach receipts') }}</label>
+                                        <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <input
+                                                ref="investmentReceiptInput"
+                                                type="file"
+                                                multiple
+                                                accept="image/*,.pdf"
+                                                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-gray-700"
+                                                @change="onInvestmentReceiptUploadChange"
+                                            >
+                                            <button
+                                                type="submit"
+                                                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                                                :disabled="savingInvestmentReceipts || investmentReceiptFiles.length === 0"
+                                            >
+                                                <ArrowUpTrayIcon class="h-4 w-4" />
+                                                {{ savingInvestmentReceipts ? tr('Subiendo...', 'Uploading...') : tr('Subir', 'Upload') }}
+                                            </button>
+                                        </div>
+                                        <p v-if="investmentReceiptFiles.length > 0" class="mt-1 text-xs text-gray-500">
+                                            {{ investmentReceiptFiles.length }} {{ tr('comprobante(s) seleccionados', 'receipt(s) selected') }}
+                                        </p>
+                                        <p v-if="firstError(investmentReceiptErrors, 'investment_receipt_images')" class="mt-1 text-xs text-rose-600">{{ firstError(investmentReceiptErrors, 'investment_receipt_images') }}</p>
+                                        <p v-if="firstError(investmentReceiptErrors, 'fundraiser_event_id')" class="mt-1 text-xs text-rose-600">{{ firstError(investmentReceiptErrors, 'fundraiser_event_id') }}</p>
+                                    </form>
+                                    <div v-if="selectedEventInitialExpenses.length > 0" class="mt-3 space-y-3">
+                                        <div v-for="expense in selectedEventInitialExpenses" :key="expense.id || expense.description" class="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                                            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                <div>
+                                                    <p class="font-semibold text-gray-950">{{ expense.description }}</p>
+                                                    <p class="mt-1 text-xs text-gray-500">{{ formatDate(expense.expense_date) }} · {{ locationLabel(expense.funds_location) }}</p>
+                                                </div>
+                                                <p class="text-lg font-semibold text-gray-950">{{ formatMoney(expense.amount) }}</p>
+                                            </div>
+                                            <div class="mt-3 flex flex-wrap gap-2">
+                                                <a
+                                                    v-for="receipt in initialExpenseReceipts(expense)"
+                                                    :key="receipt.id"
+                                                    :href="receipt.url"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                                                >
+                                                    {{ receipt.name || tr('Comprobante', 'Receipt') }}
+                                                </a>
+                                                <span v-if="initialExpenseReceipts(expense).length === 0" class="text-xs text-gray-500">{{ tr('Sin comprobantes adjuntos.', 'No receipts attached.') }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-else class="mt-3 rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+                                        {{ tr('Este fundraiser no tiene gastos iniciales registrados.', 'This fundraiser has no initial expenses recorded.') }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedEventPartners.length > 0" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                            <div class="mb-4 flex items-center gap-2">
+                                <UserGroupIcon class="h-5 w-5 text-blue-600" />
+                                <h3 class="text-base font-semibold text-gray-900">{{ tr('Distribucion asociada', 'Partner distribution') }}</h3>
+                            </div>
+                            <div class="overflow-hidden rounded-lg border border-gray-200">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                        <tr>
+                                            <th class="px-3 py-2">{{ tr('Club', 'Club') }}</th>
+                                            <th class="px-3 py-2">{{ tr('% recaudado', '% raised') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Distribucion', 'Distribution') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Recibo', 'Receipt') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 bg-white">
+                                        <tr v-for="partner in selectedEventPartners" :key="`closed-partner-${partner.id}`">
+                                            <td class="px-3 py-2 font-medium text-gray-900">{{ partner.partner_club_name }}</td>
+                                            <td class="px-3 py-2 text-gray-700">{{ partner.earnings_share_percent }}%</td>
+                                            <td class="px-3 py-2 font-semibold text-gray-900">{{ formatMoney(partner.earnings_distributed || partner.earnings_due) }}</td>
+                                            <td class="px-3 py-2">
+                                                <a v-if="partner.distribution_transfer?.receipt?.url" :href="partner.distribution_transfer.receipt.url" class="font-semibold text-red-700 hover:text-red-800">
+                                                    {{ partner.distribution_transfer.receipt.number }}
+                                                </a>
+                                                <span v-else class="text-gray-400">—</span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                            <div class="mb-4 flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2">
+                                    <ClipboardDocumentListIcon class="h-5 w-5 text-gray-600" />
+                                    <h3 class="text-base font-semibold text-gray-900">{{ tr('Recibos de ventas', 'Sales receipts') }}</h3>
+                                </div>
+                                <span class="text-sm font-semibold text-gray-600">{{ selectedEventSummary.sale_count }} / {{ selectedEventSummary.receipt_count }}</span>
+                            </div>
+
+                            <div class="overflow-hidden rounded-lg border border-gray-200">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                        <tr>
+                                            <th class="px-3 py-2">{{ tr('Fecha', 'Date') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Cliente', 'Customer') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Articulos', 'Items') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Pago', 'Payment') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Total', 'Total') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Recibo / QR', 'Receipt / QR') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 bg-white">
+                                        <tr v-for="sale in selectedEventSaleReceipts" :key="`closed-sale-${sale.id}`">
+                                            <td class="px-3 py-2 text-gray-700">{{ formatDate(sale.sale_date) }}</td>
+                                            <td class="px-3 py-2 text-gray-700">{{ sale.customer_name || tr('Venta general', 'General sale') }}</td>
+                                            <td class="px-3 py-2 text-gray-700">
+                                                {{ (sale.items || []).map((item) => `${item.quantity}x ${item.item_name}`).join(', ') }}
+                                            </td>
+                                            <td class="px-3 py-2 text-gray-700">{{ paymentTypeLabel(sale.payment_type) }}</td>
+                                            <td class="px-3 py-2 font-semibold text-gray-900">{{ formatMoney(sale.total_amount) }}</td>
+                                            <td class="px-3 py-2">
+                                                <div v-if="sale.receipt?.url" class="flex items-center gap-2">
+                                                    <a :href="sale.receipt.url" class="font-semibold text-red-700 hover:text-red-800">
+                                                        {{ sale.receipt.number }}
+                                                    </a>
+                                                    <button
+                                                        v-if="sale.receipt.qr_url"
+                                                        type="button"
+                                                        class="inline-flex shrink-0 rounded-md border border-gray-200 bg-white p-1 shadow-sm hover:border-red-300"
+                                                        :title="tr('Ampliar QR', 'Expand QR')"
+                                                        @click="openReceiptPreview(sale)"
+                                                    >
+                                                        <img
+                                                            :src="sale.receipt.qr_url"
+                                                            class="h-14 w-14"
+                                                            :alt="`${tr('QR de recibo', 'Receipt QR')} ${sale.receipt.number}`"
+                                                        >
+                                                    </button>
+                                                </div>
+                                                <span v-else class="text-gray-400">—</span>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="selectedEventSaleReceipts.length === 0">
+                                            <td colspan="6" class="px-3 py-6 text-center text-gray-500">{{ tr('Sin ventas.', 'No sales.') }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section v-if="!selectedEventIsClosed" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="mb-4 flex items-start gap-2">
                         <UserGroupIcon class="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
                         <div>
@@ -1096,7 +1494,7 @@ onMounted(() => loadFundraisers())
                     </div>
                 </section>
 
-                <section class="space-y-4">
+                    <section v-if="!selectedEventIsClosed" class="space-y-4">
                     <div ref="cajaSection" class="scroll-mt-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                         <div class="mb-4 flex items-start gap-2">
                             <ShoppingBagIcon class="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
@@ -1164,7 +1562,7 @@ onMounted(() => loadFundraisers())
                                                 </button>
                                             </td>
                                         </template>
-                                    </tr>
+                                        </tr>
                                     <tr v-if="selectedEventProducts.length === 0">
                                         <td colspan="4" class="px-3 py-5 text-center text-gray-500">{{ tr('Sin productos guardados. Usa la ultima fila para agregar el primero.', 'No saved products. Use the last row to add the first one.') }}</td>
                                     </tr>
@@ -1274,18 +1672,10 @@ onMounted(() => loadFundraisers())
                                 {{ tr('Agregar linea', 'Add line') }}
                             </button>
 
-                            <div class="grid gap-3 rounded-lg bg-gray-50 p-3 text-sm sm:grid-cols-3">
+                            <div class="rounded-lg bg-gray-50 p-3 text-sm">
                                 <div>
                                     <p class="text-gray-500">{{ tr('Total venta', 'Sale total') }}</p>
                                     <p class="text-lg font-semibold text-gray-950">{{ formatMoney(saleTotals.total) }}</p>
-                                </div>
-                                <div>
-                                    <p class="text-gray-500">{{ tr('Costo', 'Cost') }}</p>
-                                    <p class="text-lg font-semibold text-gray-950">{{ formatMoney(saleTotals.cost) }}</p>
-                                </div>
-                                <div>
-                                    <p class="text-gray-500">{{ tr('Ganancia', 'Gain') }}</p>
-                                    <p class="text-lg font-semibold" :class="saleTotals.gain < 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatMoney(saleTotals.gain) }}</p>
                                 </div>
                             </div>
 
@@ -1301,7 +1691,7 @@ onMounted(() => loadFundraisers())
                     </div>
                 </section>
 
-                <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <section v-if="!selectedEventIsClosed" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="mb-4 flex items-center gap-2">
                         <ClipboardDocumentListIcon class="h-5 w-5 text-gray-600" />
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Ventas recientes', 'Recent sales') }}</h3>
@@ -1315,7 +1705,6 @@ onMounted(() => loadFundraisers())
                                     <th class="px-3 py-2">{{ tr('Cliente', 'Customer') }}</th>
                                     <th class="px-3 py-2">{{ tr('Articulos', 'Items') }}</th>
                                     <th class="px-3 py-2">{{ tr('Total', 'Total') }}</th>
-                                    <th class="px-3 py-2">{{ tr('Ganancia', 'Gain') }}</th>
                                     <th class="px-3 py-2">{{ tr('Recibo / QR', 'Receipt / QR') }}</th>
                                 </tr>
                             </thead>
@@ -1327,7 +1716,6 @@ onMounted(() => loadFundraisers())
                                         {{ sale.items.map((item) => `${item.quantity}x ${item.item_name}`).join(', ') }}
                                     </td>
                                     <td class="px-3 py-2 font-semibold text-gray-900">{{ formatMoney(sale.total_amount) }}</td>
-                                    <td class="px-3 py-2 font-semibold" :class="Number(sale.gain_amount || 0) < 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatMoney(sale.gain_amount) }}</td>
                                     <td class="px-3 py-2">
                                         <div v-if="sale.receipt?.url" class="flex items-center gap-2">
                                             <a :href="sale.receipt.url" class="font-semibold text-red-700 hover:text-red-800">
@@ -1351,7 +1739,7 @@ onMounted(() => loadFundraisers())
                                     </td>
                                 </tr>
                                 <tr v-if="selectedEvent.sales.length === 0">
-                                    <td colspan="6" class="px-3 py-6 text-center text-gray-500">{{ tr('Sin ventas.', 'No sales.') }}</td>
+                                    <td colspan="5" class="px-3 py-6 text-center text-gray-500">{{ tr('Sin ventas.', 'No sales.') }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1448,7 +1836,9 @@ onMounted(() => loadFundraisers())
                         <p class="text-sm font-semibold text-red-700">{{ tr('Cerrar fundraiser', 'Close fundraiser') }}</p>
                         <h2 class="text-xl font-semibold text-gray-950">{{ selectedEvent?.name }}</h2>
                         <p class="mt-1 text-sm text-gray-500">
-                            {{ tr('El cierre bloquea nuevas ventas y registra distribuciones pendientes.', 'Closing blocks new sales and records pending distributions.') }}
+                            {{ selectedEventHasPartnerClubs
+                                ? tr('El cierre bloquea nuevas ventas y registra distribuciones pendientes.', 'Closing blocks new sales and records pending distributions.')
+                                : tr('El cierre bloquea nuevas ventas.', 'Closing blocks new sales.') }}
                         </p>
                     </div>
                     <button
@@ -1466,7 +1856,7 @@ onMounted(() => loadFundraisers())
                     <div class="grid gap-3 rounded-lg bg-gray-50 p-3 text-sm sm:grid-cols-3">
                         <div>
                             <p class="text-gray-500">{{ tr('Recaudado', 'Raised') }}</p>
-                            <p class="text-lg font-semibold text-gray-950">{{ formatMoney(selectedEvent?.totals?.revenue) }}</p>
+                            <p class="text-lg font-semibold text-gray-950">{{ formatMoney(selectedEvent?.totals?.partner_split_base) }}</p>
                         </div>
                         <div>
                             <p class="text-gray-500">{{ tr('A distribuir', 'To distribute') }}</p>
@@ -1478,7 +1868,7 @@ onMounted(() => loadFundraisers())
                         </div>
                     </div>
 
-                    <div v-if="selectedEventPartners.length > 0" class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                    <div v-if="selectedEventHasPartnerClubs" class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                         {{ tr('La distribucion se calcula sobre el total recaudado, sin restar la inversion inicial, porque el aporte inicial del club asociado ya debe estar registrado.', 'Distribution is calculated from total raised funds, without subtracting the initial investment, because the partner club initial contribution should already be recorded.') }}
                     </div>
 
@@ -1486,26 +1876,36 @@ onMounted(() => loadFundraisers())
                         {{ tr('Hay aportes de inversion pendientes. Registralos antes de cerrar.', 'There are pending investment contributions. Record them before closing.') }}
                     </div>
 
-                    <div class="grid gap-3 sm:grid-cols-3">
+                    <div class="grid gap-3" :class="selectedEventHasPartnerClubs ? 'sm:grid-cols-3' : 'sm:grid-cols-1'">
                         <div>
                             <label class="text-sm font-medium text-gray-700">{{ tr('Fecha cierre', 'Close date') }}</label>
                             <input v-model="closeForm.close_date" type="date" class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
                         </div>
-                        <div>
+                        <div v-if="selectedEventHasPartnerClubs">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Origen de pago', 'Payment origin') }}</label>
                             <select v-model="closeForm.funds_location" class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
                                 <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
                                 <option value="bank">{{ tr('Banco', 'Bank') }}</option>
                             </select>
+                            <p class="mt-1 text-xs text-gray-500">
+                                {{ tr('De donde sale el dinero que se va a transferir al club asociado.', 'Where the money transferred to the partner club leaves from.') }}
+                            </p>
                         </div>
-                        <div>
+                        <div v-if="selectedEventHasPartnerClubs">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Tipo recibido', 'Received type') }}</label>
                             <select v-model="closeForm.payment_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
                                 <option value="cash">{{ tr('Efectivo', 'Cash') }}</option>
                                 <option value="check">{{ tr('Cheque', 'Check') }}</option>
                                 <option value="transfer">{{ tr('Transferencia', 'Transfer') }}</option>
                             </select>
+                            <p class="mt-1 text-xs text-gray-500">
+                                {{ tr('Como queda registrado el ingreso en el club asociado.', 'How the income is recorded for the partner club.') }}
+                            </p>
                         </div>
+                    </div>
+
+                    <div v-if="selectedEventHasPartnerClubs" class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                        {{ tr('Estos campos solo aplican a la distribucion automatica entre clubes: se crea un gasto en tu club y un ingreso en el club asociado por el monto calculado.', 'These fields only apply to the automatic distribution between clubs: an expense is created in your club and an income is created in the partner club for the calculated amount.') }}
                     </div>
 
                     <div>

@@ -243,6 +243,11 @@ class FinanceEngineController extends Controller
         return $this->financeEngine->closeFundraiserEvent($request, $fundraiserEvent);
     }
 
+    public function uploadFundraiserInvestmentReceipts(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->financeEngine->uploadFundraiserInvestmentReceipts($request, $fundraiserEvent);
+    }
+
     public function storeFundraiserPartner(Request $request, FundraiserEvent $fundraiserEvent)
     {
         return $this->financeEngine->storeFundraiserPartner($request, $fundraiserEvent);

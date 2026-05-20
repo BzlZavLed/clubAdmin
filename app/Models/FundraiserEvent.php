@@ -60,4 +60,9 @@ class FundraiserEvent extends Model
     {
         return $this->belongsTo(Expense::class, 'investment_expense_id');
     }
+
+    public function investmentReceipts()
+    {
+        return $this->hasMany(FundraiserInvestmentReceipt::class);
+    }
 }

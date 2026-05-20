@@ -8,6 +8,7 @@ use App\Models\Expense;
 use App\Models\FinanceReimbursementPayee;
 use App\Models\FundraiserEvent;
 use App\Models\FundraiserEventPartner;
+use App\Models\FundraiserInvestmentReceipt;
 use App\Models\FundraiserPartnerTransfer;
 use App\Models\FundraiserProduct;
 use App\Models\FundraiserSale;
@@ -72,15 +73,16 @@ class FinanceFundraiserService
             ->where('club_id', $club->id)
             ->with([
                 'products' => fn ($query) => $query->orderByDesc('is_active')->orderBy('name'),
-                'products.investmentExpense:id,receipt_path,status',
-                'investmentExpense:id,receipt_path,status',
+                'products.investmentExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
+                'investmentExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
+                'investmentReceipts' => fn ($query) => $query->orderBy('id'),
                 'sales' => fn ($query) => $query->latest('sale_date')->latest('id'),
                 'sales.items',
                 'sales.payment.receipt:id,payment_id,receipt_number',
                 'partners' => fn ($query) => $query->where('status', 'active')->orderBy('id'),
                 'partners.partnerClub:id,club_name,club_type,church_id',
                 'partners.transfers' => fn ($query) => $query->orderBy('id'),
-                'partners.transfers.fromExpense:id,receipt_path,status',
+                'partners.transfers.fromExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
                 'partners.transfers.toPayment.receipt:id,payment_id,receipt_number',
             ])
             ->latest('event_date')
@@ -114,7 +116,9 @@ class FinanceFundraiserService
             'investment_total' => ['nullable', 'numeric', 'min:0'],
             'investment_pay_to' => ['nullable', 'string', 'max:255'],
             'investment_funds_location' => ['nullable', Rule::in(['cash', 'bank'])],
-            'investment_receipt_image' => ['nullable', 'image', 'max:5120'],
+            'investment_receipt_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
+            'investment_receipt_images' => ['nullable', 'array'],
+            'investment_receipt_images.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
             'partner_club_id' => ['nullable', 'integer', 'exists:clubs,id'],
             'partner_investment_share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'partner_earnings_share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -134,6 +138,7 @@ class FinanceFundraiserService
             $investmentAmount = round((float) ($validated['investment_total'] ?? 0), 2);
             $investmentPayTo = $validated['investment_pay_to'] ?? $payTo;
             $investmentFundsLocation = $validated['investment_funds_location'] ?? 'cash';
+            $investmentReceiptUploads = [];
             $investmentExpense = $investmentAmount > 0
                 ? $this->recordInvestmentExpense(
                     $request,
@@ -143,7 +148,8 @@ class FinanceFundraiserService
                     $investmentAmount,
                     $validated['event_date'] ?? now()->toDateString(),
                     "Inversion fundraiser: {$validated['name']}",
-                    'investment_receipt_image'
+                    ['investment_receipt_image', 'investment_receipt_images'],
+                    $investmentReceiptUploads
                 )
                 : null;
 
@@ -184,6 +190,10 @@ class FinanceFundraiserService
                     'created_by_user_id' => $request->user()?->id,
                 ]);
             }
+
+            if ($investmentAmount > 0 && $investmentExpense) {
+                $this->createFundraiserInvestmentReceipts($event, $investmentExpense, $investmentReceiptUploads, $request->user()?->id);
+            }
         });
 
         return response()->json([
@@ -192,6 +202,7 @@ class FinanceFundraiserService
             'event' => $this->eventPayload($event->fresh([
                 'products.investmentExpense',
                 'investmentExpense',
+                'investmentReceipts',
                 'sales.items',
                 'sales.payment.receipt',
                 'partners.partnerClub',
@@ -646,7 +657,7 @@ class FinanceFundraiserService
 
         if ($investmentShare <= 0 && $earningsShare <= 0) {
             throw ValidationException::withMessages([
-                'investment_share_percent' => ['Registra al menos un porcentaje de inversion o ganancias para el club asociado.'],
+                'investment_share_percent' => ['Registra al menos un porcentaje de inversion o recaudacion para el club asociado.'],
             ]);
         }
 
@@ -715,8 +726,8 @@ class FinanceFundraiserService
             $validated['to_pay_to'] ?? 'club_budget',
             $validated['funds_location'] ?? 'cash',
             $validated['payment_type'] ?? 'transfer',
-            "Distribucion de ganancia fundraiser: {$partner->fundraiserEvent->name} a {$partner->partnerClub->club_name}",
-            "Ganancia recibida fundraiser {$partner->fundraiserEvent->name} de {$partner->fundraiserEvent->club->club_name}",
+            "Distribucion de ingresos fundraiser: {$partner->fundraiserEvent->name} a {$partner->partnerClub->club_name}",
+            "Ingresos compartidos fundraiser {$partner->fundraiserEvent->name} de {$partner->fundraiserEvent->club->club_name}",
             $partner->fundraiserEvent->club->club_name
         );
     }
@@ -803,6 +814,58 @@ class FinanceFundraiserService
                 ->map(fn (FundraiserPartnerTransfer $transfer) => $this->partnerTransferPayload($transfer->fresh(['fromExpense', 'toPayment.receipt'])))
                 ->values()
                 ->all(),
+        ]);
+    }
+
+    public function uploadInvestmentReceipts(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        $event = $this->authorizedEvent($request, $fundraiserEvent);
+        $event->loadMissing(['club', 'investmentExpense']);
+
+        $request->validate([
+            'investment_receipt_images' => ['required', 'array', 'min:1'],
+            'investment_receipt_images.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
+        ]);
+
+        if ($event->status !== 'closed') {
+            throw ValidationException::withMessages([
+                'fundraiser_event_id' => ['Adjunta comprobantes de revision despues de cerrar el fundraiser.'],
+            ]);
+        }
+
+        if (!$event->investmentExpense) {
+            throw ValidationException::withMessages([
+                'investment_receipt_images' => ['Este fundraiser no tiene una inversion inicial registrada.'],
+            ]);
+        }
+
+        $uploads = $this->storeReceiptUploads($request, 'investment_receipt_images');
+        if (empty($uploads)) {
+            throw ValidationException::withMessages([
+                'investment_receipt_images' => ['Selecciona al menos un comprobante.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($event, $uploads, $request) {
+            $expense = Expense::query()
+                ->whereKey($event->investment_expense_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (!$expense->receipt_path && !empty($uploads[0]['path'])) {
+                $updates = ['receipt_path' => $uploads[0]['path']];
+                if ($expense->status === 'working') {
+                    $updates['status'] = 'completed';
+                }
+                $expense->update($updates);
+            }
+
+            $this->createFundraiserInvestmentReceipts($event, $expense, $uploads, $request->user()?->id);
+        });
+
+        return response()->json([
+            'message' => 'Fundraiser investment receipts uploaded',
+            'data' => $this->data($request->user(), $event->club),
         ]);
     }
 
@@ -1219,12 +1282,13 @@ class FinanceFundraiserService
     {
         $event->loadMissing([
             'products',
-            'products.investmentExpense:id,receipt_path,status',
-            'investmentExpense:id,receipt_path,status',
+            'products.investmentExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
+            'investmentExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
+            'investmentReceipts',
             'sales.items',
             'sales.payment.receipt:id,payment_id,receipt_number',
             'partners.partnerClub:id,club_name,club_type,church_id',
-            'partners.transfers.fromExpense:id,receipt_path,status',
+            'partners.transfers.fromExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
             'partners.transfers.toPayment.receipt:id,payment_id,receipt_number',
         ]);
 
@@ -1239,15 +1303,25 @@ class FinanceFundraiserService
         $totalGain = round($totalRevenue - $totalCost, 2);
         $productInvestmentTotal = round((float) $products->sum(fn (FundraiserProduct $product) => (float) $product->investment_amount), 2);
         $investmentTotal = round((float) $event->investment_total + $productInvestmentTotal, 2);
-        $costBasis = max($investmentTotal, $totalCost);
-        $netGain = round($totalRevenue - $costBasis, 2);
+        $initialInvestment = round((float) $event->investment_total, 2);
+        $costBasis = $initialInvestment;
+        $netGain = round($totalRevenue - $initialInvestment, 2);
         $partners = $event->partners
             ->where('status', 'active')
             ->sortBy('id')
             ->values();
+        $partnerSplitBase = $totalRevenue;
         $partnerPayloads = $partners
-            ->map(fn (FundraiserEventPartner $partner) => $this->partnerPayload($partner, $investmentTotal, $totalRevenue))
+            ->map(fn (FundraiserEventPartner $partner) => $this->partnerPayload($partner, $investmentTotal, $partnerSplitBase))
             ->values();
+        $investmentReceipts = $event->investmentReceipts
+            ->sortBy('id')
+            ->map(fn (FundraiserInvestmentReceipt $receipt) => $this->investmentReceiptPayload($receipt))
+            ->values();
+        $salePayloads = $sales
+            ->map(fn (FundraiserSale $sale) => $this->salePayload($sale, $unitCostsByProduct))
+            ->values();
+        $incomeBreakdown = $this->incomeBreakdownForSales($sales);
         $remainingInventory = $products
             ->filter(fn (FundraiserProduct $product) => $product->quantity_available !== null)
             ->sum(fn (FundraiserProduct $product) => max((int) $product->quantity_available - (int) $product->quantity_sold, 0));
@@ -1260,7 +1334,7 @@ class FinanceFundraiserService
             'event_date' => optional($event->event_date)->toDateString(),
             'pay_to' => $event->pay_to,
             'account_label' => $accountLabels ? ($accountLabels[$event->pay_to] ?? $event->pay_to) : $event->pay_to,
-            'kitchen_url' => $event->fundraiser_type === 'food'
+            'kitchen_url' => $event->fundraiser_type === 'food' && $event->status === 'active'
                 ? URL::signedRoute('fundraisers.kitchen.show', ['fundraiserEvent' => $event])
                 : null,
             'investment_total' => (float) $event->investment_total,
@@ -1268,12 +1342,25 @@ class FinanceFundraiserService
             'investment_pay_to' => $event->investment_pay_to,
             'investment_funds_location' => $event->investment_funds_location,
             'investment_expense' => $this->expensePayload($event->investmentExpense),
+            'investment_receipts' => $investmentReceipts->all(),
             'planned_units' => $event->planned_units,
             'description' => $event->description,
             'status' => $event->status,
             'partners' => $partnerPayloads->all(),
             'products' => $products->map(fn (FundraiserProduct $product) => $this->productPayload($product))->values()->all(),
-            'sales' => $sales->take(40)->map(fn (FundraiserSale $sale) => $this->salePayload($sale, $unitCostsByProduct))->values()->all(),
+            'sales' => $salePayloads->all(),
+            'report' => [
+                'initial_expenses' => $this->initialExpenseReportRows($event, $investmentReceipts->all()),
+                'sale_receipts' => $salePayloads->all(),
+                'summary' => [
+                    'total_sales' => $totalRevenue,
+                    'total_expenses' => $initialInvestment,
+                    'total_earnings' => $netGain,
+                    'sale_count' => (int) $sales->count(),
+                    'receipt_count' => (int) $sales->filter(fn (FundraiserSale $sale) => $sale->payment?->receipt)->count(),
+                ],
+                'income_breakdown' => $incomeBreakdown,
+            ],
             'totals' => [
                 'revenue' => $totalRevenue,
                 'allocated_cost' => $totalCost,
@@ -1288,11 +1375,12 @@ class FinanceFundraiserService
                 'remaining_inventory' => (int) $remainingInventory,
                 'receipt_count' => (int) $sales->filter(fn (FundraiserSale $sale) => $sale->payment?->receipt)->count(),
                 'sale_count' => (int) $sales->count(),
-                'partner_split_base' => $totalRevenue,
+                'partner_split_base' => $partnerSplitBase,
                 'partner_investment_due' => round($partnerPayloads->sum('investment_due'), 2),
                 'partner_contributions_recorded' => round($partnerPayloads->sum('contribution_recorded'), 2),
                 'partner_earnings_due' => round($partnerPayloads->sum('earnings_due'), 2),
                 'partner_earnings_distributed' => round($partnerPayloads->sum('earnings_distributed'), 2),
+                'income_breakdown' => $incomeBreakdown,
             ],
         ];
     }
@@ -1325,7 +1413,7 @@ class FinanceFundraiserService
     {
         $partner->loadMissing([
             'partnerClub:id,club_name,club_type,church_id',
-            'transfers.fromExpense:id,receipt_path,status',
+            'transfers.fromExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
             'transfers.toPayment.receipt:id,payment_id,receipt_number',
         ]);
 
@@ -1361,7 +1449,7 @@ class FinanceFundraiserService
             return null;
         }
 
-        $transfer->loadMissing(['fromExpense:id,receipt_path,status', 'toPayment.receipt:id,payment_id,receipt_number']);
+        $transfer->loadMissing(['fromExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location', 'toPayment.receipt:id,payment_id,receipt_number']);
 
         return [
             'id' => (int) $transfer->id,
@@ -1455,6 +1543,90 @@ class FinanceFundraiserService
         return round(max($revenue, 0) * ((float) $partner->earnings_share_percent / 100), 2);
     }
 
+    private function incomeBreakdownForSales($sales): array
+    {
+        $byType = collect(['cash', 'check', 'zelle', 'transfer'])
+            ->mapWithKeys(fn (string $type) => [
+                $type => round((float) $sales
+                    ->where('payment_type', $type)
+                    ->sum(fn (FundraiserSale $sale) => (float) $sale->total_amount), 2),
+            ]);
+
+        $cash = round((float) $byType->get('cash', 0) + (float) $byType->get('check', 0), 2);
+        $bank = round((float) $byType->get('zelle', 0) + (float) $byType->get('transfer', 0), 2);
+
+        return [
+            'cash' => $cash,
+            'bank' => $bank,
+            'total' => round($cash + $bank, 2),
+            'payment_types' => $byType->all(),
+        ];
+    }
+
+    private function initialExpenseReportRows(FundraiserEvent $event, array $receipts): array
+    {
+        $initialInvestment = round((float) $event->investment_total, 2);
+        if ($initialInvestment <= 0 && !$event->investmentExpense) {
+            return [];
+        }
+
+        return [[
+            'id' => $event->investment_expense_id ? (int) $event->investment_expense_id : null,
+            'description' => $event->investmentExpense?->description ?: "Inversion fundraiser: {$event->name}",
+            'amount' => $initialInvestment,
+            'expense_date' => optional($event->investmentExpense?->expense_date ?: $event->event_date)->toDateString(),
+            'pay_to' => $event->investment_pay_to ?: $event->investmentExpense?->pay_to,
+            'funds_location' => $event->investment_funds_location ?: $event->investmentExpense?->funds_location,
+            'status' => $event->investmentExpense?->status,
+            'receipt_url' => $event->investmentExpense?->receipt_url,
+            'receipts' => $receipts,
+        ]];
+    }
+
+    private function createFundraiserInvestmentReceipts(FundraiserEvent $event, Expense $expense, array $uploads, ?int $userId): void
+    {
+        foreach ($uploads as $upload) {
+            if (empty($upload['path'])) {
+                continue;
+            }
+
+            FundraiserInvestmentReceipt::query()->create([
+                'fundraiser_event_id' => $event->id,
+                'expense_id' => $expense->id,
+                'path' => $upload['path'],
+                'original_name' => $upload['original_name'] ?? null,
+                'mime_type' => $upload['mime_type'] ?? null,
+                'uploaded_by_user_id' => $userId,
+            ]);
+        }
+    }
+
+    private function storeReceiptUploads(Request $request, string|array $receiptFields): array
+    {
+        $uploads = [];
+
+        foreach ((array) $receiptFields as $field) {
+            $files = $request->file($field);
+            if (!$files) {
+                continue;
+            }
+
+            foreach (is_array($files) ? $files : [$files] as $file) {
+                if (!$file) {
+                    continue;
+                }
+
+                $uploads[] = [
+                    'path' => $file->store('expense-receipts', 'public'),
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getClientMimeType(),
+                ];
+            }
+        }
+
+        return $uploads;
+    }
+
     private function recordInvestmentExpense(
         Request $request,
         Club $club,
@@ -1463,7 +1635,8 @@ class FinanceFundraiserService
         float $amount,
         string $expenseDate,
         string $description,
-        string $receiptField
+        string|array $receiptField,
+        ?array &$receiptUploads = null
     ): Expense {
         $this->assertOperatingAccount($payTo);
         $amount = round($amount, 2);
@@ -1471,9 +1644,8 @@ class FinanceFundraiserService
         $account = $this->ensureAccount($club, $payTo);
         $fromAccount = (float) $fundingPlan['amount_from_account'];
         $shortfall = (float) $fundingPlan['reimbursement_shortfall'];
-        $receiptPath = $request->hasFile($receiptField)
-            ? $request->file($receiptField)->store('expense-receipts', 'public')
-            : null;
+        $receiptUploads = $this->storeReceiptUploads($request, $receiptField);
+        $receiptPath = $receiptUploads[0]['path'] ?? null;
         $expense = null;
 
         if ($fromAccount > 0) {
@@ -1621,8 +1793,25 @@ class FinanceFundraiserService
 
         return [
             'id' => (int) $expense->id,
+            'amount' => (float) $expense->amount,
+            'expense_date' => optional($expense->expense_date)->toDateString(),
+            'description' => $expense->description,
+            'pay_to' => $expense->pay_to,
+            'funds_location' => $expense->funds_location,
             'status' => $expense->status,
             'receipt_url' => $expense->receipt_url,
+        ];
+    }
+
+    private function investmentReceiptPayload(FundraiserInvestmentReceipt $receipt): array
+    {
+        return [
+            'id' => (int) $receipt->id,
+            'expense_id' => $receipt->expense_id ? (int) $receipt->expense_id : null,
+            'url' => $receipt->url,
+            'name' => $receipt->original_name ?: basename($receipt->path),
+            'mime_type' => $receipt->mime_type,
+            'uploaded_at' => optional($receipt->created_at)->toISOString(),
         ];
     }
 
@@ -1707,6 +1896,7 @@ class FinanceFundraiserService
         $event->loadMissing('club');
 
         abort_if($event->fundraiser_type !== 'food', 404);
+        abort_if($event->status !== 'active', 404);
     }
 
     private function kitchenSalePayload(FundraiserSale $sale): array

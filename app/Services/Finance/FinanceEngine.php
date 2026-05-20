@@ -124,6 +124,11 @@ class FinanceEngine
         return $this->fundraisers->closeEvent($request, $fundraiserEvent);
     }
 
+    public function uploadFundraiserInvestmentReceipts(Request $request, FundraiserEvent $fundraiserEvent)
+    {
+        return $this->fundraisers->uploadInvestmentReceipts($request, $fundraiserEvent);
+    }
+
     public function storeFundraiserPartner(Request $request, FundraiserEvent $fundraiserEvent)
     {
         return $this->fundraisers->storePartner($request, $fundraiserEvent);

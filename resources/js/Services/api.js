@@ -392,6 +392,13 @@ export const closeFinanceEngineFundraiserEvent = async (fundraiserEventId, paylo
     return data;
 };
 
+export const uploadFinanceEngineFundraiserInvestmentReceipts = async (fundraiserEventId, payload = {}) => {
+    const { data } = await axios.post(route('club.finance-engine.fundraisers.investment-receipts.store', { fundraiserEvent: fundraiserEventId }), financeEngineFormData(payload), {
+        headers: financeEngineFormHeaders,
+    });
+    return data;
+};
+
 export const createFinanceEngineFundraiserPartner = async (fundraiserEventId, payload) => {
     const { data } = await axios.post(route('club.finance-engine.fundraisers.partners.store', { fundraiserEvent: fundraiserEventId }), payload, {
         headers: { Accept: 'application/json' },

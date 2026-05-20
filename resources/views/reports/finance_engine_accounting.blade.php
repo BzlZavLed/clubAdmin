@@ -20,6 +20,8 @@
         .summary-card { display: table-cell; border: 1px solid #d1d5db; padding: 8px; width: 33.3%; }
         .amount-in { color: #047857; font-weight: 700; }
         .amount-out { color: #be123c; font-weight: 700; }
+        .amount-transfer { color: #0369a1; font-weight: 700; }
+        a { color: #0369a1; text-decoration: underline; }
         .footer { position: fixed; bottom: -12mm; left: 0; right: 0; border-top: 1px solid #d1d5db; padding-top: 4px; font-size: 8px; color: #6b7280; }
         .footer img { height: 34px; float: right; }
     </style>
@@ -32,6 +34,77 @@
     $movements = collect($data['engine_report']['movements'] ?? []);
     $eventSettlements = collect($data['event_settlements'] ?? []);
     $staffRemittances = collect($data['treasury']['pending_staff_remittances'] ?? []);
+    $locationLabels = [
+        'cash' => 'Efectivo',
+        'bank' => 'Banco',
+        'external' => 'Externo',
+        'internal' => 'Interno',
+        'pending' => 'Pendiente',
+        'staff_custody' => 'Custodia staff',
+    ];
+    $proofLabels = [
+        'check_image' => 'Cheque',
+        'expense_receipt' => 'Comprobante de gasto',
+        'reimbursement_receipt' => 'Comprobante de reembolso',
+        'fundraiser_investment_receipt' => 'Comprobante de inversion',
+        'treasury_proof' => 'Comprobante de transferencia',
+    ];
+    $isTransfer = fn (array $movement) => ($movement['direction'] ?? null) === 'transfer' || ($movement['domain'] ?? null) === 'transfer';
+    $locationLabel = fn ($value) => $value ? ($locationLabels[$value] ?? $value) : '-';
+    $movementAccountText = function (array $movement) use ($isTransfer, $locationLabel) {
+        if ($isTransfer($movement)) {
+            $from = $movement['from_account_label'] ?? $movement['from_account'] ?? $movement['account_label'] ?? $movement['account'] ?? '-';
+            $to = $movement['to_account_label'] ?? $movement['to_account'] ?? $movement['account_label'] ?? $movement['account'] ?? '-';
+            $fromLocation = $locationLabel($movement['from_location'] ?? null);
+            $toLocation = $locationLabel($movement['to_location'] ?? null);
+
+            return "{$from} ({$fromLocation}) -> {$to} ({$toLocation})";
+        }
+
+        $account = $movement['account_label'] ?? $movement['account'] ?? $movement['from_account'] ?? '-';
+        $location = $locationLabel($movement['location'] ?? $movement['from_location'] ?? null);
+
+        return "{$account} ({$location})";
+    };
+    $documentLinks = function (array $movement) use ($proofLabels) {
+        $links = [];
+        $receipt = $movement['receipt'] ?? null;
+
+        if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
+            $links[] = [
+                'label' => $receipt['number'] ?? 'Recibo',
+                'url' => $receipt['url'] ?? null,
+            ];
+        }
+
+        $proofs = [];
+        if (!empty($movement['proofs']) && is_array($movement['proofs'])) {
+            $proofs = $movement['proofs'];
+        } elseif (!empty($movement['proof']) && is_array($movement['proof'])) {
+            $proofs[] = $movement['proof'];
+        }
+
+        foreach ($proofs as $proof) {
+            if (!is_array($proof) || (empty($proof['name']) && empty($proof['url']) && empty($proof['type']))) {
+                continue;
+            }
+
+            $type = $proof['type'] ?? null;
+            $links[] = [
+                'label' => $proof['name'] ?? ($proofLabels[$type] ?? 'Comprobante'),
+                'url' => $proof['url'] ?? null,
+            ];
+        }
+
+        return $links;
+    };
+    $amountClass = function (array $movement) use ($isTransfer) {
+        if ($isTransfer($movement)) {
+            return 'amount-transfer';
+        }
+
+        return ($movement['direction'] ?? null) === 'out' ? 'amount-out' : 'amount-in';
+    };
 @endphp
 
 <div class="footer">
@@ -110,18 +183,25 @@
         @forelse($movements as $movement)
             @php
                 $direction = $movement['direction'] ?? null;
-                $receipt = $movement['receipt']['number'] ?? null;
-                $proof = $movement['proof']['type'] ?? null;
+                $documents = $documentLinks($movement);
             @endphp
             <tr>
                 <td>{{ $movement['date'] ?? '-' }}</td>
                 <td>{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
-                <td>{{ $movement['account_label'] ?? $movement['account'] ?? $movement['from_account'] ?? '-' }}</td>
+                <td>{{ $movementAccountText($movement) }}</td>
                 <td>{{ $movement['concept'] ?? '-' }}</td>
                 <td>
-                    {{ $receipt ?: '-' }}
-                    @if($proof)
-                        <br><span class="muted">{{ $proof }}</span>
+                    @if(empty($documents))
+                        -
+                    @else
+                        @foreach($documents as $document)
+                            @if(!empty($document['url']))
+                                <a href="{{ $document['url'] }}">{{ $document['label'] }}</a>
+                            @else
+                                {{ $document['label'] }}
+                            @endif
+                            @if(!$loop->last)<br>@endif
+                        @endforeach
                     @endif
                 </td>
                 <td>
@@ -133,7 +213,7 @@
                         <br><span class="muted">Cancela {{ $movement['canceling_movement_key'] }}</span>
                     @endif
                 </td>
-                <td style="text-align:right;" class="{{ $direction === 'out' ? 'amount-out' : 'amount-in' }}">
+                <td style="text-align:right;" class="{{ $amountClass($movement) }}">
                     {{ $direction === 'out' ? '-' : '' }}{{ $money($movement['amount'] ?? 0) }}
                 </td>
             </tr>
