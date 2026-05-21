@@ -53,6 +53,7 @@ use App\Http\Controllers\SuperAdminEventTaskFormCatalogController;
 use App\Http\Controllers\SuperAdminParentPortalController;
 use App\Http\Controllers\SuperAdminPresenceController;
 use App\Http\Controllers\PaymentReceiptController;
+use App\Http\Controllers\ReimbursementReceiptController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\UnionWorkplanController;
 use App\Http\Controllers\AssociationController;
@@ -103,6 +104,18 @@ Route::get('/payment-receipts/{receipt}/public-download', [PaymentReceiptControl
 Route::get('/payment-receipts/{receipt}/qr', [PaymentReceiptController::class, 'publicQr'])
     ->middleware('signed')
     ->name('payment-receipts.public-qr');
+Route::get('/reimbursement-receipts/{expense}/{token}', [ReimbursementReceiptController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('reimbursement-receipts.show');
+Route::post('/reimbursement-receipts/{expense}/{token}/signature', [ReimbursementReceiptController::class, 'sign'])
+    ->middleware('throttle:12,1')
+    ->name('reimbursement-receipts.signature');
+Route::get('/reimbursement-receipts/{expense}/{token}/download', [ReimbursementReceiptController::class, 'download'])
+    ->middleware('throttle:30,1')
+    ->name('reimbursement-receipts.download');
+Route::get('/reimbursement-receipts/{expense}/{token}/qr', [ReimbursementReceiptController::class, 'qr'])
+    ->middleware('throttle:60,1')
+    ->name('reimbursement-receipts.qr');
 Route::get('/fundraisers/{fundraiserEvent}/kitchen', [FinanceEngineController::class, 'fundraiserKitchen'])
     ->middleware('signed')
     ->name('fundraisers.kitchen.show');

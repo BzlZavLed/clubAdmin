@@ -1357,27 +1357,6 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertNull($normalExpense->receipt_path);
         Storage::disk('public')->assertMissing($normalReceiptPath);
 
-        $this->actingAs($director)
-            ->post(route('club.finance-engine.expenses.reimbursement-receipt.upload', $pendingReimbursement), [
-                'receipt_image' => UploadedFile::fake()->image('reimbursement-proof.jpg'),
-            ])
-            ->assertOk()
-            ->assertJsonPath('message', 'Reimbursement receipt uploaded');
-
-        $pendingReimbursement->refresh();
-        $uploadedReimbursementPath = $pendingReimbursement->reimbursement_receipt_path;
-        $this->assertNotNull($uploadedReimbursementPath);
-        Storage::disk('public')->assertExists($uploadedReimbursementPath);
-
-        $this->actingAs($director)
-            ->deleteJson(route('club.finance-engine.expenses.reimbursement-receipt.remove', $pendingReimbursement))
-            ->assertOk()
-            ->assertJsonPath('message', 'Reimbursement receipt removed');
-
-        $pendingReimbursement->refresh();
-        $this->assertNull($pendingReimbursement->reimbursement_receipt_path);
-        Storage::disk('public')->assertMissing($uploadedReimbursementPath);
-
         Payment::create([
             'club_id' => $club->id,
             'concept_text' => 'Later cash',
@@ -1390,7 +1369,7 @@ class FinanceEngineWorkflowTest extends TestCase
         ]);
         $account->increment('balance', 30);
 
-        $this->actingAs($director)
+        $settlementResponse = $this->actingAs($director)
             ->post(route('club.finance-engine.expenses.reimburse', $pendingReimbursement), [
                 'pay_to' => 'club_budget',
                 'funds_location' => 'cash',
@@ -1402,6 +1381,50 @@ class FinanceEngineWorkflowTest extends TestCase
         $pendingReimbursement->refresh();
         $this->assertSame('completed', $pendingReimbursement->status);
         $this->assertNull($pendingReimbursement->reimbursement_receipt_path);
+        $this->assertNotNull($pendingReimbursement->reimbursement_receipt_token);
+        $this->assertNotEmpty($settlementResponse->json('data.reimbursement_confirmation_url'));
+        $this->assertNotEmpty($settlementResponse->json('data.reimbursement_confirmation_qr_url'));
+
+        $receiptRouteParams = [
+            'expense' => $pendingReimbursement,
+            'token' => $pendingReimbursement->reimbursement_receipt_token,
+        ];
+
+        $this->get(route('reimbursement-receipts.show', $receiptRouteParams))
+            ->assertOk();
+
+        $qrResponse = $this->get(route('reimbursement-receipts.qr', $receiptRouteParams))
+            ->assertOk();
+        $this->assertStringContainsString('<svg', $qrResponse->getContent());
+
+        $this->postJson(route('reimbursement-receipts.signature', $receiptRouteParams), [
+            'signer_name' => 'Guest Sponsor',
+            'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+            'acknowledged' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Recibo firmado.')
+            ->assertJsonPath('data.signer_name', 'Guest Sponsor')
+            ->assertJsonPath('data.acknowledged', true)
+            ->assertJsonPath('data.download_url', route('reimbursement-receipts.download', $receiptRouteParams));
+
+        $pendingReimbursement->refresh();
+        $this->assertNotNull($pendingReimbursement->reimbursement_receipt_signed_at);
+        $this->assertSame('Guest Sponsor', $pendingReimbursement->reimbursement_receipt_signer_name);
+        $this->assertTrue((bool) $pendingReimbursement->reimbursement_receipt_acknowledged);
+        Storage::disk('public')->assertExists($pendingReimbursement->reimbursement_receipt_signature_path);
+        $this->assertNotNull($pendingReimbursement->reimbursement_receipt_path);
+        $this->assertNotNull($pendingReimbursement->reimbursement_receipt_validation_checksum);
+        Storage::disk('public')->assertExists($pendingReimbursement->reimbursement_receipt_path);
+        $this->assertDatabaseHas('document_validations', [
+            'checksum' => $pendingReimbursement->reimbursement_receipt_validation_checksum,
+            'document_type' => 'reimbursement_receipt',
+            'title' => 'Recibo de reembolso #' . $pendingReimbursement->id,
+        ]);
+
+        $this->get(route('reimbursement-receipts.download', $receiptRouteParams))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
 
         $settledCashbox = $this->actingAs($director)
             ->getJson(route('club.finance-engine.cashbox', ['club_id' => $club->id]))
@@ -1423,24 +1446,10 @@ class FinanceEngineWorkflowTest extends TestCase
 
         $this->assertSame('Liquidacion de reembolso', $settlementPayment->concept_text);
         $this->assertSame($normalExpense->id, $settlementExpense->reimbursement_origin_expense_id);
-        $this->assertNull($settlementExpense->receipt_path);
+        $this->assertSame($pendingReimbursement->reimbursement_receipt_path, $settlementExpense->receipt_path);
         $this->assertDatabaseHas('payment_receipts', [
             'payment_id' => $settlementPayment->id,
         ]);
-
-        $this->actingAs($director)
-            ->post(route('club.finance-engine.expenses.reimbursement-receipt.upload', $pendingReimbursement), [
-                'receipt_image' => UploadedFile::fake()->image('settlement-proof-late.jpg'),
-            ])
-            ->assertOk()
-            ->assertJsonPath('message', 'Reimbursement receipt uploaded');
-
-        $pendingReimbursement->refresh();
-        $settlementExpense->refresh();
-        $this->assertNotNull($pendingReimbursement->reimbursement_receipt_path);
-        Storage::disk('public')->assertExists($pendingReimbursement->reimbursement_receipt_path);
-        $this->assertSame($pendingReimbursement->reimbursement_receipt_path, $settlementExpense->receipt_path);
-        $this->assertSame('completed', $settlementExpense->status);
 
         $engine = $this->actingAs($director)
             ->getJson(route('club.finance-engine.movements', [
@@ -1452,6 +1461,9 @@ class FinanceEngineWorkflowTest extends TestCase
         $reimbursementMovement = collect($engine->json('data.movements'))->firstWhere('movement_id', "expense:{$pendingReimbursement->id}");
         $this->assertSame('reimbursement', $reimbursementMovement['correction_type']);
         $this->assertTrue((bool) $reimbursementMovement['can_reverse']);
+        $this->assertTrue(collect($reimbursementMovement['proofs'])->contains(
+            fn (array $proof) => ($proof['type'] ?? null) === 'reimbursement_signed_receipt'
+        ));
         $originMovement = collect($engine->json('data.movements'))->firstWhere('movement_id', "expense:{$normalExpense->id}");
         $settlementMovement = collect($engine->json('data.movements'))->firstWhere('movement_id', "expense:{$settlementExpense->id}");
         $this->assertSame($normalExpense->id, $reimbursementMovement['reimbursement_group']['origin_expense_id']);

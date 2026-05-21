@@ -10,6 +10,8 @@ import {
     CurrencyDollarIcon,
     DocumentTextIcon,
     ExclamationTriangleIcon,
+    PencilSquareIcon,
+    QrCodeIcon,
     TrashIcon,
 } from '@heroicons/vue/24/outline'
 import {
@@ -19,9 +21,7 @@ import {
     fetchFinanceEngineCashbox,
     reimburseFinanceEngineExpense,
     removeFinanceEngineExpenseReceipt,
-    removeFinanceEngineReimbursementReceipt,
     uploadFinanceEngineExpenseReceipt,
-    uploadFinanceEngineReimbursementReceipt,
 } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -61,7 +61,6 @@ const conceptErrors = ref({})
 const incomeCheckInput = ref(null)
 const expenseReceiptInput = ref(null)
 const expenseReceiptFiles = ref({})
-const reimbursementReceiptFiles = ref({})
 const reimbursementForms = ref({})
 const expenseActionBusy = ref({})
 const expenseActionErrors = ref({})
@@ -636,13 +635,6 @@ const setExpenseReceiptFile = (expenseId, event) => {
     }
 }
 
-const setReimbursementReceiptFile = (expenseId, event) => {
-    reimbursementReceiptFiles.value = {
-        ...reimbursementReceiptFiles.value,
-        [expenseId]: event.target.files?.[0] || null,
-    }
-}
-
 const loadCaja = async (clubId = null, quiet = false) => {
     if (quiet) refreshing.value = true
     else loading.value = true
@@ -1040,48 +1032,8 @@ const removeExpenseReceipt = async (expense) => {
     }
 }
 
-const uploadReimbursementReceipt = async (expense) => {
-    const file = reimbursementReceiptFiles.value[expense.id]
-    if (!file) {
-        setExpenseActionError(expense.id, tr('Selecciona un comprobante de reembolso.', 'Select a reimbursement proof image.'))
-        return
-    }
-
-    setExpenseActionBusy(expense.id, true)
-    setExpenseActionError(expense.id)
-
-    try {
-        await uploadFinanceEngineReimbursementReceipt(expense.id, { receipt_image: file })
-        reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: null }
-        showToast(tr('Comprobante de reembolso guardado.', 'Reimbursement proof saved.'), 'success')
-        await refreshCaja()
-    } catch (error) {
-        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo guardar el comprobante de reembolso.', 'Could not save reimbursement proof.')))
-        console.error(error)
-    } finally {
-        setExpenseActionBusy(expense.id, false)
-    }
-}
-
-const removeReimbursementReceipt = async (expense) => {
-    setExpenseActionBusy(expense.id, true)
-    setExpenseActionError(expense.id)
-
-    try {
-        await removeFinanceEngineReimbursementReceipt(expense.id)
-        showToast(tr('Comprobante de reembolso removido.', 'Reimbursement proof removed.'), 'success')
-        await refreshCaja()
-    } catch (error) {
-        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo remover el comprobante de reembolso.', 'Could not remove reimbursement proof.')))
-        console.error(error)
-    } finally {
-        setExpenseActionBusy(expense.id, false)
-    }
-}
-
 const reimburseExpense = async (expense) => {
     const form = reimbursementForms.value[expense.id] || {}
-    const file = reimbursementReceiptFiles.value[expense.id]
 
     if (!form.pay_to) {
         setExpenseActionError(expense.id, tr('Selecciona una cuenta origen.', 'Select a source account.'))
@@ -1100,9 +1052,7 @@ const reimburseExpense = async (expense) => {
             pay_to: form.pay_to,
             funds_location: form.funds_location || 'cash',
             reimbursement_date: form.reimbursement_date || today(),
-            receipt_image: file || null,
         })
-        reimbursementReceiptFiles.value = { ...reimbursementReceiptFiles.value, [expense.id]: null }
         showToast(tr('Reembolso liquidado.', 'Reimbursement settled.'), 'success')
         await refreshCaja()
     } catch (error) {
@@ -1665,12 +1615,47 @@ onMounted(() => loadCaja())
                                 </p>
                             </div>
                             <div class="mt-2 flex flex-wrap gap-3 text-sm">
-                                <a v-if="expense.reimbursement_receipt_url" :href="expense.reimbursement_receipt_url" target="_blank" rel="noopener" class="font-semibold text-gray-700 hover:underline">
-                                    {{ tr('Ver comprobante de reembolso', 'View reimbursement proof') }}
-                                </a>
                                 <span v-if="expense.settlement_expense" class="text-gray-500">
                                     {{ tr('Liquidado desde', 'Settled from') }} {{ accountLabel(expense.settlement_expense.pay_to) }}
                                 </span>
+                            </div>
+                            <div v-if="expense.reimbursement_confirmation_url" class="mt-3 grid gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+                                <img
+                                    v-if="expense.reimbursement_confirmation_qr_url"
+                                    :src="expense.reimbursement_confirmation_qr_url"
+                                    :alt="tr('QR del recibo de reembolso', 'Reimbursement receipt QR')"
+                                    class="h-24 w-24 rounded-md border border-emerald-200 bg-white p-1"
+                                />
+                                <div class="min-w-0 text-sm">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <QrCodeIcon class="h-4 w-4 text-emerald-700" />
+                                        <p class="font-semibold text-emerald-950">
+                                            {{ tr('Recibo para firma', 'Receipt for signature') }}
+                                        </p>
+                                        <span class="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
+                                            {{ expense.reimbursement_receipt_signed_at ? tr('Firmado', 'Signed') : tr('Pendiente de firma', 'Pending signature') }}
+                                        </span>
+                                    </div>
+                                    <p class="mt-1 text-xs text-emerald-800">
+                                        {{ tr('Comparte este QR con la persona reembolsada para que confirme el recibo con su firma.', 'Share this QR with the reimbursed person so they can confirm the receipt with their signature.') }}
+                                    </p>
+                                    <div class="mt-2 flex flex-wrap gap-3 text-xs font-semibold">
+                                        <a :href="expense.reimbursement_confirmation_url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-emerald-800 hover:underline">
+                                            <PencilSquareIcon class="h-4 w-4" />
+                                            {{ tr('Abrir recibo', 'Open receipt') }}
+                                        </a>
+                                        <a v-if="expense.reimbursement_signature_url" :href="expense.reimbursement_signature_url" target="_blank" rel="noopener" class="text-emerald-800 hover:underline">
+                                            {{ tr('Ver firma', 'View signature') }}
+                                        </a>
+                                        <a v-if="expense.reimbursement_receipt_signed_at && expense.reimbursement_receipt_url" :href="expense.reimbursement_receipt_url" target="_blank" rel="noopener" class="text-emerald-800 hover:underline">
+                                            {{ tr('Descargar PDF', 'Download PDF') }}
+                                        </a>
+                                    </div>
+                                    <p v-if="expense.reimbursement_receipt_signed_at" class="mt-2 text-xs text-emerald-800">
+                                        {{ tr('Firmado por', 'Signed by') }} {{ expense.reimbursement_receipt_signer_name || expense.reimbursed_to || tr('persona reembolsada', 'reimbursed person') }}
+                                        · {{ formatDateTime(expense.reimbursement_receipt_signed_at) }}
+                                    </p>
+                                </div>
                             </div>
                         </div>
 
@@ -1719,36 +1704,6 @@ onMounted(() => loadCaja())
                                 </p>
                             </div>
 
-                            <input
-                                type="file"
-                                accept="image/*"
-                                class="block w-full text-sm text-gray-700"
-                                @change="setReimbursementReceiptFile(expense.id, $event)"
-                            />
-                            <p class="text-xs text-gray-500">
-                                {{ tr('Comprobante opcional; puedes agregarlo luego.', 'Proof is optional; you can add it later.') }}
-                            </p>
-                            <div class="flex flex-col gap-2 sm:flex-row">
-                                <button
-                                    type="button"
-                                    class="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                                    :disabled="isExpenseActionBusy(expense.id)"
-                                    @click="uploadReimbursementReceipt(expense)"
-                                >
-                                    <ArrowUpTrayIcon class="h-4 w-4" />
-                                    {{ expense.reimbursement_receipt_url ? tr('Reemplazar comprobante', 'Replace proof') : tr('Guardar comprobante', 'Save proof') }}
-                                </button>
-                                <button
-                                    v-if="expense.reimbursement_receipt_url"
-                                    type="button"
-                                    class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                                    :disabled="isExpenseActionBusy(expense.id)"
-                                    @click="removeReimbursementReceipt(expense)"
-                                >
-                                    <TrashIcon class="h-4 w-4" />
-                                    {{ tr('Quitar', 'Remove') }}
-                                </button>
-                            </div>
                             <button
                                 v-if="expense.status === 'pending_reimbursement'"
                                 type="button"

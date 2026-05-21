@@ -373,6 +373,12 @@ class FinanceMovementReader
 
                 $addProof('expense_receipt', $expense->receipt_url, null, $expense->receipt_path);
                 $addProof('reimbursement_receipt', $expense->reimbursement_receipt_url, null, $expense->reimbursement_receipt_path);
+                $addProof(
+                    'reimbursement_signed_receipt',
+                    $expense->reimbursement_signature_url,
+                    $expense->reimbursement_receipt_signer_name ? 'Firma de ' . $expense->reimbursement_receipt_signer_name : null,
+                    $expense->reimbursement_receipt_signature_path
+                );
                 foreach ($expense->fundraiserInvestmentReceipts as $receipt) {
                     $addProof('fundraiser_investment_receipt', $receipt->url, $receipt->original_name, $receipt->path);
                 }

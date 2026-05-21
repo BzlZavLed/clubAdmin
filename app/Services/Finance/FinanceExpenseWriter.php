@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class FinanceExpenseWriter
 {
@@ -335,6 +336,14 @@ class FinanceExpenseWriter
             $expense->update([
                 'status' => 'completed',
                 'reimbursement_receipt_path' => $receiptPath,
+                'reimbursement_receipt_token' => $expense->reimbursement_receipt_token ?: Str::random(48),
+                'reimbursement_receipt_signed_at' => null,
+                'reimbursement_receipt_signature_path' => null,
+                'reimbursement_receipt_signer_name' => null,
+                'reimbursement_receipt_acknowledged' => false,
+                'reimbursement_receipt_ip' => null,
+                'reimbursement_receipt_user_agent' => null,
+                'reimbursement_receipt_validation_checksum' => null,
             ]);
         });
 

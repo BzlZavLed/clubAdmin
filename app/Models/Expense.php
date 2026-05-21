@@ -25,6 +25,14 @@ class Expense extends Model
         'status',
         'receipt_path',
         'reimbursement_receipt_path',
+        'reimbursement_receipt_token',
+        'reimbursement_receipt_signed_at',
+        'reimbursement_receipt_signature_path',
+        'reimbursement_receipt_signer_name',
+        'reimbursement_receipt_acknowledged',
+        'reimbursement_receipt_ip',
+        'reimbursement_receipt_user_agent',
+        'reimbursement_receipt_validation_checksum',
         'settles_expense_id',
         'reimbursement_origin_expense_id',
         'reversed_expense_id',
@@ -37,9 +45,17 @@ class Expense extends Model
         'expense_date' => 'date',
         'amount' => 'decimal:2',
         'is_cancelled' => 'boolean',
+        'reimbursement_receipt_signed_at' => 'datetime',
+        'reimbursement_receipt_acknowledged' => 'boolean',
     ];
 
-    protected $appends = ['receipt_url', 'reimbursement_receipt_url'];
+    protected $appends = [
+        'receipt_url',
+        'reimbursement_receipt_url',
+        'reimbursement_signature_url',
+        'reimbursement_confirmation_url',
+        'reimbursement_confirmation_qr_url',
+    ];
 
     public function club()
     {
@@ -124,6 +140,39 @@ class Expense extends Model
         }
 
         return $this->buildPublicUrl($this->reimbursement_receipt_path);
+    }
+
+    public function getReimbursementSignatureUrlAttribute(): ?string
+    {
+        if (!$this->reimbursement_receipt_signature_path) {
+            return null;
+        }
+
+        return $this->buildPublicUrl($this->reimbursement_receipt_signature_path);
+    }
+
+    public function getReimbursementConfirmationUrlAttribute(): ?string
+    {
+        if (!$this->reimbursement_receipt_token) {
+            return null;
+        }
+
+        return route('reimbursement-receipts.show', [
+            'expense' => $this,
+            'token' => $this->reimbursement_receipt_token,
+        ]);
+    }
+
+    public function getReimbursementConfirmationQrUrlAttribute(): ?string
+    {
+        if (!$this->reimbursement_receipt_token) {
+            return null;
+        }
+
+        return route('reimbursement-receipts.qr', [
+            'expense' => $this,
+            'token' => $this->reimbursement_receipt_token,
+        ]);
     }
 
     protected function buildPublicUrl(string $path): ?string
