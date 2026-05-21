@@ -95,6 +95,7 @@
     $proofLabels = [
         'check_image' => 'Cheque',
         'expense_receipt' => 'Comprobante de gasto',
+        'reimbursement_payment_proof' => 'Comprobante de pago de reembolso',
         'reimbursement_receipt' => 'Comprobante de reembolso',
         'fundraiser_investment_receipt' => 'Comprobante de inversion',
         'treasury_proof' => 'Comprobante de transferencia',

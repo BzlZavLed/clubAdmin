@@ -33,6 +33,9 @@ class Expense extends Model
         'reimbursement_receipt_ip',
         'reimbursement_receipt_user_agent',
         'reimbursement_receipt_validation_checksum',
+        'reimbursement_payment_proof_path',
+        'reimbursement_payment_proof_uploaded_at',
+        'reimbursement_payment_proof_uploaded_by_user_id',
         'settles_expense_id',
         'reimbursement_origin_expense_id',
         'reversed_expense_id',
@@ -47,12 +50,14 @@ class Expense extends Model
         'is_cancelled' => 'boolean',
         'reimbursement_receipt_signed_at' => 'datetime',
         'reimbursement_receipt_acknowledged' => 'boolean',
+        'reimbursement_payment_proof_uploaded_at' => 'datetime',
     ];
 
     protected $appends = [
         'receipt_url',
         'reimbursement_receipt_url',
         'reimbursement_signature_url',
+        'reimbursement_payment_proof_url',
         'reimbursement_confirmation_url',
         'reimbursement_confirmation_qr_url',
     ];
@@ -149,6 +154,15 @@ class Expense extends Model
         }
 
         return $this->buildPublicUrl($this->reimbursement_receipt_signature_path);
+    }
+
+    public function getReimbursementPaymentProofUrlAttribute(): ?string
+    {
+        if (!$this->reimbursement_payment_proof_path) {
+            return null;
+        }
+
+        return $this->buildPublicUrl($this->reimbursement_payment_proof_path);
     }
 
     public function getReimbursementConfirmationUrlAttribute(): ?string

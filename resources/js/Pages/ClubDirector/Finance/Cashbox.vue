@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import {
     ArrowPathIcon,
@@ -11,6 +11,7 @@ import {
     DocumentTextIcon,
     ExclamationTriangleIcon,
     PencilSquareIcon,
+    QuestionMarkCircleIcon,
     QrCodeIcon,
     TrashIcon,
 } from '@heroicons/vue/24/outline'
@@ -21,7 +22,9 @@ import {
     fetchFinanceEngineCashbox,
     reimburseFinanceEngineExpense,
     removeFinanceEngineExpenseReceipt,
+    removeFinanceEngineReimbursementPaymentProof,
     uploadFinanceEngineExpenseReceipt,
+    uploadFinanceEngineReimbursementPaymentProof,
 } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -61,16 +64,30 @@ const conceptErrors = ref({})
 const incomeCheckInput = ref(null)
 const expenseReceiptInput = ref(null)
 const expenseReceiptFiles = ref({})
+const reimbursementPaymentProofFiles = ref({})
 const reimbursementForms = ref({})
 const expenseActionBusy = ref({})
 const expenseActionErrors = ref({})
 const showConceptModal = ref(false)
 const savingConcept = ref(false)
 const showReimbursementOverflowModal = ref(false)
+const tutorialActive = ref(false)
+const tutorialStepIndex = ref(0)
+const tutorialTargetRect = ref(null)
+const tutorialReturnClubId = ref(null)
+const tutorialBalances = ref({})
+const tutorialMovements = ref([])
+const tutorialNextId = ref(9000)
+const tutorialReceiptWindow = ref(null)
 const CREATE_CONCEPT_OPTION = '__create_concept__'
 const CUSTOM_PAYER_OPTION = '__custom_payer__'
 const EXPENSE_FOLLOW_UP_PAGE_SIZE = 25
 const MOVEMENT_PAGE_SIZE_OPTIONS = [10, 15, 20]
+const TUTORIAL_CLUB_ID = -9001
+const TUTORIAL_MEMBER_ID = -9101
+const TUTORIAL_CONCEPT_ID = -9201
+const TUTORIAL_ACCOUNT = 'club_budget'
+const TUTORIAL_REIMBURSEMENT_ACCOUNT = 'reimbursement_to'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -555,6 +572,213 @@ const reimbursementTargetError = computed(() =>
     || firstError(expenseErrors.value, 'reimbursement_payee_email')
     || firstError(expenseErrors.value, 'reimbursed_to')
 )
+const px = (value) => `${Math.round(Number(value) || 0)}px`
+const viewportSize = () => {
+    if (typeof window === 'undefined') {
+        return { width: 1024, height: 768 }
+    }
+
+    return {
+        width: window.innerWidth || 1024,
+        height: window.innerHeight || 768,
+    }
+}
+const tutorialSteps = computed(() => [
+    {
+        id: 'intro',
+        target: '[data-tour="cashbox-header"]',
+        title: tr('Caja', 'Cashbox'),
+        body: tr('Modo tutorial usa datos simulados. Lo que registres aqui no toca la base de datos y se borra al salir.', 'Tutorial mode uses simulated data. What you record here does not touch the database and is cleared when you exit.'),
+    },
+    {
+        id: 'balances',
+        target: '[data-tour="cashbox-balances"]',
+        title: tr('Estado de cuenta', 'Account status'),
+        body: tr('Estas tarjetas muestran cuanto hay en efectivo, banco, total disponible y reembolsos pendientes para la cuenta seleccionada.', 'These cards show cash, bank, total available, and pending reimbursements for the selected account.'),
+    },
+    {
+        id: 'account-filter',
+        target: '[data-tour="cashbox-account-filter"]',
+        title: tr('Filtro de cuenta', 'Account filter'),
+        body: tr('Usa este selector para revisar una cuenta especifica o ver el balance combinado de todas las cuentas operativas.', 'Use this selector to review one account or the combined balance across operating accounts.'),
+    },
+    {
+        id: 'saved-income',
+        target: '[data-tour="cashbox-income-form"]',
+        title: tr('Ingreso con concepto guardado', 'Income with saved concept'),
+        body: tr('El formulario esta preparado con una cuota mensual de practica. Revisa concepto, pagador, monto y metodo.', 'The form is prepared with a practice monthly dues payment. Review concept, payer, amount, and method.'),
+    },
+    {
+        id: 'income-method',
+        target: '[data-tour="cashbox-income-method"]',
+        title: tr('Metodo de ingreso', 'Income method'),
+        body: tr('El metodo define donde queda el dinero: efectivo, banco por Zelle o transferencia, cheque, o saldo inicial.', 'The method defines where the money lands: cash, bank through Zelle or transfer, check, or initial balance.'),
+    },
+    {
+        id: 'save-saved-income',
+        target: '[data-tour="cashbox-save-income"]',
+        title: tr('Guardar ingreso', 'Save income'),
+        body: tr('Haz clic para simular el primer ingreso. Caja respondera como si la API lo hubiera guardado.', 'Click to simulate the first income. Cashbox will respond as if the API saved it.'),
+    },
+    {
+        id: 'manual-income',
+        target: '[data-tour="cashbox-income-form"]',
+        title: tr('Ingreso manual', 'Manual income'),
+        body: tr('Ahora el formulario se prepara con un concepto manual, util para donaciones o ingresos que no tienen concepto creado.', 'Now the form is prepared with a manual concept, useful for donations or income without a saved concept.'),
+    },
+    {
+        id: 'manual-payer',
+        target: '[data-tour="cashbox-payer"]',
+        title: tr('Pagador', 'Payer'),
+        body: tr('Selecciona un miembro o personal existente. Si no esta en la lista, usa pagador externo / otro para escribir un nombre nuevo.', 'Select an existing member or staff person. If they are not listed, use external / other payer to enter a new name.'),
+    },
+    {
+        id: 'manual-payer-name',
+        target: '[data-tour="cashbox-payer-name"]',
+        title: tr('Nombre del pagador', 'Payer name'),
+        body: tr('Cuando el pagador es externo u otro, escribe aqui el nombre que debe aparecer en el movimiento.', 'When the payer is external or other, enter the name that should appear on the movement.'),
+    },
+    {
+        id: 'save-manual-income',
+        target: '[data-tour="cashbox-save-income"]',
+        title: tr('Guardar ingreso manual', 'Save manual income'),
+        body: tr('Haz clic para simular el ingreso manual y ver como sube el balance de banco.', 'Click to simulate the manual income and see the bank balance increase.'),
+    },
+    {
+        id: 'normal-expense',
+        target: '[data-tour="cashbox-expense-form"]',
+        title: tr('Gasto normal', 'Normal expense'),
+        body: tr('El formulario se prepara con un gasto que la cuenta puede cubrir completo desde efectivo.', 'The form is prepared with an expense the account can fully cover from cash.'),
+    },
+    {
+        id: 'expense-proof',
+        target: '[data-tour="cashbox-expense-proof"]',
+        title: tr('Comprobante de gasto', 'Expense proof'),
+        body: tr('Adjunta el comprobante del gasto cuando lo tengas. Si no existe al crear el gasto, podras subirlo luego desde seguimiento.', 'Attach the expense proof when available. If it is missing when the expense is created, it can be uploaded later from follow-up.'),
+    },
+    {
+        id: 'save-normal-expense',
+        target: '[data-tour="cashbox-save-expense"]',
+        title: tr('Guardar gasto', 'Save expense'),
+        body: tr('Haz clic para simular el gasto normal. El movimiento aparecera abajo y bajara el efectivo.', 'Click to simulate the normal expense. The movement will appear below and cash will decrease.'),
+    },
+    {
+        id: 'reimbursement-expense',
+        target: '[data-tour="cashbox-expense-form"]',
+        title: tr('Gasto con reembolso', 'Expense with reimbursement'),
+        body: tr('Ahora el gasto excede lo disponible. Caja dejara el excedente como reembolso pendiente a la persona indicada.', 'Now the expense exceeds what is available. Cashbox will leave the excess as a pending reimbursement for the selected person.'),
+    },
+    {
+        id: 'save-reimbursement-expense',
+        target: '[data-tour="cashbox-save-expense"]',
+        title: tr('Crear reembolso pendiente', 'Create pending reimbursement'),
+        body: tr('Haz clic para simular el gasto con excedente y crear el reembolso pendiente.', 'Click to simulate the overflow expense and create the pending reimbursement.'),
+    },
+    {
+        id: 'settle-reimbursement',
+        target: '[data-tour="cashbox-follow-up"]',
+        title: tr('Liquidar reembolso', 'Settle reimbursement'),
+        body: tr('En seguimiento veras el reembolso pendiente. Liquida desde banco o efectivo; en tutorial la API responde sin guardar nada real.', 'In follow-up you will see the pending reimbursement. Settle it from bank or cash; in tutorial the API responds without saving anything real.'),
+    },
+    {
+        id: 'receipt-signature',
+        target: '[data-tour="cashbox-reimbursement-receipt"]',
+        title: tr('Firma del recibo', 'Receipt signature'),
+        body: tr('Despues de liquidar, abre el recibo en otra pestana. La persona reembolsada firma ahi y Caja recibe la confirmacion simulada.', 'After settlement, open the receipt in another tab. The reimbursed person signs there and Cashbox receives the simulated confirmation.'),
+    },
+    {
+        id: 'movements',
+        target: '[data-tour="cashbox-movements"]',
+        title: tr('Movimientos', 'Movements'),
+        body: tr('Esta lista es la lectura de control: ingresos, gastos, transferencias y reembolsos con fecha, cuenta, estado, recibos y comprobantes.', 'This list is the control readout: income, expenses, transfers, and reimbursements with date, account, status, receipts, and proofs.'),
+    },
+    {
+        id: 'movement-filters',
+        target: '[data-tour="cashbox-movement-filters"]',
+        title: tr('Filtros de movimientos', 'Movement filters'),
+        body: tr('Filtra por tipo, cambia el orden o actualiza la lectura cuando necesites confirmar lo que acaba de registrarse.', 'Filter by type, change the sort order, or refresh the readout when you need to confirm what was just recorded.'),
+    },
+])
+const tutorialStep = computed(() => tutorialSteps.value[tutorialStepIndex.value] || tutorialSteps.value[0] || null)
+const tutorialStepCount = computed(() => tutorialSteps.value.length)
+const tutorialProgressLabel = computed(() => `${tutorialStepIndex.value + 1}/${tutorialStepCount.value}`)
+const tutorialCutout = computed(() => {
+    if (!tutorialTargetRect.value) return null
+
+    const { width, height } = viewportSize()
+    const margin = 8
+    const top = Math.max(tutorialTargetRect.value.top - margin, 0)
+    const left = Math.max(tutorialTargetRect.value.left - margin, 0)
+    const right = Math.min(tutorialTargetRect.value.right + margin, width)
+    const bottom = Math.min(tutorialTargetRect.value.bottom + margin, height)
+
+    return {
+        top,
+        left,
+        right,
+        bottom,
+        width: Math.max(right - left, 0),
+        height: Math.max(bottom - top, 0),
+    }
+})
+const tutorialMaskStyles = computed(() => {
+    const cutout = tutorialCutout.value
+    if (!cutout) return []
+
+    return [
+        { top: '0px', left: '0px', width: '100vw', height: px(cutout.top) },
+        { top: px(cutout.bottom), left: '0px', width: '100vw', height: `calc(100vh - ${px(cutout.bottom)})` },
+        { top: px(cutout.top), left: '0px', width: px(cutout.left), height: px(cutout.height) },
+        { top: px(cutout.top), left: px(cutout.right), width: `calc(100vw - ${px(cutout.right)})`, height: px(cutout.height) },
+    ]
+})
+const tutorialHighlightStyle = computed(() => {
+    const cutout = tutorialCutout.value
+    if (!cutout) return {}
+
+    return {
+        top: px(cutout.top),
+        left: px(cutout.left),
+        width: px(cutout.width),
+        height: px(cutout.height),
+    }
+})
+const tutorialPanelStyle = computed(() => {
+    const { width, height } = viewportSize()
+    const cutout = tutorialCutout.value
+
+    if (width < 640) {
+        return {
+            left: '1rem',
+            right: '1rem',
+            bottom: '1rem',
+        }
+    }
+
+    if (!cutout) {
+        return {
+            left: '50%',
+            top: '50%',
+            width: 'min(24rem, calc(100vw - 2rem))',
+            transform: 'translate(-50%, -50%)',
+        }
+    }
+
+    const panelWidth = Math.min(384, Math.max(280, width - 32))
+    const estimatedHeight = 236
+    const left = Math.min(Math.max(cutout.left, 16), width - panelWidth - 16)
+    let top = cutout.bottom + 12
+
+    if (top + estimatedHeight > height && cutout.top > estimatedHeight + 24) {
+        top = cutout.top - estimatedHeight - 12
+    }
+
+    return {
+        left: px(left),
+        top: px(Math.max(16, Math.min(top, height - estimatedHeight - 16))),
+        width: px(panelWidth),
+    }
+})
 const expenseActionError = (expenseId) => expenseActionErrors.value[expenseId] || null
 const isExpenseActionBusy = (expenseId) => Boolean(expenseActionBusy.value[expenseId])
 const defaultOperatingPayTo = () => operatingAccountOptions.value[0]?.value || 'club_budget'
@@ -586,7 +810,7 @@ const reimbursementSettlementTransferAmount = (expense) => {
     return Math.max(Math.min(roundCurrency(amount - selectedBalance), roundCurrency(totalBalance - selectedBalance)), 0)
 }
 const canSettleReimbursement = (expense) =>
-    reimbursementSourceTotalBalance(expense) + 0.0001 >= Number(expense.amount || 0)
+    tutorialActive.value || reimbursementSourceTotalBalance(expense) + 0.0001 >= Number(expense.amount || 0)
 
 const mergeAccounts = (paymentAccounts, expenseAccounts) => {
     const rows = new Map()
@@ -609,6 +833,338 @@ const setExpenseActionError = (expenseId, message = '') => {
         ...expenseActionErrors.value,
         [expenseId]: message,
     }
+}
+
+const tutorialDelay = () => new Promise((resolve) => window.setTimeout(resolve, 250))
+const tutorialStepIndexById = (id) => tutorialSteps.value.findIndex((step) => step.id === id)
+const goToTutorialStep = (id) => {
+    const index = tutorialStepIndexById(id)
+    if (index >= 0) {
+        tutorialStepIndex.value = index
+    }
+}
+const tutorialAccountLabel = (payTo) => payTo === TUTORIAL_REIMBURSEMENT_ACCOUNT
+    ? tr('Reembolsos pendientes', 'Pending reimbursements')
+    : tr('Presupuesto del club', 'Club budget')
+const tutorialPaymentLocation = (paymentType) => paymentType === 'cash' ? 'cash' : 'bank'
+const tutorialEnsureBalance = (payTo) => {
+    if (!tutorialBalances.value[payTo]) {
+        tutorialBalances.value = {
+            ...tutorialBalances.value,
+            [payTo]: { cash_balance: 0, bank_balance: 0 },
+        }
+    }
+
+    return tutorialBalances.value[payTo]
+}
+const tutorialSetBalance = (payTo, location, value) => {
+    const row = tutorialEnsureBalance(payTo)
+    tutorialBalances.value = {
+        ...tutorialBalances.value,
+        [payTo]: {
+            ...row,
+            [`${location}_balance`]: roundCurrency(value),
+        },
+    }
+}
+const tutorialAddBalance = (payTo, location, amount) => {
+    const row = tutorialEnsureBalance(payTo)
+    tutorialSetBalance(payTo, location, Number(row[`${location}_balance`] || 0) + Number(amount || 0))
+}
+const tutorialDeductBalance = (payTo, preferredLocation, amount) => {
+    const row = tutorialEnsureBalance(payTo)
+    const first = preferredLocation === 'bank' ? 'bank' : 'cash'
+    const second = first === 'cash' ? 'bank' : 'cash'
+    let remaining = Number(amount || 0)
+    const next = { ...row }
+
+    ;[first, second].forEach((location) => {
+        const key = `${location}_balance`
+        const available = Math.max(Number(next[key] || 0), 0)
+        const used = Math.min(available, remaining)
+        next[key] = roundCurrency(Number(next[key] || 0) - used)
+        remaining = roundCurrency(remaining - used)
+    })
+
+    tutorialBalances.value = {
+        ...tutorialBalances.value,
+        [payTo]: next,
+    }
+}
+const tutorialSummary = () => {
+    const accountsSummary = Object.entries(tutorialBalances.value).map(([account, row]) => {
+        const cash = Number(row.cash_balance || 0)
+        const bank = Number(row.bank_balance || 0)
+
+        return {
+            account,
+            label: tutorialAccountLabel(account),
+            cash_balance: roundCurrency(cash),
+            bank_balance: roundCurrency(bank),
+            total_available: roundCurrency(cash + bank),
+        }
+    })
+    const cash = accountsSummary.reduce((sum, account) => sum + Number(account.cash_balance || 0), 0)
+    const bank = accountsSummary.reduce((sum, account) => sum + Number(account.bank_balance || 0), 0)
+
+    return {
+        cash_balance: roundCurrency(cash),
+        bank_balance: roundCurrency(bank),
+        total_available: roundCurrency(cash + bank),
+        accounts: accountsSummary,
+    }
+}
+const tutorialApplyEngineReport = () => {
+    engineReport.value = {
+        summary: tutorialSummary(),
+        movements: tutorialMovements.value.slice(),
+    }
+}
+const tutorialNext = () => {
+    tutorialNextId.value += 1
+    return tutorialNextId.value
+}
+const tutorialOccurredAt = () => `${today()} ${String(9 + (tutorialMovements.value.length % 8)).padStart(2, '0')}:00`
+const tutorialAddMovement = (movement) => {
+    tutorialMovements.value = [
+        {
+            status: 'posted',
+            date: today(),
+            occurred_at: tutorialOccurredAt(),
+            created_at: tutorialOccurredAt(),
+            account: TUTORIAL_ACCOUNT,
+            account_label: tutorialAccountLabel(TUTORIAL_ACCOUNT),
+            location: 'cash',
+            ...movement,
+        },
+        ...tutorialMovements.value,
+    ]
+    tutorialApplyEngineReport()
+}
+const tutorialQrDataUri = (label) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" fill="#fff"/><rect x="10" y="10" width="28" height="28" fill="#111827"/><rect x="82" y="10" width="28" height="28" fill="#111827"/><rect x="10" y="82" width="28" height="28" fill="#111827"/><rect x="48" y="48" width="10" height="10" fill="#111827"/><rect x="64" y="48" width="10" height="10" fill="#111827"/><rect x="48" y="64" width="10" height="10" fill="#111827"/><rect x="74" y="72" width="10" height="10" fill="#111827"/><rect x="88" y="88" width="12" height="12" fill="#111827"/><text x="60" y="115" text-anchor="middle" font-size="8" fill="#111827">${label}</text></svg>`
+
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+const tutorialPdfDataUri = (expense, signerName = '') => {
+    const text = [
+        'Recibo de reembolso tutorial',
+        `Reembolso #${expense.id}`,
+        `Recibe: ${signerName || expense.reimbursed_to || ''}`,
+        `Monto: ${formatMoney(expense.amount)}`,
+        'Documento simulado. No afecta la base de datos.',
+    ].join('\n')
+
+    return `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`
+}
+const tutorialBuildExpenseProofUrl = (label) => `data:text/plain;charset=utf-8,${encodeURIComponent(`${label}\nComprobante simulado de tutorial.`)}`
+const tutorialPrefillSavedIncome = () => {
+    incomeForm.value = {
+        ...incomeForm.value,
+        mode: 'existing',
+        concept_key: `concept:${TUTORIAL_CONCEPT_ID}`,
+        selected_event_concept_ids: [],
+        payer_key: `member:${TUTORIAL_MEMBER_ID}`,
+        payer_name: '',
+        concept_text: '',
+        pay_to: TUTORIAL_ACCOUNT,
+        amount_paid: '25.00',
+        payment_date: today(),
+        payment_type: 'cash',
+        zelle_phone: '',
+        check_image: null,
+        notes: tr('Practica: ingreso con concepto guardado', 'Practice: saved concept income'),
+    }
+}
+const tutorialPrefillManualIncome = () => {
+    incomeForm.value = {
+        ...incomeForm.value,
+        mode: 'manual',
+        concept_key: '',
+        selected_event_concept_ids: [],
+        payer_key: CUSTOM_PAYER_OPTION,
+        payer_name: 'Donante Tutorial',
+        concept_text: 'Donacion visitante tutorial',
+        pay_to: TUTORIAL_ACCOUNT,
+        amount_paid: '60.00',
+        payment_date: today(),
+        payment_type: 'transfer',
+        zelle_phone: '',
+        check_image: null,
+        notes: tr('Practica: ingreso manual por transferencia', 'Practice: manual transfer income'),
+    }
+}
+const tutorialPrefillNormalExpense = () => {
+    expenseForm.value = {
+        ...expenseForm.value,
+        pay_to: TUTORIAL_ACCOUNT,
+        funds_location: 'cash',
+        amount: '20.00',
+        expense_date: today(),
+        description: 'Materiales de clase tutorial',
+        reimbursed_to: '',
+        reimbursement_target_mode: 'new',
+        reimbursement_payee_id: '',
+        reimbursement_payee_name: '',
+        reimbursement_payee_phone: '',
+        reimbursement_payee_email: '',
+        receipt_image: null,
+    }
+    showReimbursementOverflowModal.value = false
+}
+const tutorialPrefillReimbursementExpense = () => {
+    const total = accountTotalBalance(TUTORIAL_ACCOUNT)
+    const amount = Math.max(total + 25, 125)
+    expenseForm.value = {
+        ...expenseForm.value,
+        pay_to: TUTORIAL_ACCOUNT,
+        funds_location: 'cash',
+        amount: amount.toFixed(2),
+        expense_date: today(),
+        description: 'Compra cubierta por lider tutorial',
+        reimbursed_to: 'Patrocinador Tutorial',
+        reimbursement_target_mode: 'new',
+        reimbursement_payee_id: '',
+        reimbursement_payee_name: 'Patrocinador Tutorial',
+        reimbursement_payee_phone: '555-0101',
+        reimbursement_payee_email: 'tutorial@example.com',
+        receipt_image: null,
+    }
+    showReimbursementOverflowModal.value = false
+}
+const tutorialApplyStepPreset = () => {
+    if (!tutorialActive.value || !tutorialStep.value) return
+
+    if (tutorialStep.value.id === 'saved-income') tutorialPrefillSavedIncome()
+    if (tutorialStep.value.id === 'manual-income') tutorialPrefillManualIncome()
+    if (tutorialStep.value.id === 'normal-expense') tutorialPrefillNormalExpense()
+    if (tutorialStep.value.id === 'reimbursement-expense') tutorialPrefillReimbursementExpense()
+}
+const tutorialResetSandbox = () => {
+    tutorialBalances.value = {
+        [TUTORIAL_ACCOUNT]: { cash_balance: 40, bank_balance: 80 },
+        [TUTORIAL_REIMBURSEMENT_ACCOUNT]: { cash_balance: 0, bank_balance: 0 },
+    }
+    tutorialMovements.value = []
+    tutorialNextId.value = 9000
+    selectedClubId.value = TUTORIAL_CLUB_ID
+    currentClub.value = { id: TUTORIAL_CLUB_ID, club_name: tr('Club Tutorial', 'Tutorial Club') }
+    clubs.value = [currentClub.value]
+    classes.value = []
+    members.value = [{
+        id: TUTORIAL_MEMBER_ID,
+        club_id: TUTORIAL_CLUB_ID,
+        applicant_name: 'Ana Gomez',
+        name: 'Ana Gomez',
+    }]
+    staff.value = []
+    concepts.value = [{
+        id: TUTORIAL_CONCEPT_ID,
+        club_id: TUTORIAL_CLUB_ID,
+        concept: 'Cuota mensual tutorial',
+        amount: 25,
+        pay_to: TUTORIAL_ACCOUNT,
+        type: 'mandatory',
+    }]
+    accounts.value = [{
+        club_id: TUTORIAL_CLUB_ID,
+        pay_to: TUTORIAL_ACCOUNT,
+        label: tutorialAccountLabel(TUTORIAL_ACCOUNT),
+    }]
+    expenses.value = []
+    reimbursementPayees.value = []
+    expenseActionBusy.value = {}
+    expenseActionErrors.value = {}
+    expenseReceiptFiles.value = {}
+    reimbursementPaymentProofFiles.value = {}
+    balanceAccountFilter.value = 'all'
+    movementDomain.value = 'all'
+    movementSort.value = 'date'
+    movementPage.value = 1
+    expenseFollowUpPage.value = 1
+    tutorialApplyEngineReport()
+    resetExpenseForm()
+    tutorialPrefillSavedIncome()
+    ensureReimbursementForms()
+}
+
+const updateTutorialTarget = (scrollIntoView = false) => {
+    if (typeof window === 'undefined' || !tutorialActive.value || !tutorialStep.value) return
+
+    nextTick(() => {
+        const target = document.querySelector(tutorialStep.value.target)
+        if (!target) {
+            tutorialTargetRect.value = null
+            return
+        }
+
+        if (scrollIntoView) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+        }
+
+        window.setTimeout(() => {
+            const rect = target.getBoundingClientRect()
+            if (!rect.width && !rect.height) {
+                tutorialTargetRect.value = null
+                return
+            }
+
+            tutorialTargetRect.value = {
+                top: rect.top,
+                left: rect.left,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+            }
+        }, scrollIntoView ? 260 : 0)
+    })
+}
+
+const startCajaTutorial = () => {
+    if (!tutorialActive.value) {
+        tutorialReturnClubId.value = selectedClubId.value
+    }
+    tutorialResetSandbox()
+    tutorialStepIndex.value = 0
+    tutorialActive.value = true
+    updateTutorialTarget(true)
+}
+
+const closeCajaTutorial = () => {
+    const returnClubId = tutorialReturnClubId.value
+    tutorialActive.value = false
+    tutorialTargetRect.value = null
+    tutorialReceiptWindow.value = null
+    tutorialReturnClubId.value = null
+    selectedClubId.value = returnClubId
+    loadCaja(returnClubId, true)
+}
+
+const previousTutorialStep = () => {
+    tutorialStepIndex.value = Math.max(tutorialStepIndex.value - 1, 0)
+}
+
+const nextTutorialStep = () => {
+    if (tutorialStepIndex.value >= tutorialStepCount.value - 1) {
+        closeCajaTutorial()
+        return
+    }
+
+    tutorialStepIndex.value += 1
+}
+
+const handleTutorialViewportChange = () => {
+    if (tutorialActive.value) {
+        updateTutorialTarget(false)
+    }
+}
+
+const handleTutorialKeydown = (event) => {
+    if (!tutorialActive.value) return
+    if (event.key === 'Escape') closeCajaTutorial()
+    if (event.key === 'ArrowRight') nextTutorialStep()
+    if (event.key === 'ArrowLeft') previousTutorialStep()
 }
 
 const ensureReimbursementForms = () => {
@@ -635,13 +1191,29 @@ const setExpenseReceiptFile = (expenseId, event) => {
     }
 }
 
+const setReimbursementPaymentProofFile = (expenseId, event) => {
+    reimbursementPaymentProofFiles.value = {
+        ...reimbursementPaymentProofFiles.value,
+        [expenseId]: event.target.files?.[0] || null,
+    }
+}
+
 const loadCaja = async (clubId = null, quiet = false) => {
+    if (tutorialActive.value) {
+        tutorialApplyEngineReport()
+        loading.value = false
+        refreshing.value = false
+        return
+    }
+
     if (quiet) refreshing.value = true
     else loading.value = true
     loadError.value = ''
 
     try {
         const payload = await fetchFinanceEngineCashbox(clubId)
+        if (tutorialActive.value) return
+
         const data = payload?.data || {}
 
         if (!selectedClubId.value) {
@@ -675,8 +1247,18 @@ const loadCaja = async (clubId = null, quiet = false) => {
     }
 }
 
-const refreshCaja = () => loadCaja(selectedClubId.value, true)
+const refreshCaja = () => {
+    if (tutorialActive.value) {
+        tutorialApplyEngineReport()
+        showToast(tr('Lectura tutorial actualizada.', 'Tutorial readout refreshed.'), 'success')
+        return Promise.resolve()
+    }
+
+    return loadCaja(selectedClubId.value, true)
+}
 const onClubChange = () => {
+    if (tutorialActive.value) return
+
     incomeForm.value.concept_key = ''
     incomeForm.value.payer_key = ''
     incomeForm.value.payer_name = ''
@@ -864,11 +1446,448 @@ const validateConceptScope = () => {
     return true
 }
 
+const tutorialCreateIncome = async (payload) => {
+    await tutorialDelay()
+
+    const id = tutorialNext()
+    const amount = Number(payload.amount_paid || 0)
+    const location = tutorialPaymentLocation(payload.payment_type)
+    const concept = payload.concept_text
+        || selectedConceptOption.value?.label
+        || 'Ingreso tutorial'
+    const payer = payload.payer_name || 'Ana Gomez'
+
+    tutorialAddBalance(payload.pay_to || TUTORIAL_ACCOUNT, location, amount)
+    tutorialAddMovement({
+        movement_id: `payment:${id}`,
+        domain: 'income',
+        kind: 'payment',
+        direction: 'in',
+        account: payload.pay_to || TUTORIAL_ACCOUNT,
+        account_label: tutorialAccountLabel(payload.pay_to || TUTORIAL_ACCOUNT),
+        location,
+        concept,
+        amount,
+        payer,
+        receipt: {
+            number: `TUT-PAY-${id}`,
+            url: tutorialBuildExpenseProofUrl(`Recibo tutorial ${id}`),
+        },
+    })
+
+    return { data: { id, tutorial: true } }
+}
+
+const tutorialCreateExpense = async (payload) => {
+    await tutorialDelay()
+
+    const id = tutorialNext()
+    const payTo = payload.pay_to || TUTORIAL_ACCOUNT
+    const amount = Number(payload.amount || 0)
+    const total = accountTotalBalance(payTo)
+    const overflow = Math.max(roundCurrency(amount - total), 0)
+    const coveredAmount = roundCurrency(amount - overflow)
+    const receiptUrl = payload.receipt_image ? tutorialBuildExpenseProofUrl(`Comprobante gasto ${id}`) : null
+    const expense = {
+        id,
+        club_id: TUTORIAL_CLUB_ID,
+        pay_to: payTo,
+        funds_location: payload.funds_location || 'cash',
+        amount,
+        expense_date: payload.expense_date || today(),
+        description: payload.description || 'Gasto tutorial',
+        status: receiptUrl ? 'completed' : 'working',
+        receipt_url: receiptUrl,
+        receipt_path: receiptUrl ? `tutorial/expense-${id}.txt` : null,
+        generated_reimbursement_expense: null,
+    }
+
+    if (coveredAmount > 0) {
+        tutorialDeductBalance(payTo, payload.funds_location || 'cash', coveredAmount)
+    }
+
+    tutorialAddMovement({
+        movement_id: `expense:${id}`,
+        domain: 'expense',
+        kind: overflow > 0 ? 'expense_with_reimbursement' : 'expense',
+        direction: 'out',
+        account: payTo,
+        account_label: tutorialAccountLabel(payTo),
+        location: payload.funds_location || 'cash',
+        concept: expense.description,
+        amount,
+        proof: receiptUrl ? {
+            name: 'Comprobante tutorial',
+            url: receiptUrl,
+        } : null,
+    })
+
+    if (overflow > 0) {
+        const payeeId = tutorialNext()
+        const reimbursementId = tutorialNext()
+        const payee = {
+            id: payeeId,
+            name: payload.reimbursement_payee_name || payload.reimbursed_to || 'Patrocinador Tutorial',
+            phone: payload.reimbursement_payee_phone || '555-0101',
+            email: payload.reimbursement_payee_email || 'tutorial@example.com',
+        }
+        const reimbursement = {
+            id: reimbursementId,
+            club_id: TUTORIAL_CLUB_ID,
+            pay_to: TUTORIAL_REIMBURSEMENT_ACCOUNT,
+            funds_location: 'cash',
+            amount: overflow,
+            expense_date: payload.expense_date || today(),
+            description: `Reembolso a ${payee.name}`,
+            reimbursed_to: payee.name,
+            reimbursement_payee_id: payee.id,
+            reimbursement_payee: payee,
+            reimbursement_origin_expense_id: expense.id,
+            reimbursement_origin_expense: {
+                id: expense.id,
+                description: expense.description,
+                expense_date: expense.expense_date,
+                amount: expense.amount,
+            },
+            status: 'pending_reimbursement',
+            receipt_url: null,
+            reimbursement_confirmation_url: null,
+            reimbursement_confirmation_qr_url: null,
+            reimbursement_receipt_signed_at: null,
+            reimbursement_receipt_signer_name: null,
+            reimbursement_receipt_url: null,
+            reimbursement_signature_url: null,
+            reimbursement_payment_proof_url: null,
+        }
+
+        expense.generated_reimbursement_expense = {
+            id: reimbursement.id,
+            amount: reimbursement.amount,
+            status: reimbursement.status,
+        }
+        reimbursementPayees.value = [payee, ...reimbursementPayees.value]
+        expenses.value = [reimbursement, expense, ...expenses.value]
+        tutorialAddBalance(TUTORIAL_REIMBURSEMENT_ACCOUNT, 'cash', -overflow)
+        tutorialAddMovement({
+            movement_id: `expense:${reimbursement.id}`,
+            domain: 'expense',
+            kind: 'reimbursement',
+            direction: 'out',
+            account: TUTORIAL_REIMBURSEMENT_ACCOUNT,
+            account_label: tutorialAccountLabel(TUTORIAL_REIMBURSEMENT_ACCOUNT),
+            location: 'cash',
+            concept: reimbursement.description,
+            amount: overflow,
+            correction_type: 'reimbursement',
+            can_reverse: true,
+            reimbursement_group: {
+                key: `tutorial-reimbursement:${reimbursement.id}`,
+                label: reimbursement.description,
+                origin_expense_id: expense.id,
+                reimbursement_expense_id: reimbursement.id,
+                reimbursed_to: payee.name,
+                origin_amount: expense.amount,
+                reimbursement_amount: reimbursement.amount,
+            },
+        })
+        ensureReimbursementForms()
+
+        return { data: { id: expense.id, reimbursement_expense_id: reimbursement.id, tutorial: true } }
+    }
+
+    expenses.value = [expense, ...expenses.value]
+    tutorialApplyEngineReport()
+
+    return { data: { id: expense.id, tutorial: true } }
+}
+
+const tutorialSettleReimbursement = async (expense, payload) => {
+    await tutorialDelay()
+
+    const settlementId = tutorialNext()
+    const paymentProofUrl = payload.payment_proof_file
+        ? tutorialBuildExpenseProofUrl(`Comprobante pago reembolso ${expense.id}`)
+        : expense.reimbursement_payment_proof_url
+    const confirmationUrl = `tutorial-reimbursement:${expense.id}`
+    const signedAt = null
+
+    expenses.value = expenses.value.map((row) => {
+        if (Number(row.id) !== Number(expense.id)) return row
+
+        return {
+            ...row,
+            status: 'completed',
+            settlement_expense: {
+                id: settlementId,
+                pay_to: payload.pay_to || TUTORIAL_ACCOUNT,
+                funds_location: payload.funds_location || 'cash',
+                amount: row.amount,
+            },
+            reimbursement_confirmation_url: confirmationUrl,
+            reimbursement_confirmation_qr_url: tutorialQrDataUri(`REIMB-${row.id}`),
+            reimbursement_receipt_signed_at: signedAt,
+            reimbursement_receipt_signer_name: null,
+            reimbursement_receipt_url: null,
+            reimbursement_signature_url: null,
+            reimbursement_payment_proof_url: paymentProofUrl,
+        }
+    })
+    tutorialAddBalance(TUTORIAL_REIMBURSEMENT_ACCOUNT, 'cash', Number(expense.amount || 0))
+    tutorialAddMovement({
+        movement_id: `expense:${settlementId}`,
+        domain: 'expense',
+        kind: 'reimbursement_settlement',
+        direction: 'out',
+        account: payload.pay_to || TUTORIAL_ACCOUNT,
+        account_label: tutorialAccountLabel(payload.pay_to || TUTORIAL_ACCOUNT),
+        location: payload.funds_location || 'cash',
+        concept: `Liquidacion ${expense.description || 'reembolso tutorial'}`,
+        amount: Number(expense.amount || 0),
+        proof: paymentProofUrl ? {
+            name: 'Comprobante de pago tutorial',
+            url: paymentProofUrl,
+        } : null,
+    })
+
+    return {
+        data: {
+            id: expense.id,
+            reimbursement_confirmation_url: confirmationUrl,
+            reimbursement_confirmation_qr_url: tutorialQrDataUri(`REIMB-${expense.id}`),
+            tutorial: true,
+        },
+    }
+}
+
+const escapeTutorialHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+const tutorialReceiptHtml = (expense) => {
+    const receipt = {
+        id: expense.id,
+        club: currentClub.value?.club_name || 'Club Tutorial',
+        amount: formatMoney(expense.amount),
+        reimbursed_to: expense.reimbursed_to || 'Persona reembolsada',
+        settlement: expense.settlement_expense
+            ? `${accountLabel(expense.settlement_expense.pay_to)} · ${locationLabel(expense.settlement_expense.funds_location)}`
+            : 'Pendiente',
+        origin: expense.reimbursement_origin_expense?.description || 'Gasto relacionado',
+        download: tutorialPdfDataUri(expense, expense.reimbursed_to),
+    }
+
+    return `<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Recibo tutorial #${escapeTutorialHtml(receipt.id)}</title>
+    <style>
+        body{margin:0;background:#f3f4f6;color:#111827;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
+        main{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 10px 28px rgba(15,23,42,.08);overflow:hidden}
+        header{border-bottom:1px solid #e5e7eb;padding:22px}
+        section{padding:22px;display:grid;gap:18px}
+        h1{font-size:22px;margin:4px 0 0}
+        .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;font-weight:700}
+        .amount{font-size:30px;font-weight:800;margin:0}
+        .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+        .box{border:1px solid #e5e7eb;background:#f9fafb;border-radius:10px;padding:14px}
+        label{font-size:14px;font-weight:700;color:#374151}
+        input[type=text]{width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:10px;padding:10px;margin-top:6px;font-size:15px}
+        canvas{width:100%;height:220px;border:1px solid #d1d5db;border-radius:10px;background:#fff;touch-action:none}
+        button,a.button{min-height:44px;border:0;border-radius:10px;background:#b91c1c;color:#fff;font-weight:800;padding:10px 16px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+        button.secondary{background:#fff;color:#374151;border:1px solid #d1d5db}
+        .actions{display:flex;gap:10px;flex-wrap:wrap}
+        .notice{border:1px solid #a7f3d0;background:#ecfdf5;color:#065f46;border-radius:10px;padding:12px;font-size:14px;font-weight:700;display:none}
+        .error{border:1px solid #fecdd3;background:#fff1f2;color:#be123c;border-radius:10px;padding:12px;font-size:14px;font-weight:700;display:none}
+        @media(max-width:640px){body{padding:12px}.grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div class="eyebrow">Recibo de reembolso tutorial</div>
+        <div class="grid">
+            <div>
+                <h1>${escapeTutorialHtml(receipt.club)}</h1>
+                <p>Reembolso #${escapeTutorialHtml(receipt.id)}</p>
+            </div>
+            <p class="amount">${escapeTutorialHtml(receipt.amount)}</p>
+        </div>
+    </header>
+    <section>
+        <div class="grid">
+            <div class="box">
+                <div class="eyebrow">Recibe</div>
+                <strong>${escapeTutorialHtml(receipt.reimbursed_to)}</strong>
+            </div>
+            <div class="box">
+                <div class="eyebrow">Liquidacion</div>
+                <strong>${escapeTutorialHtml(receipt.settlement)}</strong>
+            </div>
+        </div>
+        <div class="box">
+            <div class="eyebrow">Gasto relacionado</div>
+            <p>${escapeTutorialHtml(receipt.origin)}</p>
+        </div>
+        <form id="signature-form">
+            <label>Nombre de quien recibe</label>
+            <input id="signer-name" type="text" value="${escapeTutorialHtml(receipt.reimbursed_to)}">
+            <div style="margin-top:14px">
+                <label>Firma</label>
+                <canvas id="signature"></canvas>
+            </div>
+            <label style="display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-weight:500">
+                <input id="ack" type="checkbox" style="margin-top:3px">
+                <span>Confirmo que recibi el reembolso completo indicado en este recibo de practica.</span>
+            </label>
+            <p id="error" class="error"></p>
+            <p id="notice" class="notice">Firma recibida por Caja en modo tutorial.</p>
+            <div class="actions" style="margin-top:16px">
+                <button type="submit">Confirmar recibo</button>
+                <button type="button" class="secondary" id="clear">Limpiar firma</button>
+                <a class="button" id="download" href="${receipt.download}" download="recibo-reembolso-tutorial-${escapeTutorialHtml(receipt.id)}.txt" style="display:none">Descargar recibo</a>
+            </div>
+        </form>
+    </section>
+</main>
+<script>
+(() => {
+    const canvas = document.getElementById('signature');
+    const context = canvas.getContext('2d');
+    let drawing = false;
+    let signed = false;
+    const configure = () => {
+        const rect = canvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+        canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.strokeStyle = '#111827';
+        context.lineWidth = 2.5 * ratio;
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        signed = false;
+    };
+    const point = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (event.clientX - rect.left) * (canvas.width / rect.width),
+            y: (event.clientY - rect.top) * (canvas.height / rect.height),
+        };
+    };
+    canvas.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        drawing = true;
+        signed = true;
+        const p = point(event);
+        context.beginPath();
+        context.moveTo(p.x, p.y);
+    });
+    canvas.addEventListener('pointermove', (event) => {
+        if (!drawing) return;
+        event.preventDefault();
+        const p = point(event);
+        context.lineTo(p.x, p.y);
+        context.stroke();
+    });
+    ['pointerup','pointercancel','pointerleave'].forEach((name) => canvas.addEventListener(name, () => drawing = false));
+    document.getElementById('clear').addEventListener('click', configure);
+    document.getElementById('signature-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const error = document.getElementById('error');
+        const name = document.getElementById('signer-name').value.trim();
+        error.style.display = 'none';
+        if (!name) {
+            error.textContent = 'Escribe el nombre de quien recibe.';
+            error.style.display = 'block';
+            return;
+        }
+        if (!signed) {
+            error.textContent = 'Agrega una firma.';
+            error.style.display = 'block';
+            return;
+        }
+        if (!document.getElementById('ack').checked) {
+            error.textContent = 'Confirma que recibiste el reembolso.';
+            error.style.display = 'block';
+            return;
+        }
+        window.opener?.postMessage({
+            type: 'cashbox-tutorial-reimbursement-signed',
+            expenseId: ${Number(expense.id)},
+            signerName: name,
+        }, '*');
+        document.getElementById('notice').style.display = 'block';
+        document.getElementById('download').style.display = 'inline-flex';
+    });
+    window.addEventListener('resize', configure);
+    configure();
+})();
+<\/script>
+</body>
+</html>`
+}
+const tutorialSignReimbursementReceipt = (expenseId, signerName) => {
+    const signedAt = formatDateTime(new Date().toISOString())
+
+    expenses.value = expenses.value.map((row) => {
+        if (Number(row.id) !== Number(expenseId)) return row
+
+        return {
+            ...row,
+            reimbursement_receipt_signed_at: signedAt,
+            reimbursement_receipt_signer_name: signerName,
+            reimbursement_receipt_url: tutorialPdfDataUri(row, signerName),
+            reimbursement_signature_url: null,
+        }
+    })
+    showToast(tr('Firma tutorial recibida.', 'Tutorial signature received.'), 'success')
+    goToTutorialStep('movements')
+}
+const openTutorialReimbursementReceipt = (expense) => {
+    const popup = window.open('', '_blank')
+    if (!popup) {
+        showToast(tr('El navegador bloqueo la pestana del recibo tutorial.', 'The browser blocked the tutorial receipt tab.'), 'error')
+        return
+    }
+
+    tutorialReceiptWindow.value = popup
+    popup.document.open()
+    popup.document.write(tutorialReceiptHtml(expense))
+    popup.document.close()
+}
+const openReimbursementConfirmation = (expense, event) => {
+    if (!tutorialActive.value || !String(expense.reimbursement_confirmation_url || '').startsWith('tutorial-reimbursement:')) {
+        return
+    }
+
+    event.preventDefault()
+    openTutorialReimbursementReceipt(expense)
+}
+const handleTutorialReceiptMessage = (event) => {
+    const data = event.data || {}
+    if (data.type !== 'cashbox-tutorial-reimbursement-signed') return
+    if (tutorialReceiptWindow.value && event.source !== tutorialReceiptWindow.value) return
+
+    tutorialSignReimbursementReceipt(data.expenseId, data.signerName)
+}
+
 const submitConcept = async () => {
     savingConcept.value = true
     conceptErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            showConceptModal.value = false
+            showToast(tr('Concepto simulado. En tutorial no se guarda en base de datos.', 'Simulated concept. Tutorial mode does not save to the database.'), 'success')
+            return
+        }
+
         if (!selectedClubId.value) {
             conceptErrors.value = { club_id: tr('Selecciona un club.', 'Select a club.') }
             return
@@ -943,6 +1962,15 @@ const submitIncome = async () => {
             payload.payment_concept_id = conceptId
         }
 
+        if (tutorialActive.value) {
+            const wasManualIncome = incomeForm.value.mode === 'manual'
+            await tutorialCreateIncome(payload)
+            showToast(tr('Ingreso tutorial simulado.', 'Tutorial income simulated.'), 'success')
+            resetIncomeForm()
+            goToTutorialStep(wasManualIncome ? 'normal-expense' : 'manual-income')
+            return
+        }
+
         await createFinanceEngineIncome(payload)
         showToast(tr('Ingreso guardado.', 'Income saved.'), 'success')
         resetIncomeForm()
@@ -972,6 +2000,17 @@ const submitExpense = async () => {
             payload.reimbursement_payee_name = ''
             payload.reimbursement_payee_phone = ''
             payload.reimbursement_payee_email = ''
+        }
+
+        if (tutorialActive.value) {
+            const createsReimbursement = expenseHasOverflow.value
+            await tutorialCreateExpense(payload)
+            showToast(createsReimbursement
+                ? tr('Gasto tutorial con reembolso simulado.', 'Tutorial expense with reimbursement simulated.')
+                : tr('Gasto tutorial simulado.', 'Tutorial expense simulated.'), 'success')
+            resetExpenseForm()
+            goToTutorialStep(createsReimbursement ? 'settle-reimbursement' : 'reimbursement-expense')
+            return
         }
 
         await createFinanceEngineExpense(payload)
@@ -1004,6 +2043,21 @@ const uploadExpenseReceipt = async (expense) => {
     setExpenseActionError(expense.id)
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            expenses.value = expenses.value.map((row) => Number(row.id) === Number(expense.id)
+                ? {
+                    ...row,
+                    receipt_url: tutorialBuildExpenseProofUrl(`Comprobante gasto ${expense.id}`),
+                    receipt_path: `tutorial/expense-${expense.id}.txt`,
+                    status: 'completed',
+                }
+                : row)
+            expenseReceiptFiles.value = { ...expenseReceiptFiles.value, [expense.id]: null }
+            showToast(tr('Comprobante tutorial guardado.', 'Tutorial proof saved.'), 'success')
+            return
+        }
+
         await uploadFinanceEngineExpenseReceipt(expense.id, { receipt_image: file })
         expenseReceiptFiles.value = { ...expenseReceiptFiles.value, [expense.id]: null }
         showToast(tr('Comprobante guardado.', 'Proof saved.'), 'success')
@@ -1021,6 +2075,20 @@ const removeExpenseReceipt = async (expense) => {
     setExpenseActionError(expense.id)
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            expenses.value = expenses.value.map((row) => Number(row.id) === Number(expense.id)
+                ? {
+                    ...row,
+                    receipt_url: null,
+                    receipt_path: null,
+                    status: 'working',
+                }
+                : row)
+            showToast(tr('Comprobante tutorial removido.', 'Tutorial proof removed.'), 'success')
+            return
+        }
+
         await removeFinanceEngineExpenseReceipt(expense.id)
         showToast(tr('Comprobante removido.', 'Proof removed.'), 'success')
         await refreshCaja()
@@ -1032,8 +2100,73 @@ const removeExpenseReceipt = async (expense) => {
     }
 }
 
+const uploadReimbursementPaymentProof = async (expense) => {
+    const file = reimbursementPaymentProofFiles.value[expense.id]
+    if (!file) {
+        setExpenseActionError(expense.id, tr('Selecciona un comprobante de pago.', 'Select a payment proof file.'))
+        return
+    }
+
+    setExpenseActionBusy(expense.id, true)
+    setExpenseActionError(expense.id)
+
+    try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            expenses.value = expenses.value.map((row) => Number(row.id) === Number(expense.id)
+                ? {
+                    ...row,
+                    reimbursement_payment_proof_url: tutorialBuildExpenseProofUrl(`Comprobante pago reembolso ${expense.id}`),
+                }
+                : row)
+            reimbursementPaymentProofFiles.value = { ...reimbursementPaymentProofFiles.value, [expense.id]: null }
+            showToast(tr('Comprobante de pago tutorial guardado.', 'Tutorial payment proof saved.'), 'success')
+            return
+        }
+
+        await uploadFinanceEngineReimbursementPaymentProof(expense.id, { payment_proof_file: file })
+        reimbursementPaymentProofFiles.value = { ...reimbursementPaymentProofFiles.value, [expense.id]: null }
+        showToast(tr('Comprobante de pago guardado.', 'Payment proof saved.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo guardar el comprobante de pago.', 'Could not save payment proof.')))
+        console.error(error)
+    } finally {
+        setExpenseActionBusy(expense.id, false)
+    }
+}
+
+const removeReimbursementPaymentProof = async (expense) => {
+    setExpenseActionBusy(expense.id, true)
+    setExpenseActionError(expense.id)
+
+    try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            expenses.value = expenses.value.map((row) => Number(row.id) === Number(expense.id)
+                ? {
+                    ...row,
+                    reimbursement_payment_proof_url: null,
+                }
+                : row)
+            showToast(tr('Comprobante de pago tutorial removido.', 'Tutorial payment proof removed.'), 'success')
+            return
+        }
+
+        await removeFinanceEngineReimbursementPaymentProof(expense.id)
+        showToast(tr('Comprobante de pago removido.', 'Payment proof removed.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        setExpenseActionError(expense.id, actionErrorMessage(error, tr('No se pudo remover el comprobante de pago.', 'Could not remove payment proof.')))
+        console.error(error)
+    } finally {
+        setExpenseActionBusy(expense.id, false)
+    }
+}
+
 const reimburseExpense = async (expense) => {
     const form = reimbursementForms.value[expense.id] || {}
+    const paymentProofFile = reimbursementPaymentProofFiles.value[expense.id]
 
     if (!form.pay_to) {
         setExpenseActionError(expense.id, tr('Selecciona una cuenta origen.', 'Select a source account.'))
@@ -1048,11 +2181,26 @@ const reimburseExpense = async (expense) => {
     setExpenseActionError(expense.id)
 
     try {
+        if (tutorialActive.value) {
+            await tutorialSettleReimbursement(expense, {
+                pay_to: form.pay_to,
+                funds_location: form.funds_location || 'cash',
+                reimbursement_date: form.reimbursement_date || today(),
+                payment_proof_file: paymentProofFile || null,
+            })
+            reimbursementPaymentProofFiles.value = { ...reimbursementPaymentProofFiles.value, [expense.id]: null }
+            showToast(tr('Reembolso tutorial liquidado.', 'Tutorial reimbursement settled.'), 'success')
+            goToTutorialStep('receipt-signature')
+            return
+        }
+
         await reimburseFinanceEngineExpense(expense.id, {
             pay_to: form.pay_to,
             funds_location: form.funds_location || 'cash',
             reimbursement_date: form.reimbursement_date || today(),
+            payment_proof_file: paymentProofFile || null,
         })
+        reimbursementPaymentProofFiles.value = { ...reimbursementPaymentProofFiles.value, [expense.id]: null }
         showToast(tr('Reembolso liquidado.', 'Reimbursement settled.'), 'success')
         await refreshCaja()
     } catch (error) {
@@ -1064,6 +2212,7 @@ const reimburseExpense = async (expense) => {
 }
 
 watch(expenseHasOverflow, (hasOverflow) => {
+    if (tutorialActive.value) return
     showReimbursementOverflowModal.value = hasOverflow
 })
 
@@ -1089,7 +2238,27 @@ watch(recentMovementGroups, () => {
     }
 })
 
-onMounted(() => loadCaja())
+watch([tutorialActive, tutorialStepIndex], ([active]) => {
+    if (active) {
+        tutorialApplyStepPreset()
+        updateTutorialTarget(true)
+    }
+})
+
+onMounted(() => {
+    loadCaja()
+    window.addEventListener('resize', handleTutorialViewportChange)
+    window.addEventListener('scroll', handleTutorialViewportChange, true)
+    window.addEventListener('keydown', handleTutorialKeydown)
+    window.addEventListener('message', handleTutorialReceiptMessage)
+})
+
+onBeforeUnmount(() => {
+    window.removeEventListener('resize', handleTutorialViewportChange)
+    window.removeEventListener('scroll', handleTutorialViewportChange, true)
+    window.removeEventListener('keydown', handleTutorialKeydown)
+    window.removeEventListener('message', handleTutorialReceiptMessage)
+})
 </script>
 
 <template>
@@ -1097,7 +2266,7 @@ onMounted(() => loadCaja())
         <template #title>{{ tr('Caja', 'Cashbox') }}</template>
 
         <div class="space-y-5">
-            <section class="border-b border-gray-200 pb-4">
+            <section data-tour="cashbox-header" class="border-b border-gray-200 pb-4">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <p class="text-sm font-medium uppercase tracking-wide text-gray-500">{{ tr('Modulo financiero', 'Finance module') }}</p>
@@ -1114,14 +2283,24 @@ onMounted(() => loadCaja())
                         <select
                             v-if="canSelectClub"
                             v-model="selectedClubId"
+                            :disabled="tutorialActive"
                             @change="onClubChange"
-                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500 disabled:bg-gray-100"
                         >
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
                         <div v-else class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-800">
                             {{ activeClubName }}
                         </div>
+                        <button
+                            type="button"
+                            data-tour="cashbox-tutorial-toggle"
+                            class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                            @click="startCajaTutorial"
+                        >
+                            <QuestionMarkCircleIcon class="h-4 w-4" />
+                            {{ tutorialActive ? tr('Reiniciar tutorial', 'Restart tutorial') : tr('Modo tutorial', 'Tutorial mode') }}
+                        </button>
                     </div>
                 </div>
             </section>
@@ -1130,13 +2309,31 @@ onMounted(() => loadCaja())
                 {{ loadError }}
             </div>
 
-            <section class="space-y-3">
+            <div v-if="tutorialActive" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-red-900">{{ tr('Modo tutorial activo', 'Tutorial mode active') }}</p>
+                        <p class="mt-1 text-sm text-red-800">
+                            {{ tr('Los ingresos, gastos, reembolsos y firmas son simulados. Al salir se borra todo y se recarga la caja real.', 'Income, expenses, reimbursements, and signatures are simulated. Exiting clears everything and reloads the real cashbox.') }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                        @click="closeCajaTutorial"
+                    >
+                        {{ tr('Salir y borrar practica', 'Exit and clear practice') }}
+                    </button>
+                </div>
+            </div>
+
+            <section data-tour="cashbox-balances" class="space-y-3">
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Estado de cuenta', 'Account status') }}</h3>
                         <p class="mt-1 text-sm text-gray-500">{{ tr('Filtra los saldos por cuenta financiera.', 'Filter balances by finance account.') }}</p>
                     </div>
-                    <div class="sm:min-w-72">
+                    <div data-tour="cashbox-account-filter" class="sm:min-w-72">
                         <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cuenta', 'Account') }}</label>
                         <select
                             v-model="balanceAccountFilter"
@@ -1182,7 +2379,7 @@ onMounted(() => loadCaja())
             </section>
 
             <section class="grid gap-5 xl:grid-cols-2">
-                <form class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitIncome">
+                <form data-tour="cashbox-income-form" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitIncome">
                     <div class="mb-4 flex items-center gap-2">
                         <CreditCardIcon class="h-5 w-5 text-emerald-600" />
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Registrar ingreso', 'Record income') }}</h3>
@@ -1276,7 +2473,7 @@ onMounted(() => loadCaja())
                             </select>
                         </div>
 
-                        <div>
+                        <div data-tour="cashbox-payer">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Pagador', 'Payer') }}</label>
                             <select
                                 v-model="incomeForm.payer_key"
@@ -1291,7 +2488,7 @@ onMounted(() => loadCaja())
                             </p>
                         </div>
 
-                        <div v-if="incomeForm.payer_key === CUSTOM_PAYER_OPTION">
+                        <div v-if="incomeForm.payer_key === CUSTOM_PAYER_OPTION" data-tour="cashbox-payer-name">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Nombre del pagador', 'Payer name') }}</label>
                             <input
                                 v-model="incomeForm.payer_name"
@@ -1323,7 +2520,7 @@ onMounted(() => loadCaja())
                             />
                         </div>
 
-                        <div>
+                        <div data-tour="cashbox-income-method">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Metodo', 'Method') }}</label>
                             <select
                                 v-model="incomeForm.payment_type"
@@ -1369,6 +2566,7 @@ onMounted(() => loadCaja())
 
                     <button
                         type="submit"
+                        data-tour="cashbox-save-income"
                         :disabled="savingIncome || loading"
                         class="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60 sm:w-auto"
                     >
@@ -1378,7 +2576,7 @@ onMounted(() => loadCaja())
                     </button>
                 </form>
 
-                <form class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitExpense">
+                <form data-tour="cashbox-expense-form" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitExpense">
                     <div class="mb-4 flex items-center gap-2">
                         <CurrencyDollarIcon class="h-5 w-5 text-rose-600" />
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Registrar gasto', 'Record expense') }}</h3>
@@ -1490,7 +2688,7 @@ onMounted(() => loadCaja())
                             </p>
                         </div>
 
-                        <div class="sm:col-span-2">
+                        <div data-tour="cashbox-expense-proof" class="sm:col-span-2">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Comprobante', 'Proof') }}</label>
                             <input
                                 ref="expenseReceiptInput"
@@ -1504,6 +2702,7 @@ onMounted(() => loadCaja())
 
                     <button
                         type="submit"
+                        data-tour="cashbox-save-expense"
                         :disabled="savingExpense || loading"
                         class="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-60 sm:w-auto"
                     >
@@ -1514,7 +2713,7 @@ onMounted(() => loadCaja())
                 </form>
             </section>
 
-            <section v-if="hasExpenseFollowUp" class="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <section v-if="hasExpenseFollowUp" data-tour="cashbox-follow-up" class="rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div class="border-b border-gray-200 p-4">
                     <h3 class="text-base font-semibold text-gray-900">{{ tr('Seguimiento de gastos', 'Expense follow-up') }}</h3>
                     <p class="mt-1 text-sm text-gray-500">
@@ -1619,7 +2818,7 @@ onMounted(() => loadCaja())
                                     {{ tr('Liquidado desde', 'Settled from') }} {{ accountLabel(expense.settlement_expense.pay_to) }}
                                 </span>
                             </div>
-                            <div v-if="expense.reimbursement_confirmation_url" class="mt-3 grid gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+                            <div v-if="expense.reimbursement_confirmation_url" data-tour="cashbox-reimbursement-receipt" class="mt-3 grid gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 sm:grid-cols-[96px_minmax(0,1fr)]">
                                 <img
                                     v-if="expense.reimbursement_confirmation_qr_url"
                                     :src="expense.reimbursement_confirmation_qr_url"
@@ -1640,7 +2839,7 @@ onMounted(() => loadCaja())
                                         {{ tr('Comparte este QR con la persona reembolsada para que confirme el recibo con su firma.', 'Share this QR with the reimbursed person so they can confirm the receipt with their signature.') }}
                                     </p>
                                     <div class="mt-2 flex flex-wrap gap-3 text-xs font-semibold">
-                                        <a :href="expense.reimbursement_confirmation_url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-emerald-800 hover:underline">
+                                        <a :href="expense.reimbursement_confirmation_url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-emerald-800 hover:underline" @click="openReimbursementConfirmation(expense, $event)">
                                             <PencilSquareIcon class="h-4 w-4" />
                                             {{ tr('Abrir recibo', 'Open receipt') }}
                                         </a>
@@ -1704,6 +2903,56 @@ onMounted(() => loadCaja())
                                 </p>
                             </div>
 
+                            <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <label class="text-sm font-semibold text-gray-800">{{ tr('Comprobante de pago', 'Payment proof') }}</label>
+                                    <a
+                                        v-if="expense.reimbursement_payment_proof_url"
+                                        :href="expense.reimbursement_payment_proof_url"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="text-xs font-semibold text-gray-700 hover:underline"
+                                    >
+                                        {{ tr('Ver comprobante', 'View proof') }}
+                                    </a>
+                                </div>
+                                <input
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    class="mt-2 block w-full text-sm text-gray-700"
+                                    @change="setReimbursementPaymentProofFile(expense.id, $event)"
+                                />
+                                <p class="mt-2 text-xs text-gray-500">
+                                    <template v-if="expense.status === 'pending_reimbursement'">
+                                        {{ tr('Opcional: adjunta confirmacion de Zelle, transferencia o cheque al liquidar. En efectivo, el recibo firmado es la confirmacion principal.', 'Optional: attach Zelle, transfer, or check confirmation when settling. For cash, the signed receipt is the main confirmation.') }}
+                                    </template>
+                                    <template v-else>
+                                        {{ tr('Usa este comprobante para evidenciar que el dinero salio por Zelle, transferencia o cheque. El recibo firmado confirma que la persona lo recibio.', 'Use this proof to show money was sent by Zelle, transfer, or check. The signed receipt confirms the person received it.') }}
+                                    </template>
+                                </p>
+                                <div v-if="expense.status !== 'pending_reimbursement'" class="mt-3 flex flex-col gap-2 sm:flex-row">
+                                    <button
+                                        type="button"
+                                        class="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                        :disabled="isExpenseActionBusy(expense.id)"
+                                        @click="uploadReimbursementPaymentProof(expense)"
+                                    >
+                                        <ArrowUpTrayIcon class="h-4 w-4" />
+                                        {{ expense.reimbursement_payment_proof_url ? tr('Reemplazar comprobante', 'Replace proof') : tr('Guardar comprobante', 'Save proof') }}
+                                    </button>
+                                    <button
+                                        v-if="expense.reimbursement_payment_proof_url"
+                                        type="button"
+                                        class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                                        :disabled="isExpenseActionBusy(expense.id)"
+                                        @click="removeReimbursementPaymentProof(expense)"
+                                    >
+                                        <TrashIcon class="h-4 w-4" />
+                                        {{ tr('Quitar', 'Remove') }}
+                                    </button>
+                                </div>
+                            </div>
+
                             <button
                                 v-if="expense.status === 'pending_reimbursement'"
                                 type="button"
@@ -1756,13 +3005,13 @@ onMounted(() => loadCaja())
                 </div>
             </section>
 
-            <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <section data-tour="cashbox-movements" class="rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div class="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Movimientos', 'Movements') }}</h3>
                         <p class="text-sm text-gray-500">{{ tr('Aqui veras la lectura del motor financiero: ingresos, gastos, transferencias, reembolsos, recibos y comprobantes, con estado, cuenta, fecha y monto.', 'Here you will see the finance engine readout: income, expenses, transfers, reimbursements, receipts, and proofs, with status, account, date, and amount.') }}</p>
                     </div>
-                    <div class="flex flex-col gap-2 sm:flex-row">
+                    <div data-tour="cashbox-movement-filters" class="flex flex-col gap-2 sm:flex-row">
                         <select
                             v-model="movementDomain"
                             :aria-label="tr('Filtrar movimientos', 'Filter movements')"
@@ -1908,6 +3157,76 @@ onMounted(() => loadCaja())
                 </div>
             </section>
 
+        </div>
+
+        <div v-if="tutorialActive && tutorialStep" class="pointer-events-none fixed inset-0 z-[70]">
+            <template v-if="tutorialCutout">
+                <div
+                    v-for="(style, index) in tutorialMaskStyles"
+                    :key="index"
+                    class="pointer-events-auto fixed bg-gray-950/70"
+                    :style="style"
+                ></div>
+                <div
+                    class="pointer-events-none fixed rounded-xl border-2 border-red-500 shadow-[0_0_0_4px_rgba(248,113,113,0.35),0_18px_45px_rgba(15,23,42,0.35)]"
+                    :style="tutorialHighlightStyle"
+                ></div>
+            </template>
+            <div v-else class="pointer-events-auto fixed inset-0 bg-gray-950/70"></div>
+
+            <aside
+                class="pointer-events-auto fixed rounded-xl border border-gray-200 bg-white p-4 shadow-2xl"
+                :style="tutorialPanelStyle"
+                role="dialog"
+                :aria-label="tr('Tutorial de caja', 'Cashbox tutorial')"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-red-600">
+                            {{ tr('Tutorial de caja', 'Cashbox tutorial') }} · {{ tutorialProgressLabel }}
+                        </p>
+                        <h3 class="mt-1 text-base font-semibold text-gray-950">{{ tutorialStep.title }}</h3>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-500 hover:bg-gray-50"
+                        :aria-label="tr('Salir del tutorial', 'Exit tutorial')"
+                        @click="closeCajaTutorial"
+                    >
+                        ×
+                    </button>
+                </div>
+                <p class="mt-3 text-sm leading-6 text-gray-600">{{ tutorialStep.body }}</p>
+                <p v-if="!tutorialCutout" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    {{ tr('Esta parte no esta visible ahora; aparecera cuando existan datos relacionados.', 'This part is not visible right now; it will appear when related data exists.') }}
+                </p>
+                <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="tutorialStepIndex === 0"
+                        @click="previousTutorialStep"
+                    >
+                        {{ tr('Anterior', 'Previous') }}
+                    </button>
+                    <div class="flex gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                            @click="closeCajaTutorial"
+                        >
+                            {{ tr('Salir', 'Exit') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                            @click="nextTutorialStep"
+                        >
+                            {{ tutorialStepIndex >= tutorialStepCount - 1 ? tr('Terminar', 'Finish') : tr('Siguiente', 'Next') }}
+                        </button>
+                    </div>
+                </div>
+            </aside>
         </div>
 
         <div

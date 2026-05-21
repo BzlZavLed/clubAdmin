@@ -61,11 +61,25 @@ class FinanceWriter
         return $this->expenseWriter->uploadReimbursementReceipt($request, $expense);
     }
 
+    public function uploadReimbursementPaymentProof(Request $request, Expense $expense)
+    {
+        $this->forceJson($request);
+
+        return $this->expenseWriter->uploadReimbursementPaymentProof($request, $expense);
+    }
+
     public function removeReimbursementReceipt(Request $request, Expense $expense)
     {
         $this->forceJson($request);
 
         return $this->expenseWriter->removeReimbursementReceipt($request, $expense);
+    }
+
+    public function removeReimbursementPaymentProof(Request $request, Expense $expense)
+    {
+        $this->forceJson($request);
+
+        return $this->expenseWriter->removeReimbursementPaymentProof($request, $expense);
     }
 
     public function markExpenseReimbursed(Request $request, Expense $expense)

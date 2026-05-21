@@ -186,60 +186,69 @@ class FinanceExpenseWriter
 
     public function uploadReimbursementReceipt(Request $request, Expense $expense): JsonResponse
     {
+        return $this->uploadReimbursementPaymentProof($request, $expense);
+    }
+
+    public function uploadReimbursementPaymentProof(Request $request, Expense $expense): JsonResponse
+    {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
 
         if ($expense->pay_to !== 'reimbursement_to') {
-            return response()->json(['message' => 'Only reimbursements can accept this receipt.'], 422);
+            return response()->json(['message' => 'Only reimbursements can accept this payment proof.'], 422);
         }
 
-        $request->validate([
-            'receipt_image' => ['required', 'image', 'max:5120'],
-        ]);
+        $field = $this->paymentProofFileField($request);
+        if (!$field) {
+            return response()->json([
+                'message' => 'Select a reimbursement payment proof file.',
+                'errors' => ['payment_proof_file' => ['Select a reimbursement payment proof file.']],
+            ], 422);
+        }
 
-        $path = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
+        $request->validate([$field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240']]);
 
-        if ($expense->reimbursement_receipt_path) {
-            Storage::disk('public')->delete($expense->reimbursement_receipt_path);
+        $path = $request->file($field)->store('reimbursement-payment-proofs', 'public');
+
+        if ($expense->reimbursement_payment_proof_path) {
+            Storage::disk('public')->delete($expense->reimbursement_payment_proof_path);
         }
 
         $expense->update([
-            'reimbursement_receipt_path' => $path,
+            'reimbursement_payment_proof_path' => $path,
+            'reimbursement_payment_proof_uploaded_at' => now(),
+            'reimbursement_payment_proof_uploaded_by_user_id' => $request->user()?->id,
         ]);
 
-        if ($settlementExpense = $expense->settlementExpense()->first()) {
-            $settlementExpense->update([
-                'receipt_path' => $path,
-                'status' => 'completed',
-            ]);
-        }
-
         return response()->json([
-            'message' => 'Reimbursement receipt uploaded',
+            'message' => 'Reimbursement payment proof uploaded',
             'data' => $expense->refresh(),
         ]);
     }
 
     public function removeReimbursementReceipt(Request $request, Expense $expense): JsonResponse
     {
+        return $this->removeReimbursementPaymentProof($request, $expense);
+    }
+
+    public function removeReimbursementPaymentProof(Request $request, Expense $expense): JsonResponse
+    {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
 
-        if (!$expense->reimbursement_receipt_path) {
-            return response()->json(['message' => 'No reimbursement receipt to remove.'], 422);
+        if (!$expense->reimbursement_payment_proof_path) {
+            return response()->json(['message' => 'No reimbursement payment proof to remove.'], 422);
         }
 
-        $oldPath = $expense->reimbursement_receipt_path;
+        $oldPath = $expense->reimbursement_payment_proof_path;
         Storage::disk('public')->delete($oldPath);
 
         $expense->update([
-            'reimbursement_receipt_path' => null,
+            'reimbursement_payment_proof_path' => null,
+            'reimbursement_payment_proof_uploaded_at' => null,
+            'reimbursement_payment_proof_uploaded_by_user_id' => null,
         ]);
 
-        if ($settlementExpense = $expense->settlementExpense()->first()) {
-            $settlementExpense->update(['receipt_path' => null]);
-        }
-
         return response()->json([
-            'message' => 'Reimbursement receipt removed',
+            'message' => 'Reimbursement payment proof removed',
             'data' => $expense->refresh(),
         ]);
     }
@@ -252,6 +261,7 @@ class FinanceExpenseWriter
             'pay_to' => ['required', 'string', 'max:255'],
             'funds_location' => ['nullable', 'in:cash,bank'],
             'receipt_image' => ['nullable', 'image', 'max:5120'],
+            'payment_proof_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
             'reimbursement_date' => ['nullable', 'date'],
         ]);
 
@@ -275,18 +285,19 @@ class FinanceExpenseWriter
             ], 422);
         }
 
-        $receiptPath = $expense->reimbursement_receipt_path;
-        if ($request->hasFile('receipt_image')) {
-            $receiptPath = $request->file('receipt_image')->store('reimbursement-receipts', 'public');
+        $paymentProofPath = $expense->reimbursement_payment_proof_path;
+        $paymentProofField = $this->paymentProofFileField($request);
+        if ($paymentProofField) {
+            $paymentProofPath = $request->file($paymentProofField)->store('reimbursement-payment-proofs', 'public');
 
-            if ($expense->reimbursement_receipt_path) {
-                Storage::disk('public')->delete($expense->reimbursement_receipt_path);
+            if ($expense->reimbursement_payment_proof_path) {
+                Storage::disk('public')->delete($expense->reimbursement_payment_proof_path);
             }
         }
 
         $reimbursementDate = $validated['reimbursement_date'] ?? now()->toDateString();
 
-        DB::transaction(function () use ($expense, $account, $receiptPath, $request, $fundsLocation, $reimbursementDate, $club, $fundingPlan) {
+        DB::transaction(function () use ($expense, $account, $paymentProofPath, $paymentProofField, $request, $fundsLocation, $reimbursementDate, $club, $fundingPlan) {
             $reimbursementAccount = $this->resolveAccount($expense->club_id, 'reimbursement_to');
 
             $this->treasuryService->recordAutomaticExpenseFundingTransfer(
@@ -325,7 +336,7 @@ class FinanceExpenseWriter
                 'reimbursement_payee_id' => $expense->reimbursement_payee_id,
                 'created_by_user_id' => $request->user()->id,
                 'status' => 'completed',
-                'receipt_path' => $receiptPath,
+                'receipt_path' => null,
                 'settles_expense_id' => $expense->id,
                 'reimbursement_origin_expense_id' => $expense->reimbursement_origin_expense_id,
             ]);
@@ -335,7 +346,7 @@ class FinanceExpenseWriter
 
             $expense->update([
                 'status' => 'completed',
-                'reimbursement_receipt_path' => $receiptPath,
+                'reimbursement_receipt_path' => null,
                 'reimbursement_receipt_token' => $expense->reimbursement_receipt_token ?: Str::random(48),
                 'reimbursement_receipt_signed_at' => null,
                 'reimbursement_receipt_signature_path' => null,
@@ -344,6 +355,9 @@ class FinanceExpenseWriter
                 'reimbursement_receipt_ip' => null,
                 'reimbursement_receipt_user_agent' => null,
                 'reimbursement_receipt_validation_checksum' => null,
+                'reimbursement_payment_proof_path' => $paymentProofPath,
+                'reimbursement_payment_proof_uploaded_at' => $paymentProofPath && $paymentProofField ? now() : $expense->reimbursement_payment_proof_uploaded_at,
+                'reimbursement_payment_proof_uploaded_by_user_id' => $paymentProofPath && $paymentProofField ? $request->user()?->id : $expense->reimbursement_payment_proof_uploaded_by_user_id,
             ]);
         });
 
@@ -447,6 +461,15 @@ class FinanceExpenseWriter
             ['club_id' => $clubId, 'pay_to' => $payTo],
             ['label' => $payTo, 'balance' => 0]
         );
+    }
+
+    private function paymentProofFileField(Request $request): ?string
+    {
+        if ($request->hasFile('payment_proof_file')) {
+            return 'payment_proof_file';
+        }
+
+        return $request->hasFile('receipt_image') ? 'receipt_image' : null;
     }
 
     private function ensureExpenseBelongsToUser($user, Expense $expense): void

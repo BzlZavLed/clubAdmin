@@ -1382,8 +1382,20 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertSame('completed', $pendingReimbursement->status);
         $this->assertNull($pendingReimbursement->reimbursement_receipt_path);
         $this->assertNotNull($pendingReimbursement->reimbursement_receipt_token);
+        $this->assertNull($pendingReimbursement->reimbursement_payment_proof_path);
         $this->assertNotEmpty($settlementResponse->json('data.reimbursement_confirmation_url'));
         $this->assertNotEmpty($settlementResponse->json('data.reimbursement_confirmation_qr_url'));
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.reimbursement-payment-proof.upload', $pendingReimbursement), [
+                'payment_proof_file' => UploadedFile::fake()->image('zelle-confirmation.jpg'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Reimbursement payment proof uploaded');
+
+        $pendingReimbursement->refresh();
+        $this->assertNotNull($pendingReimbursement->reimbursement_payment_proof_path);
+        Storage::disk('public')->assertExists($pendingReimbursement->reimbursement_payment_proof_path);
 
         $receiptRouteParams = [
             'expense' => $pendingReimbursement,
@@ -1462,6 +1474,12 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertSame('reimbursement', $reimbursementMovement['correction_type']);
         $this->assertTrue((bool) $reimbursementMovement['can_reverse']);
         $this->assertTrue(collect($reimbursementMovement['proofs'])->contains(
+            fn (array $proof) => ($proof['type'] ?? null) === 'reimbursement_receipt'
+        ));
+        $this->assertTrue(collect($reimbursementMovement['proofs'])->contains(
+            fn (array $proof) => ($proof['type'] ?? null) === 'reimbursement_payment_proof'
+        ));
+        $this->assertFalse(collect($reimbursementMovement['proofs'])->contains(
             fn (array $proof) => ($proof['type'] ?? null) === 'reimbursement_signed_receipt'
         ));
         $originMovement = collect($engine->json('data.movements'))->firstWhere('movement_id', "expense:{$normalExpense->id}");

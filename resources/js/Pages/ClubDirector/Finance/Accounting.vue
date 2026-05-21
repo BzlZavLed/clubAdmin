@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -19,6 +19,7 @@ import {
     BuildingLibraryIcon,
     ChartBarIcon,
     ExclamationTriangleIcon,
+    QuestionMarkCircleIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -89,6 +90,14 @@ const ledgerFilters = ref({
     date_from: '',
     date_to: '',
 })
+const tutorialActive = ref(false)
+const tutorialStepIndex = ref(0)
+const tutorialTargetRect = ref(null)
+const tutorialReturnClubId = ref(null)
+const tutorialNextId = ref(7000)
+const TUTORIAL_CLUB_ID = -9701
+const TUTORIAL_ACCOUNT = 'club_budget'
+const TUTORIAL_EVENT_ACCOUNT = 'camporee_event'
 const ledgerIsAllAccounts = computed(() => ledgerFilters.value.account === 'all')
 
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin' || clubs.value.length > 1)
@@ -258,6 +267,175 @@ const correctionStatusLabel = (movement) => {
     return movement?.status || 'posted'
 }
 const canCorrectMovement = (movement) => Boolean(movement?.can_reverse && movement?.correction_type)
+const px = (value) => `${Math.round(Number(value) || 0)}px`
+const viewportSize = () => {
+    if (typeof window === 'undefined') return { width: 1024, height: 768 }
+
+    return {
+        width: window.innerWidth || 1024,
+        height: window.innerHeight || 768,
+    }
+}
+const tutorialSteps = computed(() => [
+    {
+        id: 'intro',
+        target: '[data-tour="accounting-header"]',
+        title: tr('Contabilidad', 'Accounting'),
+        body: tr('Modo tutorial usa datos simulados. Puedes practicar filtros, transferencias y lectura del libro sin guardar nada real.', 'Tutorial mode uses simulated data. You can practice filters, transfers, and ledger review without saving anything real.'),
+    },
+    {
+        id: 'module-nav',
+        target: '[data-tour="accounting-module-nav"]',
+        title: tr('Secciones del modulo', 'Module sections'),
+        body: tr('Estos accesos te llevan a transferencias, saldos, libro contable, eventos y entregas de staff.', 'These shortcuts take you to transfers, balances, ledger, events, and staff remittances.'),
+    },
+    {
+        id: 'summary',
+        target: '[data-tour="accounting-summary"]',
+        title: tr('Resumen general', 'General summary'),
+        body: tr('El resumen separa efectivo, banco, total disponible y reembolsos pendientes para revisar la salud de caja.', 'The summary separates cash, bank, total available, and pending reimbursements so you can review cash health.'),
+    },
+    {
+        id: 'transfer-form',
+        target: '[data-tour="accounting-transfer-form"]',
+        title: tr('Transferencias', 'Transfers'),
+        body: tr('Aqui registras movimientos internos como depositar efectivo al banco, retirar efectivo o mover dinero entre cuentas.', 'Here you record internal movements such as depositing cash to bank, withdrawing cash, or moving money between accounts.'),
+    },
+    {
+        id: 'transfer-type',
+        target: '[data-tour="accounting-transfer-type"]',
+        title: tr('Tipo de movimiento', 'Movement type'),
+        body: tr('El tipo define si el dinero cambia de ubicacion dentro de la misma cuenta o si pasa entre cuentas internas.', 'The type defines whether money changes location inside the same account or moves between internal accounts.'),
+    },
+    {
+        id: 'transfer-amount',
+        target: '[data-tour="accounting-transfer-amount"]',
+        title: tr('Monto y referencia', 'Amount and reference'),
+        body: tr('Registra el monto y una referencia de banco, Zelle, deposito o nota interna para dejar trazabilidad.', 'Record the amount and a bank, Zelle, deposit, or internal reference for traceability.'),
+    },
+    {
+        id: 'save-transfer',
+        target: '[data-tour="accounting-save-transfer"]',
+        title: tr('Guardar movimiento', 'Save movement'),
+        body: tr('Haz clic para simular la transferencia. En tutorial se actualizan saldos y libro contable sin llamar la API real.', 'Click to simulate the transfer. In tutorial, balances and the ledger update without calling the real API.'),
+    },
+    {
+        id: 'balances',
+        target: '[data-tour="accounting-balances"]',
+        title: tr('Saldos por cuenta', 'Account balances'),
+        body: tr('Esta lectura muestra cuanto tiene cada cuenta en efectivo y banco despues de cada movimiento.', 'This readout shows how much each account has in cash and bank after each movement.'),
+    },
+    {
+        id: 'ledger-filters',
+        target: '[data-tour="accounting-ledger-filters"]',
+        title: tr('Filtros del libro', 'Ledger filters'),
+        body: tr('Filtra por dominio, cuenta y fechas para auditar una parte especifica del libro contable.', 'Filter by domain, account, and dates to audit a specific part of the ledger.'),
+    },
+    {
+        id: 'ledger',
+        target: '[data-tour="accounting-ledger"]',
+        title: tr('Libro contable', 'Accounting ledger'),
+        body: tr('El libro combina ingresos, gastos, transferencias, soportes, estados y balances despues de cada movimiento.', 'The ledger combines income, expenses, transfers, files, statuses, and balances after each movement.'),
+    },
+    {
+        id: 'events',
+        target: '[data-tour="accounting-events"]',
+        title: tr('Transferencias de eventos', 'Event transfers'),
+        body: tr('Cuando un evento pertenece a otro nivel, aqui veras lo pendiente por depositar con su desglose y cuenta destino.', 'When an event belongs to another level, this shows what remains to deposit with its breakdown and destination account.'),
+    },
+    {
+        id: 'staff',
+        target: '[data-tour="accounting-staff"]',
+        title: tr('Entregas de staff', 'Staff remittances'),
+        body: tr('Valida entregas que personal marco como recibidas para que entren oficialmente al control financiero.', 'Validate remittances staff marked as delivered so they officially enter financial control.'),
+    },
+    {
+        id: 'recent',
+        target: '[data-tour="accounting-recent-transfers"]',
+        title: tr('Auditoria rapida', 'Quick audit'),
+        body: tr('Esta lista deja a la vista las transferencias internas mas recientes registradas desde contabilidad.', 'This list keeps the latest internal transfers recorded from accounting visible.'),
+    },
+])
+const tutorialStep = computed(() => tutorialSteps.value[tutorialStepIndex.value] || tutorialSteps.value[0] || null)
+const tutorialStepCount = computed(() => tutorialSteps.value.length)
+const tutorialProgressLabel = computed(() => `${tutorialStepIndex.value + 1}/${tutorialStepCount.value}`)
+const tutorialCutout = computed(() => {
+    if (!tutorialTargetRect.value) return null
+
+    const { width, height } = viewportSize()
+    const margin = 8
+    const top = Math.max(tutorialTargetRect.value.top - margin, 0)
+    const left = Math.max(tutorialTargetRect.value.left - margin, 0)
+    const right = Math.min(tutorialTargetRect.value.right + margin, width)
+    const bottom = Math.min(tutorialTargetRect.value.bottom + margin, height)
+
+    return {
+        top,
+        left,
+        right,
+        bottom,
+        width: Math.max(right - left, 0),
+        height: Math.max(bottom - top, 0),
+    }
+})
+const tutorialMaskStyles = computed(() => {
+    const cutout = tutorialCutout.value
+    if (!cutout) return []
+
+    return [
+        { top: '0px', left: '0px', width: '100vw', height: px(cutout.top) },
+        { top: px(cutout.bottom), left: '0px', width: '100vw', height: `calc(100vh - ${px(cutout.bottom)})` },
+        { top: px(cutout.top), left: '0px', width: px(cutout.left), height: px(cutout.height) },
+        { top: px(cutout.top), left: px(cutout.right), width: `calc(100vw - ${px(cutout.right)})`, height: px(cutout.height) },
+    ]
+})
+const tutorialHighlightStyle = computed(() => {
+    const cutout = tutorialCutout.value
+    if (!cutout) return {}
+
+    return {
+        top: px(cutout.top),
+        left: px(cutout.left),
+        width: px(cutout.width),
+        height: px(cutout.height),
+    }
+})
+const tutorialPanelStyle = computed(() => {
+    const { width, height } = viewportSize()
+    const cutout = tutorialCutout.value
+
+    if (width < 640) {
+        return {
+            left: '1rem',
+            right: '1rem',
+            bottom: '1rem',
+        }
+    }
+
+    if (!cutout) {
+        return {
+            left: '50%',
+            top: '50%',
+            width: 'min(24rem, calc(100vw - 2rem))',
+            transform: 'translate(-50%, -50%)',
+        }
+    }
+
+    const panelWidth = Math.min(384, Math.max(280, width - 32))
+    const estimatedHeight = 236
+    const left = Math.min(Math.max(cutout.left, 16), width - panelWidth - 16)
+    let top = cutout.bottom + 12
+
+    if (top + estimatedHeight > height && cutout.top > estimatedHeight + 24) {
+        top = cutout.top - estimatedHeight - 12
+    }
+
+    return {
+        left: px(left),
+        top: px(Math.max(16, Math.min(top, height - estimatedHeight - 16))),
+        width: px(panelWidth),
+    }
+})
 const linkedMovementKey = (movement, type) => {
     const cancellation = movement?.cancellation || {}
     return type === 'correction'
@@ -417,7 +595,310 @@ const syncMovementDefaults = () => {
     if (movementForm.value.to_pay_to && !available.includes(movementForm.value.to_pay_to)) movementForm.value.to_pay_to = ''
 }
 
+const tutorialNext = () => {
+    tutorialNextId.value += 1
+    return tutorialNextId.value
+}
+const tutorialAccountLabel = (account) => ({
+    [TUTORIAL_ACCOUNT]: tr('Presupuesto del club', 'Club budget'),
+    [TUTORIAL_EVENT_ACCOUNT]: tr('Camporee', 'Camporee'),
+    reimbursement_to: tr('Reembolsos pendientes', 'Pending reimbursements'),
+})[account] || account
+const tutorialSummaryFromAccounts = (accounts) => {
+    const rows = accounts.map((account) => ({
+        account: account.account,
+        label: account.label,
+        cash_balance: Number(account.cash_balance || 0),
+        bank_balance: Number(account.bank_balance || 0),
+        total_available: Number(account.cash_balance || 0) + Number(account.bank_balance || 0),
+    }))
+
+    return {
+        cash_balance: rows.reduce((sum, account) => sum + Number(account.cash_balance || 0), 0),
+        bank_balance: rows.reduce((sum, account) => sum + Number(account.bank_balance || 0), 0),
+        total_available: rows.reduce((sum, account) => sum + Number(account.total_available || 0), 0),
+        accounts: rows,
+    }
+}
+const tutorialLedgerMovement = (overrides) => ({
+    id: tutorialNext(),
+    movement_id: `tutorial-${tutorialNextId.value}`,
+    domain: 'transfer',
+    kind: 'transfer',
+    date: today(),
+    status: 'posted',
+    amount: 0,
+    signed_amount: 0,
+    reference: '',
+    concept: tr('Transferencia tutorial', 'Tutorial transfer'),
+    account: TUTORIAL_ACCOUNT,
+    account_label: tutorialAccountLabel(TUTORIAL_ACCOUNT),
+    location: 'cash',
+    balance_after: null,
+    can_reverse: false,
+    correction_type: null,
+    ...overrides,
+})
+const tutorialApplyTreasury = ({ accounts, movements, ledger, eventRows, staffRows }) => {
+    treasury.value = {
+        club: { id: TUTORIAL_CLUB_ID, club_name: tr('Club Tutorial', 'Tutorial Club') },
+        bank_info: {
+            bank_name: 'Banco Tutorial',
+            account_holder: tr('Club Tutorial', 'Tutorial Club'),
+            account_type: tr('Corriente', 'Checking'),
+            account_number: '****1234',
+            zelle_email: 'tutorial@example.com',
+        },
+        accounts: accounts.map((account) => ({
+            value: account.account,
+            label: account.label,
+        })),
+        summary: tutorialSummaryFromAccounts(accounts),
+        pending_staff_remittances: staffRows,
+        movements,
+    }
+    accountReport.value = { accounts }
+    engineReport.value = { movements: ledger }
+    eventSettlementRows.value = eventRows
+}
+const tutorialResetSandbox = () => {
+    const accounts = [
+        { account: TUTORIAL_ACCOUNT, label: tutorialAccountLabel(TUTORIAL_ACCOUNT), cash_balance: 180, bank_balance: 420 },
+        { account: TUTORIAL_EVENT_ACCOUNT, label: tutorialAccountLabel(TUTORIAL_EVENT_ACCOUNT), cash_balance: 35, bank_balance: 125 },
+        { account: 'reimbursement_to', label: tutorialAccountLabel('reimbursement_to'), cash_balance: -40, bank_balance: 0 },
+    ]
+    const ledger = [
+        tutorialLedgerMovement({
+            movement_id: 'tutorial-income-7001',
+            domain: 'income',
+            kind: 'income',
+            concept: tr('Cuota mensual tutorial', 'Tutorial monthly dues'),
+            account: TUTORIAL_ACCOUNT,
+            account_label: tutorialAccountLabel(TUTORIAL_ACCOUNT),
+            location: 'cash',
+            amount: 25,
+            signed_amount: 25,
+            balance_after: { account: TUTORIAL_ACCOUNT, account_balance: 600 },
+            rowCounterparty: 'Ana Gomez',
+        }),
+        tutorialLedgerMovement({
+            movement_id: 'tutorial-expense-7002',
+            domain: 'expense',
+            kind: 'expense',
+            concept: tr('Materiales de clase tutorial', 'Tutorial class supplies'),
+            account: TUTORIAL_ACCOUNT,
+            account_label: tutorialAccountLabel(TUTORIAL_ACCOUNT),
+            location: 'cash',
+            amount: 45,
+            signed_amount: -45,
+            balance_after: { account: TUTORIAL_ACCOUNT, account_balance: 575 },
+        }),
+    ]
+    const movements = [
+        {
+            id: 7003,
+            movement_type: 'cash_deposit',
+            pay_to: TUTORIAL_ACCOUNT,
+            from_location: 'cash',
+            to_location: 'bank',
+            amount: 75,
+            movement_date: today(),
+            reference: 'DEP-TUTORIAL-01',
+        },
+    ]
+    const eventRows = [{
+        event_id: 701,
+        club_id: TUTORIAL_CLUB_ID,
+        event_title: tr('Camporee tutorial', 'Tutorial camporee'),
+        organizer_label: tr('Asociacion Tutorial', 'Tutorial Association'),
+        pending_settlement_amount: 95,
+        pending_settlement_breakdown: [
+            { label: tr('Inscripcion', 'Registration'), amount: 75 },
+            { label: tr('Actividad opcional', 'Optional activity'), amount: 20 },
+        ],
+        paid_members_count: 3,
+        paid_members_total: 95,
+        paid_members: [
+            { member_id: 1, name: 'Ana Gomez', total_paid: 35, payments_count: 1, last_payment_date: today(), payment_types: ['cash'] },
+            { member_id: 2, name: 'Luis Perez', total_paid: 30, payments_count: 1, last_payment_date: today(), payment_types: ['zelle'] },
+        ],
+        organizer_bank_info: {
+            label: tr('Cuenta de asociacion', 'Association account'),
+            bank_name: 'Banco Tutorial',
+            account_holder: tr('Asociacion Tutorial', 'Tutorial Association'),
+            account_number: '****9876',
+            zelle_email: 'association@example.com',
+        },
+        settlement_receipts: [],
+    }]
+    const staffRows = [{
+        batch_id: 'tutorial-staff-1',
+        staff_name: 'Instructor Tutorial',
+        amount: 30,
+        count: 2,
+        remittance_method: 'cash',
+        remittance_reference: 'STAFF-TUTORIAL',
+        remitted_at: today(),
+    }]
+
+    selectedClubId.value = TUTORIAL_CLUB_ID
+    clubs.value = [{ id: TUTORIAL_CLUB_ID, club_name: tr('Club Tutorial', 'Tutorial Club') }]
+    ledgerFilters.value = { domain: 'all', account: 'all', date_from: '', date_to: '' }
+    ledgerPage.value = 1
+    tutorialNextId.value = 7003
+    tutorialApplyTreasury({ accounts, movements, ledger, eventRows, staffRows })
+    resetMovementForm()
+    movementForm.value = {
+        ...movementForm.value,
+        movement_type: 'cash_deposit',
+        pay_to: TUTORIAL_ACCOUNT,
+        from_pay_to: TUTORIAL_ACCOUNT,
+        to_pay_to: '',
+        from_location: 'cash',
+        to_location: 'bank',
+        amount: '75.00',
+        movement_date: today(),
+        reference: 'DEP-TUTORIAL-02',
+        notes: tr('Practica: deposito de efectivo a banco', 'Practice: cash deposit to bank'),
+    }
+}
+const updateTutorialTarget = (scrollIntoView = false) => {
+    if (typeof window === 'undefined' || !tutorialActive.value || !tutorialStep.value) return
+
+    nextTick(() => {
+        const target = document.querySelector(tutorialStep.value.target)
+        if (!target) {
+            tutorialTargetRect.value = null
+            return
+        }
+
+        if (scrollIntoView) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+        }
+
+        window.setTimeout(() => {
+            const rect = target.getBoundingClientRect()
+            if (!rect.width && !rect.height) {
+                tutorialTargetRect.value = null
+                return
+            }
+
+            tutorialTargetRect.value = {
+                top: rect.top,
+                left: rect.left,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+            }
+        }, scrollIntoView ? 260 : 0)
+    })
+}
+const startAccountingTutorial = () => {
+    if (!tutorialActive.value) {
+        tutorialReturnClubId.value = selectedClubId.value
+    }
+    tutorialResetSandbox()
+    tutorialStepIndex.value = 0
+    tutorialActive.value = true
+    updateTutorialTarget(true)
+}
+const closeAccountingTutorial = () => {
+    const returnClubId = tutorialReturnClubId.value
+    tutorialActive.value = false
+    tutorialTargetRect.value = null
+    tutorialReturnClubId.value = null
+    selectedClubId.value = returnClubId
+    loadData()
+}
+const previousTutorialStep = () => {
+    tutorialStepIndex.value = Math.max(tutorialStepIndex.value - 1, 0)
+}
+const goToTutorialStep = (id) => {
+    const index = tutorialSteps.value.findIndex((step) => step.id === id)
+    if (index >= 0) tutorialStepIndex.value = index
+}
+const nextTutorialStep = () => {
+    if (tutorialStepIndex.value >= tutorialStepCount.value - 1) {
+        closeAccountingTutorial()
+        return
+    }
+
+    tutorialStepIndex.value += 1
+}
+const handleTutorialViewportChange = () => {
+    if (tutorialActive.value) updateTutorialTarget(false)
+}
+const handleTutorialKeydown = (event) => {
+    if (!tutorialActive.value) return
+    if (event.key === 'Escape') closeAccountingTutorial()
+    if (event.key === 'ArrowRight') nextTutorialStep()
+    if (event.key === 'ArrowLeft') previousTutorialStep()
+}
+const tutorialCreateTransfer = async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 250))
+    const amount = Number(movementForm.value.amount || 0)
+    const payTo = movementForm.value.pay_to || TUTORIAL_ACCOUNT
+    const accounts = summaryAccounts.value.map((account) => ({ ...account }))
+    const account = accounts.find((row) => row.account === payTo)
+
+    if (account && movementForm.value.movement_type === 'cash_deposit') {
+        account.cash_balance = Number(account.cash_balance || 0) - amount
+        account.bank_balance = Number(account.bank_balance || 0) + amount
+        account.total_available = Number(account.cash_balance || 0) + Number(account.bank_balance || 0)
+    }
+
+    const id = tutorialNext()
+    const transfer = {
+        id,
+        movement_type: movementForm.value.movement_type,
+        pay_to: payTo,
+        from_pay_to: movementForm.value.from_pay_to,
+        to_pay_to: movementForm.value.to_pay_to,
+        from_location: movementForm.value.from_location,
+        to_location: movementForm.value.to_location,
+        amount,
+        movement_date: movementForm.value.movement_date,
+        reference: movementForm.value.reference,
+    }
+    const ledger = [
+        tutorialLedgerMovement({
+            id,
+            movement_id: `tutorial-transfer-${id}`,
+            concept: movementTypeLabel(movementForm.value.movement_type),
+            movement_type: movementForm.value.movement_type,
+            amount,
+            signed_amount: 0,
+            reference: movementForm.value.reference,
+            from_account: payTo,
+            to_account: payTo,
+            from_account_label: tutorialAccountLabel(payTo),
+            to_account_label: tutorialAccountLabel(payTo),
+            from_location: movementForm.value.from_location,
+            to_location: movementForm.value.to_location,
+            balance_after: {
+                from: { account: payTo, account_balance: account?.total_available ?? 0 },
+                to: { account: payTo, account_balance: account?.total_available ?? 0 },
+            },
+        }),
+        ...ledgerMovements.value,
+    ]
+
+    tutorialApplyTreasury({
+        accounts,
+        movements: [transfer, ...recentTreasuryMovements.value],
+        ledger,
+        eventRows: eventSettlementRows.value,
+        staffRows: pendingStaffRemittances.value,
+    })
+}
+
 async function loadLedger() {
+    if (tutorialActive.value) {
+        showToast(tr('Filtros tutorial aplicados.', 'Tutorial filters applied.'), 'success')
+        return
+    }
+
     ledgerLoading.value = true
     try {
         ledgerPage.value = 1
@@ -441,6 +922,11 @@ async function loadLedger() {
 }
 
 async function loadData() {
+    if (tutorialActive.value) {
+        tutorialResetSandbox()
+        return
+    }
+
     loading.value = true
     loadError.value = ''
     try {
@@ -486,6 +972,14 @@ function resetMovementForm() {
 async function saveMovement() {
     savingMovement.value = true
     try {
+        if (tutorialActive.value) {
+            await tutorialCreateTransfer()
+            showToast(tr('Movimiento tutorial registrado.', 'Tutorial movement recorded.'), 'success')
+            resetMovementForm()
+            goToTutorialStep('balances')
+            return
+        }
+
         await createFinanceEngineTransfer({
             ...movementForm.value,
             club_id: selectedClubId.value,
@@ -504,6 +998,19 @@ async function saveMovement() {
 async function validateRemittance(batch) {
     validatingBatchId.value = batch.batch_id
     try {
+        if (tutorialActive.value) {
+            await new Promise((resolve) => window.setTimeout(resolve, 250))
+            tutorialApplyTreasury({
+                accounts: summaryAccounts.value,
+                movements: recentTreasuryMovements.value,
+                ledger: ledgerMovements.value,
+                eventRows: eventSettlementRows.value,
+                staffRows: pendingStaffRemittances.value.filter((row) => row.batch_id !== batch.batch_id),
+            })
+            showToast(tr('Entrega tutorial validada.', 'Tutorial remittance validated.'), 'success')
+            return
+        }
+
         await validateFinanceEngineStaffRemittance(batch.batch_id, selectedClubId.value)
         showToast(tr('Entrega de staff validada.', 'Staff remittance validated.'), 'success')
         await loadData()
@@ -541,6 +1048,29 @@ async function saveEventSettlement() {
     settlementSaving.value = true
     settlementError.value = ''
     try {
+        if (tutorialActive.value) {
+            await new Promise((resolve) => window.setTimeout(resolve, 250))
+            tutorialApplyTreasury({
+                accounts: summaryAccounts.value,
+                movements: recentTreasuryMovements.value,
+                ledger: ledgerMovements.value,
+                eventRows: eventSettlementRows.value.map((row) => row.event_id === selectedSettlement.value.event_id
+                    ? {
+                        ...row,
+                        pending_settlement_amount: 0,
+                        settlement_receipts: [
+                            ...(row.settlement_receipts || []),
+                            { id: tutorialNext(), receipt_number: 'TUTORIAL-EVENT-001', receipt_url: 'data:text/plain;charset=utf-8,Recibo%20tutorial' },
+                        ],
+                    }
+                    : row),
+                staffRows: pendingStaffRemittances.value,
+            })
+            showToast(tr('Transferencia de evento tutorial registrada.', 'Tutorial event transfer recorded.'), 'success')
+            closeSettlementModal()
+            return
+        }
+
         await createFinanceEngineEventSettlement(selectedSettlement.value.event_id, {
             club_id: selectedSettlement.value.club_id,
             deposited_at: settlementForm.value.deposited_at,
@@ -642,7 +1172,22 @@ watch(ledgerMovements, () => {
     }
 })
 
-onMounted(loadData)
+watch([tutorialActive, tutorialStepIndex], ([active]) => {
+    if (active) updateTutorialTarget(true)
+})
+
+onMounted(() => {
+    loadData()
+    window.addEventListener('resize', handleTutorialViewportChange)
+    window.addEventListener('scroll', handleTutorialViewportChange, true)
+    window.addEventListener('keydown', handleTutorialKeydown)
+})
+
+onBeforeUnmount(() => {
+    window.removeEventListener('resize', handleTutorialViewportChange)
+    window.removeEventListener('scroll', handleTutorialViewportChange, true)
+    window.removeEventListener('keydown', handleTutorialKeydown)
+})
 </script>
 
 <template>
@@ -650,7 +1195,7 @@ onMounted(loadData)
         <template #title>{{ tr('Contabilidad', 'Accounting') }}</template>
 
         <div class="space-y-6">
-            <section class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <section data-tour="accounting-header" class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <div class="border-b border-gray-100 bg-gray-50 px-4 py-4 sm:px-5">
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                         <div class="min-w-0">
@@ -670,6 +1215,7 @@ onMounted(loadData)
                                 <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Club', 'Club') }}</label>
                                 <select
                                     v-model="selectedClubId"
+                                    :disabled="tutorialActive"
                                     class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                                     @change="loadData"
                                 >
@@ -685,11 +1231,19 @@ onMounted(loadData)
                                 <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': loading }" />
                                 <span>{{ loading ? tr('Cargando...', 'Loading...') : tr('Recargar', 'Reload') }}</span>
                             </button>
+                            <button
+                                type="button"
+                                class="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                                @click="startAccountingTutorial"
+                            >
+                                <QuestionMarkCircleIcon class="h-4 w-4" />
+                                <span>{{ tutorialActive ? tr('Reiniciar tutorial', 'Restart tutorial') : tr('Modo tutorial', 'Tutorial mode') }}</span>
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <div class="grid gap-3 p-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+                <div data-tour="accounting-module-nav" class="grid gap-3 p-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
                     <a
                         v-for="item in moduleNavItems"
                         :key="item.href"
@@ -708,7 +1262,25 @@ onMounted(loadData)
                 {{ loadError }}
             </div>
 
-            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div v-if="tutorialActive" class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-red-900">{{ tr('Modo tutorial activo', 'Tutorial mode active') }}</p>
+                        <p class="mt-1 text-sm text-red-800">
+                            {{ tr('Transferencias, eventos y validaciones son simuladas. Al salir se borra la practica y se recarga contabilidad real.', 'Transfers, events, and validations are simulated. Exiting clears practice data and reloads real accounting.') }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-xl bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                        @click="closeAccountingTutorial"
+                    >
+                        {{ tr('Salir y borrar practica', 'Exit and clear practice') }}
+                    </button>
+                </div>
+            </div>
+
+            <section data-tour="accounting-summary" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <article class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="flex items-center justify-between gap-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Efectivo', 'Cash') }}</p>
@@ -742,7 +1314,7 @@ onMounted(loadData)
             </section>
 
             <section id="accounting-transfers" class="scroll-mt-4 grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                <article class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <article data-tour="accounting-transfer-form" class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="mb-4 flex items-start gap-3">
                         <BanknotesIcon class="mt-1 h-5 w-5 text-red-600" />
                         <div>
@@ -754,7 +1326,7 @@ onMounted(loadData)
                     </div>
 
                     <form class="space-y-4" @submit.prevent="saveMovement">
-                        <div>
+                        <div data-tour="accounting-transfer-type">
                             <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Tipo de movimiento', 'Movement type') }}</label>
                             <select
                                 v-model="movementForm.movement_type"
@@ -850,7 +1422,7 @@ onMounted(loadData)
                             </div>
                         </div>
 
-                        <div class="grid gap-3 sm:grid-cols-2">
+                        <div data-tour="accounting-transfer-amount" class="grid gap-3 sm:grid-cols-2">
                             <div>
                                 <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Monto', 'Amount') }}</label>
                                 <input
@@ -895,6 +1467,7 @@ onMounted(loadData)
 
                         <button
                             type="submit"
+                            data-tour="accounting-save-transfer"
                             class="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
                             :disabled="savingMovement"
                         >
@@ -903,7 +1476,7 @@ onMounted(loadData)
                     </form>
                 </article>
 
-                <article id="accounting-balances" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <article id="accounting-balances" data-tour="accounting-balances" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="mb-4 flex items-start gap-3">
                         <ChartBarIcon class="mt-1 h-5 w-5 text-red-600" />
                         <div>
@@ -942,7 +1515,7 @@ onMounted(loadData)
                 </article>
             </section>
 
-            <section id="accounting-ledger" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <section id="accounting-ledger" data-tour="accounting-ledger" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Libro contable normalizado', 'Normalized Accounting Ledger') }}</h2>
@@ -950,7 +1523,7 @@ onMounted(loadData)
                             {{ tr('Vista unificada de ingresos, gastos, transferencias, recibos, comprobantes y correcciones vinculadas.', 'Unified view of income, expenses, transfers, receipts, proofs, and linked corrections.') }}
                         </p>
                     </div>
-                    <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                    <div data-tour="accounting-ledger-filters" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                         <select
                             v-model="ledgerFilters.domain"
                             class="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
@@ -1215,7 +1788,7 @@ onMounted(loadData)
                 </div>
             </section>
 
-            <section id="accounting-events" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <section id="accounting-events" data-tour="accounting-events" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Transferencias de eventos hacia arriba', 'Upstream Event Transfers') }}</h2>
@@ -1310,7 +1883,7 @@ onMounted(loadData)
                 </div>
             </section>
 
-            <section id="accounting-staff" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <section id="accounting-staff" data-tour="accounting-staff" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Entregas de dinero de staff', 'Staff Money Remittances') }}</h2>
@@ -1351,7 +1924,7 @@ onMounted(loadData)
                 </div>
             </section>
 
-            <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <section data-tour="accounting-recent-transfers" class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex items-start gap-3">
                     <ArrowPathIcon class="mt-1 h-5 w-5 text-red-600" />
                     <div>
@@ -1378,6 +1951,76 @@ onMounted(loadData)
                     </article>
                 </div>
             </section>
+        </div>
+
+        <div v-if="tutorialActive && tutorialStep" class="pointer-events-none fixed inset-0 z-[70]">
+            <template v-if="tutorialCutout">
+                <div
+                    v-for="(style, index) in tutorialMaskStyles"
+                    :key="index"
+                    class="pointer-events-auto fixed bg-gray-950/70"
+                    :style="style"
+                ></div>
+                <div
+                    class="pointer-events-none fixed rounded-xl border-2 border-red-500 shadow-[0_0_0_4px_rgba(248,113,113,0.35),0_18px_45px_rgba(15,23,42,0.35)]"
+                    :style="tutorialHighlightStyle"
+                ></div>
+            </template>
+            <div v-else class="pointer-events-auto fixed inset-0 bg-gray-950/70"></div>
+
+            <aside
+                class="pointer-events-auto fixed rounded-xl border border-gray-200 bg-white p-4 shadow-2xl"
+                :style="tutorialPanelStyle"
+                role="dialog"
+                :aria-label="tr('Tutorial de contabilidad', 'Accounting tutorial')"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-red-600">
+                            {{ tr('Tutorial de contabilidad', 'Accounting tutorial') }} · {{ tutorialProgressLabel }}
+                        </p>
+                        <h3 class="mt-1 text-base font-semibold text-gray-950">{{ tutorialStep.title }}</h3>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-500 hover:bg-gray-50"
+                        :aria-label="tr('Salir del tutorial', 'Exit tutorial')"
+                        @click="closeAccountingTutorial"
+                    >
+                        ×
+                    </button>
+                </div>
+                <p class="mt-3 text-sm leading-6 text-gray-600">{{ tutorialStep.body }}</p>
+                <p v-if="!tutorialCutout" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    {{ tr('Esta parte no esta visible ahora; aparecera cuando existan datos relacionados.', 'This part is not visible right now; it will appear when related data exists.') }}
+                </p>
+                <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="tutorialStepIndex === 0"
+                        @click="previousTutorialStep"
+                    >
+                        {{ tr('Anterior', 'Previous') }}
+                    </button>
+                    <div class="flex gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                            @click="closeAccountingTutorial"
+                        >
+                            {{ tr('Salir', 'Exit') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                            @click="nextTutorialStep"
+                        >
+                            {{ tutorialStepIndex >= tutorialStepCount - 1 ? tr('Terminar', 'Finish') : tr('Siguiente', 'Next') }}
+                        </button>
+                    </div>
+                </div>
+            </aside>
         </div>
 
         <div v-if="selectedCorrectionMovement" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

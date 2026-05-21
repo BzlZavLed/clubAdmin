@@ -680,6 +680,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.expenses.reimbursement-receipt.upload');
     Route::delete('/club-director/finance-engine/expenses/{expense}/reimbursement-receipt', [FinanceEngineController::class, 'removeReimbursementReceipt'])
         ->name('club.finance-engine.expenses.reimbursement-receipt.remove');
+    Route::post('/club-director/finance-engine/expenses/{expense}/reimbursement-payment-proof', [FinanceEngineController::class, 'uploadReimbursementPaymentProof'])
+        ->name('club.finance-engine.expenses.reimbursement-payment-proof.upload');
+    Route::delete('/club-director/finance-engine/expenses/{expense}/reimbursement-payment-proof', [FinanceEngineController::class, 'removeReimbursementPaymentProof'])
+        ->name('club.finance-engine.expenses.reimbursement-payment-proof.remove');
     Route::post('/club-director/finance-engine/expenses/{expense}/reimburse', [FinanceEngineController::class, 'markExpenseReimbursed'])
         ->name('club.finance-engine.expenses.reimburse');
     Route::post('/club-director/finance-engine/transfers', [FinanceEngineController::class, 'storeTransfer'])
@@ -725,6 +729,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.expenses.uploadReimbursementReceipt');
     Route::delete('/club-director/expenses/{expense}/reimbursement-receipt', [FinanceEngineController::class, 'removeReimbursementReceipt'])
         ->name('club.director.expenses.removeReimbursementReceipt');
+    Route::post('/club-director/expenses/{expense}/reimbursement-payment-proof', [FinanceEngineController::class, 'uploadReimbursementPaymentProof'])
+        ->name('club.director.expenses.uploadReimbursementPaymentProof');
+    Route::delete('/club-director/expenses/{expense}/reimbursement-payment-proof', [FinanceEngineController::class, 'removeReimbursementPaymentProof'])
+        ->name('club.director.expenses.removeReimbursementPaymentProof');
     Route::post('/club-director/expenses/{expense}/reimburse', [FinanceEngineController::class, 'markExpenseReimbursed'])
         ->name('club.director.expenses.reimburse');
     Route::get('/club-director/staff', function () {

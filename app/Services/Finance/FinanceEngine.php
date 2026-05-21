@@ -164,9 +164,19 @@ class FinanceEngine
         return $this->writer->uploadReimbursementReceipt($request, $expense);
     }
 
+    public function uploadReimbursementPaymentProof(Request $request, Expense $expense)
+    {
+        return $this->writer->uploadReimbursementPaymentProof($request, $expense);
+    }
+
     public function removeReimbursementReceipt(Request $request, Expense $expense)
     {
         return $this->writer->removeReimbursementReceipt($request, $expense);
+    }
+
+    public function removeReimbursementPaymentProof(Request $request, Expense $expense)
+    {
+        return $this->writer->removeReimbursementPaymentProof($request, $expense);
     }
 
     public function markExpenseReimbursed(Request $request, Expense $expense)

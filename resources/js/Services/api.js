@@ -443,6 +443,22 @@ export const removeFinanceEngineExpenseReceipt = async (expenseId) => {
     return data;
 };
 
+export const uploadFinanceEngineReimbursementPaymentProof = async (expenseId, payload) => {
+    const { data } = await axios.post(
+        route('club.finance-engine.expenses.reimbursement-payment-proof.upload', { expense: expenseId }),
+        financeEngineFormData(payload),
+        { headers: financeEngineFormHeaders }
+    );
+    return data;
+};
+
+export const removeFinanceEngineReimbursementPaymentProof = async (expenseId) => {
+    const { data } = await axios.delete(route('club.finance-engine.expenses.reimbursement-payment-proof.remove', { expense: expenseId }), {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
 export const reimburseFinanceEngineExpense = async (expenseId, payload) => {
     const { data } = await axios.post(
         route('club.finance-engine.expenses.reimburse', { expense: expenseId }),

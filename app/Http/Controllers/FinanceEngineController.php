@@ -273,8 +273,8 @@ class FinanceEngineController extends Controller
         return match ($proof['type'] ?? null) {
             'check_image' => 'PAY-' . $id,
             'expense_receipt' => 'EXP-' . $id,
+            'reimbursement_payment_proof' => 'REIMB-PAY-' . $id,
             'reimbursement_receipt' => 'REIMB-' . $id,
-            'reimbursement_signed_receipt' => 'REIMB-SIGN-' . $id,
             'fundraiser_investment_receipt' => 'INV-' . $id,
             'treasury_proof' => 'TREAS-' . $id,
             default => $this->movementReference($movement),
@@ -286,8 +286,8 @@ class FinanceEngineController extends Controller
         return match ($type) {
             'check_image' => 'Cheque',
             'expense_receipt' => 'Comprobante de gasto',
+            'reimbursement_payment_proof' => 'Comprobante de pago de reembolso',
             'reimbursement_receipt' => 'Comprobante de reembolso',
-            'reimbursement_signed_receipt' => 'Recibo de reembolso firmado',
             'fundraiser_investment_receipt' => 'Comprobante de inversion',
             'treasury_proof' => 'Comprobante de transferencia',
             default => 'Comprobante',
@@ -492,9 +492,19 @@ class FinanceEngineController extends Controller
         return $this->financeEngine->uploadReimbursementReceipt($request, $expense);
     }
 
+    public function uploadReimbursementPaymentProof(Request $request, Expense $expense)
+    {
+        return $this->financeEngine->uploadReimbursementPaymentProof($request, $expense);
+    }
+
     public function removeReimbursementReceipt(Request $request, Expense $expense)
     {
         return $this->financeEngine->removeReimbursementReceipt($request, $expense);
+    }
+
+    public function removeReimbursementPaymentProof(Request $request, Expense $expense)
+    {
+        return $this->financeEngine->removeReimbursementPaymentProof($request, $expense);
     }
 
     public function markExpenseReimbursed(Request $request, Expense $expense)

@@ -140,6 +140,13 @@ const menuItems = computed(() => [
                 icon: ChartBarIcon
             },
             {
+                id: 'finance_reports',
+                name: t('financial_reports'),
+                href: '/club-director/finance/reports',
+                route: 'club.director.finance.reports',
+                icon: DocumentTextIcon
+            },
+            {
                 id: 'fundraiser_pos',
                 name: t('fundraiser_pos'),
                 href: '/club-director/finance/fundraisers',
