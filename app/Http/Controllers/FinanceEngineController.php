@@ -164,6 +164,10 @@ class FinanceEngineController extends Controller
             $receipt = $movement['receipt'] ?? null;
             if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
                 $isIncomeReceipt = ($movement['domain'] ?? null) === 'income';
+                if (!$isIncomeReceipt && empty($receipt['url'])) {
+                    continue;
+                }
+
                 $this->pushLedgerAnnex($annexes, $seen, [
                     'key' => 'receipt:' . ($receipt['url'] ?? $receipt['number']),
                     'reference' => $receipt['number'] ?? $this->movementReference($movement),
@@ -194,6 +198,10 @@ class FinanceEngineController extends Controller
 
                 $path = $proof['path'] ?? null;
                 $url = $proof['url'] ?? null;
+                if (!$path && !$url) {
+                    continue;
+                }
+
                 $file = $this->annexFilePayload($path);
 
                 $this->pushLedgerAnnex($annexes, $seen, [

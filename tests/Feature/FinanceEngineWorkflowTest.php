@@ -262,6 +262,106 @@ class FinanceEngineWorkflowTest extends TestCase
             ->assertJsonPath('file_name', 'finance-ledger.pdf');
     }
 
+    public function test_finance_ledger_receipt_appendix_orders_attached_and_missing_sections_by_reference(): void
+    {
+        $club = (object) [
+            'club_name' => 'Test Club',
+            'church_name' => 'Test Church',
+        ];
+
+        $report = [
+            'summary' => [],
+            'filters' => [],
+            'movements' => [
+                [
+                    'movement_id' => 'expense:10',
+                    'domain' => 'expense',
+                    'kind' => 'expense',
+                    'date' => '2026-01-10',
+                    'concept' => 'No receipt expense ten',
+                    'amount' => 10,
+                    'status' => 'posted',
+                ],
+                [
+                    'movement_id' => 'expense:8',
+                    'domain' => 'expense',
+                    'kind' => 'expense',
+                    'date' => '2026-01-08',
+                    'concept' => 'No receipt expense eight',
+                    'amount' => 8,
+                    'status' => 'posted',
+                ],
+                [
+                    'movement_id' => 'expense:13',
+                    'domain' => 'expense',
+                    'kind' => 'expense',
+                    'date' => '2026-01-13',
+                    'concept' => 'Attached expense thirteen',
+                    'amount' => 13,
+                    'status' => 'posted',
+                    'proofs' => [[
+                        'type' => 'expense_receipt',
+                        'url' => 'https://example.test/receipts/EXP-13.jpg',
+                        'path' => 'expense-receipts/EXP-13.jpg',
+                    ]],
+                ],
+                [
+                    'movement_id' => 'expense:12',
+                    'domain' => 'expense',
+                    'kind' => 'expense',
+                    'date' => '2026-01-12',
+                    'concept' => 'Attached expense twelve',
+                    'amount' => 12,
+                    'status' => 'posted',
+                    'proofs' => [[
+                        'type' => 'expense_receipt',
+                        'url' => 'https://example.test/receipts/EXP-12.jpg',
+                        'path' => 'expense-receipts/EXP-12.jpg',
+                    ]],
+                ],
+            ],
+        ];
+
+        $receiptAnnexes = [
+            [
+                'anchor' => 'exp-13',
+                'reference' => 'EXP-13',
+                'title' => 'Comprobante de gasto EXP-13',
+                'url' => 'https://example.test/receipts/EXP-13.jpg',
+                'document_type' => 'expense_receipt',
+                'movement' => ['movement_id' => 'expense:13', 'date' => '2026-01-13', 'concept' => 'Attached expense thirteen', 'amount' => 13],
+            ],
+            [
+                'anchor' => 'exp-12',
+                'reference' => 'EXP-12',
+                'title' => 'Comprobante de gasto EXP-12',
+                'url' => 'https://example.test/receipts/EXP-12.jpg',
+                'document_type' => 'expense_receipt',
+                'movement' => ['movement_id' => 'expense:12', 'date' => '2026-01-12', 'concept' => 'Attached expense twelve', 'amount' => 12],
+            ],
+        ];
+
+        $html = view('reports.finance_engine_movements', [
+            'club' => $club,
+            'report' => $report,
+            'generatedAt' => now(),
+            'clubLogoDataUri' => null,
+            'validationUrl' => 'https://example.test/validate',
+            'qrCodeDataUri' => null,
+            'receiptAnnexes' => $receiptAnnexes,
+            'annexOnly' => true,
+        ])->render();
+
+        $withSection = strpos($html, 'Movimientos con recibos o comprobantes');
+        $withoutSection = strpos($html, 'Movimientos sin recibos o comprobantes');
+
+        $this->assertNotFalse($withSection);
+        $this->assertNotFalse($withoutSection);
+        $this->assertLessThan($withoutSection, $withSection);
+        $this->assertLessThan(strpos($html, 'Comprobante de gasto EXP-13'), strpos($html, 'Comprobante de gasto EXP-12'));
+        $this->assertLessThan(strpos($html, 'EXP-10 - No receipt expense ten'), strpos($html, 'EXP-8 - No receipt expense eight'));
+    }
+
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void
     {
         Storage::fake('public');

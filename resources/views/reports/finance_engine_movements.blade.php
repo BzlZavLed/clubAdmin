@@ -123,20 +123,37 @@
         'income' => 40,
         'transfer' => 70,
     ];
-    $annexSortNumber = function (array $annex) {
-        $value = (string) ($annex['reference'] ?? $annex['title'] ?? $annex['filename'] ?? '');
-        preg_match_all('/\d+/', $value, $matches);
+    $naturalReferenceSortKey = function (?string $value) {
+        $value = strtoupper((string) ($value ?? ''));
 
-        return $matches[0] ? (int) end($matches[0]) : PHP_INT_MAX;
+        return preg_replace_callback('/\d+/', fn ($matches) => str_pad($matches[0], 12, '0', STR_PAD_LEFT), $value);
+    };
+    $movementReferenceText = function (array $movement) {
+        if (!empty($movement['receipt']['number'])) {
+            return $movement['receipt']['number'];
+        }
+        if (!empty($movement['reference'])) {
+            return $movement['reference'];
+        }
+
+        $movementId = (string) ($movement['movement_id'] ?? '');
+        [$type, $id] = array_pad(explode(':', $movementId, 2), 2, null);
+
+        return match ($type) {
+            'payment' => 'RCPT-' . $id,
+            'expense' => (
+                str_contains(strtolower((string) ($movement['concept'] ?? '')), 'reimburs')
+                || str_contains(strtolower((string) ($movement['concept'] ?? '')), 'reembolso')
+            ) ? 'REIMB-' . $id : 'EXP-' . $id,
+            'treasury' => 'TREAS-' . $id,
+            default => strtoupper($movementId ?: 'MOV'),
+        };
     };
     $receiptAnnexGroups = $receiptAnnexes
         ->groupBy(fn (array $annex) => $annex['document_type'] ?? 'other')
         ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
         ->map(fn ($items) => $items
-            ->sortBy([
-                fn (array $annex) => $annexSortNumber($annex),
-                fn (array $annex) => (string) ($annex['reference'] ?? ''),
-            ])
+            ->sortBy(fn (array $annex) => $naturalReferenceSortKey((string) ($annex['reference'] ?? $annex['title'] ?? $annex['filename'] ?? '')))
             ->values()
         );
     $annexUrlAnchors = $receiptAnnexes
@@ -253,20 +270,20 @@
         }
 
         $receipt = $movement['receipt'] ?? null;
-        if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
+        if (is_array($receipt) && (!empty($receipt['url']) || (($movement['domain'] ?? null) === 'income' && !empty($receipt['number'])))) {
             return true;
         }
 
         if (!empty($movement['proofs']) && is_array($movement['proofs'])) {
             foreach ($movement['proofs'] as $proof) {
-                if (is_array($proof) && (!empty($proof['name']) || !empty($proof['url']) || !empty($proof['type']) || !empty($proof['path']))) {
+                if (is_array($proof) && (!empty($proof['url']) || !empty($proof['path']))) {
                     return true;
                 }
             }
         }
 
         $proof = $movement['proof'] ?? null;
-        return is_array($proof) && (!empty($proof['name']) || !empty($proof['url']) || !empty($proof['type']) || !empty($proof['path']));
+        return is_array($proof) && (!empty($proof['url']) || !empty($proof['path']));
     };
     $movementGroupType = function (array $movement) {
         $domain = $movement['domain'] ?? 'other';
@@ -279,21 +296,12 @@
 
         return in_array($domain, ['income', 'expense', 'transfer'], true) ? $domain : 'other';
     };
-    $movementSortNumber = function (array $movement) {
-        $value = (string) ($movement['movement_id'] ?? $movement['reference'] ?? $movement['concept'] ?? '');
-        preg_match_all('/\d+/', $value, $matches);
-
-        return $matches[0] ? (int) end($matches[0]) : PHP_INT_MAX;
-    };
     $movementsWithoutReceiptsGroups = $movements
         ->filter(fn (array $movement) => !$isCorrectionMovement($movement) && !$movementHasDocuments($movement))
         ->groupBy(fn (array $movement) => $movementGroupType($movement))
         ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
         ->map(fn ($items) => $items
-            ->sortBy([
-                fn (array $movement) => $movementSortNumber($movement),
-                fn (array $movement) => (string) ($movement['movement_id'] ?? ''),
-            ])
+            ->sortBy(fn (array $movement) => $naturalReferenceSortKey($movementReferenceText($movement)))
             ->values()
         );
     $amountClass = function (array $movement) use ($isTransfer) {
@@ -475,8 +483,8 @@
 
 @if($receiptAnnexGroups->isNotEmpty())
     <div>
-        <h2 class="annex-title">Recibos y comprobantes agrupados</h2>
-        <div class="annex-subtitle">Ordenados por tipo y numero de referencia.</div>
+        <h2 class="annex-title">Movimientos con recibos o comprobantes</h2>
+        <div class="annex-subtitle">Agrupados por tipo y ordenados por Referencia.</div>
 
         @foreach($receiptAnnexGroups as $groupType => $groupAnnexes)
             <h3 class="annex-compact-group">
@@ -604,7 +612,7 @@
 @if($movementsWithoutReceiptsGroups->isNotEmpty())
     <div class="{{ $receiptAnnexGroups->isNotEmpty() ? 'annex-compact-section' : '' }}">
         <h2 class="annex-title">Movimientos sin recibos o comprobantes</h2>
-        <div class="annex-subtitle">Agrupados por tipo y ordenados por numero de movimiento.</div>
+        <div class="annex-subtitle">Agrupados por tipo y ordenados por Referencia.</div>
 
         @foreach($movementsWithoutReceiptsGroups as $groupType => $groupMovements)
             <h3 class="annex-compact-group">
@@ -614,8 +622,11 @@
 
             @foreach($groupMovements as $movement)
                 <div class="annex-compact-card">
-                    <div class="annex-compact-title">{{ $movement['movement_id'] ?? '-' }} - {{ $movement['concept'] ?? '-' }}</div>
+                    <div class="annex-compact-title">{{ $movementReferenceText($movement) }} - {{ $movement['concept'] ?? '-' }}</div>
                     <div class="annex-compact-meta">
+                        Referencia {{ $movementReferenceText($movement) }}
+                        · Movimiento {{ $movement['movement_id'] ?? '-' }}
+                        ·
                         Fecha {{ $movement['date'] ?? '-' }}
                         · Monto {{ $money($movement['amount'] ?? 0) }}
                         · Cuenta {{ $movement['account_label'] ?? $movement['account'] ?? $movement['from_account'] ?? '-' }}
