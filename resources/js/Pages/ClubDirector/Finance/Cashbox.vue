@@ -3425,14 +3425,6 @@ onBeforeUnmount(() => {
                                 {{ size }} {{ tr('por pagina', 'per page') }}
                             </option>
                         </select>
-                        <button
-                            type="button"
-                            class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                            @click="refreshCaja"
-                        >
-                            <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': refreshing }" />
-                            {{ tr('Actualizar', 'Refresh') }}
-                        </button>
                     </div>
                 </div>
 

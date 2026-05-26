@@ -11,6 +11,7 @@ import {
     reverseFinanceEngineExpense,
     reverseFinanceEnginePayment,
     reverseFinanceEngineReimbursement,
+    updateFinanceEngineMovementDisplayConcept,
     validateFinanceEngineStaffRemittance,
 } from '@/Services/api'
 import {
@@ -21,6 +22,7 @@ import {
     ChevronDownIcon,
     ChevronRightIcon,
     ExclamationTriangleIcon,
+    PencilSquareIcon,
     QuestionMarkCircleIcon,
 } from '@heroicons/vue/24/outline'
 
@@ -79,7 +81,12 @@ const selectedSettlement = ref(null)
 const settlementSaving = ref(false)
 const settlementError = ref('')
 const ledgerPage = ref(1)
+const ledgerSearch = ref('')
+const ledgerFiltersOpen = ref(false)
 const openLedgerAccountSections = ref({})
+const movementEditForms = ref({})
+const movementEditBusy = ref({})
+const movementEditErrors = ref({})
 const LEDGER_PAGE_SIZE = 25
 const settlementForm = ref({
     deposited_at: new Date().toISOString().slice(0, 16),
@@ -125,7 +132,30 @@ const reimbursementBalanceSummary = computed(() => {
 })
 const pendingStaffRemittances = computed(() => treasury.value.pending_staff_remittances || [])
 const recentTreasuryMovements = computed(() => treasury.value.movements || [])
-const ledgerMovements = computed(() => engineReport.value?.movements || [])
+const rawLedgerMovements = computed(() => engineReport.value?.movements || [])
+const movementDisplayConcept = (movement) => movement?.display_concept || movement?.concept || movement?.reference || movementTypeLabel(movement?.kind)
+const ledgerMovements = computed(() => {
+    const query = ledgerSearch.value.trim().toLowerCase()
+    if (!query) return rawLedgerMovements.value
+
+    return rawLedgerMovements.value.filter((movement) => [
+        movement?.movement_id,
+        movement?.id,
+        movementDisplayConcept(movement),
+        movement?.concept,
+        movement?.original_concept,
+        movement?.reference,
+        movement?.notes,
+        rowCounterparty(movement),
+        movementDescription(movement),
+        movement?.account,
+        movement?.account_label,
+        movement?.from_account,
+        movement?.from_account_label,
+        movement?.to_account,
+        movement?.to_account_label,
+    ].some((value) => String(value || '').toLowerCase().includes(query)))
+})
 const ledgerPageCount = computed(() => ledgerIsAllAccounts.value ? 1 : Math.max(Math.ceil(ledgerMovements.value.length / LEDGER_PAGE_SIZE), 1))
 const paginatedLedgerMovements = computed(() => {
     if (ledgerIsAllAccounts.value) return ledgerMovements.value
@@ -445,8 +475,102 @@ const linkedMovementKey = (movement, type) => {
         ? (movement?.related_canceled_movement_key || cancellation.related_canceled_movement_key)
         : (movement?.canceling_movement_key || cancellation.canceling_movement_key || cancellation.reversed_movement_key)
 }
+const normalizeErrors = (error) => {
+    const errors = error?.response?.data?.errors || {}
+    return Object.fromEntries(Object.entries(errors).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]))
+}
 const setLedgerPage = (page) => {
     ledgerPage.value = Math.min(Math.max(Number(page) || 1, 1), ledgerPageCount.value)
+}
+const movementEditKey = (movement) => movement?.movement_id || `${movement?.domain || 'movement'}:${movement?.id || ''}`
+const movementTypeAndId = (movement) => {
+    const [type, id] = String(movement?.movement_id || '').split(':')
+
+    return type && id ? { type, id } : null
+}
+const isEditingMovement = (movement) => movementEditForms.value[movementEditKey(movement)]?.editing === true
+const startEditMovement = (movement) => {
+    const key = movementEditKey(movement)
+    movementEditForms.value = {
+        ...movementEditForms.value,
+        [key]: {
+            editing: true,
+            concept: movementDisplayConcept(movement),
+            notes: movement?.notes || '',
+        },
+    }
+    movementEditErrors.value = {
+        ...movementEditErrors.value,
+        [key]: '',
+    }
+}
+const cancelEditMovement = (movement) => {
+    const key = movementEditKey(movement)
+    movementEditForms.value = {
+        ...movementEditForms.value,
+        [key]: {
+            editing: false,
+            concept: movementDisplayConcept(movement),
+            notes: movement?.notes || '',
+        },
+    }
+    movementEditErrors.value = {
+        ...movementEditErrors.value,
+        [key]: '',
+    }
+}
+const applyMovementEdit = (movementKey, data) => {
+    if (!engineReport.value?.movements) return
+
+    engineReport.value = {
+        ...engineReport.value,
+        movements: engineReport.value.movements.map((movement) => {
+            if (movement.movement_id !== movementKey) return movement
+
+            return {
+                ...movement,
+                original_concept: movement.original_concept || data.original_concept || movement.concept || null,
+                display_concept: data.display_concept || movement.concept || null,
+                concept_override: data.display_concept ? data : null,
+                notes: data.notes || null,
+            }
+        }),
+    }
+}
+const saveMovementEdit = async (movement) => {
+    const key = movementEditKey(movement)
+    const target = movementTypeAndId(movement)
+    if (!target || !selectedClubId.value || tutorialActive.value) return
+
+    movementEditBusy.value = { ...movementEditBusy.value, [key]: true }
+    movementEditErrors.value = { ...movementEditErrors.value, [key]: '' }
+
+    try {
+        const response = await updateFinanceEngineMovementDisplayConcept(target.type, target.id, {
+            club_id: selectedClubId.value,
+            display_concept: movementEditForms.value[key]?.concept || '',
+            notes: movementEditForms.value[key]?.notes || '',
+        })
+        const data = response?.data || {}
+        applyMovementEdit(data.movement_key || movement.movement_id, data)
+        movementEditForms.value = {
+            ...movementEditForms.value,
+            [key]: {
+                editing: false,
+                concept: data.display_concept || data.original_concept || movement.concept || '',
+                notes: data.notes || '',
+            },
+        }
+        showToast(response?.message || tr('Movimiento actualizado.', 'Movement updated.'), 'success')
+    } catch (error) {
+        const errors = normalizeErrors(error)
+        movementEditErrors.value = {
+            ...movementEditErrors.value,
+            [key]: error?.response?.data?.message || errors.display_concept || errors.notes || tr('No se pudo actualizar el movimiento.', 'Could not update movement.'),
+        }
+    } finally {
+        movementEditBusy.value = { ...movementEditBusy.value, [key]: false }
+    }
 }
 const scrollToLedgerMovement = async (movementKey) => {
     const index = ledgerMovements.value.findIndex((movement) => movement.movement_id === movementKey)
@@ -1206,6 +1330,10 @@ watch(() => movementForm.value.from_pay_to, (fromPayTo) => {
     if (movementForm.value.to_pay_to === fromPayTo) movementForm.value.to_pay_to = ''
 })
 
+watch(ledgerSearch, () => {
+    ledgerPage.value = 1
+})
+
 watch(ledgerMovements, () => {
     if (ledgerPage.value > ledgerPageCount.value) {
         setLedgerPage(ledgerPageCount.value)
@@ -1563,7 +1691,26 @@ onBeforeUnmount(() => {
                             {{ tr('Vista unificada de ingresos, gastos, transferencias, recibos, comprobantes y correcciones vinculadas.', 'Unified view of income, expenses, transfers, receipts, proofs, and linked corrections.') }}
                         </p>
                     </div>
-                    <div data-tour="accounting-ledger-filters" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 lg:hidden"
+                        @click="ledgerFiltersOpen = !ledgerFiltersOpen"
+                    >
+                        <ChevronDownIcon v-if="ledgerFiltersOpen" class="h-4 w-4" />
+                        <ChevronRightIcon v-else class="h-4 w-4" />
+                        {{ tr('Filtros y busqueda', 'Filters and search') }}
+                    </button>
+                    <div
+                        data-tour="accounting-ledger-filters"
+                        class="grid gap-2 sm:grid-cols-2 lg:grid lg:grid-cols-6"
+                        :class="ledgerFiltersOpen ? 'grid' : 'hidden'"
+                    >
+                        <input
+                            v-model="ledgerSearch"
+                            type="search"
+                            class="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100 lg:col-span-2"
+                            :placeholder="tr('Buscar ID, concepto, nota o tercero', 'Search ID, concept, note, or counterparty')"
+                        />
                         <select
                             v-model="ledgerFilters.domain"
                             class="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
@@ -1656,15 +1803,64 @@ onBeforeUnmount(() => {
                             >
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
-	                                    <p class="font-semibold text-gray-900">{{ movement.display_concept || movement.concept || movementTypeLabel(movement.kind) }}</p>
-	                                    <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
-	                                    <p v-if="movement.notes" class="mt-1 text-sm text-gray-600">{{ tr('Notas', 'Notes') }}: {{ movement.notes }}</p>
-	                                </div>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <p class="font-semibold text-gray-900">{{ movementDisplayConcept(movement) }}</p>
+                                        <button
+                                            v-if="!tutorialActive"
+                                            type="button"
+                                            class="inline-flex min-h-8 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                                            @click="startEditMovement(movement)"
+                                        >
+                                            <PencilSquareIcon class="h-3.5 w-3.5" />
+                                            {{ tr('Editar', 'Edit') }}
+                                        </button>
+                                    </div>
+                                    <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
+                                    <p v-if="movement.notes && !isEditingMovement(movement)" class="mt-1 text-sm text-gray-600">{{ tr('Notas', 'Notes') }}: {{ movement.notes }}</p>
+                                </div>
                                 <p
                                     class="shrink-0 font-semibold"
                                     :class="Number(movement.signed_amount) < 0 ? 'text-red-700' : Number(movement.signed_amount) > 0 ? 'text-emerald-700' : 'text-gray-900'"
                                 >
                                     {{ formatMoney(movement.amount) }}
+                                </p>
+                            </div>
+                            <div v-if="isEditingMovement(movement)" class="mt-3 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                <input
+                                    v-model="movementEditForms[movementEditKey(movement)].concept"
+                                    type="text"
+                                    maxlength="500"
+                                    class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    :aria-label="tr('Concepto visible', 'Display concept')"
+                                >
+                                <textarea
+                                    v-model="movementEditForms[movementEditKey(movement)].notes"
+                                    rows="2"
+                                    maxlength="2000"
+                                    class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    :aria-label="tr('Notas', 'Notes')"
+                                    :placeholder="tr('Notas del movimiento', 'Movement notes')"
+                                ></textarea>
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        class="inline-flex min-h-9 items-center justify-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                                        :disabled="movementEditBusy[movementEditKey(movement)]"
+                                        @click="saveMovementEdit(movement)"
+                                    >
+                                        {{ movementEditBusy[movementEditKey(movement)] ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="inline-flex min-h-9 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                        :disabled="movementEditBusy[movementEditKey(movement)]"
+                                        @click="cancelEditMovement(movement)"
+                                    >
+                                        {{ tr('Cancelar', 'Cancel') }}
+                                    </button>
+                                </div>
+                                <p v-if="movementEditErrors[movementEditKey(movement)]" class="text-xs text-red-600">
+                                    {{ movementEditErrors[movementEditKey(movement)] }}
                                 </p>
                             </div>
                             <p class="mt-2 text-sm text-gray-600">{{ movementDescription(movement) }}</p>
@@ -1773,10 +1969,61 @@ onBeforeUnmount(() => {
                                     <td class="whitespace-nowrap px-3 py-2">{{ formatDate(movement.date) }}</td>
                                     <td class="px-3 py-2">{{ domainLabel(movement.domain) }}</td>
                                     <td class="max-w-xs px-3 py-2">
-	                                        <div class="font-medium text-gray-900">{{ movement.display_concept || movement.concept || movementTypeLabel(movement.kind) }}</div>
-	                                        <div v-if="movement.reference" class="text-xs text-gray-500">{{ movement.reference }}</div>
-	                                        <div v-if="movement.notes" class="text-xs text-gray-500">{{ movement.notes }}</div>
-	                                    </td>
+                                        <div class="flex items-start gap-2">
+                                            <div class="min-w-0">
+                                                <div class="font-medium text-gray-900">{{ movementDisplayConcept(movement) }}</div>
+                                                <div v-if="movement.reference" class="text-xs text-gray-500">{{ movement.reference }}</div>
+                                                <div v-if="movement.notes && !isEditingMovement(movement)" class="text-xs text-gray-500">{{ movement.notes }}</div>
+                                            </div>
+                                            <button
+                                                v-if="!tutorialActive"
+                                                type="button"
+                                                class="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                                                @click="startEditMovement(movement)"
+                                            >
+                                                <PencilSquareIcon class="h-3.5 w-3.5" />
+                                                {{ tr('Editar', 'Edit') }}
+                                            </button>
+                                        </div>
+                                        <div v-if="isEditingMovement(movement)" class="mt-2 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-2">
+                                            <input
+                                                v-model="movementEditForms[movementEditKey(movement)].concept"
+                                                type="text"
+                                                maxlength="500"
+                                                class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                                :aria-label="tr('Concepto visible', 'Display concept')"
+                                            >
+                                            <textarea
+                                                v-model="movementEditForms[movementEditKey(movement)].notes"
+                                                rows="2"
+                                                maxlength="2000"
+                                                class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                                :aria-label="tr('Notas', 'Notes')"
+                                                :placeholder="tr('Notas del movimiento', 'Movement notes')"
+                                            ></textarea>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button
+                                                    type="button"
+                                                    class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                                                    :disabled="movementEditBusy[movementEditKey(movement)]"
+                                                    @click="saveMovementEdit(movement)"
+                                                >
+                                                    {{ movementEditBusy[movementEditKey(movement)] ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                                                    :disabled="movementEditBusy[movementEditKey(movement)]"
+                                                    @click="cancelEditMovement(movement)"
+                                                >
+                                                    {{ tr('Cancelar', 'Cancel') }}
+                                                </button>
+                                            </div>
+                                            <p v-if="movementEditErrors[movementEditKey(movement)]" class="text-xs text-red-600">
+                                                {{ movementEditErrors[movementEditKey(movement)] }}
+                                            </p>
+                                        </div>
+                                    </td>
                                     <td class="px-3 py-2">{{ movementDescription(movement) }}</td>
                                     <td class="px-3 py-2">{{ rowCounterparty(movement) }}</td>
                                     <td
