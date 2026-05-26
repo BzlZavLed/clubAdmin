@@ -6,6 +6,8 @@ import {
     ArrowUpTrayIcon,
     BanknotesIcon,
     CheckCircleIcon,
+    ChevronDownIcon,
+    ChevronRightIcon,
     CreditCardIcon,
     CurrencyDollarIcon,
     DocumentTextIcon,
@@ -57,7 +59,10 @@ const movementSort = ref('date')
 const movementPage = ref(1)
 const movementPageSize = ref(10)
 const balanceAccountFilter = ref('all')
-const expenseFollowUpPage = ref(1)
+const openExpenseFollowUpSections = ref({
+    missing: false,
+    attached: false,
+})
 const incomeErrors = ref({})
 const expenseErrors = ref({})
 const conceptErrors = ref({})
@@ -82,7 +87,6 @@ const tutorialNextId = ref(9000)
 const tutorialReceiptWindow = ref(null)
 const CREATE_CONCEPT_OPTION = '__create_concept__'
 const CUSTOM_PAYER_OPTION = '__custom_payer__'
-const EXPENSE_FOLLOW_UP_PAGE_SIZE = 25
 const MOVEMENT_PAGE_SIZE_OPTIONS = [10, 15, 20]
 const TUTORIAL_CLUB_ID = -9001
 const TUTORIAL_MEMBER_ID = -9101
@@ -363,14 +367,50 @@ const expenseFollowUpRows = computed(() => expenses.value.filter((expense) => !i
     type: expense.pay_to === 'reimbursement_to' ? 'reimbursement' : 'expense',
     expense,
 })))
-const expenseFollowUpPageCount = computed(() => Math.max(Math.ceil(expenseFollowUpRows.value.length / EXPENSE_FOLLOW_UP_PAGE_SIZE), 1))
-const paginatedExpenseFollowUpRows = computed(() => {
-    const start = (expenseFollowUpPage.value - 1) * EXPENSE_FOLLOW_UP_PAGE_SIZE
+const hasExpenseFollowUpProof = (row) => {
+    const expense = row?.expense || row
 
-    return expenseFollowUpRows.value.slice(start, start + EXPENSE_FOLLOW_UP_PAGE_SIZE)
+    if (expense?.pay_to === 'reimbursement_to') {
+        return Boolean(
+            expense?.reimbursement_payment_proof_url
+            || expense?.reimbursement_receipt_signed_at
+            || expense?.reimbursement_receipt_url
+            || expense?.reimbursement_confirmation_url
+        )
+    }
+
+    return Boolean(expense?.receipt_url || expense?.receipt_path)
+}
+const expenseFollowUpSections = computed(() => {
+    const missing = []
+    const attached = []
+
+    expenseFollowUpRows.value.forEach((row) => {
+        ;(hasExpenseFollowUpProof(row) ? attached : missing).push(row)
+    })
+
+    return [
+        {
+            key: 'missing',
+            title: tr('Sin comprobante', 'Missing proof'),
+            description: tr('Movimientos que necesitan comprobante o accion de seguimiento.', 'Movements that need proof or follow-up action.'),
+            rows: missing,
+        },
+        {
+            key: 'attached',
+            title: tr('Con comprobante', 'With proof'),
+            description: tr('Movimientos con comprobante ya agregado; puedes revisarlo o reemplazarlo.', 'Movements with proof already added; you can review or replace it.'),
+            rows: attached,
+        },
+    ]
 })
-const expenseFollowUpPageStart = computed(() => expenseFollowUpRows.value.length ? ((expenseFollowUpPage.value - 1) * EXPENSE_FOLLOW_UP_PAGE_SIZE) + 1 : 0)
-const expenseFollowUpPageEnd = computed(() => Math.min(expenseFollowUpPage.value * EXPENSE_FOLLOW_UP_PAGE_SIZE, expenseFollowUpRows.value.length))
+const isExpenseFollowUpSectionOpen = (key) => openExpenseFollowUpSections.value[key] === true
+const toggleExpenseFollowUpSection = (key) => {
+    openExpenseFollowUpSections.value = {
+        ...openExpenseFollowUpSections.value,
+        [key]: !openExpenseFollowUpSections.value[key],
+    }
+}
 const hasExpenseFollowUp = computed(() => expenseFollowUpRows.value.length > 0)
 
 const isEventConcept = (concept) => Boolean(concept?.event_id && concept?.event_fee_component_id)
@@ -570,9 +610,6 @@ const normalizeErrors = (error) => {
     return Object.fromEntries(Object.entries(errors).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]))
 }
 const firstError = (errors, key) => errors?.[key] || null
-const setExpenseFollowUpPage = (page) => {
-    expenseFollowUpPage.value = Math.min(Math.max(Number(page) || 1, 1), expenseFollowUpPageCount.value)
-}
 const setMovementPage = (page) => {
     movementPage.value = Math.min(Math.max(Number(page) || 1, 1), movementPageCount.value)
 }
@@ -1118,7 +1155,6 @@ const tutorialResetSandbox = () => {
     movementDomain.value = 'all'
     movementSort.value = 'date'
     movementPage.value = 1
-    expenseFollowUpPage.value = 1
     tutorialApplyEngineReport()
     resetExpenseForm()
     tutorialPrefillSavedIncome()
@@ -1325,7 +1361,6 @@ const onClubChange = () => {
     incomeForm.value.concept_key = ''
     incomeForm.value.payer_key = ''
     incomeForm.value.payer_name = ''
-    expenseFollowUpPage.value = 1
     movementPage.value = 1
     loadCaja(selectedClubId.value)
 }
@@ -2333,12 +2368,6 @@ watch(operatingSummaryAccounts, (accounts) => {
     }
 })
 
-watch(expenseFollowUpRows, () => {
-    if (expenseFollowUpPage.value > expenseFollowUpPageCount.value) {
-        setExpenseFollowUpPage(expenseFollowUpPageCount.value)
-    }
-})
-
 watch([movementDomain, movementSort, movementPageSize], () => {
     movementPage.value = 1
 })
@@ -2835,7 +2864,28 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="divide-y divide-gray-100">
-                    <template v-for="{ key, type, expense } in paginatedExpenseFollowUpRows" :key="key">
+                    <div v-for="section in expenseFollowUpSections" :key="section.key">
+                        <button
+                            type="button"
+                            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50"
+                            @click="toggleExpenseFollowUpSection(section.key)"
+                        >
+                            <span class="min-w-0">
+                                <span class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                                    <ChevronDownIcon v-if="isExpenseFollowUpSectionOpen(section.key)" class="h-4 w-4 shrink-0" />
+                                    <ChevronRightIcon v-else class="h-4 w-4 shrink-0" />
+                                    {{ section.title }}
+                                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">{{ section.rows.length }}</span>
+                                </span>
+                                <span class="mt-0.5 block text-xs text-gray-500">{{ section.description }}</span>
+                            </span>
+                        </button>
+
+                        <div v-if="isExpenseFollowUpSectionOpen(section.key)" class="divide-y divide-gray-100 border-t border-gray-100">
+                            <div v-if="!section.rows.length" class="px-4 py-6 text-sm text-gray-500">
+                                {{ tr('No hay movimientos en esta seccion.', 'No movements in this section.') }}
+                            </div>
+                    <template v-for="{ key, type, expense } in section.rows" :key="key">
                     <article v-if="type === 'expense'" class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-2">
@@ -3103,39 +3153,7 @@ onBeforeUnmount(() => {
                         </div>
                     </article>
                     </template>
-                </div>
-
-                <div
-                    v-if="expenseFollowUpRows.length > EXPENSE_FOLLOW_UP_PAGE_SIZE"
-                    class="flex flex-col gap-3 border-t border-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                    <p class="text-sm text-gray-600">
-                        {{ tr('Mostrando', 'Showing') }}
-                        <span class="font-semibold text-gray-900">{{ expenseFollowUpPageStart }}-{{ expenseFollowUpPageEnd }}</span>
-                        {{ tr('de', 'of') }}
-                        <span class="font-semibold text-gray-900">{{ expenseFollowUpRows.length }}</span>
-                        {{ tr('movimientos', 'movements') }}
-                    </p>
-                    <div class="flex items-center gap-2">
-                        <button
-                            type="button"
-                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            :disabled="expenseFollowUpPage <= 1"
-                            @click="setExpenseFollowUpPage(expenseFollowUpPage - 1)"
-                        >
-                            {{ tr('Anterior', 'Previous') }}
-                        </button>
-                        <span class="rounded-lg bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
-                            {{ tr('Pagina', 'Page') }} {{ expenseFollowUpPage }} / {{ expenseFollowUpPageCount }}
-                        </span>
-                        <button
-                            type="button"
-                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            :disabled="expenseFollowUpPage >= expenseFollowUpPageCount"
-                            @click="setExpenseFollowUpPage(expenseFollowUpPage + 1)"
-                        >
-                            {{ tr('Siguiente', 'Next') }}
-                        </button>
+                        </div>
                     </div>
                 </div>
             </section>
