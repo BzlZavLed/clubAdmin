@@ -60,6 +60,7 @@ const movementSearch = ref('')
 const movementPage = ref(1)
 const movementPageSize = ref(10)
 const balanceAccountFilter = ref('all')
+const openReimbursementMovementGroups = ref({})
 const openExpenseFollowUpSections = ref({
     missing: false,
     attached: false,
@@ -613,8 +614,104 @@ const movementGroupAmountSummary = (group) => {
             : null,
         reimbursementGroup.reimbursement_amount !== null && reimbursementGroup.reimbursement_amount !== undefined
             ? `${tr('Reembolso', 'Reimbursement')} ${formatMoney(reimbursementGroup.reimbursement_amount)}`
-            : null,
+        : null,
     ].filter(Boolean).join(' · ')
+}
+const isReimbursementMovementGroupOpen = (group) => openReimbursementMovementGroups.value[group.key] === true
+const toggleReimbursementMovementGroup = (group) => {
+    openReimbursementMovementGroups.value = {
+        ...openReimbursementMovementGroups.value,
+        [group.key]: !isReimbursementMovementGroupOpen(group),
+    }
+}
+const movementAccountDisplay = (movement) => {
+    if (movement?.domain === 'transfer') {
+        const from = movement.from_account_label || accountLabel(movement.from_account)
+        const to = movement.to_account_label || accountLabel(movement.to_account)
+
+        return `${from} → ${to}`
+    }
+
+    return movement?.account_label || accountLabel(movement?.account || movement?.from_account || movement?.to_account)
+}
+const movementLocationDisplay = (movement) => {
+    if (movement?.domain === 'transfer') {
+        return `${locationLabel(movement.from_location)} → ${locationLabel(movement.to_location)}`
+    }
+
+    return locationLabel(movement?.location || movement?.from_location || movement?.to_location)
+}
+const reimbursementGroupStatus = (group) => {
+    const status = group.reimbursementGroup?.reimbursement_status
+    const hasSettlement = group.movements.some((movement) => ['settlement_credit', 'settlement_expense'].includes(movement.reimbursement_group?.role))
+
+    if (status === 'pending_reimbursement' && !hasSettlement) return tr('Pendiente', 'Pending')
+    if (hasSettlement || status === 'completed') return tr('Liquidado', 'Settled')
+
+    return status || tr('Registrado', 'Posted')
+}
+const reimbursementGroupAccounts = (group) => Array.from(new Set(
+    group.movements
+        .flatMap((movement) => {
+            if (movement.domain === 'transfer') {
+                return [
+                    movement.from_account_label || accountLabel(movement.from_account),
+                    movement.to_account_label || accountLabel(movement.to_account),
+                ]
+            }
+
+            return [movement.account_label || accountLabel(movement.account || movement.from_account || movement.to_account)]
+        })
+        .filter((value) => value && value !== '—')
+)).join(' · ')
+const reimbursementRoleOrder = {
+    origin_expense: 10,
+    pending_reimbursement: 20,
+    settlement_credit: 30,
+    settlement_expense: 40,
+}
+const reimbursementRoleLabel = (role) => ({
+    origin_expense: tr('Gasto original', 'Original expense'),
+    pending_reimbursement: tr('Reembolso pendiente', 'Pending reimbursement'),
+    settlement_credit: tr('Credito a reembolsos', 'Credit to reimbursements'),
+    settlement_expense: tr('Pago desde cuenta', 'Payout from account'),
+})[role] || role || tr('Movimiento', 'Movement')
+const reimbursementGroupDetailRows = (group) => group.movements.slice().sort((a, b) => {
+    const roleCompare = (reimbursementRoleOrder[a.reimbursement_group?.role] || 99) - (reimbursementRoleOrder[b.reimbursement_group?.role] || 99)
+    if (roleCompare !== 0) return roleCompare
+
+    const dateCompare = movementDateValue(a) - movementDateValue(b)
+    if (dateCompare !== 0) return dateCompare
+
+    return movementNumericId(a) - movementNumericId(b)
+})
+const reimbursementAccountingRows = (group) => {
+    const detailRows = reimbursementGroupDetailRows(group)
+    const byRole = new Map(detailRows.map((movement) => [movement.reimbursement_group?.role, movement]))
+    const rows = [
+        {
+            role: 'origin_expense',
+            title: tr('Salida por gasto original', 'Original expense outflow'),
+            movement: byRole.get('origin_expense'),
+        },
+        {
+            role: 'pending_reimbursement',
+            title: tr('Responsabilidad de reembolso pendiente', 'Pending reimbursement liability'),
+            movement: byRole.get('pending_reimbursement'),
+        },
+        {
+            role: 'settlement_credit',
+            title: tr('Credito interno a reimbursement_to', 'Internal credit into reimbursement_to'),
+            movement: byRole.get('settlement_credit'),
+        },
+        {
+            role: 'settlement_expense',
+            title: tr('Pago real desde cuenta origen', 'Real payout from source account'),
+            movement: byRole.get('settlement_expense'),
+        },
+    ]
+
+    return rows.filter((row) => row.movement)
 }
 const normalizeErrors = (error) => {
     const errors = error?.response?.data?.errors || {}
@@ -3231,65 +3328,138 @@ onBeforeUnmount(() => {
 
                 <div v-else class="divide-y divide-gray-100">
                     <article v-for="group in paginatedMovementGroups" :key="group.key" class="p-4">
-                        <div v-if="group.reimbursementGroup" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                            <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                                <div>
-                                    <p class="text-sm font-semibold text-amber-950">{{ movementGroupTitle(group) }}</p>
-                                    <p v-if="movementGroupSummary(group)" class="mt-1 text-xs text-amber-800">{{ movementGroupSummary(group) }}</p>
-                                </div>
-                                <p v-if="movementGroupAmountSummary(group)" class="text-xs font-semibold text-amber-900">
-                                    {{ movementGroupAmountSummary(group) }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="space-y-3">
-                            <div
-                                v-for="movement in group.movements"
-                                :key="movement.movement_id"
-                                class="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center"
+                        <template v-if="group.reimbursementGroup">
+                            <button
+                                type="button"
+                                class="flex w-full items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left hover:bg-amber-100"
+                                @click="toggleReimbursementMovementGroup(group)"
                             >
-                                <div class="min-w-0">
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <span class="rounded-full border px-2 py-1 text-xs font-semibold" :class="movementTone(movement)">
-                                            {{ movement.domain }}
-                                        </span>
-                                        <span class="text-sm font-semibold text-gray-900">{{ movement.concept || movement.kind }}</span>
-                                        <span class="text-xs text-gray-500">#{{ movement.movement_id }}</span>
-                                    </div>
-                                    <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
-                                        <span>{{ tr('Fecha y hora', 'Date and time') }}: {{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</span>
-                                        <span>{{ tr('Cuenta', 'Account') }}: {{ movement.account_label || accountLabel(movement.account) }}</span>
-                                        <span>{{ tr('Ubicacion', 'Location') }}: {{ locationLabel(movement.location) }}</span>
-                                        <span>{{ tr('Estado', 'Status') }}: {{ movement.status || 'posted' }}</span>
-                                    </div>
-                                    <div v-if="movement.receipt || movement.proof" class="mt-2 flex flex-wrap gap-2 text-xs">
-                                        <a
-                                            v-if="movement.receipt?.url"
-                                            :href="movement.receipt.url"
-                                            target="_blank"
-                                            class="font-semibold text-red-700 hover:underline"
+                                <span class="min-w-0">
+                                    <span class="flex flex-wrap items-center gap-2">
+                                        <ChevronDownIcon v-if="isReimbursementMovementGroupOpen(group)" class="h-4 w-4 shrink-0 text-amber-800" />
+                                        <ChevronRightIcon v-else class="h-4 w-4 shrink-0 text-amber-800" />
+                                        <span class="text-sm font-semibold text-amber-950">{{ movementGroupTitle(group) }}</span>
+                                        <span class="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">{{ reimbursementGroupStatus(group) }}</span>
+                                    </span>
+                                    <span v-if="movementGroupSummary(group)" class="mt-1 block text-xs text-amber-800">{{ movementGroupSummary(group) }}</span>
+                                    <span v-if="reimbursementGroupAccounts(group)" class="mt-1 block text-xs text-amber-700">
+                                        {{ tr('Cuentas', 'Accounts') }}: {{ reimbursementGroupAccounts(group) }}
+                                    </span>
+                                </span>
+                                <span class="shrink-0 text-right text-xs font-semibold text-amber-900">
+                                    {{ movementGroupAmountSummary(group) }}
+                                </span>
+                            </button>
+
+                            <div v-if="isReimbursementMovementGroupOpen(group)" class="mt-3 space-y-3">
+                                <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Vista contable', 'Accounting view') }}</p>
+                                    <div class="mt-2 grid gap-2 lg:grid-cols-2">
+                                        <div
+                                            v-for="row in reimbursementAccountingRows(group)"
+                                            :key="`${group.key}-${row.role}`"
+                                            class="rounded-md border border-gray-200 bg-white px-3 py-2"
                                         >
-                                            {{ movement.receipt.number || tr('Recibo', 'Receipt') }}
-                                        </a>
-                                        <a
-                                            v-if="movement.proof?.url"
-                                            :href="movement.proof.url"
-                                            target="_blank"
-                                            class="font-semibold text-gray-700 hover:underline"
-                                        >
-                                            {{ movement.proof.name || tr('Comprobante', 'Proof') }}
-                                        </a>
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div class="min-w-0">
+                                                    <p class="text-sm font-semibold text-gray-900">{{ row.title }}</p>
+                                                    <p class="mt-1 text-xs text-gray-500">
+                                                        {{ row.movement.movement_id }} · {{ formatDate(row.movement.date) }} · {{ movementLocationDisplay(row.movement) }}
+                                                    </p>
+                                                    <p class="mt-1 text-xs text-gray-600">{{ movementAccountDisplay(row.movement) }}</p>
+                                                </div>
+                                                <p class="shrink-0 text-sm font-semibold" :class="row.movement.domain === 'expense' ? 'text-rose-700' : row.movement.domain === 'income' ? 'text-emerald-700' : 'text-blue-700'">
+                                                    {{ movementAmountLabel(row.movement) }}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="text-left lg:text-right">
-                                    <p class="text-lg font-semibold" :class="movement.domain === 'expense' ? 'text-rose-700' : movement.domain === 'income' ? 'text-emerald-700' : 'text-blue-700'">
-                                        {{ movementAmountLabel(movement) }}
-                                    </p>
-                                    <p class="text-xs text-gray-500">{{ movement.kind }}</p>
+
+                                <div class="overflow-hidden rounded-lg border border-gray-200">
+                                    <div class="grid gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 lg:grid-cols-[1fr_6rem_9rem_8rem_7rem_7rem_8rem]">
+                                        <span>{{ tr('Movimiento', 'Movement') }}</span>
+                                        <span>{{ tr('Rol', 'Role') }}</span>
+                                        <span>{{ tr('Fecha', 'Date') }}</span>
+                                        <span>{{ tr('Cuenta', 'Account') }}</span>
+                                        <span>{{ tr('Ubicacion', 'Location') }}</span>
+                                        <span>{{ tr('Monto', 'Amount') }}</span>
+                                        <span>{{ tr('Monto firmado', 'Signed amount') }}</span>
+                                    </div>
+                                    <div
+                                        v-for="movement in reimbursementGroupDetailRows(group)"
+                                        :key="`${group.key}-${movement.movement_id}`"
+                                        class="grid gap-2 border-t border-gray-100 px-3 py-2 text-sm lg:grid-cols-[1fr_6rem_9rem_8rem_7rem_7rem_8rem]"
+                                    >
+                                        <div class="min-w-0">
+                                            <p class="font-semibold text-gray-900">{{ movement.movement_id }}</p>
+                                            <p class="truncate text-xs text-gray-500">{{ movement.concept || movement.kind }}</p>
+                                        </div>
+                                        <div class="text-xs font-semibold text-gray-700">{{ reimbursementRoleLabel(movement.reimbursement_group?.role) }}</div>
+                                        <div class="text-gray-600">{{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</div>
+                                        <div class="break-words text-gray-600">{{ movementAccountDisplay(movement) }}</div>
+                                        <div class="text-gray-600">{{ movementLocationDisplay(movement) }}</div>
+                                        <div class="font-semibold" :class="movement.domain === 'expense' ? 'text-rose-700' : movement.domain === 'income' ? 'text-emerald-700' : 'text-blue-700'">
+                                            {{ movementAmountLabel(movement) }}
+                                        </div>
+                                        <div class="text-gray-600">{{ formatMoney(movement.signed_amount || 0) }}</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </template>
+
+                        <template v-else>
+                            <div class="space-y-3">
+                                <div
+                                    v-for="movement in group.movements"
+                                    :key="movement.movement_id"
+                                    class="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center"
+                                >
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="rounded-full border px-2 py-1 text-xs font-semibold" :class="movementTone(movement)">
+                                                {{ movement.domain }}
+                                            </span>
+                                            <span class="text-sm font-semibold text-gray-900">{{ movement.concept || movement.kind }}</span>
+                                            <span class="text-xs text-gray-500">#{{ movement.movement_id }}</span>
+                                        </div>
+                                        <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
+                                            <span>{{ tr('Fecha y hora', 'Date and time') }}: {{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</span>
+                                            <span>{{ tr('Cuenta', 'Account') }}: {{ movement.account_label || accountLabel(movement.account) }}</span>
+                                            <span>{{ tr('Ubicacion', 'Location') }}: {{ locationLabel(movement.location) }}</span>
+                                            <span>{{ tr('Estado', 'Status') }}: {{ movement.status || 'posted' }}</span>
+                                        </div>
+                                        <div v-if="movement.receipt || movement.proof" class="mt-2 flex flex-wrap gap-2 text-xs">
+                                            <a
+                                                v-if="movement.receipt?.url"
+                                                :href="movement.receipt.url"
+                                                target="_blank"
+                                                class="font-semibold text-red-700 hover:underline"
+                                            >
+                                                {{ movement.receipt.number || tr('Recibo', 'Receipt') }}
+                                            </a>
+                                            <a
+                                                v-if="movement.proof?.url"
+                                                :href="movement.proof.url"
+                                                target="_blank"
+                                                class="font-semibold text-gray-700 hover:underline"
+                                            >
+                                                {{ movement.proof.name || tr('Comprobante', 'Proof') }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                    <div class="text-left lg:text-right">
+                                        <p
+                                            class="text-lg font-semibold"
+                                            :class="movement.domain === 'expense' ? 'text-rose-700' : movement.domain === 'income' ? 'text-emerald-700' : 'text-blue-700'"
+                                        >
+                                            {{ movementAmountLabel(movement) }}
+                                        </p>
+                                        <p class="text-xs text-gray-500">{{ movement.kind }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
                     </article>
                 </div>
 
