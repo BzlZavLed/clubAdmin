@@ -37,10 +37,15 @@ const treasury = ref({
 })
 const engineReport = ref(null)
 const ledgerPage = ref(1)
+const ledgerDateMode = ref('dates')
 const ledgerFilters = ref({
     account: 'all',
     date_from: '',
     date_to: '',
+})
+const ledgerMonthRange = ref({
+    from: '',
+    to: '',
 })
 const includeLedgerAnnexes = ref(false)
 
@@ -135,6 +140,21 @@ const ledgerTotals = computed(() => ledgerMovements.value.reduce((totals, moveme
     }
 }, { income: 0, expenses: 0, transfers: 0, corrections: 0 }))
 const ledgerNet = computed(() => ledgerTotals.value.income - ledgerTotals.value.expenses)
+const currentYear = new Date().getFullYear()
+const monthOptions = computed(() => [
+    { value: 1, label: tr('Enero', 'January') },
+    { value: 2, label: tr('Febrero', 'February') },
+    { value: 3, label: tr('Marzo', 'March') },
+    { value: 4, label: tr('Abril', 'April') },
+    { value: 5, label: tr('Mayo', 'May') },
+    { value: 6, label: tr('Junio', 'June') },
+    { value: 7, label: tr('Julio', 'July') },
+    { value: 8, label: tr('Agosto', 'August') },
+    { value: 9, label: tr('Septiembre', 'September') },
+    { value: 10, label: tr('Octubre', 'October') },
+    { value: 11, label: tr('Noviembre', 'November') },
+    { value: 12, label: tr('Diciembre', 'December') },
+])
 
 const ledgerPdfUrl = computed(() => {
     const params = { limit: 5000 }
@@ -147,11 +167,101 @@ const ledgerPdfUrl = computed(() => {
     return route('club.finance-engine.movements.pdf', params)
 })
 
-
+const ledgerHasDateLimit = computed(() => Boolean(ledgerFilters.value.date_from || ledgerFilters.value.date_to))
 
 const downloadingLedgerPdf = ref(false)
+const exportConfirmationModal = ref({
+    show: false,
+    title: '',
+    message: '',
+    confirmLabel: '',
+    cancelLabel: '',
+    confirmClass: '',
+    files: [],
+})
+const generatedLedgerFilesModal = ref({
+    show: false,
+    files: [],
+})
+let resolveExportConfirmation = null
+
+const closeExportConfirmationModal = (confirmed = false) => {
+    exportConfirmationModal.value.show = false
+
+    if (resolveExportConfirmation) {
+        resolveExportConfirmation(confirmed)
+        resolveExportConfirmation = null
+    }
+}
+
+const confirmExportAction = ({ title, message, confirmLabel, cancelLabel, confirmClass = 'bg-red-600 text-white hover:bg-red-700', files = [] }) => new Promise((resolve) => {
+    resolveExportConfirmation = resolve
+    exportConfirmationModal.value = {
+        show: true,
+        title,
+        message,
+        confirmLabel,
+        cancelLabel,
+        confirmClass,
+        files,
+    }
+})
+
+const closeGeneratedLedgerFilesModal = () => {
+    generatedLedgerFilesModal.value = {
+        show: false,
+        files: [],
+    }
+}
+
+const formatFileSize = (size) => {
+    const bytes = Number(size || 0)
+    if (!bytes) return ''
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 const downloadLedgerPdf = async () => {
+    if (!ledgerHasDateLimit.value) {
+        const shouldContinue = await confirmExportAction({
+            title: tr('Exportar sin rango', 'Export without range'),
+            message: tr(
+                'No seleccionaste un rango de fechas o meses. Exportar sin limite puede generar un archivo muy grande y tardar bastante en descargar.',
+                'No date or month range is selected. Exporting without a limit can generate a very large file and take a while to download.'
+            ),
+            confirmLabel: tr('Continuar exportacion', 'Continue export'),
+            cancelLabel: tr('Cancelar', 'Cancel'),
+        })
+
+        if (!shouldContinue) return
+    }
+
+    if (includeLedgerAnnexes.value) {
+        const shouldContinue = await confirmExportAction({
+            title: tr('Recibos en PDF separado', 'Receipts in separate PDF'),
+            message: tr(
+                'Los recibos se generaran en un PDF separado del libro contable. Esto hace la descarga mas rapida y confiable.',
+                'Receipts will be generated in a separate PDF from the ledger. This makes the download faster and more reliable.'
+            ),
+            confirmLabel: tr('Generar archivos', 'Generate files'),
+            cancelLabel: tr('Cancelar', 'Cancel'),
+            confirmClass: 'bg-emerald-600 text-white hover:bg-emerald-700',
+            files: [
+                {
+                    label: tr('Libro contable', 'Ledger'),
+                    name: 'finance-ledger.pdf',
+                },
+                {
+                    label: tr('Recibos y comprobantes', 'Receipts and proofs'),
+                    name: 'finance-ledger-receipts.pdf',
+                },
+            ],
+        })
+
+        if (!shouldContinue) return
+    }
+
     downloadingLedgerPdf.value = true
 
     try {
@@ -172,11 +282,17 @@ const downloadLedgerPdf = async () => {
         if (!data.url) {
             throw new Error('No PDF URL returned.')
         }
-        window.open(data.url, '_blank') 
+
+        generatedLedgerFilesModal.value = {
+            show: true,
+            files: Array.isArray(data.files) && data.files.length
+                ? data.files
+                : [{ label: tr('Libro contable', 'Ledger'), file_name: data.file_name || 'finance-ledger.pdf', url: data.url, size: data.size }],
+        }
        
     } catch (error) {
         console.error(error)
-        alert('Could not download the ledger PDF. Please try again.')
+        showToast(tr('No se pudo descargar el PDF del libro contable. Intenta de nuevo.', 'Could not download the ledger PDF. Please try again.'), 'error')
     } finally {
         downloadingLedgerPdf.value = false
     }
@@ -197,6 +313,8 @@ const formatMoney = (value) => {
     })}`
 }
 const formatDate = (value) => value ? String(value).slice(0, 10) : '—'
+const isoDate = (year, month, day) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+const lastDayOfMonth = (year, month) => new Date(year, month, 0).getDate()
 const accountLabel = (value) => accountLabels.value[value] || value || '—'
 const locationLabel = (value) => ({
     bank: tr('Banco', 'Bank'),
@@ -440,11 +558,42 @@ const loadData = async () => {
 }
 
 const applyLedgerFilters = () => loadLedger()
+const applyLedgerDateFilters = async () => {
+    ledgerDateMode.value = 'dates'
+    ledgerMonthRange.value = {
+        from: '',
+        to: '',
+    }
+    await loadLedger()
+}
+const applyLedgerMonthRange = async () => {
+    ledgerDateMode.value = 'months'
+    const selectedFrom = Number(ledgerMonthRange.value.from || ledgerMonthRange.value.to || 0)
+    const selectedTo = Number(ledgerMonthRange.value.to || ledgerMonthRange.value.from || 0)
+
+    if (!selectedFrom || !selectedTo) {
+        showToast(tr('Selecciona al menos un mes.', 'Select at least one month.'), 'error')
+        return
+    }
+
+    const fromMonth = Math.min(selectedFrom, selectedTo)
+    const toMonth = Math.max(selectedFrom, selectedTo)
+
+    ledgerFilters.value.date_from = isoDate(currentYear, fromMonth, 1)
+    ledgerFilters.value.date_to = isoDate(currentYear, toMonth, lastDayOfMonth(currentYear, toMonth))
+
+    await loadLedger()
+}
 const clearLedgerFilters = async () => {
+    ledgerDateMode.value = 'dates'
     ledgerFilters.value = {
         account: 'all',
         date_from: '',
         date_to: '',
+    }
+    ledgerMonthRange.value = {
+        from: '',
+        to: '',
     }
     await loadLedger()
 }
@@ -559,7 +708,7 @@ onMounted(loadData)
                                 <span class="leading-5">
                                     {{ tr('Incluir anexos de recibos', 'Include receipt appendices') }}
                                     <span class="block text-xs font-normal text-gray-500">
-                                        {{ tr('Hace el PDF mas pesado.', 'Makes the PDF larger.') }}
+                                        {{ tr('Se generan como PDF separado para evitar archivos pesados.', 'Generated as a separate PDF to avoid oversized files.') }}
                                     </span>
                                 </span>
                             </label>
@@ -594,6 +743,30 @@ onMounted(loadData)
                                 </option>
                             </select>
                         </div>
+                        <div class="lg:col-span-4">
+                            <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Rango', 'Range') }}</label>
+                            <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+                                <button
+                                    type="button"
+                                    class="rounded-md px-3 py-1.5 text-sm font-semibold"
+                                    :class="ledgerDateMode === 'dates' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-900'"
+                                    @click="ledgerDateMode = 'dates'"
+                                >
+                                    {{ tr('Fechas', 'Dates') }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded-md px-3 py-1.5 text-sm font-semibold"
+                                    :class="ledgerDateMode === 'months' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-900'"
+                                    @click="ledgerDateMode = 'months'"
+                                >
+                                    {{ tr('Meses', 'Months') }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="ledgerDateMode === 'dates'" class="mt-3 grid gap-3 lg:grid-cols-[minmax(150px,0.75fr)_minmax(150px,0.75fr)_auto_auto_minmax(0,1fr)] lg:items-end">
                         <div>
                             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Desde', 'From') }}</label>
                             <input v-model="ledgerFilters.date_from" type="date" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
@@ -606,7 +779,7 @@ onMounted(loadData)
                             type="button"
                             class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
                             :disabled="ledgerLoading"
-                            @click="applyLedgerFilters"
+                            @click="applyLedgerDateFilters"
                         >
                             <FunnelIcon class="h-4 w-4" />
                             {{ tr('Aplicar', 'Apply') }}
@@ -619,6 +792,46 @@ onMounted(loadData)
                         >
                             {{ tr('Limpiar', 'Clear') }}
                         </button>
+                    </div>
+                    <div v-else class="mt-3 grid gap-3 lg:grid-cols-[minmax(150px,0.75fr)_minmax(150px,0.75fr)_auto_auto_minmax(0,1fr)] lg:items-end">
+                        <div>
+                            <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Mes inicial', 'Start month') }}</label>
+                            <select v-model="ledgerMonthRange.from" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
+                                <option value="">{{ tr('Seleccionar mes', 'Select month') }}</option>
+                                <option v-for="month in monthOptions" :key="`from-${month.value}`" :value="month.value">
+                                    {{ month.label }}
+                                </option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Mes final', 'End month') }}</label>
+                            <select v-model="ledgerMonthRange.to" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
+                                <option value="">{{ tr('Seleccionar mes', 'Select month') }}</option>
+                                <option v-for="month in monthOptions" :key="`to-${month.value}`" :value="month.value">
+                                    {{ month.label }}
+                                </option>
+                            </select>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                            :disabled="ledgerLoading"
+                            @click="applyLedgerMonthRange"
+                        >
+                            <FunnelIcon class="h-4 w-4" />
+                            {{ tr('Aplicar meses', 'Apply months') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                            :disabled="ledgerLoading"
+                            @click="clearLedgerFilters"
+                        >
+                            {{ tr('Limpiar', 'Clear') }}
+                        </button>
+                        <p class="text-xs text-gray-500">
+                            {{ tr('Usa el ano actual', 'Uses current year') }} {{ currentYear }}. {{ tr('El mes final usa su ultimo dia real.', 'The end month uses its real last day.') }}
+                        </p>
                     </div>
                 </div>
 
@@ -817,6 +1030,111 @@ onMounted(loadData)
                     </table>
                 </div>
             </section>
+        </div>
+
+        <div
+            v-if="exportConfirmationModal.show"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 p-4"
+            @click.self="closeExportConfirmationModal(false)"
+        >
+            <div class="w-full max-w-md rounded-lg bg-white shadow-xl">
+                <div class="border-b border-gray-100 p-4">
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                            <DocumentChartBarIcon class="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h2 class="text-base font-semibold text-gray-950">{{ exportConfirmationModal.title }}</h2>
+                            <p class="mt-1 text-sm leading-6 text-gray-600">{{ exportConfirmationModal.message }}</p>
+                            <div v-if="exportConfirmationModal.files.length" class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    {{ tr('Archivos a generar', 'Files to generate') }}
+                                </p>
+                                <ul class="mt-2 space-y-2">
+                                    <li
+                                        v-for="file in exportConfirmationModal.files"
+                                        :key="file.name"
+                                        class="flex items-center justify-between gap-3 text-sm"
+                                    >
+                                        <span class="text-gray-600">{{ file.label }}</span>
+                                        <span class="rounded-md bg-white px-2 py-1 font-mono text-xs font-semibold text-gray-900 shadow-sm">
+                                            {{ file.name }}
+                                        </span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col-reverse gap-2 p-4 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        @click="closeExportConfirmationModal(false)"
+                    >
+                        {{ exportConfirmationModal.cancelLabel }}
+                    </button>
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold"
+                        :class="exportConfirmationModal.confirmClass"
+                        @click="closeExportConfirmationModal(true)"
+                    >
+                        {{ exportConfirmationModal.confirmLabel }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div
+            v-if="generatedLedgerFilesModal.show"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 p-4"
+            @click.self="closeGeneratedLedgerFilesModal"
+        >
+            <div class="w-full max-w-lg rounded-lg bg-white shadow-xl">
+                <div class="border-b border-gray-100 p-4">
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                            <ArrowDownTrayIcon class="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h2 class="text-base font-semibold text-gray-950">
+                                {{ tr('Archivos generados', 'Generated files') }}
+                            </h2>
+                            <p class="mt-1 text-sm leading-6 text-gray-600">
+                                {{ tr('Abre o descarga cada archivo generado para este reporte.', 'Open or download each file generated for this report.') }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-2 p-4">
+                    <a
+                        v-for="file in generatedLedgerFilesModal.files"
+                        :key="file.url"
+                        :href="file.url"
+                        target="_blank"
+                        rel="noopener"
+                        class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm hover:bg-gray-50"
+                    >
+                        <span>
+                            <span class="block font-semibold text-gray-950">{{ file.label }}</span>
+                            <span class="block font-mono text-xs text-gray-500">{{ file.file_name }}</span>
+                        </span>
+                        <span class="shrink-0 text-xs font-semibold text-gray-500">
+                            {{ formatFileSize(file.size) }}
+                        </span>
+                    </a>
+                </div>
+                <div class="flex justify-end border-t border-gray-100 p-4">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        @click="closeGeneratedLedgerFilesModal"
+                    >
+                        {{ tr('Cerrar', 'Close') }}
+                    </button>
+                </div>
+            </div>
         </div>
     </PathfinderLayout>
 </template>

@@ -10,9 +10,21 @@
         h2 { font-size: 12px; margin: 14px 0 6px; }
         h3 { font-size: 11px; margin: 12px 0 5px; }
         table { width: 100%; border-collapse: collapse; }
-        thead { display: table-header-group; }
         th, td { border: 1px solid #d1d5db; padding: 5px; vertical-align: top; }
         th { background: #f3f4f6; text-align: left; font-weight: 700; }
+        .ledger-table { table-layout: fixed; font-size: 8px; }
+        .ledger-table thead { display: table-row-group; }
+        .ledger-table th, .ledger-table td { padding: 3px; overflow-wrap: break-word; word-wrap: break-word; }
+        .ledger-table .date-column { width: 7%; white-space: nowrap; }
+        .ledger-table .type-column { width: 9%; }
+        .ledger-table .account-column { width: 16%; }
+        .ledger-table .location-column { width: 9%; }
+        .ledger-table .concept-column { width: 18%; }
+        .ledger-table .counterparty-column { width: 11%; }
+        .ledger-table .document-column { width: 13%; }
+        .ledger-table .status-column { width: 7%; }
+        .ledger-table .amount-column { width: 5%; }
+        .ledger-table .balance-column { width: 5%; }
         .section-title { page-break-after: avoid; }
         .header { display: table; width: 100%; margin-bottom: 12px; }
         .header-left, .header-right { display: table-cell; vertical-align: top; }
@@ -64,6 +76,8 @@
     $signedMoney = fn ($value) => ((float) ($value ?? 0)) < 0
         ? '-$' . number_format(abs((float) $value), 2)
         : '$' . number_format((float) ($value ?? 0), 2);
+    $annexOnly = $annexOnly ?? false;
+    $ledgerOnly = $ledgerOnly ?? false;
     $movements = collect($report['movements'] ?? []);
     $summary = $report['summary'] ?? [];
     $receiptAnnexes = collect($receiptAnnexes ?? [])->values()->map(function (array $annex, int $index) {
@@ -227,7 +241,7 @@
 
 <div class="header">
     <div class="header-left">
-        <h1>Libro contable financiero</h1>
+        <h1>{{ $annexOnly ? 'Anexos de recibos' : 'Libro contable financiero' }}</h1>
         <div class="muted">{{ $club->club_name ?? 'Club' }}</div>
         <div class="muted">Generado: {{ optional($generatedAt)->format('Y-m-d H:i') }}</div>
     </div>
@@ -238,6 +252,7 @@
     </div>
 </div>
 
+@if(!$annexOnly)
 <div class="summary">
     <div class="summary-card">
         <div class="muted">Efectivo</div>
@@ -266,19 +281,19 @@
         </tbody>
     </table>
 @else
-    <table>
+    <table class="ledger-table">
         <thead>
             <tr>
-                <th>Fecha</th>
-                <th>Tipo</th>
-                <th>Cuenta</th>
-                <th>Ubicacion</th>
-                <th>Concepto</th>
-                <th>Contraparte</th>
-                <th>Recibo / comprobante</th>
-                <th>Estado</th>
-                <th style="text-align:right;">Monto</th>
-                <th style="text-align:right;">Balance cuenta</th>
+                <th class="date-column">Fecha</th>
+                <th class="type-column">Tipo</th>
+                <th class="account-column">Cuenta</th>
+                <th class="location-column">Ubicacion</th>
+                <th class="concept-column">Concepto</th>
+                <th class="counterparty-column">Contraparte</th>
+                <th class="document-column">Recibo / comprobante</th>
+                <th class="status-column">Estado</th>
+                <th class="amount-column" style="text-align:right;">Monto</th>
+                <th class="balance-column" style="text-align:right;">Balance cuenta</th>
             </tr>
         </thead>
         <tbody>
@@ -288,13 +303,13 @@
                     $documents = $documentLinks($movement);
                 @endphp
                 <tr>
-                    <td>{{ $movement['date'] ?? '-' }}</td>
-                    <td>{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
-                    <td>{{ $movementAccountText($movement) }}</td>
-                    <td>{{ $movementLocationText($movement) }}</td>
-                    <td>{{ $movement['concept'] ?? '-' }}</td>
-                    <td>{{ $movement['counterparty'] ?? $movement['created_by'] ?? '-' }}</td>
-                    <td>
+                    <td class="date-column">{{ $movement['date'] ?? '-' }}</td>
+                    <td class="type-column">{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
+                    <td class="account-column">{{ $movementAccountText($movement) }}</td>
+                    <td class="location-column">{{ $movementLocationText($movement) }}</td>
+                    <td class="concept-column">{{ $movement['concept'] ?? '-' }}</td>
+                    <td class="counterparty-column">{{ $movement['counterparty'] ?? $movement['created_by'] ?? '-' }}</td>
+                    <td class="document-column">
                         @if(empty($documents))
                             -
                         @else
@@ -308,7 +323,7 @@
                             @endforeach
                         @endif
                     </td>
-                    <td>
+                    <td class="status-column">
                         {{ $movement['status'] ?? 'posted' }}
                         @if(!empty($movement['related_canceled_movement_key']))
                             <br><span class="muted">Cancelado por {{ $movement['related_canceled_movement_key'] }}</span>
@@ -317,14 +332,29 @@
                             <br><span class="muted">Cancela {{ $movement['canceling_movement_key'] }}</span>
                         @endif
                     </td>
-                    <td style="text-align:right;" class="amount-cell {{ $amountClass($movement) }}">
+                    <td style="text-align:right;" class="amount-column amount-cell {{ $amountClass($movement) }}">
                         {{ $direction === 'out' ? '-' : '' }}{{ $money($movement['amount'] ?? 0) }}
                     </td>
-                    <td style="text-align:right;" class="balance-cell">{{ $movementBalanceText($movement, $movementSection['account']) }}</td>
+                    <td style="text-align:right;" class="balance-column balance-cell">{{ $movementBalanceText($movement, $movementSection['account']) }}</td>
                 </tr>
             @endforeach
         </tbody>
     </table>
+@endif
+@endif
+
+@if(!$ledgerOnly)
+@if($annexOnly)
+    <h2>Anexos de recibos y comprobantes</h2>
+    @if($receiptAnnexes->isEmpty())
+        <table>
+            <tbody>
+                <tr>
+                    <td style="text-align:center;">No hay recibos o comprobantes para los filtros seleccionados.</td>
+                </tr>
+            </tbody>
+        </table>
+    @endif
 @endif
 
 @foreach($receiptAnnexes as $annex)
@@ -474,5 +504,6 @@
         @endif
     </div>
 @endforeach
+@endif
 </body>
 </html>

@@ -101,16 +101,54 @@ class FinanceEngineController extends Controller
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
             'qrCodeDataUri' => $validation['qr_code_data_uri'],
-            'receiptAnnexes' => $receiptAnnexes,
+            'receiptAnnexes' => [],
+            'ledgerOnly' => true,
         ])->setPaper('a4', 'landscape');
 
-        return GeneratedPdfResponse::fromDomPdf(
-            $pdf,
+        $payload = GeneratedPdfResponse::store(
+            $pdf->output(),
             'generated/finance-ledgers',
             'finance-ledger-' . $club->id,
-            'finance-ledger.pdf',
-            $request
+            'finance-ledger.pdf'
         );
+        $payload['files'] = [[
+            'label' => 'Libro contable',
+            'file_name' => $payload['file_name'],
+            'url' => $payload['url'],
+            'size' => $payload['size'] ?? null,
+        ]];
+
+        if ($includeAnnexes) {
+            $appendixPdf = Pdf::loadView('reports.finance_engine_movements', [
+                'club' => $club,
+                'report' => $report,
+                'generatedAt' => $generatedAt,
+                'clubLogoDataUri' => $clubLogoService->dataUri($club),
+                'validationUrl' => $validation['url'],
+                'qrCodeDataUri' => $validation['qr_code_data_uri'],
+                'receiptAnnexes' => $receiptAnnexes,
+                'annexOnly' => true,
+            ])->setPaper('a4', 'portrait');
+
+            $payload['appendix'] = GeneratedPdfResponse::store(
+                $appendixPdf->output(),
+                'generated/finance-ledgers',
+                'finance-ledger-receipts-' . $club->id,
+                'finance-ledger-receipts.pdf'
+            );
+            $payload['files'][] = [
+                'label' => 'Recibos y comprobantes',
+                'file_name' => $payload['appendix']['file_name'],
+                'url' => $payload['appendix']['url'],
+                'size' => $payload['appendix']['size'] ?? null,
+            ];
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json($payload);
+        }
+
+        return redirect()->away($payload['url']);
     }
 
     private function ledgerReceiptAnnexes(array $report): array
