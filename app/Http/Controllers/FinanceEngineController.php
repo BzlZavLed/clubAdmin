@@ -157,6 +157,10 @@ class FinanceEngineController extends Controller
         $seen = [];
 
         foreach (($report['movements'] ?? []) as $movement) {
+            if ($this->isCorrectionMovement($movement)) {
+                continue;
+            }
+
             $receipt = $movement['receipt'] ?? null;
             if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
                 $isIncomeReceipt = ($movement['domain'] ?? null) === 'income';
@@ -205,6 +209,17 @@ class FinanceEngineController extends Controller
         }
 
         return array_values($annexes);
+    }
+
+    private function isCorrectionMovement(array $movement): bool
+    {
+        $status = $movement['status'] ?? null;
+        $kind = (string) ($movement['kind'] ?? '');
+
+        return $status === 'cancellation'
+            || str_contains($kind, 'reversal')
+            || !empty($movement['canceling_id'])
+            || !empty($movement['canceling_movement_key']);
     }
 
     private function pushLedgerAnnex(array &$annexes, array &$seen, array $annex): void

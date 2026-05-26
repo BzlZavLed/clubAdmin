@@ -143,7 +143,20 @@
 
         return $locationLabel($movement['location'] ?? $movement['from_location'] ?? null);
     };
-    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors) {
+    $isCorrectionMovement = function (array $movement) {
+        $status = $movement['status'] ?? null;
+        $kind = (string) ($movement['kind'] ?? '');
+
+        return $status === 'cancellation'
+            || str_contains($kind, 'reversal')
+            || !empty($movement['canceling_id'])
+            || !empty($movement['canceling_movement_key']);
+    };
+    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors, $isCorrectionMovement) {
+        if ($isCorrectionMovement($movement)) {
+            return [];
+        }
+
         $links = [];
         $receipt = $movement['receipt'] ?? null;
 
