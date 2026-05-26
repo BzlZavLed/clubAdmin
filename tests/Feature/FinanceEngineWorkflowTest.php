@@ -474,6 +474,7 @@ class FinanceEngineWorkflowTest extends TestCase
 
         $this->assertStringContainsString('Comprobante de gasto EXP-13', $ledgerHtml);
         $this->assertStringContainsString('Comprobante de reembolso REIMB-35', $ledgerHtml);
+        $this->assertStringNotContainsString('<a href="https://example.test/receipts/EXP-13.jpg">Comprobante de gasto EXP-13</a>', $ledgerHtml);
     }
 
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void

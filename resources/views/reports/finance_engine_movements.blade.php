@@ -276,9 +276,7 @@
             $url = $receipt['url'] ?? null;
             $links[] = [
                 'label' => $number ?? 'Recibo',
-                'url' => ($number && isset($annexReferenceAnchors[$number]))
-                    ? $annexReferenceAnchors[$number]
-                    : ($annexUrlAnchors[$url] ?? $url),
+                'url' => null,
             ];
         }
 
@@ -314,7 +312,7 @@
 
             $links[] = [
                 'label' => ($proofLabels[$type] ?? 'Comprobante') . ' ' . $reference,
-                'url' => $annexUrlAnchors[$url] ?? $url,
+                'url' => null,
             ];
         }
 
