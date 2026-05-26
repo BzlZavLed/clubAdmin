@@ -91,13 +91,7 @@
 
         return $annex;
     });
-    $pagedReceiptAnnexes = $receiptAnnexes
-        ->filter(fn (array $annex) => !empty($annex['render_inline_receipt']) || !empty($annex['data_uri']))
-        ->values();
-    $compactReceiptAnnexes = $receiptAnnexes
-        ->filter(fn (array $annex) => empty($annex['render_inline_receipt']) && empty($annex['data_uri']))
-        ->values();
-    $compactGroupLabels = [
+    $appendixGroupLabels = [
         'reimbursement_receipt' => 'Reembolsos',
         'reimbursement_payment_proof' => 'Pagos de reembolso',
         'expense_receipt' => 'Gastos',
@@ -108,8 +102,12 @@
         'treasury_proof' => 'Transferencias',
         'proof' => 'Otros comprobantes',
         'other' => 'Otros comprobantes',
+        'income' => 'Ingresos',
+        'expense' => 'Gastos',
+        'reimbursement' => 'Reembolsos',
+        'transfer' => 'Transferencias',
     ];
-    $compactGroupOrder = [
+    $appendixGroupOrder = [
         'reimbursement_receipt' => 10,
         'reimbursement_payment_proof' => 20,
         'expense_receipt' => 30,
@@ -120,6 +118,10 @@
         'treasury_proof' => 70,
         'proof' => 90,
         'other' => 99,
+        'reimbursement' => 10,
+        'expense' => 30,
+        'income' => 40,
+        'transfer' => 70,
     ];
     $annexSortNumber = function (array $annex) {
         $value = (string) ($annex['reference'] ?? $annex['title'] ?? $annex['filename'] ?? '');
@@ -127,9 +129,9 @@
 
         return $matches[0] ? (int) end($matches[0]) : PHP_INT_MAX;
     };
-    $compactReceiptGroups = $compactReceiptAnnexes
+    $receiptAnnexGroups = $receiptAnnexes
         ->groupBy(fn (array $annex) => $annex['document_type'] ?? 'other')
-        ->sortBy(fn ($items, $type) => $compactGroupOrder[$type] ?? 99)
+        ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
         ->map(fn ($items) => $items
             ->sortBy([
                 fn (array $annex) => $annexSortNumber($annex),
@@ -245,6 +247,55 @@
 
         return $links;
     };
+    $movementHasDocuments = function (array $movement) use ($isCorrectionMovement) {
+        if ($isCorrectionMovement($movement)) {
+            return false;
+        }
+
+        $receipt = $movement['receipt'] ?? null;
+        if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
+            return true;
+        }
+
+        if (!empty($movement['proofs']) && is_array($movement['proofs'])) {
+            foreach ($movement['proofs'] as $proof) {
+                if (is_array($proof) && (!empty($proof['name']) || !empty($proof['url']) || !empty($proof['type']) || !empty($proof['path']))) {
+                    return true;
+                }
+            }
+        }
+
+        $proof = $movement['proof'] ?? null;
+        return is_array($proof) && (!empty($proof['name']) || !empty($proof['url']) || !empty($proof['type']) || !empty($proof['path']));
+    };
+    $movementGroupType = function (array $movement) {
+        $domain = $movement['domain'] ?? 'other';
+        $kind = strtolower((string) ($movement['kind'] ?? ''));
+        $concept = strtolower((string) ($movement['concept'] ?? ''));
+
+        if ($domain === 'expense' && (str_contains($kind, 'reimbursement') || str_contains($concept, 'reembolso') || str_contains($concept, 'reimburs'))) {
+            return 'reimbursement';
+        }
+
+        return in_array($domain, ['income', 'expense', 'transfer'], true) ? $domain : 'other';
+    };
+    $movementSortNumber = function (array $movement) {
+        $value = (string) ($movement['movement_id'] ?? $movement['reference'] ?? $movement['concept'] ?? '');
+        preg_match_all('/\d+/', $value, $matches);
+
+        return $matches[0] ? (int) end($matches[0]) : PHP_INT_MAX;
+    };
+    $movementsWithoutReceiptsGroups = $movements
+        ->filter(fn (array $movement) => !$isCorrectionMovement($movement) && !$movementHasDocuments($movement))
+        ->groupBy(fn (array $movement) => $movementGroupType($movement))
+        ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
+        ->map(fn ($items) => $items
+            ->sortBy([
+                fn (array $movement) => $movementSortNumber($movement),
+                fn (array $movement) => (string) ($movement['movement_id'] ?? ''),
+            ])
+            ->values()
+        );
     $amountClass = function (array $movement) use ($isTransfer) {
         if ($isTransfer($movement)) {
             return 'amount-transfer';
@@ -422,194 +473,156 @@
     @endif
 @endif
 
-@foreach($pagedReceiptAnnexes as $annex)
-    @php
-        $movement = $annex['movement'] ?? [];
-        $receipt = $annex['receipt'] ?? [];
-        $title = $annex['title'] ?? ('Anexo ' . ($annex['reference'] ?? $loop->iteration));
-        $reference = $annex['reference'] ?? '-';
-        $receiptAmount = (float) ($receipt['signed_amount'] ?? (($receipt['direction'] ?? null) === 'out' ? -1 * ($receipt['amount'] ?? 0) : ($receipt['amount'] ?? 0)));
-        $receiptTitle = $receiptAmount < 0 || ($receipt['status'] ?? null) === 'cancellation'
-            ? 'Recibo de cancelacion'
-            : 'Recibo de ingreso';
-    @endphp
-    <div class="annex-page">
-        <a name="{{ $annex['anchor'] }}"></a>
-        <h2 class="annex-title">{{ $title }}</h2>
-        <div class="annex-subtitle">Anexo del libro contable financiero - Referencia {{ $reference }}</div>
+@if($receiptAnnexGroups->isNotEmpty())
+    <div>
+        <h2 class="annex-title">Recibos y comprobantes agrupados</h2>
+        <div class="annex-subtitle">Ordenados por tipo y numero de referencia.</div>
 
-        @if(!empty($annex['render_inline_receipt']) && !empty($receipt))
-            <div class="inline-receipt">
-                <div class="inline-receipt-top">
-                    <table class="inline-receipt-header">
-                        <tr>
-                            <td style="width:58px;">
-                                @if(!empty($clubLogoDataUri))
-                                    <img src="{{ $clubLogoDataUri }}" class="inline-receipt-logo" alt="Logo">
-                                @endif
-                            </td>
-                            <td>
-                                <div class="inline-receipt-club">{{ $club->club_name ?? 'Club' }}</div>
-                                <div class="inline-receipt-subtitle">{{ $club->church_name ?? '' }}</div>
-                            </td>
-                            <td style="text-align:right;">
-                                <div class="inline-receipt-title">{{ $receiptTitle }}</div>
-                                <div class="inline-receipt-number">{{ $receipt['number'] ?? $reference }}</div>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-                <div class="inline-receipt-body">
-                    <table class="inline-receipt-grid">
-                        <tr>
-                            <td>
-                                <div class="annex-label">Fecha de pago</div>
-                                <div class="annex-value">{{ $receipt['date'] ?? '-' }}</div>
-                            </td>
-                            <td>
-                                <div class="annex-label">Emitido</div>
-                                <div class="annex-value">{{ !empty($receipt['issued_at']) ? substr((string) $receipt['issued_at'], 0, 16) : '-' }}</div>
-                            </td>
-                            <td>
-                                <div class="annex-label">Metodo</div>
-                                <div class="annex-value">{{ $paymentTypeLabel($receipt['payment_type'] ?? null) }}</div>
-                            </td>
-                        </tr>
-                    </table>
-                    <table class="inline-receipt-detail">
-                        <tr>
-                            <td style="width:50%;">
-                                <div class="annex-label">Recibido de</div>
-                                <div class="annex-value">{{ $receipt['payer'] ?? '-' }}</div>
-                            </td>
-                            <td style="width:50%;">
-                                <div class="annex-label">Registrado por</div>
-                                <div class="annex-value">{{ $receipt['received_by'] ?? '-' }}</div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                <div class="annex-label">Concepto</div>
-                                <div class="annex-value">{{ $receipt['concept'] ?? '-' }}</div>
-                            </td>
-                            <td>
-                                <div class="annex-label">Cuenta / ubicacion</div>
-                                <div class="annex-value">{{ $receipt['account'] ?? '-' }} / {{ $locationLabel($receipt['location'] ?? null) }}</div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                <div class="annex-label">Movimiento</div>
-                                <div class="annex-value">{{ $receipt['movement_id'] ?? '-' }}</div>
-                            </td>
-                            <td>
-                                <div class="annex-label">Email emitido</div>
-                                <div class="annex-value">{{ $receipt['issued_to_email'] ?? '-' }}</div>
-                            </td>
-                        </tr>
-                    </table>
-                    <div class="inline-receipt-total">
-                        <div class="annex-label">Total recibido</div>
-                        <div class="inline-receipt-total-value">{{ $signedMoney($receiptAmount) }}</div>
-                    </div>
-                </div>
-            </div>
-        @else
-            <table class="annex-meta">
-                <tr>
-                    <td>
-                        <div class="annex-label">Movimiento</div>
-                        <div class="annex-value">{{ $movement['movement_id'] ?? '-' }}</div>
-                    </td>
-                    <td>
-                        <div class="annex-label">Fecha</div>
-                        <div class="annex-value">{{ $movement['date'] ?? '-' }}</div>
-                    </td>
-                    <td>
-                        <div class="annex-label">Monto</div>
-                        <div class="annex-value">{{ $money($movement['amount'] ?? 0) }}</div>
-                    </td>
-                    <td>
-                        <div class="annex-label">Contraparte</div>
-                        <div class="annex-value">{{ $movement['counterparty'] ?? '-' }}</div>
-                    </td>
-                    <td>
-                        <div class="annex-label">Referencia</div>
-                        <div class="annex-value">{{ $reference }}</div>
-                    </td>
-                </tr>
-            </table>
-
-            <table class="annex-meta">
-                <tr>
-                    <td style="width:100%;">
-                        <div class="annex-label">Concepto</div>
-                        <div class="annex-value">{{ $movement['concept'] ?? '-' }}</div>
-                    </td>
-                </tr>
-            </table>
-        @endif
-
-        @if(!empty($annex['data_uri']))
-            <div class="annex-preview">
-                <img class="annex-image" src="{{ $annex['data_uri'] }}" alt="{{ $reference }}">
-            </div>
-        @elseif(empty($annex['render_inline_receipt']))
-            <div class="annex-link-box">
-                <div class="annex-link-title">{{ $annex['filename'] ?? $title }}</div>
-                @if(!empty($annex['url']))
-                    <div>Archivo original: <a href="{{ $annex['url'] }}">{{ $annex['url'] }}</a></div>
-                @else
-                    <div>No hay vista previa disponible para este comprobante.</div>
-                @endif
-                @if(!empty($annex['mime_type']))
-                    <div class="muted" style="margin-top:6px;">Tipo de archivo: {{ $annex['mime_type'] }}</div>
-                @endif
-            </div>
-        @endif
-    </div>
-@endforeach
-
-@if($compactReceiptAnnexes->isNotEmpty())
-    <div class="{{ $pagedReceiptAnnexes->isNotEmpty() ? 'annex-compact-section' : '' }}">
-        <h2 class="annex-title">Comprobantes sin vista previa</h2>
-        <div class="annex-subtitle">Estos archivos no tienen imagen adjunta para previsualizar y se listan juntos para reducir paginas vacias.</div>
-
-        @foreach($compactReceiptGroups as $groupType => $groupAnnexes)
+        @foreach($receiptAnnexGroups as $groupType => $groupAnnexes)
             <h3 class="annex-compact-group">
-                {{ $compactGroupLabels[$groupType] ?? $compactGroupLabels['other'] }}
+                {{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }}
                 ({{ $groupAnnexes->count() }})
             </h3>
 
             @foreach($groupAnnexes as $annex)
                 @php
                     $movement = $annex['movement'] ?? [];
+                    $receipt = $annex['receipt'] ?? [];
                     $title = $annex['title'] ?? ('Anexo ' . ($annex['reference'] ?? $loop->iteration));
                     $reference = $annex['reference'] ?? '-';
+                    $hasPreview = !empty($annex['render_inline_receipt']) || !empty($annex['data_uri']);
+                    $receiptAmount = (float) ($receipt['signed_amount'] ?? (($receipt['direction'] ?? null) === 'out' ? -1 * ($receipt['amount'] ?? 0) : ($receipt['amount'] ?? 0)));
+                    $receiptTitle = $receiptAmount < 0 || ($receipt['status'] ?? null) === 'cancellation'
+                        ? 'Recibo de cancelacion'
+                        : 'Recibo de ingreso';
                 @endphp
-                <div class="annex-compact-card">
-                    <a name="{{ $annex['anchor'] }}"></a>
-                    <div class="annex-compact-title">{{ $title }}</div>
-                    <div class="annex-compact-meta">
-                        Referencia {{ $reference }}
-                        · Movimiento {{ $movement['movement_id'] ?? '-' }}
-                        · Fecha {{ $movement['date'] ?? '-' }}
-                        · Monto {{ $money($movement['amount'] ?? 0) }}
-                    </div>
-                    <div class="annex-compact-meta">
-                        {{ $movement['concept'] ?? '-' }}
-                        @if(!empty($movement['counterparty']))
-                            · {{ $movement['counterparty'] }}
+
+                @if($hasPreview)
+                    <div class="annex-page">
+                        <a name="{{ $annex['anchor'] }}"></a>
+                        <h2 class="annex-title">{{ $title }}</h2>
+                        <div class="annex-subtitle">{{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }} - Referencia {{ $reference }}</div>
+
+                        @if(!empty($annex['render_inline_receipt']) && !empty($receipt))
+                            <div class="inline-receipt">
+                                <div class="inline-receipt-top">
+                                    <table class="inline-receipt-header">
+                                        <tr>
+                                            <td style="width:58px;">
+                                                @if(!empty($clubLogoDataUri))
+                                                    <img src="{{ $clubLogoDataUri }}" class="inline-receipt-logo" alt="Logo">
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <div class="inline-receipt-club">{{ $club->club_name ?? 'Club' }}</div>
+                                                <div class="inline-receipt-subtitle">{{ $club->church_name ?? '' }}</div>
+                                            </td>
+                                            <td style="text-align:right;">
+                                                <div class="inline-receipt-title">{{ $receiptTitle }}</div>
+                                                <div class="inline-receipt-number">{{ $receipt['number'] ?? $reference }}</div>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <div class="inline-receipt-body">
+                                    <table class="inline-receipt-grid">
+                                        <tr>
+                                            <td><div class="annex-label">Fecha de pago</div><div class="annex-value">{{ $receipt['date'] ?? '-' }}</div></td>
+                                            <td><div class="annex-label">Emitido</div><div class="annex-value">{{ !empty($receipt['issued_at']) ? substr((string) $receipt['issued_at'], 0, 16) : '-' }}</div></td>
+                                            <td><div class="annex-label">Metodo</div><div class="annex-value">{{ $paymentTypeLabel($receipt['payment_type'] ?? null) }}</div></td>
+                                        </tr>
+                                    </table>
+                                    <table class="inline-receipt-detail">
+                                        <tr>
+                                            <td style="width:50%;"><div class="annex-label">Recibido de</div><div class="annex-value">{{ $receipt['payer'] ?? '-' }}</div></td>
+                                            <td style="width:50%;"><div class="annex-label">Registrado por</div><div class="annex-value">{{ $receipt['received_by'] ?? '-' }}</div></td>
+                                        </tr>
+                                        <tr>
+                                            <td><div class="annex-label">Concepto</div><div class="annex-value">{{ $receipt['concept'] ?? '-' }}</div></td>
+                                            <td><div class="annex-label">Cuenta / ubicacion</div><div class="annex-value">{{ $receipt['account'] ?? '-' }} / {{ $locationLabel($receipt['location'] ?? null) }}</div></td>
+                                        </tr>
+                                        <tr>
+                                            <td><div class="annex-label">Movimiento</div><div class="annex-value">{{ $receipt['movement_id'] ?? '-' }}</div></td>
+                                            <td><div class="annex-label">Email emitido</div><div class="annex-value">{{ $receipt['issued_to_email'] ?? '-' }}</div></td>
+                                        </tr>
+                                    </table>
+                                    <div class="inline-receipt-total">
+                                        <div class="annex-label">Total recibido</div>
+                                        <div class="inline-receipt-total-value">{{ $signedMoney($receiptAmount) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        @elseif(!empty($annex['data_uri']))
+                            <table class="annex-meta">
+                                <tr>
+                                    <td><div class="annex-label">Movimiento</div><div class="annex-value">{{ $movement['movement_id'] ?? '-' }}</div></td>
+                                    <td><div class="annex-label">Fecha</div><div class="annex-value">{{ $movement['date'] ?? '-' }}</div></td>
+                                    <td><div class="annex-label">Monto</div><div class="annex-value">{{ $money($movement['amount'] ?? 0) }}</div></td>
+                                    <td><div class="annex-label">Contraparte</div><div class="annex-value">{{ $movement['counterparty'] ?? '-' }}</div></td>
+                                    <td><div class="annex-label">Referencia</div><div class="annex-value">{{ $reference }}</div></td>
+                                </tr>
+                            </table>
+                            <table class="annex-meta">
+                                <tr><td style="width:100%;"><div class="annex-label">Concepto</div><div class="annex-value">{{ $movement['concept'] ?? '-' }}</div></td></tr>
+                            </table>
+                            <div class="annex-preview">
+                                <img class="annex-image" src="{{ $annex['data_uri'] }}" alt="{{ $reference }}">
+                            </div>
                         @endif
                     </div>
-                    @if(!empty($annex['url']))
-                        <div class="annex-compact-link">Archivo original: <a href="{{ $annex['url'] }}">{{ $annex['url'] }}</a></div>
-                    @else
-                        <div class="annex-compact-link">No hay vista previa disponible para este comprobante.</div>
-                    @endif
-                    @if(!empty($annex['mime_type']))
-                        <div class="annex-compact-meta">Tipo de archivo: {{ $annex['mime_type'] }}</div>
-                    @endif
+                @else
+                    <div class="annex-compact-card">
+                        <a name="{{ $annex['anchor'] }}"></a>
+                        <div class="annex-compact-title">{{ $title }}</div>
+                        <div class="annex-compact-meta">
+                            Referencia {{ $reference }}
+                            · Movimiento {{ $movement['movement_id'] ?? '-' }}
+                            · Fecha {{ $movement['date'] ?? '-' }}
+                            · Monto {{ $money($movement['amount'] ?? 0) }}
+                        </div>
+                        <div class="annex-compact-meta">
+                            {{ $movement['concept'] ?? '-' }}
+                            @if(!empty($movement['counterparty']))
+                                · {{ $movement['counterparty'] }}
+                            @endif
+                        </div>
+                        @if(!empty($annex['url']))
+                            <div class="annex-compact-link">Archivo original: <a href="{{ $annex['url'] }}">{{ $annex['url'] }}</a></div>
+                        @else
+                            <div class="annex-compact-link">No hay vista previa disponible para este comprobante.</div>
+                        @endif
+                        @if(!empty($annex['mime_type']))
+                            <div class="annex-compact-meta">Tipo de archivo: {{ $annex['mime_type'] }}</div>
+                        @endif
+                    </div>
+                @endif
+            @endforeach
+        @endforeach
+    </div>
+@endif
+
+@if($movementsWithoutReceiptsGroups->isNotEmpty())
+    <div class="{{ $receiptAnnexGroups->isNotEmpty() ? 'annex-compact-section' : '' }}">
+        <h2 class="annex-title">Movimientos sin recibos o comprobantes</h2>
+        <div class="annex-subtitle">Agrupados por tipo y ordenados por numero de movimiento.</div>
+
+        @foreach($movementsWithoutReceiptsGroups as $groupType => $groupMovements)
+            <h3 class="annex-compact-group">
+                {{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }}
+                ({{ $groupMovements->count() }})
+            </h3>
+
+            @foreach($groupMovements as $movement)
+                <div class="annex-compact-card">
+                    <div class="annex-compact-title">{{ $movement['movement_id'] ?? '-' }} - {{ $movement['concept'] ?? '-' }}</div>
+                    <div class="annex-compact-meta">
+                        Fecha {{ $movement['date'] ?? '-' }}
+                        · Monto {{ $money($movement['amount'] ?? 0) }}
+                        · Cuenta {{ $movement['account_label'] ?? $movement['account'] ?? $movement['from_account'] ?? '-' }}
+                    </div>
+                    <div class="annex-compact-meta">
+                        {{ $movement['counterparty'] ?? $movement['created_by'] ?? '-' }}
+                    </div>
                 </div>
             @endforeach
         @endforeach
