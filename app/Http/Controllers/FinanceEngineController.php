@@ -53,6 +53,7 @@ class FinanceEngineController extends Controller
 
         $validated = $this->validateMovementFilters($request);
         $includeAnnexes = (bool) ($validated['include_annexes'] ?? false);
+        $includeIncomeReceiptAnnexes = (bool) ($validated['include_income_receipt_annexes'] ?? false);
 
         $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
 
@@ -61,7 +62,7 @@ class FinanceEngineController extends Controller
             'limit' => $validated['limit'] ?? 5000,
         ]);
 
-        $receiptAnnexes = $includeAnnexes ? $this->ledgerReceiptAnnexes($report) : [];
+        $receiptAnnexes = $includeAnnexes ? $this->ledgerReceiptAnnexes($report, $includeIncomeReceiptAnnexes) : [];
         $generatedAt = now();
 
         $validation = $documentValidationService->create(
@@ -151,7 +152,7 @@ class FinanceEngineController extends Controller
         return redirect()->away($payload['url']);
     }
 
-    private function ledgerReceiptAnnexes(array $report): array
+    private function ledgerReceiptAnnexes(array $report, bool $includeIncomeReceipts = false): array
     {
         $annexes = [];
         $seen = [];
@@ -168,6 +169,10 @@ class FinanceEngineController extends Controller
             $receipt = $movement['receipt'] ?? null;
             if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
                 $isIncomeReceipt = ($movement['domain'] ?? null) === 'income';
+                if ($isIncomeReceipt && !$includeIncomeReceipts) {
+                    continue;
+                }
+
                 if (!$isIncomeReceipt && empty($receipt['url'])) {
                     continue;
                 }
@@ -716,6 +721,7 @@ class FinanceEngineController extends Controller
             'domain' => ['nullable', 'in:income,expense,transfer'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
             'include_annexes' => ['nullable', 'boolean'],
+            'include_income_receipt_annexes' => ['nullable', 'boolean'],
         ]);
     }
 }

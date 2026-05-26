@@ -264,6 +264,8 @@ class FinanceEngineWorkflowTest extends TestCase
 
     public function test_finance_ledger_receipt_appendix_orders_attached_and_missing_sections_by_reference(): void
     {
+        Storage::fake('public');
+
         $club = (object) [
             'club_name' => 'Test Club',
             'church_name' => 'Test Church',
@@ -359,6 +361,20 @@ class FinanceEngineWorkflowTest extends TestCase
                         'path' => 'reimbursement-receipts/AIH4ZWcurwx3LAAPvqay8tjcYAu0bt52mHRwkqmj.jpg',
                     ]],
                 ],
+                [
+                    'movement_id' => 'payment:61',
+                    'domain' => 'income',
+                    'kind' => 'income',
+                    'date' => '2026-05-09',
+                    'concept' => 'Monthly dues',
+                    'amount' => 25,
+                    'account' => 'club_budget',
+                    'status' => 'posted',
+                    'receipt' => [
+                        'number' => 'RCPT-61',
+                        'url' => 'https://example.test/payment-receipts/61',
+                    ],
+                ],
             ],
         ];
 
@@ -415,6 +431,12 @@ class FinanceEngineWorkflowTest extends TestCase
         $generatedAnnexes = $method->invoke($controller, $report);
 
         $this->assertSame(['EXP-13', 'EXP-12'], array_column($generatedAnnexes, 'reference'));
+
+        $generatedAnnexesWithIncomeReceipts = $method->invoke($controller, $report, true);
+        $generatedAnnexReferences = array_column($generatedAnnexesWithIncomeReceipts, 'reference');
+
+        $this->assertContains('RCPT-61', $generatedAnnexReferences);
+        $this->assertNotContains('RCPT-60', $generatedAnnexReferences);
     }
 
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void
