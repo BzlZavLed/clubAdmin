@@ -392,9 +392,10 @@ export const closeFinanceEngineFundraiserEvent = async (fundraiserEventId, paylo
     return data;
 };
 
-export const uploadFinanceEngineFundraiserInvestmentReceipts = async (fundraiserEventId, payload = {}) => {
+export const uploadFinanceEngineFundraiserInvestmentReceipts = async (fundraiserEventId, payload = {}, options = {}) => {
     const { data } = await axios.post(route('club.finance-engine.fundraisers.investment-receipts.store', { fundraiserEvent: fundraiserEventId }), financeEngineFormData(payload), {
         headers: financeEngineFormHeaders,
+        ...options,
     });
     return data;
 };
@@ -427,11 +428,11 @@ export const createFinanceEngineExpense = async (payload) => {
     return data;
 };
 
-export const uploadFinanceEngineExpenseReceipt = async (expenseId, payload) => {
+export const uploadFinanceEngineExpenseReceipt = async (expenseId, payload, options = {}) => {
     const { data } = await axios.post(
         route('club.finance-engine.expenses.receipt.upload', { expense: expenseId }),
         financeEngineFormData(payload),
-        { headers: financeEngineFormHeaders }
+        { headers: financeEngineFormHeaders, ...options }
     );
     return data;
 };
@@ -443,11 +444,11 @@ export const removeFinanceEngineExpenseReceipt = async (expenseId) => {
     return data;
 };
 
-export const uploadFinanceEngineReimbursementPaymentProof = async (expenseId, payload) => {
+export const uploadFinanceEngineReimbursementPaymentProof = async (expenseId, payload, options = {}) => {
     const { data } = await axios.post(
         route('club.finance-engine.expenses.reimbursement-payment-proof.upload', { expense: expenseId }),
         financeEngineFormData(payload),
-        { headers: financeEngineFormHeaders }
+        { headers: financeEngineFormHeaders, ...options }
     );
     return data;
 };

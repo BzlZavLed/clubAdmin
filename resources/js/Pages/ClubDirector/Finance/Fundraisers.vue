@@ -53,6 +53,7 @@ const savingProduct = ref(false)
 const savingProductEdit = ref(false)
 const savingSale = ref(false)
 const savingInvestmentReceipts = ref(false)
+const investmentReceiptUploadProgress = ref(0)
 const loadError = ref('')
 const eventErrors = ref({})
 const investmentReceiptErrors = ref({})
@@ -89,6 +90,7 @@ const tutorialNextId = ref(8000)
 const TUTORIAL_CLUB_ID = -9801
 const TUTORIAL_PARTNER_CLUB_ID = -9802
 const TUTORIAL_ACCOUNT = 'club_budget'
+const DOCUMENT_RECEIPT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf']
 
 const eventForm = ref({
     name: '',
@@ -236,7 +238,24 @@ const normalizeErrors = (error) => {
     const errors = error?.response?.data?.errors || {}
     return Object.fromEntries(Object.entries(errors).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]))
 }
-const actionErrorMessage = (error, fallback) => error?.response?.data?.message || fallback
+const allowedExtensionText = (extensions) => extensions.map((extension) => `.${extension}`).join(', ')
+const fileExtension = (file) => String(file?.name || '').split('.').pop()?.toLowerCase() || ''
+const invalidFileMessage = (extensions) => tr(
+    `Tipo de archivo no permitido. Usa ${allowedExtensionText(extensions)}.`,
+    `File type not allowed. Use ${allowedExtensionText(extensions)}.`
+)
+const actionErrorMessage = (error, fallback) => {
+    if (error?.response?.data?.message) return error.response.data.message
+    const validationMessage = Object.values(normalizeErrors(error)).find(Boolean)
+    if (validationMessage) return validationMessage
+    if (error?.code === 'ECONNABORTED') {
+        return tr('La carga tardo demasiado. Intenta con archivos mas pequeños o revisa la conexion.', 'The upload took too long. Try smaller files or check the connection.')
+    }
+    if (error?.request && !error?.response) {
+        return tr('No se recibio respuesta del servidor. Revisa la conexion e intenta de nuevo.', 'No server response was received. Check the connection and try again.')
+    }
+    return fallback
+}
 const firstError = (errors, key) => errors?.[key] || null
 const px = (value) => `${Math.round(Number(value) || 0)}px`
 const viewportSize = () => {
@@ -1217,11 +1236,38 @@ const submitProductEdit = async (product) => {
 }
 
 const onEventInvestmentReceiptChange = (event) => {
-    eventForm.value.investment_receipt_images = Array.from(event.target.files || [])
+    const files = Array.from(event.target.files || [])
+    const invalidFile = files.find((file) => !DOCUMENT_RECEIPT_EXTENSIONS.includes(fileExtension(file)))
+    if (invalidFile) {
+        event.target.value = ''
+        eventForm.value.investment_receipt_images = []
+        eventErrors.value = {
+            ...eventErrors.value,
+            investment_receipt_images: invalidFileMessage(DOCUMENT_RECEIPT_EXTENSIONS),
+        }
+        return
+    }
+
+    eventErrors.value = { ...eventErrors.value, investment_receipt_images: '' }
+    eventForm.value.investment_receipt_images = files
 }
 
 const onInvestmentReceiptUploadChange = (event) => {
-    investmentReceiptFiles.value = Array.from(event.target.files || [])
+    const files = Array.from(event.target.files || [])
+    const invalidFile = files.find((file) => !DOCUMENT_RECEIPT_EXTENSIONS.includes(fileExtension(file)))
+    investmentReceiptErrors.value = {}
+    investmentReceiptUploadProgress.value = 0
+
+    if (invalidFile) {
+        event.target.value = ''
+        investmentReceiptFiles.value = []
+        investmentReceiptErrors.value = {
+            investment_receipt_images: invalidFileMessage(DOCUMENT_RECEIPT_EXTENSIONS),
+        }
+        return
+    }
+
+    investmentReceiptFiles.value = files
 }
 
 const submitInvestmentReceipts = async () => {
@@ -1229,6 +1275,7 @@ const submitInvestmentReceipts = async () => {
 
     savingInvestmentReceipts.value = true
     investmentReceiptErrors.value = {}
+    investmentReceiptUploadProgress.value = 0
 
     try {
         if (tutorialActive.value) {
@@ -1241,7 +1288,17 @@ const submitInvestmentReceipts = async () => {
 
         const response = await uploadFinanceEngineFundraiserInvestmentReceipts(selectedEvent.value.id, {
             investment_receipt_images: investmentReceiptFiles.value,
+        }, {
+            onUploadProgress: (event) => {
+                if (!event.total) {
+                    investmentReceiptUploadProgress.value = 1
+                    return
+                }
+
+                investmentReceiptUploadProgress.value = Math.min(99, Math.round((event.loaded / event.total) * 100))
+            },
         })
+        investmentReceiptUploadProgress.value = 100
         applyData(response.data)
         investmentReceiptFiles.value = []
         if (investmentReceiptInput.value) {
@@ -1254,6 +1311,9 @@ const submitInvestmentReceipts = async () => {
         console.error(error)
     } finally {
         savingInvestmentReceipts.value = false
+        window.setTimeout(() => {
+            investmentReceiptUploadProgress.value = 0
+        }, 800)
     }
 }
 
@@ -1742,10 +1802,11 @@ onBeforeUnmount(() => {
 
                         <div v-if="Number(eventForm.investment_total || 0) > 0">
                             <label class="text-sm font-medium text-gray-700">{{ tr('Comprobante de inversion', 'Investment proof') }}</label>
-                            <input type="file" accept="image/*,.pdf" multiple class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-gray-700" @change="onEventInvestmentReceiptChange">
+                            <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" multiple class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-gray-700" @change="onEventInvestmentReceiptChange">
                             <p v-if="eventForm.investment_receipt_images.length > 0" class="mt-1 text-xs text-gray-500">
                                 {{ eventForm.investment_receipt_images.length }} {{ tr('comprobante(s) seleccionados', 'receipt(s) selected') }}
                             </p>
+                            <p v-if="firstError(eventErrors, 'investment_receipt_images')" class="mt-1 text-xs text-rose-600">{{ firstError(eventErrors, 'investment_receipt_images') }}</p>
                         </div>
 
                         <div v-if="eventPartnerClubOptions.length > 0" class="md:col-span-2 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
@@ -1978,7 +2039,7 @@ onBeforeUnmount(() => {
                                                 ref="investmentReceiptInput"
                                                 type="file"
                                                 multiple
-                                                accept="image/*,.pdf"
+                                                accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
                                                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-gray-700"
                                                 @change="onInvestmentReceiptUploadChange"
                                             >
@@ -1994,6 +2055,17 @@ onBeforeUnmount(() => {
                                         <p v-if="investmentReceiptFiles.length > 0" class="mt-1 text-xs text-gray-500">
                                             {{ investmentReceiptFiles.length }} {{ tr('comprobante(s) seleccionados', 'receipt(s) selected') }}
                                         </p>
+                                        <div v-if="investmentReceiptUploadProgress > 0" class="mt-2 space-y-1">
+                                            <div class="h-2 overflow-hidden rounded-full bg-gray-100">
+                                                <div
+                                                    class="h-full rounded-full bg-red-600 transition-all"
+                                                    :style="{ width: `${investmentReceiptUploadProgress}%` }"
+                                                ></div>
+                                            </div>
+                                            <p class="text-xs text-gray-500">
+                                                {{ tr('Subiendo', 'Uploading') }} {{ investmentReceiptUploadProgress }}%
+                                            </p>
+                                        </div>
                                         <p v-if="firstError(investmentReceiptErrors, 'investment_receipt_images')" class="mt-1 text-xs text-rose-600">{{ firstError(investmentReceiptErrors, 'investment_receipt_images') }}</p>
                                         <p v-if="firstError(investmentReceiptErrors, 'fundraiser_event_id')" class="mt-1 text-xs text-rose-600">{{ firstError(investmentReceiptErrors, 'fundraiser_event_id') }}</p>
                                     </form>

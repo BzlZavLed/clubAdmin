@@ -45,8 +45,12 @@ class FinanceIncomeWriter
             'payment_date' => ['required', 'date'],
             'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'transfer', 'initial'])],
             'zelle_phone' => ['nullable', 'string', 'max:32'],
-            'check_image' => ['nullable', 'image', 'max:4096'],
+            'check_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
             'notes' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'check_image.image' => 'La imagen del cheque debe ser JPG, PNG o WEBP.',
+            'check_image.mimes' => 'La imagen del cheque debe ser JPG, PNG o WEBP.',
+            'check_image.max' => 'La imagen del cheque no puede pesar mas de 4 MB.',
         ]);
 
         $isInitial = $validated['payment_type'] === 'initial';

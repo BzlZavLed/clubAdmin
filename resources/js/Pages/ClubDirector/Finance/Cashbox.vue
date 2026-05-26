@@ -68,6 +68,7 @@ const reimbursementPaymentProofFiles = ref({})
 const reimbursementForms = ref({})
 const expenseActionBusy = ref({})
 const expenseActionErrors = ref({})
+const expenseUploadProgress = ref({})
 const showConceptModal = ref(false)
 const savingConcept = ref(false)
 const showReimbursementOverflowModal = ref(false)
@@ -88,6 +89,8 @@ const TUTORIAL_MEMBER_ID = -9101
 const TUTORIAL_CONCEPT_ID = -9201
 const TUTORIAL_ACCOUNT = 'club_budget'
 const TUTORIAL_REIMBURSEMENT_ACCOUNT = 'reimbursement_to'
+const IMAGE_RECEIPT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
+const DOCUMENT_RECEIPT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf']
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -781,6 +784,7 @@ const tutorialPanelStyle = computed(() => {
 })
 const expenseActionError = (expenseId) => expenseActionErrors.value[expenseId] || null
 const isExpenseActionBusy = (expenseId) => Boolean(expenseActionBusy.value[expenseId])
+const expenseUploadProgressValue = (expenseId) => Number(expenseUploadProgress.value[expenseId] || 0)
 const defaultOperatingPayTo = () => operatingAccountOptions.value[0]?.value || 'club_budget'
 const accountLocationBalance = (payTo, fundsLocation = 'cash') => {
     const row = summaryAccounts.value.find((account) => account.account === payTo)
@@ -833,6 +837,32 @@ const setExpenseActionError = (expenseId, message = '') => {
         ...expenseActionErrors.value,
         [expenseId]: message,
     }
+}
+
+const setExpenseUploadProgress = (expenseId, value = 0) => {
+    expenseUploadProgress.value = {
+        ...expenseUploadProgress.value,
+        [expenseId]: value,
+    }
+}
+
+const fileExtension = (file) => String(file?.name || '').split('.').pop()?.toLowerCase() || ''
+const allowedExtensionText = (extensions) => extensions.map((extension) => `.${extension}`).join(', ')
+const invalidFileMessage = (extensions) => tr(
+    `Tipo de archivo no permitido. Usa ${allowedExtensionText(extensions)}.`,
+    `File type not allowed. Use ${allowedExtensionText(extensions)}.`
+)
+const validateReceiptFile = (file, extensions) => {
+    if (!file) return true
+    return extensions.includes(fileExtension(file))
+}
+const uploadProgressHandler = (expenseId) => (event) => {
+    if (!event.total) {
+        setExpenseUploadProgress(expenseId, 1)
+        return
+    }
+
+    setExpenseUploadProgress(expenseId, Math.min(99, Math.round((event.loaded / event.total) * 100)))
 }
 
 const tutorialDelay = () => new Promise((resolve) => window.setTimeout(resolve, 250))
@@ -1185,16 +1215,42 @@ const ensureReimbursementForms = () => {
 }
 
 const setExpenseReceiptFile = (expenseId, event) => {
+    const file = event.target.files?.[0] || null
+    setExpenseActionError(expenseId)
+
+    if (file && !validateReceiptFile(file, IMAGE_RECEIPT_EXTENSIONS)) {
+        event.target.value = ''
+        expenseReceiptFiles.value = {
+            ...expenseReceiptFiles.value,
+            [expenseId]: null,
+        }
+        setExpenseActionError(expenseId, invalidFileMessage(IMAGE_RECEIPT_EXTENSIONS))
+        return
+    }
+
     expenseReceiptFiles.value = {
         ...expenseReceiptFiles.value,
-        [expenseId]: event.target.files?.[0] || null,
+        [expenseId]: file,
     }
 }
 
 const setReimbursementPaymentProofFile = (expenseId, event) => {
+    const file = event.target.files?.[0] || null
+    setExpenseActionError(expenseId)
+
+    if (file && !validateReceiptFile(file, DOCUMENT_RECEIPT_EXTENSIONS)) {
+        event.target.value = ''
+        reimbursementPaymentProofFiles.value = {
+            ...reimbursementPaymentProofFiles.value,
+            [expenseId]: null,
+        }
+        setExpenseActionError(expenseId, invalidFileMessage(DOCUMENT_RECEIPT_EXTENSIONS))
+        return
+    }
+
     reimbursementPaymentProofFiles.value = {
         ...reimbursementPaymentProofFiles.value,
-        [expenseId]: event.target.files?.[0] || null,
+        [expenseId]: file,
     }
 }
 
@@ -1306,11 +1362,35 @@ const toggleEventComponent = (concept, checked) => {
 }
 
 const onIncomeCheckImage = (event) => {
-    incomeForm.value.check_image = event.target.files?.[0] || null
+    const file = event.target.files?.[0] || null
+    if (file && !validateReceiptFile(file, IMAGE_RECEIPT_EXTENSIONS)) {
+        event.target.value = ''
+        incomeForm.value.check_image = null
+        incomeErrors.value = {
+            ...incomeErrors.value,
+            check_image: invalidFileMessage(IMAGE_RECEIPT_EXTENSIONS),
+        }
+        return
+    }
+
+    incomeErrors.value = { ...incomeErrors.value, check_image: '' }
+    incomeForm.value.check_image = file
 }
 
 const onExpenseReceipt = (event) => {
-    expenseForm.value.receipt_image = event.target.files?.[0] || null
+    const file = event.target.files?.[0] || null
+    if (file && !validateReceiptFile(file, IMAGE_RECEIPT_EXTENSIONS)) {
+        event.target.value = ''
+        expenseForm.value.receipt_image = null
+        expenseErrors.value = {
+            ...expenseErrors.value,
+            receipt_image: invalidFileMessage(IMAGE_RECEIPT_EXTENSIONS),
+        }
+        return
+    }
+
+    expenseErrors.value = { ...expenseErrors.value, receipt_image: '' }
+    expenseForm.value.receipt_image = file
 }
 
 const resetIncomeForm = () => {
@@ -2029,8 +2109,22 @@ const submitExpense = async () => {
     }
 }
 
-const actionErrorMessage = (error, fallback) =>
-    error?.response?.data?.message || Object.values(normalizeErrors(error)).find(Boolean) || fallback
+const actionErrorMessage = (error, fallback) => {
+    if (error?.response?.data?.message) return error.response.data.message
+
+    const validationMessage = Object.values(normalizeErrors(error)).find(Boolean)
+    if (validationMessage) return validationMessage
+
+    if (error?.code === 'ECONNABORTED') {
+        return tr('La carga tardo demasiado. Intenta con un archivo mas pequeño o revisa la conexion.', 'The upload took too long. Try a smaller file or check the connection.')
+    }
+
+    if (error?.request && !error?.response) {
+        return tr('No se recibio respuesta del servidor. Revisa la conexion e intenta de nuevo.', 'No server response was received. Check the connection and try again.')
+    }
+
+    return fallback
+}
 
 const uploadExpenseReceipt = async (expense) => {
     const file = expenseReceiptFiles.value[expense.id]
@@ -2041,6 +2135,7 @@ const uploadExpenseReceipt = async (expense) => {
 
     setExpenseActionBusy(expense.id, true)
     setExpenseActionError(expense.id)
+    setExpenseUploadProgress(expense.id, 0)
 
     try {
         if (tutorialActive.value) {
@@ -2058,7 +2153,10 @@ const uploadExpenseReceipt = async (expense) => {
             return
         }
 
-        await uploadFinanceEngineExpenseReceipt(expense.id, { receipt_image: file })
+        await uploadFinanceEngineExpenseReceipt(expense.id, { receipt_image: file }, {
+            onUploadProgress: uploadProgressHandler(expense.id),
+        })
+        setExpenseUploadProgress(expense.id, 100)
         expenseReceiptFiles.value = { ...expenseReceiptFiles.value, [expense.id]: null }
         showToast(tr('Comprobante guardado.', 'Proof saved.'), 'success')
         await refreshCaja()
@@ -2067,12 +2165,14 @@ const uploadExpenseReceipt = async (expense) => {
         console.error(error)
     } finally {
         setExpenseActionBusy(expense.id, false)
+        window.setTimeout(() => setExpenseUploadProgress(expense.id, 0), 800)
     }
 }
 
 const removeExpenseReceipt = async (expense) => {
     setExpenseActionBusy(expense.id, true)
     setExpenseActionError(expense.id)
+    setExpenseUploadProgress(expense.id, 0)
 
     try {
         if (tutorialActive.value) {
@@ -2124,7 +2224,10 @@ const uploadReimbursementPaymentProof = async (expense) => {
             return
         }
 
-        await uploadFinanceEngineReimbursementPaymentProof(expense.id, { payment_proof_file: file })
+        await uploadFinanceEngineReimbursementPaymentProof(expense.id, { payment_proof_file: file }, {
+            onUploadProgress: uploadProgressHandler(expense.id),
+        })
+        setExpenseUploadProgress(expense.id, 100)
         reimbursementPaymentProofFiles.value = { ...reimbursementPaymentProofFiles.value, [expense.id]: null }
         showToast(tr('Comprobante de pago guardado.', 'Payment proof saved.'), 'success')
         await refreshCaja()
@@ -2133,6 +2236,7 @@ const uploadReimbursementPaymentProof = async (expense) => {
         console.error(error)
     } finally {
         setExpenseActionBusy(expense.id, false)
+        window.setTimeout(() => setExpenseUploadProgress(expense.id, 0), 800)
     }
 }
 
@@ -2548,10 +2652,11 @@ onBeforeUnmount(() => {
                             <input
                                 ref="incomeCheckInput"
                                 type="file"
-                                accept="image/*"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                                 class="mt-1 block w-full text-sm text-gray-700"
                                 @change="onIncomeCheckImage"
                             />
+                            <p v-if="firstError(incomeErrors, 'check_image')" class="mt-1 text-xs text-rose-600">{{ firstError(incomeErrors, 'check_image') }}</p>
                         </div>
 
                         <div class="sm:col-span-2">
@@ -2693,10 +2798,11 @@ onBeforeUnmount(() => {
                             <input
                                 ref="expenseReceiptInput"
                                 type="file"
-                                accept="image/*"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                                 class="mt-1 block w-full text-sm text-gray-700"
                                 @change="onExpenseReceipt"
                             />
+                            <p v-if="firstError(expenseErrors, 'receipt_image')" class="mt-1 text-xs text-rose-600">{{ firstError(expenseErrors, 'receipt_image') }}</p>
                         </div>
                     </div>
 
@@ -2755,10 +2861,21 @@ onBeforeUnmount(() => {
                         <div class="space-y-2">
                             <input
                                 type="file"
-                                accept="image/*"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                                 class="block w-full text-sm text-gray-700"
                                 @change="setExpenseReceiptFile(expense.id, $event)"
                             />
+                            <div v-if="expenseUploadProgressValue(expense.id) > 0" class="space-y-1">
+                                <div class="h-2 overflow-hidden rounded-full bg-gray-100">
+                                    <div
+                                        class="h-full rounded-full bg-red-600 transition-all"
+                                        :style="{ width: `${expenseUploadProgressValue(expense.id)}%` }"
+                                    ></div>
+                                </div>
+                                <p class="text-xs text-gray-500">
+                                    {{ tr('Subiendo', 'Uploading') }} {{ expenseUploadProgressValue(expense.id) }}%
+                                </p>
+                            </div>
                             <div class="flex flex-col gap-2 sm:flex-row">
                                 <button
                                     type="button"
@@ -2918,10 +3035,21 @@ onBeforeUnmount(() => {
                                 </div>
                                 <input
                                     type="file"
-                                    accept="image/*,application/pdf"
+                                    accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
                                     class="mt-2 block w-full text-sm text-gray-700"
                                     @change="setReimbursementPaymentProofFile(expense.id, $event)"
                                 />
+                                <div v-if="expenseUploadProgressValue(expense.id) > 0" class="mt-2 space-y-1">
+                                    <div class="h-2 overflow-hidden rounded-full bg-gray-100">
+                                        <div
+                                            class="h-full rounded-full bg-red-600 transition-all"
+                                            :style="{ width: `${expenseUploadProgressValue(expense.id)}%` }"
+                                        ></div>
+                                    </div>
+                                    <p class="text-xs text-gray-500">
+                                        {{ tr('Subiendo', 'Uploading') }} {{ expenseUploadProgressValue(expense.id) }}%
+                                    </p>
+                                </div>
                                 <p class="mt-2 text-xs text-gray-500">
                                     <template v-if="expense.status === 'pending_reimbursement'">
                                         {{ tr('Opcional: adjunta confirmacion de Zelle, transferencia o cheque al liquidar. En efectivo, el recibo firmado es la confirmacion principal.', 'Optional: attach Zelle, transfer, or check confirmation when settling. For cash, the signed receipt is the main confirmation.') }}

@@ -40,8 +40,8 @@ class FinanceExpenseWriter
             'reimbursement_payee_name' => ['nullable', 'string', 'max:255'],
             'reimbursement_payee_phone' => ['nullable', 'string', 'max:50'],
             'reimbursement_payee_email' => ['nullable', 'email', 'max:255'],
-            'receipt_image' => ['nullable', 'image', 'max:5120'],
-        ]);
+            'receipt_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+        ], $this->receiptValidationMessages());
 
         $clubId = (int) $validated['club_id'];
         if (!ClubHelper::clubIdsForUser($request->user())->contains($clubId)) {
@@ -143,8 +143,8 @@ class FinanceExpenseWriter
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
 
         $request->validate([
-            'receipt_image' => ['required', 'image', 'max:5120'],
-        ]);
+            'receipt_image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+        ], $this->receiptValidationMessages());
 
         $path = $request->file('receipt_image')->store('expense-receipts', 'public');
 
@@ -205,7 +205,7 @@ class FinanceExpenseWriter
             ], 422);
         }
 
-        $request->validate([$field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240']]);
+        $request->validate([$field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240']], $this->receiptValidationMessages());
 
         $path = $request->file($field)->store('reimbursement-payment-proofs', 'public');
 
@@ -260,10 +260,10 @@ class FinanceExpenseWriter
         $validated = $request->validate([
             'pay_to' => ['required', 'string', 'max:255'],
             'funds_location' => ['nullable', 'in:cash,bank'],
-            'receipt_image' => ['nullable', 'image', 'max:5120'],
+            'receipt_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'payment_proof_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
             'reimbursement_date' => ['nullable', 'date'],
-        ]);
+        ], $this->receiptValidationMessages());
 
         if ($expense->pay_to !== 'reimbursement_to' || $expense->status !== 'pending_reimbursement') {
             return response()->json(['message' => 'Only pending reimbursements can be marked as reimbursed.'], 422);
@@ -470,6 +470,17 @@ class FinanceExpenseWriter
         }
 
         return $request->hasFile('receipt_image') ? 'receipt_image' : null;
+    }
+
+    private function receiptValidationMessages(): array
+    {
+        return [
+            'receipt_image.image' => 'El comprobante debe ser una imagen JPG, PNG o WEBP.',
+            'receipt_image.mimes' => 'El comprobante debe ser JPG, PNG o WEBP.',
+            'receipt_image.max' => 'El comprobante no puede pesar mas de 5 MB.',
+            'payment_proof_file.mimes' => 'El comprobante de pago debe ser JPG, PNG, WEBP o PDF.',
+            'payment_proof_file.max' => 'El comprobante de pago no puede pesar mas de 10 MB.',
+        ];
     }
 
     private function ensureExpenseBelongsToUser($user, Expense $expense): void
