@@ -52,6 +52,7 @@ class FinanceEngineController extends Controller
         @ini_set('zlib.output_compression', '0');
 
         $validated = $this->validateMovementFilters($request);
+        $includeAnnexes = (bool) ($validated['include_annexes'] ?? false);
 
         $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
 
@@ -60,7 +61,7 @@ class FinanceEngineController extends Controller
             'limit' => $validated['limit'] ?? 5000,
         ]);
 
-        $receiptAnnexes = $this->ledgerReceiptAnnexes($report);
+        $receiptAnnexes = $includeAnnexes ? $this->ledgerReceiptAnnexes($report) : [];
         $generatedAt = now();
 
         $validation = $documentValidationService->create(
@@ -87,7 +88,7 @@ class FinanceEngineController extends Controller
                 'Club' => $club->club_name,
                 'Documento' => 'Libro contable financiero',
                 'Movimientos' => (string) count($report['movements'] ?? []),
-                'Anexos' => (string) count($receiptAnnexes),
+                'Anexos' => $includeAnnexes ? (string) count($receiptAnnexes) : 'No incluidos',
             ],
             generatedBy: $request->user(),
             generatedAt: $generatedAt,
@@ -206,10 +207,60 @@ class FinanceEngineController extends Controller
             return ['mime_type' => $mime];
         }
 
+        $optimizedDataUri = $this->optimizedAnnexImageDataUri($fullPath);
+
         return [
-            'mime_type' => $mime,
-            'data_uri' => 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($fullPath)),
+            'mime_type' => $optimizedDataUri ? 'image/jpeg' : $mime,
+            'data_uri' => $optimizedDataUri ?: 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($fullPath)),
         ];
+    }
+
+    private function optimizedAnnexImageDataUri(string $fullPath): ?string
+    {
+        if (!function_exists('imagecreatefromstring')) {
+            return null;
+        }
+
+        $contents = file_get_contents($fullPath);
+        if ($contents === false) {
+            return null;
+        }
+
+        $source = @imagecreatefromstring($contents);
+        if (!$source) {
+            return null;
+        }
+
+        $width = imagesx($source);
+        $height = imagesy($source);
+        $maxSide = 1600;
+        $scale = min(1, $maxSide / max($width, $height));
+        $targetWidth = max(1, (int) round($width * $scale));
+        $targetHeight = max(1, (int) round($height * $scale));
+
+        $target = imagecreatetruecolor($targetWidth, $targetHeight);
+        if (!$target) {
+            imagedestroy($source);
+
+            return null;
+        }
+
+        $white = imagecolorallocate($target, 255, 255, 255);
+        imagefilledrectangle($target, 0, 0, $targetWidth, $targetHeight, $white);
+        imagecopyresampled($target, $source, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+
+        ob_start();
+        $encoded = imagejpeg($target, null, 72);
+        $jpeg = ob_get_clean();
+
+        imagedestroy($source);
+        imagedestroy($target);
+
+        if (!$encoded || !$jpeg) {
+            return null;
+        }
+
+        return 'data:image/jpeg;base64,' . base64_encode($jpeg);
     }
 
     private function annexMovementContext(array $movement): array
@@ -551,6 +602,7 @@ class FinanceEngineController extends Controller
             'account' => ['nullable', 'string', 'max:255'],
             'domain' => ['nullable', 'in:income,expense,transfer'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
+            'include_annexes' => ['nullable', 'boolean'],
         ]);
     }
 }

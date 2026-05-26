@@ -42,6 +42,7 @@ const ledgerFilters = ref({
     date_from: '',
     date_to: '',
 })
+const includeLedgerAnnexes = ref(false)
 
 const ledgerIsAllAccounts = computed(() => ledgerFilters.value.account === 'all')
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin' || clubs.value.length > 1)
@@ -141,6 +142,7 @@ const ledgerPdfUrl = computed(() => {
     if (ledgerFilters.value.account !== 'all') params.account = ledgerFilters.value.account
     if (ledgerFilters.value.date_from) params.date_from = ledgerFilters.value.date_from
     if (ledgerFilters.value.date_to) params.date_to = ledgerFilters.value.date_to
+    if (includeLedgerAnnexes.value) params.include_annexes = 1
 
     return route('club.finance-engine.movements.pdf', params)
 })
@@ -547,22 +549,38 @@ onMounted(loadData)
                             {{ tr('PDF libro', 'Ledger PDF') }}
                         </a> -->
 
-                        <button
-                            type="button"
-                            @click="downloadLedgerPdf"
-                            :disabled="downloadingLedgerPdf"
-                            class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                            <ArrowDownTrayIcon class="h-4 w-4" />
+                        <div class="flex flex-col gap-2 sm:items-end">
+                            <label class="inline-flex items-start gap-2 text-sm font-medium text-gray-700">
+                                <input
+                                    v-model="includeLedgerAnnexes"
+                                    type="checkbox"
+                                    class="mt-0.5 rounded border-gray-300 text-red-600 shadow-sm focus:ring-red-500"
+                                >
+                                <span class="leading-5">
+                                    {{ tr('Incluir anexos de recibos', 'Include receipt appendices') }}
+                                    <span class="block text-xs font-normal text-gray-500">
+                                        {{ tr('Hace el PDF mas pesado.', 'Makes the PDF larger.') }}
+                                    </span>
+                                </span>
+                            </label>
 
-                            <span v-if="downloadingLedgerPdf">
-                                {{ tr('Generando...', 'Generating...') }}
-                            </span>
+                            <button
+                                type="button"
+                                @click="downloadLedgerPdf"
+                                :disabled="downloadingLedgerPdf"
+                                class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                <ArrowDownTrayIcon class="h-4 w-4" />
 
-                            <span v-else>
-                                {{ tr('PDF libro', 'Ledger PDF') }}
-                            </span>
-                        </button>
+                                <span v-if="downloadingLedgerPdf">
+                                    {{ tr('Generando...', 'Generating...') }}
+                                </span>
+
+                                <span v-else>
+                                    {{ tr('PDF libro', 'Ledger PDF') }}
+                                </span>
+                            </button>
+                        </div>
 
                     </div>
 

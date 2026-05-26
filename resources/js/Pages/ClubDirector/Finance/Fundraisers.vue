@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import {
     ArrowDownTrayIcon,
@@ -76,10 +76,19 @@ const eventWorkspace = ref(null)
 const cajaSection = ref(null)
 const investmentReceiptInput = ref(null)
 const receiptPreviewSale = ref(null)
+const showTutorialKitchen = ref(false)
 const showFundraiserGuide = ref(false)
 const showCloseModal = ref(false)
 const showCreateEventForm = ref(false)
 const eventSelectionBeforeCreate = ref(null)
+const tutorialActive = ref(false)
+const tutorialStepIndex = ref(0)
+const tutorialTargetRect = ref(null)
+const tutorialReturnClubId = ref(null)
+const tutorialNextId = ref(8000)
+const TUTORIAL_CLUB_ID = -9801
+const TUTORIAL_PARTNER_CLUB_ID = -9802
+const TUTORIAL_ACCOUNT = 'club_budget'
 
 const eventForm = ref({
     name: '',
@@ -229,6 +238,175 @@ const normalizeErrors = (error) => {
 }
 const actionErrorMessage = (error, fallback) => error?.response?.data?.message || fallback
 const firstError = (errors, key) => errors?.[key] || null
+const px = (value) => `${Math.round(Number(value) || 0)}px`
+const viewportSize = () => {
+    if (typeof window === 'undefined') return { width: 1024, height: 768 }
+
+    return {
+        width: window.innerWidth || 1024,
+        height: window.innerHeight || 768,
+    }
+}
+const tutorialSteps = computed(() => [
+    {
+        id: 'intro',
+        target: '[data-tour="fundraiser-header"]',
+        title: tr('Fundraisers', 'Fundraisers'),
+        body: tr('Modo tutorial usa datos simulados. Puedes practicar crear fundraisers, productos, ventas y cierres sin guardar nada real.', 'Tutorial mode uses simulated data. You can practice creating fundraisers, products, sales, and closing without saving anything real.'),
+    },
+    {
+        id: 'selector',
+        target: '[data-tour="fundraiser-selector"]',
+        title: tr('Seleccionar fundraiser', 'Select fundraiser'),
+        body: tr('Usa estos selectores para cambiar entre fundraisers activos y resúmenes de fundraisers cerrados.', 'Use these selectors to switch between active fundraisers and closed fundraiser summaries.'),
+    },
+    {
+        id: 'new-event',
+        target: '[data-tour="fundraiser-new-button"]',
+        title: tr('Nuevo fundraiser', 'New fundraiser'),
+        body: tr('Este botón abre el formulario para crear una nueva venta o campaña de recaudación.', 'This button opens the form to create a new sale or fundraising campaign.'),
+    },
+    {
+        id: 'event-form',
+        target: '[data-tour="fundraiser-event-form"]',
+        title: tr('Datos del fundraiser', 'Fundraiser details'),
+        body: tr('Define nombre, tipo, fecha, cuenta destino e inversión inicial. Si la ubicación elegida no tiene suficiente saldo, el sistema usa saldo disponible de la cuenta con una transferencia interna; si la cuenta completa no alcanza, crea reembolso pendiente por el faltante.', 'Define name, type, date, destination account, and initial investment. If the selected location does not have enough balance, the system uses available account balance with an internal transfer; if the full account is still short, it creates a pending reimbursement for the remainder.'),
+    },
+    {
+        id: 'save-event',
+        target: '[data-tour="fundraiser-save-event"]',
+        title: tr('Crear fundraiser', 'Create fundraiser'),
+        body: tr('Haz clic para simular la creación. Se agregará al selector y podrás trabajar productos y ventas.', 'Click to simulate creation. It will be added to the selector and you can work with products and sales.'),
+    },
+    {
+        id: 'summary',
+        target: '[data-tour="fundraiser-summary"]',
+        title: tr('Resumen', 'Summary'),
+        body: tr('Estas tarjetas muestran ventas, inversión inicial y ganancia calculada del fundraiser seleccionado.', 'These cards show sales, initial investment, and calculated earnings for the selected fundraiser.'),
+    },
+    {
+        id: 'partners',
+        target: '[data-tour="fundraiser-partners"]',
+        title: tr('Clubes asociados', 'Partner clubs'),
+        body: tr('Si otro club aporta o recibe porcentaje de lo recaudado, aquí se registra el acuerdo y sus movimientos.', 'If another club contributes or receives a percentage of funds raised, this is where the agreement and movements are recorded.'),
+    },
+    {
+        id: 'products',
+        target: '[data-tour="fundraiser-products"]',
+        title: tr('Productos', 'Products'),
+        body: tr('Agrega platos o productos con precio y cantidad planeada. Eso alimenta la caja de ventas.', 'Add plates or products with price and planned quantity. This feeds the sales register.'),
+    },
+    {
+        id: 'sale-form',
+        target: '[data-tour="fundraiser-sale-form"]',
+        title: tr('Registrar venta', 'Record sale'),
+        body: tr('Selecciona cliente, método de pago, producto y cantidad. El total se calcula antes de registrar.', 'Select customer, payment method, product, and quantity. The total is calculated before recording.'),
+    },
+    {
+        id: 'save-sale',
+        target: '[data-tour="fundraiser-save-sale"]',
+        title: tr('Guardar venta', 'Save sale'),
+        body: tr('Haz clic para simular una venta con recibo y QR. El resumen subirá inmediatamente.', 'Click to simulate a sale with receipt and QR. The summary will update immediately.'),
+    },
+    {
+        id: 'recent-sales',
+        target: '[data-tour="fundraiser-recent-sales"]',
+        title: tr('Ventas recientes', 'Recent sales'),
+        body: tr('Cada venta queda listada con artículos, total, recibo y QR para compartir con el comprador.', 'Each sale is listed with items, total, receipt, and QR to share with the buyer.'),
+    },
+    {
+        id: 'receipt-qr',
+        target: '[data-tour="fundraiser-receipt-qr"]',
+        title: tr('QR del recibo', 'Receipt QR'),
+        body: tr('Abre el QR para mostrar el recibo del cliente. Ese enlace sirve para compartir o descargar el comprobante de la venta.', 'Open the QR to show the client receipt. That link can be shared or used to download the sale receipt.'),
+    },
+    {
+        id: 'receipt-preview',
+        target: '[data-tour="fundraiser-receipt-preview"]',
+        title: tr('Recibo del cliente', 'Client receipt'),
+        body: tr('La vista del recibo muestra QR, enlace publico, pedido, total y metodo de pago para confirmar la compra con el cliente.', 'The receipt view shows the QR, public link, order, total, and payment method so you can confirm the purchase with the client.'),
+    },
+    {
+        id: 'kitchen',
+        target: '[data-tour="fundraiser-kitchen-modal"]',
+        title: tr('Cocina', 'Kitchen'),
+        body: tr('Cuando el fundraiser es de comida, este modal simula la pantalla de cocina: pedidos pendientes, articulos y boton para marcar preparado.', 'When the fundraiser is food, this modal simulates the kitchen screen: pending orders, items, and the button to mark prepared.'),
+    },
+    {
+        id: 'close',
+        target: '[data-tour="fundraiser-close-button"]',
+        title: tr('Cerrar fundraiser', 'Close fundraiser'),
+        body: tr('Cuando termines, cierra el fundraiser para bloquear nuevas ventas y dejar el reporte final.', 'When finished, close the fundraiser to block new sales and keep the final report.'),
+    },
+    {
+        id: 'close-modal',
+        target: '[data-tour="fundraiser-close-modal"]',
+        title: tr('Confirmar cierre', 'Confirm close'),
+        body: tr('Este modal confirma la fecha de cierre. Si hay clubes asociados, tambien define de donde sale el dinero y como queda registrado para el club asociado.', 'This modal confirms the close date. If there are partner clubs, it also defines where the money leaves from and how it is recorded for the partner club.'),
+    },
+])
+const tutorialStep = computed(() => tutorialSteps.value[tutorialStepIndex.value] || tutorialSteps.value[0] || null)
+const tutorialStepCount = computed(() => tutorialSteps.value.length)
+const tutorialProgressLabel = computed(() => `${tutorialStepIndex.value + 1}/${tutorialStepCount.value}`)
+const tutorialCutout = computed(() => {
+    if (!tutorialTargetRect.value) return null
+
+    const { width, height } = viewportSize()
+    const margin = 8
+    const top = Math.max(tutorialTargetRect.value.top - margin, 0)
+    const left = Math.max(tutorialTargetRect.value.left - margin, 0)
+    const right = Math.min(tutorialTargetRect.value.right + margin, width)
+    const bottom = Math.min(tutorialTargetRect.value.bottom + margin, height)
+
+    return { top, left, right, bottom, width: Math.max(right - left, 0), height: Math.max(bottom - top, 0) }
+})
+const tutorialMaskStyles = computed(() => {
+    const cutout = tutorialCutout.value
+    if (!cutout) return []
+
+    return [
+        { top: '0px', left: '0px', width: '100vw', height: px(cutout.top) },
+        { top: px(cutout.bottom), left: '0px', width: '100vw', height: `calc(100vh - ${px(cutout.bottom)})` },
+        { top: px(cutout.top), left: '0px', width: px(cutout.left), height: px(cutout.height) },
+        { top: px(cutout.top), left: px(cutout.right), width: `calc(100vw - ${px(cutout.right)})`, height: px(cutout.height) },
+    ]
+})
+const tutorialHighlightStyle = computed(() => {
+    const cutout = tutorialCutout.value
+    if (!cutout) return {}
+
+    return { top: px(cutout.top), left: px(cutout.left), width: px(cutout.width), height: px(cutout.height) }
+})
+const tutorialPanelStyle = computed(() => {
+    const { width, height } = viewportSize()
+    const cutout = tutorialCutout.value
+
+    if (width < 640) return { left: '1rem', right: '1rem', bottom: '1rem' }
+
+    if (!cutout) {
+        return {
+            left: '50%',
+            top: '50%',
+            width: 'min(24rem, calc(100vw - 2rem))',
+            transform: 'translate(-50%, -50%)',
+        }
+    }
+
+    const panelWidth = Math.min(384, Math.max(280, width - 32))
+    const estimatedHeight = 236
+    const left = Math.min(Math.max(cutout.left, 16), width - panelWidth - 16)
+    let top = cutout.bottom + 12
+
+    if (top + estimatedHeight > height && cutout.top > estimatedHeight + 24) {
+        top = cutout.top - estimatedHeight - 12
+    }
+
+    return {
+        left: px(left),
+        top: px(Math.max(16, Math.min(top, height - estimatedHeight - 16))),
+        width: px(panelWidth),
+    }
+})
 const fundraiserTypeLabel = (type) => {
     if (type === 'food') return tr('Comida / menú', 'Food / menu')
     if (type === 'products') return tr('Productos', 'Products')
@@ -374,7 +552,256 @@ const applyData = (response) => {
     }
 }
 
+const tutorialNext = () => {
+    tutorialNextId.value += 1
+    return tutorialNextId.value
+}
+const tutorialQrDataUri = (label) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 112 112"><rect width="112" height="112" fill="#fff"/><rect x="8" y="8" width="26" height="26" fill="#111827"/><rect x="78" y="8" width="26" height="26" fill="#111827"/><rect x="8" y="78" width="26" height="26" fill="#111827"/><rect x="46" y="46" width="10" height="10" fill="#111827"/><rect x="62" y="46" width="10" height="10" fill="#111827"/><rect x="46" y="64" width="10" height="10" fill="#111827"/><rect x="72" y="72" width="12" height="12" fill="#111827"/><text x="56" y="107" text-anchor="middle" font-size="7" fill="#111827">${label}</text></svg>`
+
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+const tutorialReceiptUrl = (label) => `data:text/plain;charset=utf-8,${encodeURIComponent(`${label}\nRecibo simulado de fundraiser tutorial.`)}`
+const tutorialBuildReport = (event) => ({
+    summary: {
+        total_sales: Number(event.totals?.revenue || 0),
+        total_expenses: Number(event.investment_total || 0),
+        total_earnings: Number(event.totals?.net_gain || 0),
+        sale_count: Number(event.totals?.sale_count || 0),
+        receipt_count: Number(event.totals?.receipt_count || 0),
+    },
+    income_breakdown: event.totals?.income_breakdown || {
+        cash: Number(event.totals?.revenue || 0),
+        bank: 0,
+        total: Number(event.totals?.revenue || 0),
+        payment_types: { cash: Number(event.totals?.revenue || 0) },
+    },
+    initial_expenses: Number(event.investment_total || 0) > 0 ? [{
+        id: `${event.id}-investment`,
+        description: tr('Inversion inicial tutorial', 'Tutorial initial investment'),
+        expense_date: event.event_date,
+        funds_location: 'cash',
+        amount: event.investment_total,
+        receipt_url: tutorialReceiptUrl(`Inversion ${event.id}`),
+    }] : [],
+    sale_receipts: event.sales || [],
+})
+const tutorialApplyEvents = (nextEvents) => {
+    events.value = nextEvents.map((event) => ({
+        ...event,
+        report: tutorialBuildReport(event),
+    }))
+}
+const tutorialSelectedEventUpdate = (updater) => {
+    tutorialApplyEvents(events.value.map((event) => Number(event.id) === Number(selectedEventId.value) ? updater(event) : event))
+}
+const tutorialResetSandbox = () => {
+    const eventId = 8101
+    const productId = 8201
+    const saleId = 8301
+    const saleTotal = 24
+    const baseEvent = {
+        id: eventId,
+        club_id: TUTORIAL_CLUB_ID,
+        name: tr('Venta de tacos tutorial', 'Tutorial taco sale'),
+        fundraiser_type: 'food',
+        event_date: today(),
+        pay_to: TUTORIAL_ACCOUNT,
+        account_label: tr('Presupuesto del club', 'Club budget'),
+        status: 'active',
+        investment_total: 50,
+        kitchen_url: '#tutorial-kitchen',
+        products: [{
+            id: productId,
+            name: tr('Taco combo', 'Taco combo'),
+            sale_price: 12,
+            unit_cost: 0,
+            quantity_available: 30,
+            quantity_sold: 2,
+            tracks_inventory: true,
+            is_active: true,
+        }],
+        partners: [{
+            id: 8401,
+            partner_club_id: TUTORIAL_PARTNER_CLUB_ID,
+            partner_club_name: tr('Club Asociado Tutorial', 'Tutorial Partner Club'),
+            investment_share_percent: 20,
+            earnings_share_percent: 25,
+            investment_due: 10,
+            contribution_recorded: 0,
+            contribution_pending: 10,
+            earnings_due: 6,
+            earnings_distributed: 0,
+            notes: tr('Practica de club asociado', 'Partner club practice'),
+        }],
+        sales: [{
+            id: saleId,
+            customer_name: 'Cliente Tutorial',
+            sale_date: today(),
+            payment_type: 'cash',
+            total_amount: saleTotal,
+            items: [{ id: 1, item_name: tr('Taco combo', 'Taco combo'), quantity: 2, unit_price: 12, line_total: saleTotal }],
+            receipt: {
+                number: 'TUT-FR-001',
+                url: tutorialReceiptUrl('TUT-FR-001'),
+                public_url: tutorialReceiptUrl('TUT-FR-001'),
+                qr_url: tutorialQrDataUri('TUT-FR-001'),
+            },
+        }],
+        totals: {
+            revenue: saleTotal,
+            investment: 50,
+            net_gain: saleTotal - 50,
+            sale_count: 1,
+            receipt_count: 1,
+            partner_split_base: saleTotal,
+            income_breakdown: {
+                cash: saleTotal,
+                bank: 0,
+                total: saleTotal,
+                payment_types: { cash: saleTotal, zelle: 0, check: 0, transfer: 0 },
+            },
+        },
+    }
+
+    selectedClubId.value = TUTORIAL_CLUB_ID
+    currentClub.value = { id: TUTORIAL_CLUB_ID, club_name: tr('Club Tutorial', 'Tutorial Club') }
+    clubs.value = [currentClub.value]
+    partnerClubs.value = [{ id: TUTORIAL_PARTNER_CLUB_ID, club_name: tr('Club Asociado Tutorial', 'Tutorial Partner Club') }]
+    accounts.value = [{ pay_to: TUTORIAL_ACCOUNT, label: tr('Presupuesto del club', 'Club budget') }]
+    accountBalances.value = [{ account: TUTORIAL_ACCOUNT, cash_balance: 160, bank_balance: 420, total_available: 580 }]
+    paymentTypes.value = ['cash', 'zelle', 'check', 'transfer']
+    tutorialNextId.value = 8500
+    tutorialApplyEvents([baseEvent])
+    selectedEventId.value = eventId
+    showCreateEventForm.value = false
+    eventSelectionBeforeCreate.value = null
+    resetFundraiserWorkspaceState()
+    eventForm.value = {
+        ...eventForm.value,
+        name: tr('Venta de arepas tutorial', 'Tutorial arepa sale'),
+        fundraiser_type: 'food',
+        event_date: today(),
+        pay_to: TUTORIAL_ACCOUNT,
+        investment_total: '35.00',
+        investment_pay_to: TUTORIAL_ACCOUNT,
+        investment_funds_location: 'cash',
+        description: tr('Practica de creacion de fundraiser', 'Fundraiser creation practice'),
+    }
+    productForm.value = productFormTemplate({
+        name: tr('Arepa combo', 'Arepa combo'),
+        sale_price: '10.00',
+        quantity_available: '20',
+        tracks_inventory: true,
+    })
+    saleForm.value = {
+        customer_name: 'Comprador Tutorial',
+        sale_date: today(),
+        payment_type: 'cash',
+        zelle_phone: '',
+        notes: tr('Venta tutorial', 'Tutorial sale'),
+        items: [{ fundraiser_product_id: productId, quantity: 1, unit_price: '' }],
+    }
+}
+const updateTutorialTarget = (scrollIntoView = false) => {
+    if (typeof window === 'undefined' || !tutorialActive.value || !tutorialStep.value) return
+
+    nextTick(() => {
+        const target = document.querySelector(tutorialStep.value.target)
+        if (!target) {
+            tutorialTargetRect.value = null
+            return
+        }
+
+        if (scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+
+        window.setTimeout(() => {
+            const rect = target.getBoundingClientRect()
+            if (!rect.width && !rect.height) {
+                tutorialTargetRect.value = null
+                return
+            }
+
+            tutorialTargetRect.value = {
+                top: rect.top,
+                left: rect.left,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+            }
+        }, scrollIntoView ? 260 : 0)
+    })
+}
+const startFundraiserTutorial = () => {
+    if (!tutorialActive.value) tutorialReturnClubId.value = selectedClubId.value
+    tutorialResetSandbox()
+    tutorialStepIndex.value = 0
+    tutorialActive.value = true
+    updateTutorialTarget(true)
+}
+const closeFundraiserTutorial = () => {
+    const returnClubId = tutorialReturnClubId.value
+    tutorialActive.value = false
+    tutorialTargetRect.value = null
+    tutorialReturnClubId.value = null
+    showCloseModal.value = false
+    receiptPreviewSale.value = null
+    showTutorialKitchen.value = false
+    selectedClubId.value = returnClubId
+    loadFundraisers()
+}
+const previousTutorialStep = () => {
+    tutorialStepIndex.value = Math.max(tutorialStepIndex.value - 1, 0)
+}
+const nextTutorialStep = () => {
+    if (tutorialStepIndex.value >= tutorialStepCount.value - 1) {
+        closeFundraiserTutorial()
+        return
+    }
+
+    tutorialStepIndex.value += 1
+}
+const goToTutorialStep = (id) => {
+    const index = tutorialSteps.value.findIndex((step) => step.id === id)
+    if (index >= 0) tutorialStepIndex.value = index
+}
+const handleTutorialViewportChange = () => {
+    if (tutorialActive.value) updateTutorialTarget(false)
+}
+const handleTutorialKeydown = (event) => {
+    if (!tutorialActive.value) return
+    if (event.key === 'Escape') closeFundraiserTutorial()
+    if (event.key === 'ArrowRight') nextTutorialStep()
+    if (event.key === 'ArrowLeft') previousTutorialStep()
+}
+const applyTutorialStepState = () => {
+    if (!tutorialActive.value || !tutorialStep.value) return
+
+    if (tutorialStep.value.id === 'close-modal') {
+        closeReceiptPreview()
+        openCloseModal()
+    } else if (showCloseModal.value) {
+        closeCloseModal()
+    }
+
+    if (tutorialStep.value.id === 'receipt-preview') {
+        showTutorialKitchen.value = false
+        openReceiptPreview(selectedEvent.value?.sales?.[0])
+    } else if (receiptPreviewSale.value) {
+        closeReceiptPreview()
+    }
+
+    showTutorialKitchen.value = tutorialStep.value.id === 'kitchen'
+}
+const tutorialDelay = () => new Promise((resolve) => window.setTimeout(resolve, 250))
+
 const loadFundraisers = async () => {
+    if (tutorialActive.value) {
+        tutorialResetSandbox()
+        return
+    }
+
     loading.value = true
     loadError.value = ''
 
@@ -390,6 +817,11 @@ const loadFundraisers = async () => {
 }
 
 const refreshFundraisers = async () => {
+    if (tutorialActive.value) {
+        showToast(tr('Datos tutorial actualizados.', 'Tutorial data refreshed.'), 'success')
+        return
+    }
+
     refreshing.value = true
 
     try {
@@ -414,6 +846,17 @@ const closeReceiptPreview = () => {
     receiptPreviewSale.value = null
 }
 
+const openKitchenLink = (event) => {
+    if (!tutorialActive.value) return
+
+    event.preventDefault()
+    showTutorialKitchen.value = true
+}
+
+const closeTutorialKitchen = () => {
+    showTutorialKitchen.value = false
+}
+
 const scrollToEventWorkspace = async () => {
     await nextTick()
     eventWorkspace.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -430,6 +873,19 @@ const openEventForm = () => {
     selectedEventId.value = null
     resetFundraiserWorkspaceState()
     resetEventForm()
+    if (tutorialActive.value) {
+        eventForm.value = {
+            ...eventForm.value,
+            name: tr('Venta de arepas tutorial', 'Tutorial arepa sale'),
+            fundraiser_type: 'food',
+            event_date: today(),
+            pay_to: TUTORIAL_ACCOUNT,
+            investment_total: '35.00',
+            investment_pay_to: TUTORIAL_ACCOUNT,
+            investment_funds_location: 'cash',
+            description: tr('Practica de creacion de fundraiser', 'Fundraiser creation practice'),
+        }
+    }
     eventErrors.value = {}
     showCreateEventForm.value = true
 }
@@ -564,6 +1020,43 @@ const submitEvent = async () => {
     eventErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            const id = tutorialNext()
+            const nextEvent = {
+                id,
+                club_id: TUTORIAL_CLUB_ID,
+                name: eventForm.value.name || tr('Fundraiser tutorial', 'Tutorial fundraiser'),
+                fundraiser_type: eventForm.value.fundraiser_type || 'food',
+                event_date: eventForm.value.event_date || today(),
+                pay_to: eventForm.value.pay_to || TUTORIAL_ACCOUNT,
+                account_label: tr('Presupuesto del club', 'Club budget'),
+                status: 'active',
+                investment_total: Number(eventForm.value.investment_total || 0),
+                kitchen_url: '#tutorial-kitchen',
+                products: [],
+                partners: [],
+                sales: [],
+                totals: {
+                    revenue: 0,
+                    investment: Number(eventForm.value.investment_total || 0),
+                    net_gain: -Number(eventForm.value.investment_total || 0),
+                    sale_count: 0,
+                    receipt_count: 0,
+                    partner_split_base: 0,
+                    income_breakdown: { cash: 0, bank: 0, total: 0, payment_types: { cash: 0, zelle: 0, check: 0, transfer: 0 } },
+                },
+            }
+            tutorialApplyEvents([nextEvent, ...events.value])
+            selectedEventId.value = id
+            resetEventForm()
+            showCreateEventForm.value = false
+            eventSelectionBeforeCreate.value = null
+            showToast(tr('Fundraiser tutorial creado.', 'Tutorial fundraiser created.'), 'success')
+            goToTutorialStep('summary')
+            return
+        }
+
         const response = await createFinanceEngineFundraiserEvent({
             ...eventForm.value,
             club_id: selectedClubId.value,
@@ -591,6 +1084,35 @@ const submitPartner = async () => {
     partnerErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            const partnerClub = partnerClubs.value.find((club) => Number(club.id) === Number(partnerForm.value.partner_club_id)) || partnerClubs.value[0]
+            const investmentPercent = Number(partnerForm.value.investment_share_percent || 0)
+            const earningsPercent = Number(partnerForm.value.earnings_share_percent || 0)
+            tutorialSelectedEventUpdate((event) => ({
+                ...event,
+                partners: [
+                    ...(event.partners || []),
+                    {
+                        id: tutorialNext(),
+                        partner_club_id: partnerClub?.id || TUTORIAL_PARTNER_CLUB_ID,
+                        partner_club_name: partnerClub?.club_name || tr('Club Asociado Tutorial', 'Tutorial Partner Club'),
+                        investment_share_percent: investmentPercent,
+                        earnings_share_percent: earningsPercent,
+                        investment_due: roundCurrency(Number(event.investment_total || 0) * (investmentPercent / 100)),
+                        contribution_recorded: 0,
+                        contribution_pending: roundCurrency(Number(event.investment_total || 0) * (investmentPercent / 100)),
+                        earnings_due: roundCurrency(Number(event.totals?.partner_split_base || 0) * (earningsPercent / 100)),
+                        earnings_distributed: 0,
+                        notes: partnerForm.value.notes,
+                    },
+                ],
+            }))
+            resetPartnerForm()
+            showToast(tr('Club asociado tutorial guardado.', 'Tutorial partner club saved.'), 'success')
+            return
+        }
+
         const response = await createFinanceEngineFundraiserPartner(selectedEvent.value.id, partnerForm.value)
         applyData(response.data)
         resetPartnerForm()
@@ -611,6 +1133,25 @@ const submitProduct = async () => {
     productErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            const product = {
+                id: tutorialNext(),
+                name: productForm.value.name || tr('Producto tutorial', 'Tutorial product'),
+                sale_price: Number(productForm.value.sale_price || 0),
+                unit_cost: Number(productForm.value.unit_cost || 0),
+                quantity_available: productForm.value.quantity_available === '' ? null : Number(productForm.value.quantity_available || 0),
+                quantity_sold: 0,
+                tracks_inventory: Boolean(productForm.value.tracks_inventory || productForm.value.quantity_available !== ''),
+                is_active: Boolean(productForm.value.is_active),
+            }
+            tutorialSelectedEventUpdate((event) => ({ ...event, products: [...(event.products || []), product] }))
+            resetProductForm()
+            showToast(tr('Producto tutorial guardado.', 'Tutorial product saved.'), 'success')
+            goToTutorialStep('sale-form')
+            return
+        }
+
         const response = await createFinanceEngineFundraiserProduct(selectedEvent.value.id, productForm.value)
         applyData(response.data)
         resetProductForm()
@@ -643,6 +1184,25 @@ const submitProductEdit = async (product) => {
     productEditErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            tutorialSelectedEventUpdate((event) => ({
+                ...event,
+                products: (event.products || []).map((row) => Number(row.id) === Number(product.id)
+                    ? {
+                        ...row,
+                        name: productEditForm.value.name,
+                        sale_price: Number(productEditForm.value.sale_price || 0),
+                        quantity_available: productEditForm.value.quantity_available === '' ? null : Number(productEditForm.value.quantity_available || 0),
+                        is_active: Boolean(productEditForm.value.is_active),
+                    }
+                    : row),
+            }))
+            cancelProductEdit()
+            showToast(tr('Producto tutorial actualizado.', 'Tutorial product updated.'), 'success')
+            return
+        }
+
         const response = await updateFinanceEngineFundraiserProduct(product.id, productEditForm.value)
         applyData(response.data)
         cancelProductEdit()
@@ -671,6 +1231,14 @@ const submitInvestmentReceipts = async () => {
     investmentReceiptErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            investmentReceiptFiles.value = []
+            if (investmentReceiptInput.value) investmentReceiptInput.value.value = ''
+            showToast(tr('Comprobantes tutorial adjuntados.', 'Tutorial receipts attached.'), 'success')
+            return
+        }
+
         const response = await uploadFinanceEngineFundraiserInvestmentReceipts(selectedEvent.value.id, {
             investment_receipt_images: investmentReceiptFiles.value,
         })
@@ -696,6 +1264,71 @@ const submitSale = async () => {
     saleErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            const id = tutorialNext()
+            const items = saleRows.value
+                .filter((row) => row.product && row.quantity > 0)
+                .map((row, index) => ({
+                    id: `${id}-${index}`,
+                    item_name: row.product.name,
+                    quantity: row.quantity,
+                    unit_price: row.unitPrice,
+                    line_total: row.lineTotal,
+                }))
+            const total = saleTotals.value.total
+            const receiptNumber = `TUT-FR-${id}`
+            const paymentType = saleForm.value.payment_type || 'cash'
+            const isBank = ['zelle', 'transfer'].includes(paymentType)
+            const sale = {
+                id,
+                customer_name: saleForm.value.customer_name,
+                sale_date: saleForm.value.sale_date || today(),
+                payment_type: paymentType,
+                total_amount: total,
+                items,
+                receipt: {
+                    number: receiptNumber,
+                    url: tutorialReceiptUrl(receiptNumber),
+                    public_url: tutorialReceiptUrl(receiptNumber),
+                    qr_url: tutorialQrDataUri(receiptNumber),
+                },
+            }
+            tutorialSelectedEventUpdate((event) => {
+                const paymentTypesBreakdown = { ...(event.totals?.income_breakdown?.payment_types || {}) }
+                paymentTypesBreakdown[paymentType] = roundCurrency(Number(paymentTypesBreakdown[paymentType] || 0) + total)
+                const cash = roundCurrency(Number(event.totals?.income_breakdown?.cash || 0) + (isBank ? 0 : total))
+                const bank = roundCurrency(Number(event.totals?.income_breakdown?.bank || 0) + (isBank ? total : 0))
+                const revenue = roundCurrency(Number(event.totals?.revenue || 0) + total)
+
+                return {
+                    ...event,
+                    sales: [sale, ...(event.sales || [])],
+                    products: (event.products || []).map((product) => {
+                        const sold = saleRows.value.find((row) => Number(row.product?.id) === Number(product.id))?.quantity || 0
+                        return sold ? { ...product, quantity_sold: Number(product.quantity_sold || 0) + sold } : product
+                    }),
+                    totals: {
+                        ...(event.totals || {}),
+                        revenue,
+                        net_gain: roundCurrency(revenue - Number(event.investment_total || 0)),
+                        sale_count: Number(event.totals?.sale_count || 0) + 1,
+                        receipt_count: Number(event.totals?.receipt_count || 0) + 1,
+                        partner_split_base: revenue,
+                        income_breakdown: { cash, bank, total: revenue, payment_types: paymentTypesBreakdown },
+                    },
+                    partners: (event.partners || []).map((partner) => ({
+                        ...partner,
+                        earnings_due: roundCurrency(revenue * (Number(partner.earnings_share_percent || 0) / 100)),
+                    })),
+                }
+            })
+            resetSaleForm()
+            showToast(tr('Venta tutorial registrada con recibo.', 'Tutorial sale recorded with receipt.'), 'success')
+            goToTutorialStep('recent-sales')
+            return
+        }
+
         const response = await createFinanceEngineFundraiserSale(selectedEvent.value.id, saleForm.value)
         applyData(response.data)
         resetSaleForm()
@@ -717,6 +1350,28 @@ const submitCloseEvent = async () => {
     closeErrors.value = {}
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            tutorialSelectedEventUpdate((event) => ({
+                ...event,
+                status: 'closed',
+                partners: (event.partners || []).map((partner) => ({
+                    ...partner,
+                    earnings_distributed: Number(partner.earnings_due || 0),
+                    distribution_transfer: {
+                        receipt: {
+                            number: `TUT-DIST-${partner.id}`,
+                            url: tutorialReceiptUrl(`TUT-DIST-${partner.id}`),
+                        },
+                    },
+                })),
+            }))
+            showCloseModal.value = false
+            closeErrors.value = {}
+            showToast(tr('Fundraiser tutorial cerrado.', 'Tutorial fundraiser closed.'), 'success')
+            return
+        }
+
         const closePayload = {
             close_date: closeForm.value.close_date,
             notes: closeForm.value.notes,
@@ -755,6 +1410,42 @@ const recordPartnerTransfer = async (partner, type) => {
     partnerTransferErrors.value = { ...partnerTransferErrors.value, [key]: null }
 
     try {
+        if (tutorialActive.value) {
+            await tutorialDelay()
+            tutorialSelectedEventUpdate((event) => ({
+                ...event,
+                partners: (event.partners || []).map((row) => {
+                    if (Number(row.id) !== Number(partner.id)) return row
+
+                    if (isContribution) {
+                        return {
+                            ...row,
+                            contribution_recorded: Number(row.investment_due || 0),
+                            contribution_pending: 0,
+                            contribution_transfer: {
+                                receipt: { number: `TUT-CONT-${row.id}`, url: tutorialReceiptUrl(`TUT-CONT-${row.id}`) },
+                            },
+                        }
+                    }
+
+                    return {
+                        ...row,
+                        earnings_distributed: Number(row.earnings_due || 0),
+                        distribution_transfer: {
+                            receipt: { number: `TUT-DIST-${row.id}`, url: tutorialReceiptUrl(`TUT-DIST-${row.id}`) },
+                        },
+                    }
+                }),
+            }))
+            showToast(
+                isContribution
+                    ? tr('Aporte tutorial registrado.', 'Tutorial contribution recorded.')
+                    : tr('Distribucion tutorial transferida.', 'Tutorial distribution transferred.'),
+                'success'
+            )
+            return
+        }
+
         const response = await apiCall(partner.id, partnerTransferForm(partner, type))
         applyData(response.data)
         showToast(
@@ -804,9 +1495,29 @@ const resetFundraiserWorkspaceState = () => {
     resetSaleForm()
 }
 
-watch(selectedEventId, resetFundraiserWorkspaceState)
+watch(selectedEventId, () => {
+    if (!tutorialActive.value) resetFundraiserWorkspaceState()
+})
 
-onMounted(() => loadFundraisers())
+watch([tutorialActive, tutorialStepIndex], ([active]) => {
+    if (active) {
+        applyTutorialStepState()
+        updateTutorialTarget(true)
+    }
+})
+
+onMounted(() => {
+    loadFundraisers()
+    window.addEventListener('resize', handleTutorialViewportChange)
+    window.addEventListener('scroll', handleTutorialViewportChange, true)
+    window.addEventListener('keydown', handleTutorialKeydown)
+})
+
+onBeforeUnmount(() => {
+    window.removeEventListener('resize', handleTutorialViewportChange)
+    window.removeEventListener('scroll', handleTutorialViewportChange, true)
+    window.removeEventListener('keydown', handleTutorialKeydown)
+})
 </script>
 
 <template>
@@ -814,7 +1525,7 @@ onMounted(() => loadFundraisers())
         <template #title>{{ tr('Fundraisers', 'Fundraisers') }}</template>
 
         <div class="space-y-5">
-            <section class="border-b border-gray-200 pb-4">
+            <section data-tour="fundraiser-header" class="border-b border-gray-200 pb-4">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <p class="text-sm font-medium uppercase tracking-wide text-gray-500">{{ tr('Modulo financiero', 'Finance module') }}</p>
@@ -831,8 +1542,9 @@ onMounted(() => loadFundraisers())
                         <select
                             v-if="canSelectClub"
                             v-model="selectedClubId"
+                            :disabled="tutorialActive"
                             @change="onClubChange"
-                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500 disabled:bg-gray-100"
                         >
                             <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
                         </select>
@@ -847,8 +1559,26 @@ onMounted(() => loadFundraisers())
                 {{ loadError }}
             </div>
 
+            <div v-if="tutorialActive" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-red-900">{{ tr('Modo tutorial activo', 'Tutorial mode active') }}</p>
+                        <p class="mt-1 text-sm text-red-800">
+                            {{ tr('Fundraisers, productos, ventas, recibos y cierres son simulados. Al salir se recarga la informacion real.', 'Fundraisers, products, sales, receipts, and closing are simulated. Exiting reloads real information.') }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                        @click="closeFundraiserTutorial"
+                    >
+                        {{ tr('Salir y borrar practica', 'Exit and clear practice') }}
+                    </button>
+                </div>
+            </div>
+
             <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                    <div v-if="events.length > 0" class="grid gap-3 sm:min-w-[24rem] sm:max-w-2xl md:grid-cols-2">
+                    <div v-if="events.length > 0" data-tour="fundraiser-selector" class="grid gap-3 sm:min-w-[24rem] sm:max-w-2xl md:grid-cols-2">
                         <div v-if="activeEvents.length > 0" class="flex flex-col gap-1">
                             <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">
                                 {{ tr('Fundraiser activo', 'Active fundraiser') }}
@@ -878,11 +1608,20 @@ onMounted(() => loadFundraisers())
                         <button
                             v-if="events.length > 0 && !showCreateEventForm"
                             type="button"
+                            data-tour="fundraiser-new-button"
                             class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
                             @click="openEventForm"
                     >
                         <PlusIcon class="h-4 w-4" />
                         {{ tr('Nuevo fundraiser', 'New fundraiser') }}
+                    </button>
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                        @click="startFundraiserTutorial"
+                    >
+                        <QuestionMarkCircleIcon class="h-4 w-4" />
+                        {{ tutorialActive ? tr('Reiniciar tutorial', 'Restart tutorial') : tr('Modo tutorial', 'Tutorial mode') }}
                     </button>
                     <button
                         type="button"
@@ -915,7 +1654,7 @@ onMounted(() => loadFundraisers())
             </div>
 
             <section v-if="showEventSetup" class="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-                <form class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitEvent">
+                <form data-tour="fundraiser-event-form" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitEvent">
                     <div class="mb-4 flex items-start justify-between gap-3">
                         <div class="flex items-center gap-2">
                             <ShoppingCartIcon class="h-5 w-5 text-emerald-600" />
@@ -970,6 +1709,9 @@ onMounted(() => loadFundraisers())
                         <div>
                             <label class="text-sm font-medium text-gray-700">{{ tr('Inversion general', 'General investment') }}</label>
                             <input v-model="eventForm.investment_total" type="number" min="0" step="0.01" class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
+                            <p class="mt-1 text-xs text-gray-500">
+                                {{ tr('Si el origen elegido no alcanza, se usa otra ubicacion de la misma cuenta con transferencia interna; si la cuenta completa no alcanza, se crea reembolso pendiente por el faltante.', 'If the selected origin is short, another location in the same account is used through an internal transfer; if the full account is short, a pending reimbursement is created for the remainder.') }}
+                            </p>
                             <p v-if="firstError(eventErrors, 'investment_total')" class="mt-1 text-xs text-rose-600">{{ firstError(eventErrors, 'investment_total') }}</p>
                         </div>
 
@@ -1046,7 +1788,7 @@ onMounted(() => loadFundraisers())
                     </div>
 
                     <div class="mt-4 flex justify-end">
-                        <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60" :disabled="savingEvent">
+                        <button type="submit" data-tour="fundraiser-save-event" class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60" :disabled="savingEvent">
                             <PlusIcon class="h-4 w-4" />
                             {{ savingEvent ? tr('Guardando...', 'Saving...') : tr('Crear fundraiser', 'Create fundraiser') }}
                         </button>
@@ -1117,10 +1859,12 @@ onMounted(() => loadFundraisers())
                         <div class="flex flex-wrap gap-2">
                             <a
                                 v-if="selectedEventCanUseKitchen"
+                                data-tour="fundraiser-kitchen"
                                 :href="selectedEvent.kitchen_url"
                                 target="_blank"
                                 rel="noopener"
                                 class="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+                                @click="openKitchenLink"
                             >
                                 <ShoppingBagIcon class="h-4 w-4" />
                                 {{ tr('Cocina', 'Kitchen') }}
@@ -1137,6 +1881,7 @@ onMounted(() => loadFundraisers())
                             <button
                                 v-if="!selectedEventIsClosed"
                                 type="button"
+                                data-tour="fundraiser-close-button"
                                 class="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
                                 @click="openCloseModal"
                             >
@@ -1150,7 +1895,7 @@ onMounted(() => loadFundraisers())
                         </div>
                     </div>
 
-                        <div class="grid gap-3 sm:grid-cols-3">
+                        <div data-tour="fundraiser-summary" class="grid gap-3 sm:grid-cols-3">
                             <div class="rounded-lg border border-gray-200 bg-white p-4">
                                 <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
                                     <BanknotesIcon class="h-5 w-5 text-emerald-600" />
@@ -1376,7 +2121,7 @@ onMounted(() => loadFundraisers())
                         </div>
                     </section>
 
-                    <section v-if="!selectedEventIsClosed" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <section v-if="!selectedEventIsClosed" data-tour="fundraiser-partners" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="mb-4 flex items-start gap-2">
                         <UserGroupIcon class="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
                         <div>
@@ -1495,7 +2240,7 @@ onMounted(() => loadFundraisers())
                 </section>
 
                     <section v-if="!selectedEventIsClosed" class="space-y-4">
-                    <div ref="cajaSection" class="scroll-mt-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <div ref="cajaSection" data-tour="fundraiser-products" class="scroll-mt-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                         <div class="mb-4 flex items-start gap-2">
                             <ShoppingBagIcon class="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                             <div>
@@ -1595,7 +2340,7 @@ onMounted(() => loadFundraisers())
                         </div>
                     </div>
 
-                    <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <div data-tour="fundraiser-sale-form" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                         <div class="mb-4 flex items-center gap-2">
                             <CurrencyDollarIcon class="h-5 w-5 text-emerald-600" />
                             <h3 class="text-base font-semibold text-gray-900">{{ tr('Registrar venta', 'Record sale') }}</h3>
@@ -1682,7 +2427,7 @@ onMounted(() => loadFundraisers())
                             <p v-if="firstError(saleErrors, 'items')" class="text-sm text-rose-600">{{ firstError(saleErrors, 'items') }}</p>
 
                             <div class="flex justify-end">
-                                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60" :disabled="savingSale || activeProducts.length === 0 || selectedEventIsClosed">
+                                <button type="submit" data-tour="fundraiser-save-sale" class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60" :disabled="savingSale || activeProducts.length === 0 || selectedEventIsClosed">
                                     <CurrencyDollarIcon class="h-4 w-4" />
                                     {{ savingSale ? tr('Registrando...', 'Recording...') : tr('Registrar venta', 'Record sale') }}
                                 </button>
@@ -1691,7 +2436,7 @@ onMounted(() => loadFundraisers())
                     </div>
                 </section>
 
-                    <section v-if="!selectedEventIsClosed" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <section v-if="!selectedEventIsClosed" data-tour="fundraiser-recent-sales" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                     <div class="mb-4 flex items-center gap-2">
                         <ClipboardDocumentListIcon class="h-5 w-5 text-gray-600" />
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Ventas recientes', 'Recent sales') }}</h3>
@@ -1724,6 +2469,7 @@ onMounted(() => loadFundraisers())
                                             <button
                                                 v-if="sale.receipt.qr_url"
                                                 type="button"
+                                                data-tour="fundraiser-receipt-qr"
                                                 class="inline-flex shrink-0 rounded-md border border-gray-200 bg-white p-1 shadow-sm hover:border-red-300"
                                                 :title="tr('Ampliar QR', 'Expand QR')"
                                                 @click="openReceiptPreview(sale)"
@@ -1748,12 +2494,82 @@ onMounted(() => loadFundraisers())
             </template>
         </div>
 
+        <div v-if="tutorialActive && tutorialStep" class="pointer-events-none fixed inset-0 z-[70]">
+            <template v-if="tutorialCutout">
+                <div
+                    v-for="(style, index) in tutorialMaskStyles"
+                    :key="index"
+                    class="pointer-events-auto fixed bg-gray-950/70"
+                    :style="style"
+                ></div>
+                <div
+                    class="pointer-events-none fixed rounded-xl border-2 border-red-500 shadow-[0_0_0_4px_rgba(248,113,113,0.35),0_18px_45px_rgba(15,23,42,0.35)]"
+                    :style="tutorialHighlightStyle"
+                ></div>
+            </template>
+            <div v-else class="pointer-events-auto fixed inset-0 bg-gray-950/70"></div>
+
+            <aside
+                class="pointer-events-auto fixed rounded-xl border border-gray-200 bg-white p-4 shadow-2xl"
+                :style="tutorialPanelStyle"
+                role="dialog"
+                :aria-label="tr('Tutorial de fundraisers', 'Fundraisers tutorial')"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-red-600">
+                            {{ tr('Tutorial de fundraisers', 'Fundraisers tutorial') }} · {{ tutorialProgressLabel }}
+                        </p>
+                        <h3 class="mt-1 text-base font-semibold text-gray-950">{{ tutorialStep.title }}</h3>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-500 hover:bg-gray-50"
+                        :aria-label="tr('Salir del tutorial', 'Exit tutorial')"
+                        @click="closeFundraiserTutorial"
+                    >
+                        ×
+                    </button>
+                </div>
+                <p class="mt-3 text-sm leading-6 text-gray-600">{{ tutorialStep.body }}</p>
+                <p v-if="!tutorialCutout" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    {{ tr('Esta parte no esta visible ahora; aparecera cuando existan datos relacionados.', 'This part is not visible right now; it will appear when related data exists.') }}
+                </p>
+                <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="tutorialStepIndex === 0"
+                        @click="previousTutorialStep"
+                    >
+                        {{ tr('Anterior', 'Previous') }}
+                    </button>
+                    <div class="flex gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                            @click="closeFundraiserTutorial"
+                        >
+                            {{ tr('Salir', 'Exit') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                            @click="nextTutorialStep"
+                        >
+                            {{ tutorialStepIndex >= tutorialStepCount - 1 ? tr('Terminar', 'Finish') : tr('Siguiente', 'Next') }}
+                        </button>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
         <div
             v-if="receiptPreviewSale"
             class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4"
             @click.self="closeReceiptPreview"
         >
-            <section class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl">
+            <section data-tour="fundraiser-receipt-preview" class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl">
                 <header class="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
                     <div>
                         <p class="text-sm font-semibold text-red-700">{{ receiptPreviewSale.receipt?.number }}</p>
@@ -1826,11 +2642,78 @@ onMounted(() => loadFundraisers())
         </div>
 
         <div
+            v-if="showTutorialKitchen"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4"
+            @click.self="closeTutorialKitchen"
+        >
+            <section data-tour="fundraiser-kitchen-modal" class="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white shadow-2xl">
+                <header class="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
+                    <div>
+                        <p class="text-sm font-semibold text-emerald-700">{{ tr('Cocina tutorial', 'Tutorial kitchen') }}</p>
+                        <h2 class="text-xl font-semibold text-gray-950">{{ selectedEvent?.name }}</h2>
+                        <p class="mt-1 text-sm text-gray-500">
+                            {{ tr('Vista simulada para preparar pedidos de comida.', 'Simulated view for preparing food orders.') }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                        :aria-label="tr('Cerrar', 'Close')"
+                        @click="closeTutorialKitchen"
+                    >
+                        <XMarkIcon class="h-5 w-5" />
+                    </button>
+                </header>
+
+                <div class="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_220px]">
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">{{ tr('Pedidos pendientes', 'Pending orders') }}</h3>
+                        <article
+                            v-for="sale in selectedEvent?.sales || []"
+                            :key="`kitchen-${sale.id}`"
+                            class="rounded-lg border border-emerald-200 bg-emerald-50 p-4"
+                        >
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                    <p class="font-semibold text-gray-950">{{ sale.customer_name || tr('Venta general', 'General sale') }}</p>
+                                    <p class="mt-1 text-sm text-gray-700">{{ formatDate(sale.sale_date) }} · {{ sale.receipt?.number }}</p>
+                                </div>
+                                <span class="inline-flex rounded-full bg-white px-2 py-1 text-xs font-semibold text-emerald-800">
+                                    {{ tr('Pendiente', 'Pending') }}
+                                </span>
+                            </div>
+                            <div class="mt-3 divide-y divide-emerald-100 rounded-lg bg-white">
+                                <div
+                                    v-for="item in sale.items"
+                                    :key="`kitchen-${sale.id}-${item.id}`"
+                                    class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                                >
+                                    <span class="font-medium text-gray-900">{{ item.item_name }}</span>
+                                    <span class="font-semibold text-gray-900">x{{ item.quantity }}</span>
+                                </div>
+                            </div>
+                            <button type="button" class="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+                                {{ tr('Marcar preparado', 'Mark prepared') }}
+                            </button>
+                        </article>
+                    </div>
+
+                    <aside class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+                        <h3 class="font-semibold text-gray-950">{{ tr('Uso del enlace', 'Using the link') }}</h3>
+                        <p class="mt-2">
+                            {{ tr('En produccion, este enlace abre una pantalla firmada para cocina. En tutorial se muestra aqui para no tocar rutas reales.', 'In production, this link opens a signed kitchen screen. In tutorial, it is shown here so real routes are not touched.') }}
+                        </p>
+                    </aside>
+                </div>
+            </section>
+        </div>
+
+        <div
             v-if="showCloseModal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4"
             @click.self="closeCloseModal"
         >
-            <section class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl">
+            <section data-tour="fundraiser-close-modal" class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl">
                 <header class="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
                     <div>
                         <p class="text-sm font-semibold text-red-700">{{ tr('Cerrar fundraiser', 'Close fundraiser') }}</p>
@@ -1958,6 +2841,7 @@ onMounted(() => loadFundraisers())
                         <h3 class="font-semibold text-gray-950">{{ tr('Flujo normal', 'Normal flow') }}</h3>
                         <ol class="mt-3 list-decimal space-y-2 pl-5">
                             <li>{{ tr('Crea el fundraiser y registra la inversion inicial desde la cuenta del club operativo.', 'Create the fundraiser and record the initial investment from the operative club account.') }}</li>
+                            <li>{{ tr('Si el efectivo o banco seleccionado no alcanza para fondear la inversion, el sistema crea una transferencia interna desde la otra ubicacion disponible de la misma cuenta; si la cuenta completa no alcanza, deja el faltante como reembolso pendiente.', 'If the selected cash or bank location is not enough to fund the investment, the system creates an internal transfer from the other available location in the same account; if the full account is short, it leaves the remainder as a pending reimbursement.') }}</li>
                             <li>{{ tr('Agrega los productos o platos con nombre, precio y cantidad planeada.', 'Add products or plates with name, price, and planned quantity.') }}</li>
                             <li>{{ tr('Cada venta registrada en caja entra como ingreso a la cuenta destino del fundraiser y genera recibo.', 'Every register sale is posted as income to the fundraiser destination account and generates a receipt.') }}</li>
                             <li>{{ tr('Si es comida, el enlace de cocina muestra los pedidos en orden para prepararlos y marcarlos terminados.', 'For food, the kitchen link shows orders in sequence so they can be prepared and marked finished.') }}</li>
