@@ -200,6 +200,7 @@ class FinanceEngineController extends Controller
                     'reference' => $reference,
                     'title' => $this->proofLabel($proof['type'] ?? null) . ' ' . $reference,
                     'url' => $url,
+                    'path' => $path,
                     'filename' => $proof['name'] ?? ($path ? basename($path) : null),
                     'data_uri' => $file['data_uri'] ?? null,
                     'mime_type' => $file['mime_type'] ?? null,
@@ -224,13 +225,43 @@ class FinanceEngineController extends Controller
 
     private function pushLedgerAnnex(array &$annexes, array &$seen, array $annex): void
     {
-        $key = $annex['key'] ?? null;
-        if (!$key || isset($seen[$key])) {
+        $keys = $this->ledgerAnnexDedupKeys($annex);
+        if (empty($keys)) {
             return;
         }
 
-        $seen[$key] = true;
+        foreach ($keys as $key) {
+            if (isset($seen[$key])) {
+                return;
+            }
+        }
+
+        foreach ($keys as $key) {
+            $seen[$key] = true;
+        }
+
         $annexes[] = $annex;
+    }
+
+    private function ledgerAnnexDedupKeys(array $annex): array
+    {
+        $keys = [];
+        foreach (['path', 'url', 'filename', 'reference', 'key'] as $field) {
+            $value = $annex[$field] ?? null;
+            if (!$value || !is_string($value)) {
+                continue;
+            }
+
+            $normalized = strtolower(trim($value));
+            $keys[] = $field . ':' . $normalized;
+
+            $basename = basename(parse_url($normalized, PHP_URL_PATH) ?: $normalized);
+            if ($basename && $basename !== '.' && $basename !== '/') {
+                $keys[] = 'basename:' . $basename;
+            }
+        }
+
+        return array_values(array_unique($keys));
     }
 
     private function movementProofs(array $movement): array

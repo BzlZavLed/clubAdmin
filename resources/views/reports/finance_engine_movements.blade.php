@@ -49,6 +49,11 @@
         .annex-image { max-width: 100%; max-height: 410px; object-fit: contain; }
         .annex-link-box { border: 1px dashed #94a3b8; background: #f8fafc; padding: 18px; text-align: center; }
         .annex-link-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+        .annex-compact-section { page-break-before: always; }
+        .annex-compact-card { border: 1px solid #d1d5db; background: #ffffff; padding: 8px; margin-bottom: 8px; page-break-inside: avoid; }
+        .annex-compact-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+        .annex-compact-meta { font-size: 8px; color: #6b7280; margin-bottom: 4px; }
+        .annex-compact-link { font-size: 8px; word-break: break-all; }
         .inline-receipt { border: 1px solid #d1d5db; background: #fff; }
         .inline-receipt-top { border-bottom: 1px solid #d1d5db; padding: 14px 16px; }
         .inline-receipt-header { width: 100%; border-collapse: collapse; }
@@ -85,6 +90,12 @@
 
         return $annex;
     });
+    $pagedReceiptAnnexes = $receiptAnnexes
+        ->filter(fn (array $annex) => !empty($annex['render_inline_receipt']) || !empty($annex['data_uri']))
+        ->values();
+    $compactReceiptAnnexes = $receiptAnnexes
+        ->filter(fn (array $annex) => empty($annex['render_inline_receipt']) && empty($annex['data_uri']))
+        ->values();
     $annexUrlAnchors = $receiptAnnexes
         ->filter(fn (array $annex) => !empty($annex['url']))
         ->mapWithKeys(fn (array $annex) => [$annex['url'] => '#' . $annex['anchor']])
@@ -370,7 +381,7 @@
     @endif
 @endif
 
-@foreach($receiptAnnexes as $annex)
+@foreach($pagedReceiptAnnexes as $annex)
     @php
         $movement = $annex['movement'] ?? [];
         $receipt = $annex['receipt'] ?? [];
@@ -517,6 +528,45 @@
         @endif
     </div>
 @endforeach
+
+@if($compactReceiptAnnexes->isNotEmpty())
+    <div class="{{ $pagedReceiptAnnexes->isNotEmpty() ? 'annex-compact-section' : '' }}">
+        <h2 class="annex-title">Comprobantes sin vista previa</h2>
+        <div class="annex-subtitle">Estos archivos no tienen imagen adjunta para previsualizar y se listan juntos para reducir paginas vacias.</div>
+
+        @foreach($compactReceiptAnnexes as $annex)
+            @php
+                $movement = $annex['movement'] ?? [];
+                $title = $annex['title'] ?? ('Anexo ' . ($annex['reference'] ?? $loop->iteration));
+                $reference = $annex['reference'] ?? '-';
+            @endphp
+            <div class="annex-compact-card">
+                <a name="{{ $annex['anchor'] }}"></a>
+                <div class="annex-compact-title">{{ $title }}</div>
+                <div class="annex-compact-meta">
+                    Referencia {{ $reference }}
+                    · Movimiento {{ $movement['movement_id'] ?? '-' }}
+                    · Fecha {{ $movement['date'] ?? '-' }}
+                    · Monto {{ $money($movement['amount'] ?? 0) }}
+                </div>
+                <div class="annex-compact-meta">
+                    {{ $movement['concept'] ?? '-' }}
+                    @if(!empty($movement['counterparty']))
+                        · {{ $movement['counterparty'] }}
+                    @endif
+                </div>
+                @if(!empty($annex['url']))
+                    <div class="annex-compact-link">Archivo original: <a href="{{ $annex['url'] }}">{{ $annex['url'] }}</a></div>
+                @else
+                    <div class="annex-compact-link">No hay vista previa disponible para este comprobante.</div>
+                @endif
+                @if(!empty($annex['mime_type']))
+                    <div class="annex-compact-meta">Tipo de archivo: {{ $annex['mime_type'] }}</div>
+                @endif
+            </div>
+        @endforeach
+    </div>
+@endif
 @endif
 </body>
 </html>
