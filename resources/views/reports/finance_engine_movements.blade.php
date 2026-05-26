@@ -51,6 +51,7 @@
         .annex-link-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
         .annex-compact-section { page-break-before: always; }
         .annex-compact-card { border: 1px solid #d1d5db; background: #ffffff; padding: 8px; margin-bottom: 8px; page-break-inside: avoid; }
+        .annex-compact-group { font-size: 12px; font-weight: 700; margin: 12px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #d1d5db; }
         .annex-compact-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
         .annex-compact-meta { font-size: 8px; color: #6b7280; margin-bottom: 4px; }
         .annex-compact-link { font-size: 8px; word-break: break-all; }
@@ -96,6 +97,46 @@
     $compactReceiptAnnexes = $receiptAnnexes
         ->filter(fn (array $annex) => empty($annex['render_inline_receipt']) && empty($annex['data_uri']))
         ->values();
+    $compactGroupLabels = [
+        'reimbursement_receipt' => 'Reembolsos',
+        'reimbursement_payment_proof' => 'Pagos de reembolso',
+        'expense_receipt' => 'Gastos',
+        'income_receipt' => 'Ingresos',
+        'payment_receipt' => 'Ingresos',
+        'check_image' => 'Cheques',
+        'fundraiser_investment_receipt' => 'Inversiones de fundraiser',
+        'treasury_proof' => 'Transferencias',
+        'proof' => 'Otros comprobantes',
+        'other' => 'Otros comprobantes',
+    ];
+    $compactGroupOrder = [
+        'reimbursement_receipt' => 10,
+        'reimbursement_payment_proof' => 20,
+        'expense_receipt' => 30,
+        'income_receipt' => 40,
+        'payment_receipt' => 40,
+        'check_image' => 50,
+        'fundraiser_investment_receipt' => 60,
+        'treasury_proof' => 70,
+        'proof' => 90,
+        'other' => 99,
+    ];
+    $annexSortNumber = function (array $annex) {
+        $value = (string) ($annex['reference'] ?? $annex['title'] ?? $annex['filename'] ?? '');
+        preg_match_all('/\d+/', $value, $matches);
+
+        return $matches[0] ? (int) end($matches[0]) : PHP_INT_MAX;
+    };
+    $compactReceiptGroups = $compactReceiptAnnexes
+        ->groupBy(fn (array $annex) => $annex['document_type'] ?? 'other')
+        ->sortBy(fn ($items, $type) => $compactGroupOrder[$type] ?? 99)
+        ->map(fn ($items) => $items
+            ->sortBy([
+                fn (array $annex) => $annexSortNumber($annex),
+                fn (array $annex) => (string) ($annex['reference'] ?? ''),
+            ])
+            ->values()
+        );
     $annexUrlAnchors = $receiptAnnexes
         ->filter(fn (array $annex) => !empty($annex['url']))
         ->mapWithKeys(fn (array $annex) => [$annex['url'] => '#' . $annex['anchor']])
@@ -534,36 +575,43 @@
         <h2 class="annex-title">Comprobantes sin vista previa</h2>
         <div class="annex-subtitle">Estos archivos no tienen imagen adjunta para previsualizar y se listan juntos para reducir paginas vacias.</div>
 
-        @foreach($compactReceiptAnnexes as $annex)
-            @php
-                $movement = $annex['movement'] ?? [];
-                $title = $annex['title'] ?? ('Anexo ' . ($annex['reference'] ?? $loop->iteration));
-                $reference = $annex['reference'] ?? '-';
-            @endphp
-            <div class="annex-compact-card">
-                <a name="{{ $annex['anchor'] }}"></a>
-                <div class="annex-compact-title">{{ $title }}</div>
-                <div class="annex-compact-meta">
-                    Referencia {{ $reference }}
-                    · Movimiento {{ $movement['movement_id'] ?? '-' }}
-                    · Fecha {{ $movement['date'] ?? '-' }}
-                    · Monto {{ $money($movement['amount'] ?? 0) }}
-                </div>
-                <div class="annex-compact-meta">
-                    {{ $movement['concept'] ?? '-' }}
-                    @if(!empty($movement['counterparty']))
-                        · {{ $movement['counterparty'] }}
+        @foreach($compactReceiptGroups as $groupType => $groupAnnexes)
+            <h3 class="annex-compact-group">
+                {{ $compactGroupLabels[$groupType] ?? $compactGroupLabels['other'] }}
+                ({{ $groupAnnexes->count() }})
+            </h3>
+
+            @foreach($groupAnnexes as $annex)
+                @php
+                    $movement = $annex['movement'] ?? [];
+                    $title = $annex['title'] ?? ('Anexo ' . ($annex['reference'] ?? $loop->iteration));
+                    $reference = $annex['reference'] ?? '-';
+                @endphp
+                <div class="annex-compact-card">
+                    <a name="{{ $annex['anchor'] }}"></a>
+                    <div class="annex-compact-title">{{ $title }}</div>
+                    <div class="annex-compact-meta">
+                        Referencia {{ $reference }}
+                        · Movimiento {{ $movement['movement_id'] ?? '-' }}
+                        · Fecha {{ $movement['date'] ?? '-' }}
+                        · Monto {{ $money($movement['amount'] ?? 0) }}
+                    </div>
+                    <div class="annex-compact-meta">
+                        {{ $movement['concept'] ?? '-' }}
+                        @if(!empty($movement['counterparty']))
+                            · {{ $movement['counterparty'] }}
+                        @endif
+                    </div>
+                    @if(!empty($annex['url']))
+                        <div class="annex-compact-link">Archivo original: <a href="{{ $annex['url'] }}">{{ $annex['url'] }}</a></div>
+                    @else
+                        <div class="annex-compact-link">No hay vista previa disponible para este comprobante.</div>
+                    @endif
+                    @if(!empty($annex['mime_type']))
+                        <div class="annex-compact-meta">Tipo de archivo: {{ $annex['mime_type'] }}</div>
                     @endif
                 </div>
-                @if(!empty($annex['url']))
-                    <div class="annex-compact-link">Archivo original: <a href="{{ $annex['url'] }}">{{ $annex['url'] }}</a></div>
-                @else
-                    <div class="annex-compact-link">No hay vista previa disponible para este comprobante.</div>
-                @endif
-                @if(!empty($annex['mime_type']))
-                    <div class="annex-compact-meta">Tipo de archivo: {{ $annex['mime_type'] }}</div>
-                @endif
-            </div>
+            @endforeach
         @endforeach
     </div>
 @endif
