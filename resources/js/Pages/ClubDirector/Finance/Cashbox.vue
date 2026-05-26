@@ -3173,7 +3173,7 @@ onBeforeUnmount(() => {
                 <div class="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Movimientos', 'Movements') }}</h3>
-                        <p class="text-sm text-gray-500">{{ tr('Aqui veras la lectura del motor financiero: ingresos, gastos, transferencias, reembolsos, recibos y comprobantes, con estado, cuenta, fecha y monto.', 'Here you will see the finance engine readout: income, expenses, transfers, reimbursements, receipts, and proofs, with status, account, date, and amount.') }}</p>
+                        <p class="text-sm text-gray-500">{{ tr('Aqui ingresos, gastos, transferencias, reembolsos, recibos y comprobantes', 'Here you will see income, expenses, transfers, reimbursements, receipts, and proofs.') }}</p>
                     </div>
                     <div data-tour="cashbox-movement-filters" class="flex flex-col gap-2 sm:flex-row">
                         <input
