@@ -194,6 +194,7 @@ class FinanceEngineWorkflowTest extends TestCase
                 'amount_paid' => 7.50,
                 'payment_date' => '2026-05-14',
                 'payment_type' => 'cash',
+                'notes' => 'Snack table cash counted by treasurer.',
             ])
             ->assertCreated();
 
@@ -245,7 +246,9 @@ class FinanceEngineWorkflowTest extends TestCase
 
         $movements = collect($engine->json('data.movements'));
         $this->assertNotNull($movements->firstWhere('concept', 'Monthly dues')['receipt']['number'] ?? null);
-        $this->assertSame(7.50, (float) $movements->firstWhere('concept', 'Manual snack donation')['amount']);
+        $manualSnackMovement = $movements->firstWhere('concept', 'Manual snack donation');
+        $this->assertSame(7.50, (float) $manualSnackMovement['amount']);
+        $this->assertSame('Snack table cash counted by treasurer.', $manualSnackMovement['notes']);
         $guestDonationMovement = $movements->firstWhere('concept', 'Guest donation');
         $this->assertSame('Donante Invitado', $guestDonationMovement['counterparty']);
         $this->assertSame(45.0, (float) $guestDonationMovement['balance_after']['account_balance']);
@@ -1388,6 +1391,7 @@ class FinanceEngineWorkflowTest extends TestCase
                 'amount' => 35.25,
                 'expense_date' => '2026-05-13',
                 'description' => 'Club supplies',
+                'notes' => 'Bought during staff prep night.',
                 'receipt_image' => UploadedFile::fake()->image('supplies.jpg'),
             ])
             ->assertCreated()
@@ -1395,6 +1399,7 @@ class FinanceEngineWorkflowTest extends TestCase
 
         $expense = Expense::query()->firstWhere('description', 'Club supplies');
         $this->assertNotNull($expense);
+        $this->assertSame('Bought during staff prep night.', $expense->notes);
         $this->assertSame('completed', $expense->status);
         Storage::disk('public')->assertExists($expense->receipt_path);
         $this->assertSame('64.75', Account::findOrFail($account->id)->balance);
@@ -1415,6 +1420,7 @@ class FinanceEngineWorkflowTest extends TestCase
         $movement = collect($engine->json('data.movements'))->firstWhere('concept', 'Club supplies');
         $this->assertSame('expense_receipt', $movement['proof']['type']);
         $this->assertSame('cash', $movement['location']);
+        $this->assertSame('Bought during staff prep night.', $movement['notes']);
     }
 
     public function test_cashbox_expenses_use_total_account_balance_before_reimbursement(): void
@@ -1717,10 +1723,12 @@ class FinanceEngineWorkflowTest extends TestCase
             ]), [
                 'club_id' => $club->id,
                 'display_concept' => 'Reembolso a patrocinador corregido',
+                'notes' => 'Nombre visible corregido sin cambiar el asiento.',
             ])
             ->assertOk()
             ->assertJsonPath('data.movement_key', "expense:{$pendingReimbursement->id}")
-            ->assertJsonPath('data.display_concept', 'Reembolso a patrocinador corregido');
+            ->assertJsonPath('data.display_concept', 'Reembolso a patrocinador corregido')
+            ->assertJsonPath('data.notes', 'Nombre visible corregido sin cambiar el asiento.');
 
         $withOverride = $this->actingAs($director)
             ->getJson(route('club.finance-engine.movements', ['club_id' => $club->id]))
@@ -1729,6 +1737,8 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertSame('Reembolso a patrocinador corregido', $updatedReimbursementMovement['display_concept']);
         $this->assertSame('Reembolso pendiente por: Out of pocket supplies', $updatedReimbursementMovement['concept']);
         $this->assertSame('Reembolso pendiente por: Out of pocket supplies', $updatedReimbursementMovement['original_concept']);
+        $this->assertSame('Nombre visible corregido sin cambiar el asiento.', $updatedReimbursementMovement['notes']);
+        $this->assertSame('Nombre visible corregido sin cambiar el asiento.', $pendingReimbursement->refresh()->notes);
 
         $this->actingAs($director)
             ->patchJson(route('club.finance-engine.movements.display-concept.update', [
@@ -1737,15 +1747,18 @@ class FinanceEngineWorkflowTest extends TestCase
             ]), [
                 'club_id' => $club->id,
                 'display_concept' => '',
+                'notes' => '',
             ])
             ->assertOk()
-            ->assertJsonPath('data.display_concept', null);
+            ->assertJsonPath('data.display_concept', null)
+            ->assertJsonPath('data.notes', null);
 
         $withoutOverride = $this->actingAs($director)
             ->getJson(route('club.finance-engine.movements', ['club_id' => $club->id]))
             ->assertOk();
         $clearedReimbursementMovement = collect($withoutOverride->json('data.movements'))->firstWhere('movement_id', "expense:{$pendingReimbursement->id}");
         $this->assertSame('Reembolso pendiente por: Out of pocket supplies', $clearedReimbursementMovement['display_concept']);
+        $this->assertNull($clearedReimbursementMovement['notes']);
         $this->assertNull($clearedReimbursementMovement['concept_override']);
     }
 

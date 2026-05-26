@@ -107,6 +107,7 @@ class FinanceWriter
         $validated = $request->validate([
             'club_id' => ['required', 'integer', 'exists:clubs,id'],
             'display_concept' => ['nullable', 'string', 'max:500'],
+            'notes' => ['nullable', 'string', 'max:2000'],
             'movement_type' => ['nullable', Rule::in(['payment', 'expense', 'treasury'])],
         ]);
 
@@ -118,6 +119,8 @@ class FinanceWriter
         abort_unless((int) $clubId === (int) $club->id, 403, 'Unauthorized.');
 
         $displayConcept = trim((string) ($validated['display_concept'] ?? ''));
+        $notes = trim((string) ($validated['notes'] ?? ''));
+        $this->updateMovementNotes($movementType, $movementId, $notes);
 
         if ($displayConcept === '') {
             FinanceMovementConceptOverride::query()
@@ -134,6 +137,7 @@ class FinanceWriter
                     'movement_key' => "{$movementType}:{$movementId}",
                     'display_concept' => null,
                     'original_concept' => $originalConcept,
+                    'notes' => $notes ?: null,
                 ],
             ]);
         }
@@ -160,6 +164,7 @@ class FinanceWriter
                 'movement_key' => "{$movementType}:{$movementId}",
                 'display_concept' => $override->display_concept,
                 'original_concept' => $override->original_concept,
+                'notes' => $notes ?: null,
                 'updated_at' => $override->updated_at?->toIso8601String(),
             ],
         ]);
@@ -248,5 +253,16 @@ class FinanceWriter
             $movement->club_id,
             $movement->event?->title ?: $movement->reference,
         ];
+    }
+
+    private function updateMovementNotes(string $movementType, int $movementId, string $notes): void
+    {
+        $value = $notes !== '' ? $notes : null;
+
+        match ($movementType) {
+            'payment' => Payment::query()->whereKey($movementId)->update(['notes' => $value]),
+            'expense' => Expense::query()->whereKey($movementId)->update(['notes' => $value]),
+            'treasury' => TreasuryMovement::query()->whereKey($movementId)->update(['notes' => $value]),
+        };
     }
 }

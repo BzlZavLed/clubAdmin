@@ -1656,9 +1656,10 @@ onBeforeUnmount(() => {
                             >
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
-                                    <p class="font-semibold text-gray-900">{{ movement.display_concept || movement.concept || movementTypeLabel(movement.kind) }}</p>
-                                    <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
-                                </div>
+	                                    <p class="font-semibold text-gray-900">{{ movement.display_concept || movement.concept || movementTypeLabel(movement.kind) }}</p>
+	                                    <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
+	                                    <p v-if="movement.notes" class="mt-1 text-sm text-gray-600">{{ tr('Notas', 'Notes') }}: {{ movement.notes }}</p>
+	                                </div>
                                 <p
                                     class="shrink-0 font-semibold"
                                     :class="Number(movement.signed_amount) < 0 ? 'text-red-700' : Number(movement.signed_amount) > 0 ? 'text-emerald-700' : 'text-gray-900'"
@@ -1772,9 +1773,10 @@ onBeforeUnmount(() => {
                                     <td class="whitespace-nowrap px-3 py-2">{{ formatDate(movement.date) }}</td>
                                     <td class="px-3 py-2">{{ domainLabel(movement.domain) }}</td>
                                     <td class="max-w-xs px-3 py-2">
-                                        <div class="font-medium text-gray-900">{{ movement.display_concept || movement.concept || movementTypeLabel(movement.kind) }}</div>
-                                        <div v-if="movement.reference" class="text-xs text-gray-500">{{ movement.reference }}</div>
-                                    </td>
+	                                        <div class="font-medium text-gray-900">{{ movement.display_concept || movement.concept || movementTypeLabel(movement.kind) }}</div>
+	                                        <div v-if="movement.reference" class="text-xs text-gray-500">{{ movement.reference }}</div>
+	                                        <div v-if="movement.notes" class="text-xs text-gray-500">{{ movement.notes }}</div>
+	                                    </td>
                                     <td class="px-3 py-2">{{ movementDescription(movement) }}</td>
                                     <td class="px-3 py-2">{{ rowCounterparty(movement) }}</td>
                                     <td

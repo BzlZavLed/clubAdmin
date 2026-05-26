@@ -499,7 +499,12 @@
                     <td class="type-column">{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
                     <td class="account-column">{{ $movementAccountText($movement) }}</td>
                     <td class="location-column">{{ $movementLocationText($movement) }}</td>
-                    <td class="concept-column">{{ $movementConceptText($movement) }}</td>
+                    <td class="concept-column">
+                        {{ $movementConceptText($movement) }}
+                        @if(!empty($movement['notes']))
+                            <br><span class="muted">{{ $movement['notes'] }}</span>
+                        @endif
+                    </td>
                     <td class="counterparty-column">{{ $movement['counterparty'] ?? $movement['created_by'] ?? '-' }}</td>
                     <td class="document-column">
                         @if(empty($documents))
@@ -642,6 +647,9 @@
                             </table>
                             <table class="annex-meta">
                                 <tr><td style="width:100%;"><div class="annex-label">Concepto</div><div class="annex-value">{{ $movementConceptText($movement) }}</div></td></tr>
+                                @if(!empty($movement['notes']))
+                                    <tr><td style="width:100%;"><div class="annex-label">Notas</div><div class="annex-value">{{ $movement['notes'] }}</div></td></tr>
+                                @endif
                             </table>
                             <div class="annex-preview">
                                 <img class="annex-image" src="{{ $annex['data_uri'] }}" alt="{{ $reference }}">
@@ -668,6 +676,9 @@
                             {{ $movementConceptText($movement) }}
                             @if(!empty($movement['counterparty']))
                                 · {{ $movement['counterparty'] }}
+                            @endif
+                            @if(!empty($movement['notes']))
+                                <br><span class="muted">{{ $movement['notes'] }}</span>
                             @endif
                         </div>
                         @if(!empty($annex['url']))
@@ -699,6 +710,9 @@
             @foreach($groupMovements as $movement)
                 <div class="annex-compact-card">
                     <div class="annex-compact-title">{{ $movementReferenceText($movement) }} - {{ $movementConceptText($movement) }}</div>
+                    @if(!empty($movement['notes']))
+                        <div class="annex-compact-meta">{{ $movement['notes'] }}</div>
+                    @endif
                     <div class="annex-compact-meta">
                         Referencia {{ $movementReferenceText($movement) }}
                         · Movimiento {{ $movement['movement_id'] ?? '-' }}

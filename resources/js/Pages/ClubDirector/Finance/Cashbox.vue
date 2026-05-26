@@ -126,6 +126,7 @@ const expenseForm = ref({
     amount: '',
     expense_date: today(),
     description: '',
+    notes: '',
     reimbursed_to: '',
     reimbursement_target_mode: 'new',
     reimbursement_payee_id: '',
@@ -177,6 +178,7 @@ const recentMovements = computed(() => {
             movement?.concept,
             movement?.display_concept,
             movement?.description,
+            movement?.notes,
             movement?.reference,
         ].some((value) => String(value || '').toLowerCase().includes(query)))
         : rows
@@ -613,6 +615,7 @@ const startEditMovementConcept = (movement) => {
         [key]: {
             editing: true,
             value: movementDisplayConcept(movement),
+            notes: movement?.notes || '',
         },
     }
     movementConceptErrors.value = {
@@ -627,6 +630,7 @@ const cancelEditMovementConcept = (movement) => {
         [key]: {
             editing: false,
             value: movementDisplayConcept(movement),
+            notes: movement?.notes || '',
         },
     }
     movementConceptErrors.value = {
@@ -634,7 +638,7 @@ const cancelEditMovementConcept = (movement) => {
         [key]: '',
     }
 }
-const applyMovementConceptOverride = (movementKey, displayConcept, originalConcept = null, override = null) => {
+const applyMovementConceptOverride = (movementKey, displayConcept, originalConcept = null, override = null, notes = null) => {
     if (!engineReport.value?.movements) return
 
     engineReport.value = {
@@ -647,6 +651,7 @@ const applyMovementConceptOverride = (movementKey, displayConcept, originalConce
                 original_concept: movement.original_concept || originalConcept || movement.concept || null,
                 display_concept: displayConcept || movement.concept || null,
                 concept_override: override,
+                notes,
             }
         }),
     }
@@ -663,21 +668,23 @@ const saveMovementConcept = async (movement) => {
         const payload = await updateFinanceEngineMovementDisplayConcept(target.type, target.id, {
             club_id: selectedClubId.value,
             display_concept: movementConceptForms.value[key]?.value || '',
+            notes: movementConceptForms.value[key]?.notes || '',
         })
         const data = payload?.data || {}
-        applyMovementConceptOverride(data.movement_key || movement.movement_id, data.display_concept, data.original_concept, data.display_concept ? data : null)
+        applyMovementConceptOverride(data.movement_key || movement.movement_id, data.display_concept, data.original_concept, data.display_concept ? data : null, data.notes || null)
         movementConceptForms.value = {
             ...movementConceptForms.value,
             [key]: {
                 editing: false,
                 value: data.display_concept || data.original_concept || movement.concept || '',
+                notes: data.notes || '',
             },
         }
-        showToast(payload?.message || tr('Concepto actualizado.', 'Concept updated.'), 'success')
+        showToast(payload?.message || tr('Concepto y notas actualizados.', 'Concept and notes updated.'), 'success')
     } catch (error) {
         movementConceptErrors.value = {
             ...movementConceptErrors.value,
-            [key]: error?.response?.data?.message || firstError(normalizeErrors(error), 'display_concept') || tr('No se pudo actualizar el concepto.', 'Could not update concept.'),
+            [key]: error?.response?.data?.message || firstError(normalizeErrors(error), 'display_concept') || firstError(normalizeErrors(error), 'notes') || tr('No se pudo actualizar el concepto o las notas.', 'Could not update concept or notes.'),
         }
     } finally {
         movementConceptBusy.value = { ...movementConceptBusy.value, [key]: false }
@@ -1666,6 +1673,7 @@ const resetExpenseForm = () => {
         amount: '',
         expense_date: today(),
         description: '',
+        notes: '',
         reimbursed_to: '',
         reimbursement_target_mode: reimbursementPayeeOptions.value.length ? expenseForm.value.reimbursement_target_mode : 'new',
         reimbursement_payee_id: '',
@@ -1823,6 +1831,7 @@ const tutorialCreateExpense = async (payload) => {
         amount,
         expense_date: payload.expense_date || today(),
         description: payload.description || 'Gasto tutorial',
+        notes: payload.notes || '',
         status: receiptUrl ? 'completed' : 'working',
         receipt_url: receiptUrl,
         receipt_path: receiptUrl ? `tutorial/expense-${id}.txt` : null,
@@ -1842,6 +1851,7 @@ const tutorialCreateExpense = async (payload) => {
         account_label: tutorialAccountLabel(payTo),
         location: payload.funds_location || 'cash',
         concept: expense.description,
+        notes: expense.notes,
         amount,
         proof: receiptUrl ? {
             name: 'Comprobante tutorial',
@@ -3006,6 +3016,16 @@ onBeforeUnmount(() => {
                             ></textarea>
                         </div>
 
+                        <div class="sm:col-span-2">
+                            <label class="text-sm font-medium text-gray-700">{{ tr('Notas', 'Notes') }}</label>
+                            <textarea
+                                v-model="expenseForm.notes"
+                                rows="2"
+                                class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                            ></textarea>
+                            <p v-if="firstError(expenseErrors, 'notes')" class="mt-1 text-xs text-rose-600">{{ firstError(expenseErrors, 'notes') }}</p>
+                        </div>
+
                         <div v-if="expenseHasOverflow" class="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
@@ -3468,7 +3488,7 @@ onBeforeUnmount(() => {
                                                             @click="startEditMovementConcept(row.movement)"
                                                         >
                                                             <PencilSquareIcon class="h-3.5 w-3.5" />
-                                                            {{ tr('Editar concepto', 'Edit concept') }}
+                                                            {{ tr('Editar', 'Edit') }}
                                                         </button>
                                                     </div>
                                                     <div v-if="isEditingMovementConcept(row.movement)" class="mt-2 space-y-2">
@@ -3479,6 +3499,14 @@ onBeforeUnmount(() => {
                                                             class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                                             :aria-label="tr('Concepto visible', 'Display concept')"
                                                         >
+                                                        <textarea
+                                                            v-model="movementConceptForms[movementConceptKey(row.movement)].notes"
+                                                            rows="2"
+                                                            maxlength="2000"
+                                                            class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                            :aria-label="tr('Notas', 'Notes')"
+                                                            :placeholder="tr('Notas del movimiento', 'Movement notes')"
+                                                        ></textarea>
                                                         <div class="flex flex-wrap items-center gap-2">
                                                             <button
                                                                 type="button"
@@ -3504,6 +3532,9 @@ onBeforeUnmount(() => {
                                                     <p v-else class="mt-1 text-xs font-medium text-gray-700">{{ movementDisplayConcept(row.movement) }}</p>
                                                     <p v-if="row.movement.concept_override && !isEditingMovementConcept(row.movement)" class="mt-1 text-xs text-gray-500">
                                                         {{ tr('Original', 'Original') }}: {{ row.movement.original_concept || row.movement.concept }}
+                                                    </p>
+                                                    <p v-if="row.movement.notes" class="mt-1 text-xs text-gray-600">
+                                                        {{ tr('Notas', 'Notes') }}: {{ row.movement.notes }}
                                                     </p>
                                                     <p class="mt-1 text-xs text-gray-500">
                                                         {{ row.movement.movement_id }} · {{ formatDate(row.movement.date) }} · {{ movementLocationDisplay(row.movement) }}
@@ -3571,7 +3602,7 @@ onBeforeUnmount(() => {
                                                 @click="startEditMovementConcept(movement)"
                                             >
                                                 <PencilSquareIcon class="h-3.5 w-3.5" />
-                                                {{ tr('Editar concepto', 'Edit concept') }}
+                                                {{ tr('Editar', 'Edit') }}
                                             </button>
                                         </div>
                                         <div v-if="isEditingMovementConcept(movement)" class="mt-2 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -3582,6 +3613,14 @@ onBeforeUnmount(() => {
                                                 class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                                 :aria-label="tr('Concepto visible', 'Display concept')"
                                             >
+                                            <textarea
+                                                v-model="movementConceptForms[movementConceptKey(movement)].notes"
+                                                rows="2"
+                                                maxlength="2000"
+                                                class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                :aria-label="tr('Notas', 'Notes')"
+                                                :placeholder="tr('Notas del movimiento', 'Movement notes')"
+                                            ></textarea>
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <button
                                                     type="button"
@@ -3606,6 +3645,9 @@ onBeforeUnmount(() => {
                                         </div>
                                         <p v-if="movement.concept_override && !isEditingMovementConcept(movement)" class="mt-1 text-xs text-gray-500">
                                             {{ tr('Original', 'Original') }}: {{ movement.original_concept || movement.concept }}
+                                        </p>
+                                        <p v-if="movement.notes" class="mt-1 text-sm text-gray-600">
+                                            {{ tr('Notas', 'Notes') }}: {{ movement.notes }}
                                         </p>
                                         <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
                                             <span>{{ tr('Fecha y hora', 'Date and time') }}: {{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</span>

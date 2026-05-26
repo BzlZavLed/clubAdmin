@@ -19,6 +19,7 @@ class Expense extends Model
         'amount',
         'expense_date',
         'description',
+        'notes',
         'reimbursed_to',
         'reimbursement_payee_id',
         'created_by_user_id',
