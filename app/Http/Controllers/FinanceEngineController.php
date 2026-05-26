@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Services\Finance\FinanceEngine;
+use App\Jobs\GenerateFinanceLedgerExport;
 use App\Models\Event;
 use App\Models\Expense;
+use App\Models\FinanceLedgerExportJob;
 use App\Models\FundraiserEvent;
 use App\Models\FundraiserEventPartner;
 use App\Models\FundraiserProduct;
@@ -12,6 +14,7 @@ use App\Models\FundraiserSale;
 use App\Models\Payment;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
+use App\Services\Finance\FinanceLedgerPdfGenerator;
 use App\Support\ClubHelper;
 use App\Support\GeneratedPdfResponse;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -45,116 +48,109 @@ class FinanceEngineController extends Controller
         ]);
     }
 
-    public function movementsPdf(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
+    public function movementsPdf(Request $request, FinanceLedgerPdfGenerator $ledgerPdfGenerator)
     {
-        @ini_set('memory_limit', '512M');
-        @ini_set('max_execution_time', '180');
-        @ini_set('zlib.output_compression', '0');
-
         $validated = $this->validateMovementFilters($request);
-        $includeAnnexes = (bool) ($validated['include_annexes'] ?? false);
-        $includeIncomeReceiptAnnexes = (bool) ($validated['include_income_receipt_annexes'] ?? false);
-
         $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
 
-        $report = $this->financeEngine->movementReport($club, [
+        if ($request->expectsJson()) {
+            $export = FinanceLedgerExportJob::create([
+                'club_id' => $club->id,
+                'user_id' => $request->user()->id,
+                'status' => 'queued',
+                'filters' => [
+                    ...$validated,
+                    'club_id' => $club->id,
+                    'limit' => $validated['limit'] ?? 5000,
+                ],
+            ]);
+
+            if (app()->runningUnitTests()) {
+                app()->call([new GenerateFinanceLedgerExport($export->id), 'handle']);
+            } else {
+                $this->deferFinanceLedgerExport($export);
+            }
+            $export->refresh();
+
+            $payload = [
+                'success' => true,
+                'queued' => true,
+                'export_id' => $export->uuid,
+                'status' => $export->status,
+                'status_url' => route('club.finance-engine.movements.pdf-export.status', $export),
+                'message' => 'La exportacion del libro contable esta en proceso.',
+            ];
+
+            if ($export->status === 'completed') {
+                $payload = [
+                    ...($export->files ?? []),
+                    ...$payload,
+                    'message' => 'La exportacion del libro contable esta lista.',
+                ];
+            }
+
+            return response()->json($payload, $export->status === 'completed' ? 200 : 202);
+        }
+
+        $payload = $ledgerPdfGenerator->generate($club, $request->user(), [
             ...$validated,
+            'club_id' => $club->id,
             'limit' => $validated['limit'] ?? 5000,
         ]);
 
-        $receiptAnnexes = $includeAnnexes ? $this->ledgerReceiptAnnexes($report, $includeIncomeReceiptAnnexes) : [];
-        $generatedAt = now();
+        return redirect()->away($payload['url']);
+    }
 
-        $validation = $documentValidationService->create(
-            documentType: 'finance_engine_movements',
-            title: 'Libro contable financiero',
-            snapshot: [
-                'club_id' => $club->id,
-                'filters' => $report['filters'] ?? [],
-                'summary' => $report['summary'] ?? [],
-                'movements' => collect($report['movements'] ?? [])->map(fn(array $movement) => [
-                    'movement_id' => $movement['movement_id'] ?? null,
-                    'date' => $movement['date'] ?? null,
-                    'domain' => $movement['domain'] ?? null,
-                    'kind' => $movement['kind'] ?? null,
-                    'account' => $movement['account'] ?? null,
-                    'concept' => $movement['concept'] ?? null,
-                    'display_concept' => $movement['display_concept'] ?? null,
-                    'notes' => $movement['notes'] ?? null,
-                    'amount' => $movement['amount'] ?? null,
-                    'signed_amount' => $movement['signed_amount'] ?? null,
-                    'balance_after' => $movement['balance_after'] ?? null,
-                    'receipt' => $movement['receipt']['number'] ?? null,
-                    'status' => $movement['status'] ?? null,
-                ])->all(),
-            ],
-            metadata: [
-                'Club' => $club->club_name,
-                'Documento' => 'Libro contable financiero',
-                'Movimientos' => (string) count($report['movements'] ?? []),
-                'Anexos' => $includeAnnexes ? (string) count($receiptAnnexes) : 'No incluidos',
-            ],
-            generatedBy: $request->user(),
-            generatedAt: $generatedAt,
-        );
+    public function movementPdfExportStatus(Request $request, FinanceLedgerExportJob $export)
+    {
+        $club = ClubHelper::clubForUser($request->user(), $export->club_id);
+        abort_unless((int) $club->id === (int) $export->club_id, 403);
 
-        $pdf = Pdf::loadView('reports.finance_engine_movements', [
-            'club' => $club,
-            'report' => $report,
-            'generatedAt' => $generatedAt,
-            'clubLogoDataUri' => $clubLogoService->dataUri($club),
-            'validationUrl' => $validation['url'],
-                'qrCodeDataUri' => $validation['qr_code_data_uri'],
-                'receiptAnnexes' => [],
-                'ledgerOnly' => true,
-                'includeIncomeReceiptAnnexes' => false,
-            ])->setPaper('a4', 'landscape');
+        if ($export->status === 'queued' && $export->updated_at?->lt(now()->subSeconds(5))) {
+            $this->deferFinanceLedgerExport($export);
+            $export->refresh();
+        }
 
-        $payload = GeneratedPdfResponse::store(
-            $pdf->output(),
-            'generated/finance-ledgers',
-            'finance-ledger-' . $club->id,
-            'finance-ledger.pdf'
-        );
-        $payload['files'] = [[
-            'label' => 'Libro contable',
-            'file_name' => $payload['file_name'],
-            'url' => $payload['url'],
-            'size' => $payload['size'] ?? null,
-        ]];
+        $payload = [
+            'success' => true,
+            'queued' => true,
+            'export_id' => $export->uuid,
+            'status' => $export->status,
+            'status_url' => route('club.finance-engine.movements.pdf-export.status', $export),
+            'message' => match ($export->status) {
+                'completed' => 'La exportacion del libro contable esta lista.',
+                'failed' => $export->error_message ?: 'No se pudo generar la exportacion.',
+                'processing' => 'La exportacion del libro contable se esta generando.',
+                default => 'La exportacion del libro contable esta en cola.',
+            },
+        ];
 
-        if ($includeAnnexes) {
-            $appendixPdf = Pdf::loadView('reports.finance_engine_movements', [
-                'club' => $club,
-                'report' => $report,
-                'generatedAt' => $generatedAt,
-                'clubLogoDataUri' => $clubLogoService->dataUri($club),
-                'validationUrl' => $validation['url'],
-                'qrCodeDataUri' => $validation['qr_code_data_uri'],
-                'receiptAnnexes' => $receiptAnnexes,
-                'annexOnly' => true,
-                'includeIncomeReceiptAnnexes' => $includeIncomeReceiptAnnexes,
-            ])->setPaper('a4', 'portrait');
-
-            $payload['appendix'] = GeneratedPdfResponse::store(
-                $appendixPdf->output(),
-                'generated/finance-ledgers',
-                'finance-ledger-receipts-' . $club->id,
-                'finance-ledger-receipts.pdf'
-            );
-            $payload['files'][] = [
-                'label' => 'Recibos y comprobantes',
-                'file_name' => $payload['appendix']['file_name'],
-                'url' => $payload['appendix']['url'],
-                'size' => $payload['appendix']['size'] ?? null,
+        if ($export->status === 'completed') {
+            $payload = [
+                ...($export->files ?? []),
+                ...$payload,
             ];
         }
 
-        if ($request->expectsJson()) {
-            return response()->json($payload);
-        }
+        return response()->json($payload);
+    }
 
-        return redirect()->away($payload['url']);
+    private function deferFinanceLedgerExport(FinanceLedgerExportJob $export): void
+    {
+        $export->update([
+            'status' => 'processing',
+            'started_at' => $export->started_at ?? now(),
+            'error_message' => null,
+        ]);
+
+        app()->terminating(function () use ($export): void {
+            $freshExport = FinanceLedgerExportJob::find($export->id);
+            if (!$freshExport || $freshExport->status === 'completed') {
+                return;
+            }
+
+            app()->call([new GenerateFinanceLedgerExport($freshExport->id), 'handle']);
+        });
     }
 
     private function ledgerReceiptAnnexes(array $report, bool $includeIncomeReceipts = false): array

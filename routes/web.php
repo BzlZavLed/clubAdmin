@@ -646,6 +646,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.fundraisers');
     Route::get('/club-director/finance-engine/movements/pdf', [FinanceEngineController::class, 'movementsPdf'])
         ->name('club.finance-engine.movements.pdf');
+    Route::get('/club-director/finance-engine/movements/pdf-exports/{export}/status', [FinanceEngineController::class, 'movementPdfExportStatus'])
+        ->name('club.finance-engine.movements.pdf-export.status');
     Route::get('/club-director/finance-engine/accounting/pdf', [FinanceEngineController::class, 'accountingPdf'])
         ->name('club.finance-engine.accounting.pdf');
     Route::post('/club-director/finance-engine/concepts', [FinanceEngineController::class, 'storeConcept'])

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import {
     ArrowDownTrayIcon,
@@ -39,6 +39,7 @@ const treasury = ref({
 })
 const engineReport = ref(null)
 const ledgerPage = ref(1)
+const ledgerSearch = ref('')
 const openLedgerAccountSections = ref({})
 const ledgerDateMode = ref('dates')
 const ledgerFilters = ref({
@@ -99,7 +100,37 @@ const accountBalanceRows = computed(() => (summary.value.accounts || []).map((ro
     total_available: Number(row.total_available ?? (Number(row.cash_balance || 0) + Number(row.bank_balance || 0))),
 })).sort((a, b) => String(a.label).localeCompare(String(b.label))))
 
-const ledgerMovements = computed(() => engineReport.value?.movements || [])
+const rawLedgerMovements = computed(() => engineReport.value?.movements || [])
+const ledgerMovements = computed(() => {
+    const query = ledgerSearch.value.trim().toLowerCase()
+    if (!query) return rawLedgerMovements.value
+
+    return rawLedgerMovements.value.filter((movement) => [
+        movement.movement_id,
+        movement.id,
+        movement.reference,
+        movement.display_concept,
+        movement.concept,
+        movement.original_concept,
+        movement.notes,
+        movement.counterparty,
+        movement.created_by,
+        movement.account,
+        movement.account_label,
+        movement.from_account,
+        movement.from_account_label,
+        movement.to_account,
+        movement.to_account_label,
+        movement.location,
+        movement.from_location,
+        movement.to_location,
+        movement.payment_type,
+        movement.status,
+        movement.kind,
+        movement.receipt?.number,
+        ...(Array.isArray(movement.proofs) ? movement.proofs.flatMap((proof) => [proof?.name, proof?.type, proof?.path, proof?.url]) : []),
+    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query)))
+})
 const ledgerPageCount = computed(() => ledgerIsAllAccounts.value ? 1 : Math.max(Math.ceil(ledgerMovements.value.length / LEDGER_PAGE_SIZE), 1))
 const paginatedLedgerMovements = computed(() => {
     if (ledgerIsAllAccounts.value) return ledgerMovements.value
@@ -181,6 +212,7 @@ watch(includeLedgerAnnexes, (includeAnnexes) => {
 const ledgerHasDateLimit = computed(() => Boolean(ledgerFilters.value.date_from || ledgerFilters.value.date_to))
 
 const downloadingLedgerPdf = ref(false)
+const ledgerExportMessage = ref('')
 const exportConfirmationModal = ref({
     show: false,
     title: '',
@@ -195,6 +227,7 @@ const generatedLedgerFilesModal = ref({
     files: [],
 })
 let resolveExportConfirmation = null
+let ledgerExportPollingTimer = null
 
 const closeExportConfirmationModal = (confirmed = false) => {
     exportConfirmationModal.value.show = false
@@ -231,6 +264,61 @@ const formatFileSize = (size) => {
     if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
 
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const filesFromExportPayload = (data) => (Array.isArray(data.files) && data.files.length
+    ? data.files
+    : [{ label: tr('Libro contable', 'Ledger'), file_name: data.file_name || 'finance-ledger.pdf', url: data.url, size: data.size }])
+
+const clearLedgerExportPolling = () => {
+    if (ledgerExportPollingTimer) {
+        window.clearTimeout(ledgerExportPollingTimer)
+        ledgerExportPollingTimer = null
+    }
+}
+
+const finishLedgerExport = (data) => {
+    clearLedgerExportPolling()
+    generatedLedgerFilesModal.value = {
+        show: true,
+        files: filesFromExportPayload(data),
+    }
+    downloadingLedgerPdf.value = false
+    ledgerExportMessage.value = ''
+}
+
+const pollLedgerExport = async (statusUrl) => {
+    try {
+        const response = await fetch(statusUrl, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            credentials: 'same-origin',
+        })
+
+        if (!response.ok) {
+            throw new Error('Could not check ledger export status.')
+        }
+
+        const data = await response.json()
+        ledgerExportMessage.value = data.message || tr('Generando exportacion...', 'Generating export...')
+
+        if (data.status === 'completed') {
+            finishLedgerExport(data)
+            return
+        }
+
+        if (data.status === 'failed') {
+            throw new Error(data.message || 'Ledger export failed.')
+        }
+
+        ledgerExportPollingTimer = window.setTimeout(() => pollLedgerExport(statusUrl), 2000)
+    } catch (error) {
+        clearLedgerExportPolling()
+        console.error(error)
+        downloadingLedgerPdf.value = false
+        ledgerExportMessage.value = ''
+        showToast(tr('No se pudo completar la exportacion del libro contable. Intenta de nuevo.', 'Could not complete the ledger export. Please try again.'), 'error')
+    }
 }
 
 const downloadLedgerPdf = async () => {
@@ -290,22 +378,29 @@ const downloadLedgerPdf = async () => {
 
         const data = await response.json()
 
-        if (!data.url) {
-            throw new Error('No PDF URL returned.')
+        if (data.status === 'completed' || data.url) {
+            finishLedgerExport(data)
+            return
         }
 
-        generatedLedgerFilesModal.value = {
-            show: true,
-            files: Array.isArray(data.files) && data.files.length
-                ? data.files
-                : [{ label: tr('Libro contable', 'Ledger'), file_name: data.file_name || 'finance-ledger.pdf', url: data.url, size: data.size }],
+        if (data.queued && data.status_url) {
+            ledgerExportMessage.value = data.message || tr('Generando exportacion...', 'Generating export...')
+            await pollLedgerExport(data.status_url)
+            return
         }
+
+        throw new Error('No PDF URL returned.')
        
     } catch (error) {
         console.error(error)
         showToast(tr('No se pudo descargar el PDF del libro contable. Intenta de nuevo.', 'Could not download the ledger PDF. Please try again.'), 'error')
-    } finally {
+        ledgerExportMessage.value = ''
+        clearLedgerExportPolling()
         downloadingLedgerPdf.value = false
+    } finally {
+        if (!ledgerExportPollingTimer) {
+            downloadingLedgerPdf.value = false
+        }
     }
 }
 
@@ -639,7 +734,12 @@ watch(ledgerMovements, () => {
     }
 })
 
+watch(ledgerSearch, () => {
+    ledgerPage.value = 1
+})
+
 onMounted(loadData)
+onBeforeUnmount(clearLedgerExportPolling)
 </script>
 
 <template>
@@ -780,11 +880,14 @@ onMounted(loadData)
                                     {{ tr('PDF libro', 'Ledger PDF') }}
                                 </span>
                             </button>
+                            <p v-if="ledgerExportMessage" class="max-w-xs text-xs text-gray-500">
+                                {{ ledgerExportMessage }}
+                            </p>
                         </div>
 
                     </div>
 
-                    <div class="mt-4 grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(150px,0.75fr)_minmax(150px,0.75fr)_auto_auto] lg:items-end">
+                    <div class="mt-4 grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(150px,0.75fr)_auto_auto] lg:items-end">
                         <div>
                             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Cuenta', 'Account') }}</label>
                             <select v-model="ledgerFilters.account" class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
@@ -794,7 +897,16 @@ onMounted(loadData)
                                 </option>
                             </select>
                         </div>
-                        <div class="lg:col-span-4">
+                        <div>
+                            <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Buscar', 'Search') }}</label>
+                            <input
+                                v-model="ledgerSearch"
+                                type="search"
+                                class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                :placeholder="tr('Referencia, id, concepto, notas...', 'Reference, id, concept, notes...')"
+                            >
+                        </div>
+                        <div class="lg:col-span-3">
                             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Rango', 'Range') }}</label>
                             <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
                                 <button
