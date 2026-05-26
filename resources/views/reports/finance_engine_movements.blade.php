@@ -38,6 +38,7 @@
         .amount-transfer { color: #0369a1; font-weight: 700; }
         .amount-cell { white-space: nowrap; }
         .balance-cell { white-space: pre-line; }
+        .movement-meta { margin-top: 2px; color: #6b7280; font-size: 7px; line-height: 1.3; }
         .annex-page { page-break-before: always; }
         .annex-page-current { page-break-before: auto; }
         .annex-title { font-size: 15px; margin: 0 0 8px; }
@@ -152,6 +153,22 @@
         };
     };
     $movementConceptText = fn (array $movement) => $movement['display_concept'] ?? $movement['concept'] ?? '-';
+    $movementGroupText = function (array $movement) {
+        $group = $movement['reimbursement_group'] ?? null;
+        if (!is_array($group) || empty($group['key'])) {
+            return null;
+        }
+
+        $parts = [$group['key']];
+        if (!empty($group['role'])) {
+            $parts[] = 'rol ' . $group['role'];
+        }
+        if (!empty($group['status'])) {
+            $parts[] = 'estado ' . $group['status'];
+        }
+
+        return implode(' · ', $parts);
+    };
     $receiptAnnexGroups = $receiptAnnexes
         ->groupBy(fn (array $annex) => $annex['document_type'] ?? 'other')
         ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
@@ -501,6 +518,12 @@
                     <td class="location-column">{{ $movementLocationText($movement) }}</td>
                     <td class="concept-column">
                         {{ $movementConceptText($movement) }}
+                        <div class="movement-meta">
+                            Movimiento: {{ $movement['movement_id'] ?? '-' }}
+                            @if($movementGroupText($movement))
+                                <br>Grupo: {{ $movementGroupText($movement) }}
+                            @endif
+                        </div>
                         @if(!empty($movement['notes']))
                             <br><span class="muted">{{ $movement['notes'] }}</span>
                         @endif
