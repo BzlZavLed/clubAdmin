@@ -57,6 +57,7 @@
         .annex-compact-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
         .annex-compact-meta { font-size: 8px; color: #6b7280; margin-bottom: 4px; }
         .annex-compact-link { font-size: 8px; word-break: break-all; }
+        .cancelled-badge { display: inline-block; margin: 0 0 6px; padding: 3px 6px; border: 1px solid #f59e0b; background: #fffbeb; color: #92400e; font-size: 8px; font-weight: 700; text-transform: uppercase; }
         .inline-receipt { border: 1px solid #d1d5db; background: #fff; }
         .inline-receipt-top { border-bottom: 1px solid #d1d5db; padding: 14px 16px; }
         .inline-receipt-header { width: 100%; border-collapse: collapse; }
@@ -153,6 +154,27 @@
         };
     };
     $movementConceptText = fn (array $movement) => $movement['display_concept'] ?? $movement['concept'] ?? '-';
+    $movementCancellationText = function (array $movement) {
+        $status = $movement['status'] ?? null;
+
+        if ($status === 'cancelled' || !empty($movement['is_cancelled']) || !empty($movement['related_canceled_movement_key'])) {
+            $cancelledBy = $movement['related_canceled_movement_key'] ?? null;
+
+            return $cancelledBy
+                ? 'Movimiento cancelado por ' . $cancelledBy
+                : 'Movimiento cancelado';
+        }
+
+        if ($status === 'cancellation' || !empty($movement['canceling_movement_key'])) {
+            $cancels = $movement['canceling_movement_key'] ?? null;
+
+            return $cancels
+                ? 'Movimiento de cancelacion de ' . $cancels
+                : 'Movimiento de cancelacion';
+        }
+
+        return null;
+    };
     $movementGroupText = function (array $movement) {
         $group = $movement['reimbursement_group'] ?? null;
         if (!is_array($group) || empty($group['key'])) {
@@ -592,6 +614,7 @@
                     $hasPreview = !empty($annex['render_inline_receipt']) || !empty($annex['data_uri']);
                     $isFirstAnnex = $loop->parent->first && $loop->first;
                     $receiptAmount = (float) ($receipt['signed_amount'] ?? (($receipt['direction'] ?? null) === 'out' ? -1 * ($receipt['amount'] ?? 0) : ($receipt['amount'] ?? 0)));
+                    $cancellationText = $movementCancellationText($movement);
                     $receiptTitle = $receiptAmount < 0 || ($receipt['status'] ?? null) === 'cancellation'
                         ? 'Recibo de cancelacion'
                         : 'Recibo de ingreso';
@@ -607,6 +630,9 @@
                             </h3>
                         @endif
                         <h2 class="annex-title">{{ $title }}</h2>
+                        @if($cancellationText)
+                            <div class="cancelled-badge">{{ $cancellationText }}</div>
+                        @endif
                         <div class="annex-subtitle">{{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }} - Referencia {{ $reference }}</div>
 
                         @if(!empty($annex['render_inline_receipt']) && !empty($receipt))
@@ -689,6 +715,9 @@
                             </h3>
                         @endif
                         <div class="annex-compact-title">{{ $title }}</div>
+                        @if($cancellationText)
+                            <div class="cancelled-badge">{{ $cancellationText }}</div>
+                        @endif
                         <div class="annex-compact-meta">
                             Referencia {{ $reference }}
                             · Movimiento {{ $movement['movement_id'] ?? '-' }}
@@ -731,8 +760,14 @@
             </h3>
 
             @foreach($groupMovements as $movement)
+                @php
+                    $cancellationText = $movementCancellationText($movement);
+                @endphp
                 <div class="annex-compact-card">
                     <div class="annex-compact-title">{{ $movementReferenceText($movement) }} - {{ $movementConceptText($movement) }}</div>
+                    @if($cancellationText)
+                        <div class="cancelled-badge">{{ $cancellationText }}</div>
+                    @endif
                     @if(!empty($movement['notes']))
                         <div class="annex-compact-meta">{{ $movement['notes'] }}</div>
                     @endif

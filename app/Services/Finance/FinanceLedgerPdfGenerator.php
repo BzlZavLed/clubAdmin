@@ -384,6 +384,9 @@ class FinanceLedgerPdfGenerator
             'payment_type' => $movement['payment_type'] ?? null,
             'created_by' => $movement['created_by'] ?? null,
             'status' => $movement['status'] ?? null,
+            'is_cancelled' => $movement['is_cancelled'] ?? null,
+            'related_canceled_movement_key' => $movement['related_canceled_movement_key'] ?? null,
+            'canceling_movement_key' => $movement['canceling_movement_key'] ?? null,
         ];
     }
 
