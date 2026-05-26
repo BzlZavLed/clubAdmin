@@ -85,6 +85,7 @@
         : '$' . number_format((float) ($value ?? 0), 2);
     $annexOnly = $annexOnly ?? false;
     $ledgerOnly = $ledgerOnly ?? false;
+    $includeIncomeReceiptAnnexes = $includeIncomeReceiptAnnexes ?? false;
     $movements = collect($report['movements'] ?? []);
     $summary = $report['summary'] ?? [];
     $receiptAnnexes = collect($receiptAnnexes ?? [])->values()->map(function (array $annex, int $index) {
@@ -317,7 +318,10 @@
         return in_array($domain, ['income', 'expense', 'transfer'], true) ? $domain : 'other';
     };
     $movementsWithoutReceiptsGroups = $movements
-        ->filter(fn (array $movement) => !$isCorrectionMovement($movement) && !$isReimbursementSettlementIncome($movement) && !$movementHasDocuments($movement))
+        ->filter(fn (array $movement) => !$isCorrectionMovement($movement)
+            && !$isReimbursementSettlementIncome($movement)
+            && ($includeIncomeReceiptAnnexes || ($movement['domain'] ?? null) !== 'income')
+            && !$movementHasDocuments($movement))
         ->groupBy(fn (array $movement) => $movementGroupType($movement))
         ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
         ->map(fn ($items) => $items

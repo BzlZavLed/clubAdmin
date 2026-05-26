@@ -419,6 +419,7 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertStringContainsString('REIMB-32 - Reembolso a Benjamin Zavala Ledesma', $html);
         $this->assertStringContainsString('REIMB-35 - Reembolso a Gabriela Jose Marcano', $html);
         $this->assertStringNotContainsString('RCPT-60 - Reembolso a Benjamin Zavala Ledesma', $html);
+        $this->assertStringNotContainsString('RCPT-61 - Monthly dues', $html);
         $this->assertStringNotContainsString('Referencia RCPT-60', $html);
 
         Storage::disk('public')->put('expense-receipts/EXP-13.jpg', 'test receipt 13');
@@ -437,6 +438,20 @@ class FinanceEngineWorkflowTest extends TestCase
 
         $this->assertContains('RCPT-61', $generatedAnnexReferences);
         $this->assertNotContains('RCPT-60', $generatedAnnexReferences);
+
+        $htmlWithIncomeReceipts = view('reports.finance_engine_movements', [
+            'club' => $club,
+            'report' => $report,
+            'generatedAt' => now(),
+            'clubLogoDataUri' => null,
+            'validationUrl' => 'https://example.test/validate',
+            'qrCodeDataUri' => null,
+            'receiptAnnexes' => $generatedAnnexesWithIncomeReceipts,
+            'annexOnly' => true,
+            'includeIncomeReceiptAnnexes' => true,
+        ])->render();
+
+        $this->assertStringContainsString('Recibo RCPT-61', $htmlWithIncomeReceipts);
     }
 
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void

@@ -101,10 +101,11 @@ class FinanceEngineController extends Controller
             'generatedAt' => $generatedAt,
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
-            'qrCodeDataUri' => $validation['qr_code_data_uri'],
-            'receiptAnnexes' => [],
-            'ledgerOnly' => true,
-        ])->setPaper('a4', 'landscape');
+                'qrCodeDataUri' => $validation['qr_code_data_uri'],
+                'receiptAnnexes' => [],
+                'ledgerOnly' => true,
+                'includeIncomeReceiptAnnexes' => false,
+            ])->setPaper('a4', 'landscape');
 
         $payload = GeneratedPdfResponse::store(
             $pdf->output(),
@@ -129,6 +130,7 @@ class FinanceEngineController extends Controller
                 'qrCodeDataUri' => $validation['qr_code_data_uri'],
                 'receiptAnnexes' => $receiptAnnexes,
                 'annexOnly' => true,
+                'includeIncomeReceiptAnnexes' => $includeIncomeReceiptAnnexes,
             ])->setPaper('a4', 'portrait');
 
             $payload['appendix'] = GeneratedPdfResponse::store(
