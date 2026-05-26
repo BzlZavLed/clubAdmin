@@ -56,6 +56,7 @@ const reimbursementPayees = ref([])
 const engineReport = ref(null)
 const movementDomain = ref('all')
 const movementSort = ref('date')
+const movementSearch = ref('')
 const movementPage = ref(1)
 const movementPageSize = ref(10)
 const balanceAccountFilter = ref('all')
@@ -160,11 +161,21 @@ const movementDateValue = (movement) => {
 }
 const movementStatusValue = (movement) => String(movement?.status || 'posted').toLowerCase()
 const recentMovements = computed(() => {
+    const query = movementSearch.value.trim().toLowerCase()
     const rows = movementDomain.value === 'all'
         ? allMovements.value
         : allMovements.value.filter((movement) => movement.domain === movementDomain.value)
+    const filteredRows = query
+        ? rows.filter((movement) => [
+            movement?.movement_id,
+            movement?.id,
+            movement?.concept,
+            movement?.description,
+            movement?.reference,
+        ].some((value) => String(value || '').toLowerCase().includes(query)))
+        : rows
 
-    return rows.slice().sort((a, b) => {
+    return filteredRows.slice().sort((a, b) => {
         if (movementSort.value === 'status') {
             const statusCompare = movementStatusValue(a).localeCompare(movementStatusValue(b))
             if (statusCompare !== 0) return statusCompare
@@ -2368,7 +2379,7 @@ watch(operatingSummaryAccounts, (accounts) => {
     }
 })
 
-watch([movementDomain, movementSort, movementPageSize], () => {
+watch([movementDomain, movementSort, movementPageSize, movementSearch], () => {
     movementPage.value = 1
 })
 
@@ -3165,6 +3176,13 @@ onBeforeUnmount(() => {
                         <p class="text-sm text-gray-500">{{ tr('Aqui veras la lectura del motor financiero: ingresos, gastos, transferencias, reembolsos, recibos y comprobantes, con estado, cuenta, fecha y monto.', 'Here you will see the finance engine readout: income, expenses, transfers, reimbursements, receipts, and proofs, with status, account, date, and amount.') }}</p>
                     </div>
                     <div data-tour="cashbox-movement-filters" class="flex flex-col gap-2 sm:flex-row">
+                        <input
+                            v-model="movementSearch"
+                            type="search"
+                            :placeholder="tr('Buscar ID o descripcion', 'Search ID or description')"
+                            :aria-label="tr('Buscar movimientos por ID o descripcion', 'Search movements by ID or description')"
+                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                        />
                         <select
                             v-model="movementDomain"
                             :aria-label="tr('Filtrar movimientos', 'Filter movements')"
