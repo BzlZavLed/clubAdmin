@@ -319,6 +319,46 @@ class FinanceEngineWorkflowTest extends TestCase
                         'path' => 'expense-receipts/EXP-12.jpg',
                     ]],
                 ],
+                [
+                    'movement_id' => 'expense:32',
+                    'domain' => 'expense',
+                    'kind' => 'expense',
+                    'date' => '2026-05-08',
+                    'concept' => 'Reembolso a Benjamin Zavala Ledesma',
+                    'amount' => 9.35,
+                    'status' => 'pending_reimbursement',
+                ],
+                [
+                    'movement_id' => 'payment:60',
+                    'domain' => 'income',
+                    'kind' => 'income',
+                    'date' => '2026-05-08',
+                    'concept' => 'Reembolso a Benjamin Zavala Ledesma',
+                    'amount' => 9.35,
+                    'account' => 'reimbursement_to',
+                    'status' => 'posted',
+                    'settles_expense_id' => 32,
+                    'reimbursement_group' => ['key' => 'reimbursement:32'],
+                    'receipt' => [
+                        'number' => 'RCPT-60',
+                        'url' => 'https://example.test/payment-receipts/60',
+                    ],
+                ],
+                [
+                    'movement_id' => 'expense:35',
+                    'domain' => 'expense',
+                    'kind' => 'expense',
+                    'date' => '2026-05-08',
+                    'concept' => 'Reembolso a Gabriela Jose Marcano',
+                    'counterparty' => 'Gabriela Jose Marcano',
+                    'amount' => 9.35,
+                    'status' => 'posted',
+                    'proofs' => [[
+                        'type' => 'reimbursement_receipt',
+                        'url' => 'https://adminmyclub.com/storage/reimbursement-receipts/AIH4ZWcurwx3LAAPvqay8tjcYAu0bt52mHRwkqmj.jpg',
+                        'path' => 'reimbursement-receipts/AIH4ZWcurwx3LAAPvqay8tjcYAu0bt52mHRwkqmj.jpg',
+                    ]],
+                ],
             ],
         ];
 
@@ -360,6 +400,21 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertLessThan($withoutSection, $withSection);
         $this->assertLessThan(strpos($html, 'Comprobante de gasto EXP-13'), strpos($html, 'Comprobante de gasto EXP-12'));
         $this->assertLessThan(strpos($html, 'EXP-10 - No receipt expense ten'), strpos($html, 'EXP-8 - No receipt expense eight'));
+        $this->assertStringContainsString('REIMB-32 - Reembolso a Benjamin Zavala Ledesma', $html);
+        $this->assertStringContainsString('REIMB-35 - Reembolso a Gabriela Jose Marcano', $html);
+        $this->assertStringNotContainsString('RCPT-60 - Reembolso a Benjamin Zavala Ledesma', $html);
+        $this->assertStringNotContainsString('Referencia RCPT-60', $html);
+
+        Storage::disk('public')->put('expense-receipts/EXP-13.jpg', 'test receipt 13');
+        Storage::disk('public')->put('expense-receipts/EXP-12.jpg', 'test receipt 12');
+
+        $controller = app(\App\Http\Controllers\FinanceEngineController::class);
+        $method = new \ReflectionMethod($controller, 'ledgerReceiptAnnexes');
+        $method->setAccessible(true);
+
+        $generatedAnnexes = $method->invoke($controller, $report);
+
+        $this->assertSame(['EXP-13', 'EXP-12'], array_column($generatedAnnexes, 'reference'));
     }
 
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void

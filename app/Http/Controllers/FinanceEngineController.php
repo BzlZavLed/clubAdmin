@@ -161,6 +161,10 @@ class FinanceEngineController extends Controller
                 continue;
             }
 
+            if ($this->isReimbursementSettlementIncome($movement)) {
+                continue;
+            }
+
             $receipt = $movement['receipt'] ?? null;
             if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
                 $isIncomeReceipt = ($movement['domain'] ?? null) === 'income';
@@ -203,6 +207,9 @@ class FinanceEngineController extends Controller
                 }
 
                 $file = $this->annexFilePayload($path);
+                if (empty($file)) {
+                    continue;
+                }
 
                 $this->pushLedgerAnnex($annexes, $seen, [
                     'key' => 'proof:' . ($path ?: $url ?: $reference),
@@ -231,6 +238,18 @@ class FinanceEngineController extends Controller
             || str_contains($kind, 'reversal')
             || !empty($movement['canceling_id'])
             || !empty($movement['canceling_movement_key']);
+    }
+
+    private function isReimbursementSettlementIncome(array $movement): bool
+    {
+        if (($movement['domain'] ?? null) !== 'income') {
+            return false;
+        }
+
+        $account = $movement['account'] ?? $movement['to_account'] ?? null;
+
+        return $account === 'reimbursement_to'
+            && (!empty($movement['settles_expense_id']) || !empty($movement['reimbursement_group']));
     }
 
     private function pushLedgerAnnex(array &$annexes, array &$seen, array $annex): void

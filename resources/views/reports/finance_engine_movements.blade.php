@@ -39,6 +39,7 @@
         .amount-cell { white-space: nowrap; }
         .balance-cell { white-space: pre-line; }
         .annex-page { page-break-before: always; }
+        .annex-page-current { page-break-before: auto; }
         .annex-title { font-size: 15px; margin: 0 0 8px; }
         .annex-subtitle { color: #4b5563; font-size: 9px; margin-bottom: 10px; }
         .annex-meta { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
@@ -223,8 +224,18 @@
             || !empty($movement['canceling_id'])
             || !empty($movement['canceling_movement_key']);
     };
-    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors, $isCorrectionMovement) {
-        if ($isCorrectionMovement($movement)) {
+    $isReimbursementSettlementIncome = function (array $movement) {
+        if (($movement['domain'] ?? null) !== 'income') {
+            return false;
+        }
+
+        $account = $movement['account'] ?? $movement['to_account'] ?? null;
+
+        return $account === 'reimbursement_to'
+            && (!empty($movement['settles_expense_id']) || !empty($movement['reimbursement_group']));
+    };
+    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors, $isCorrectionMovement, $isReimbursementSettlementIncome) {
+        if ($isCorrectionMovement($movement) || $isReimbursementSettlementIncome($movement)) {
             return [];
         }
 
@@ -264,26 +275,35 @@
 
         return $links;
     };
-    $movementHasDocuments = function (array $movement) use ($isCorrectionMovement) {
-        if ($isCorrectionMovement($movement)) {
+    $movementHasDocuments = function (array $movement) use ($isCorrectionMovement, $isReimbursementSettlementIncome, $annexUrlAnchors, $annexReferenceAnchors, $movementReferenceText) {
+        if ($isCorrectionMovement($movement) || $isReimbursementSettlementIncome($movement)) {
             return false;
         }
 
         $receipt = $movement['receipt'] ?? null;
-        if (is_array($receipt) && (!empty($receipt['url']) || (($movement['domain'] ?? null) === 'income' && !empty($receipt['number'])))) {
+        if (is_array($receipt) && (
+            (!empty($receipt['number']) && isset($annexReferenceAnchors[$receipt['number']]))
+            || (!empty($receipt['url']) && isset($annexUrlAnchors[$receipt['url']]))
+        )) {
             return true;
         }
 
         if (!empty($movement['proofs']) && is_array($movement['proofs'])) {
             foreach ($movement['proofs'] as $proof) {
-                if (is_array($proof) && (!empty($proof['url']) || !empty($proof['path']))) {
+                if (is_array($proof) && (
+                    (!empty($proof['url']) && isset($annexUrlAnchors[$proof['url']]))
+                    || isset($annexReferenceAnchors[$movementReferenceText($movement)])
+                )) {
                     return true;
                 }
             }
         }
 
         $proof = $movement['proof'] ?? null;
-        return is_array($proof) && (!empty($proof['url']) || !empty($proof['path']));
+        return is_array($proof) && (
+            (!empty($proof['url']) && isset($annexUrlAnchors[$proof['url']]))
+            || isset($annexReferenceAnchors[$movementReferenceText($movement)])
+        );
     };
     $movementGroupType = function (array $movement) {
         $domain = $movement['domain'] ?? 'other';
@@ -297,7 +317,7 @@
         return in_array($domain, ['income', 'expense', 'transfer'], true) ? $domain : 'other';
     };
     $movementsWithoutReceiptsGroups = $movements
-        ->filter(fn (array $movement) => !$isCorrectionMovement($movement) && !$movementHasDocuments($movement))
+        ->filter(fn (array $movement) => !$isCorrectionMovement($movement) && !$isReimbursementSettlementIncome($movement) && !$movementHasDocuments($movement))
         ->groupBy(fn (array $movement) => $movementGroupType($movement))
         ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
         ->map(fn ($items) => $items
@@ -487,11 +507,6 @@
         <div class="annex-subtitle">Agrupados por tipo y ordenados por Referencia.</div>
 
         @foreach($receiptAnnexGroups as $groupType => $groupAnnexes)
-            <h3 class="annex-compact-group">
-                {{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }}
-                ({{ $groupAnnexes->count() }})
-            </h3>
-
             @foreach($groupAnnexes as $annex)
                 @php
                     $movement = $annex['movement'] ?? [];
@@ -499,6 +514,7 @@
                     $title = $annex['title'] ?? ('Anexo ' . ($annex['reference'] ?? $loop->iteration));
                     $reference = $annex['reference'] ?? '-';
                     $hasPreview = !empty($annex['render_inline_receipt']) || !empty($annex['data_uri']);
+                    $isFirstAnnex = $loop->parent->first && $loop->first;
                     $receiptAmount = (float) ($receipt['signed_amount'] ?? (($receipt['direction'] ?? null) === 'out' ? -1 * ($receipt['amount'] ?? 0) : ($receipt['amount'] ?? 0)));
                     $receiptTitle = $receiptAmount < 0 || ($receipt['status'] ?? null) === 'cancellation'
                         ? 'Recibo de cancelacion'
@@ -506,8 +522,14 @@
                 @endphp
 
                 @if($hasPreview)
-                    <div class="annex-page">
+                    <div class="annex-page{{ $isFirstAnnex ? ' annex-page-current' : '' }}">
                         <a name="{{ $annex['anchor'] }}"></a>
+                        @if($loop->first)
+                            <h3 class="annex-compact-group">
+                                {{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }}
+                                ({{ $groupAnnexes->count() }})
+                            </h3>
+                        @endif
                         <h2 class="annex-title">{{ $title }}</h2>
                         <div class="annex-subtitle">{{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }} - Referencia {{ $reference }}</div>
 
@@ -581,6 +603,12 @@
                 @else
                     <div class="annex-compact-card">
                         <a name="{{ $annex['anchor'] }}"></a>
+                        @if($loop->first)
+                            <h3 class="annex-compact-group">
+                                {{ $appendixGroupLabels[$groupType] ?? $appendixGroupLabels['other'] }}
+                                ({{ $groupAnnexes->count() }})
+                            </h3>
+                        @endif
                         <div class="annex-compact-title">{{ $title }}</div>
                         <div class="annex-compact-meta">
                             Referencia {{ $reference }}
