@@ -328,7 +328,13 @@ class FinanceEngineWorkflowTest extends TestCase
                     'date' => '2026-05-08',
                     'concept' => 'Reembolso a Benjamin Zavala Ledesma',
                     'amount' => 9.35,
+                    'account' => 'reimbursement_to',
                     'status' => 'pending_reimbursement',
+                    'reimbursement_origin_expense_id' => 35,
+                    'reimbursement_group' => [
+                        'role' => 'pending_reimbursement',
+                        'origin_expense_id' => 35,
+                    ],
                 ],
                 [
                     'movement_id' => 'payment:60',
@@ -354,7 +360,9 @@ class FinanceEngineWorkflowTest extends TestCase
                     'concept' => 'Reembolso a Gabriela Jose Marcano',
                     'counterparty' => 'Gabriela Jose Marcano',
                     'amount' => 9.35,
+                    'account' => 'club_budget',
                     'status' => 'posted',
+                    'settles_expense_id' => 32,
                     'proofs' => [[
                         'type' => 'reimbursement_receipt',
                         'url' => 'https://adminmyclub.com/storage/reimbursement-receipts/AIH4ZWcurwx3LAAPvqay8tjcYAu0bt52mHRwkqmj.jpg',
@@ -416,7 +424,7 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertLessThan($withoutSection, $withSection);
         $this->assertLessThan(strpos($html, 'Comprobante de gasto EXP-13'), strpos($html, 'Comprobante de gasto EXP-12'));
         $this->assertLessThan(strpos($html, 'EXP-10 - No receipt expense ten'), strpos($html, 'EXP-8 - No receipt expense eight'));
-        $this->assertStringContainsString('REIMB-32 - Reembolso a Benjamin Zavala Ledesma', $html);
+        $this->assertStringNotContainsString('REIMB-32 - Reembolso a Benjamin Zavala Ledesma', $html);
         $this->assertStringContainsString('REIMB-35 - Reembolso a Gabriela Jose Marcano', $html);
         $this->assertStringNotContainsString('RCPT-60 - Reembolso a Benjamin Zavala Ledesma', $html);
         $this->assertStringNotContainsString('RCPT-61 - Monthly dues', $html);

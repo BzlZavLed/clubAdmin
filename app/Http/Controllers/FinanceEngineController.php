@@ -168,6 +168,10 @@ class FinanceEngineController extends Controller
                 continue;
             }
 
+            if ($this->isInternalReimbursementBalanceExpense($movement)) {
+                continue;
+            }
+
             $receipt = $movement['receipt'] ?? null;
             if (is_array($receipt) && (!empty($receipt['number']) || !empty($receipt['url']))) {
                 $isIncomeReceipt = ($movement['domain'] ?? null) === 'income';
@@ -257,6 +261,22 @@ class FinanceEngineController extends Controller
 
         return $account === 'reimbursement_to'
             && (!empty($movement['settles_expense_id']) || !empty($movement['reimbursement_group']));
+    }
+
+    private function isInternalReimbursementBalanceExpense(array $movement): bool
+    {
+        if (($movement['domain'] ?? null) !== 'expense') {
+            return false;
+        }
+
+        $account = $movement['account'] ?? $movement['from_account'] ?? null;
+        $group = $movement['reimbursement_group'] ?? [];
+        $hasOriginExpense = !empty($movement['reimbursement_origin_expense_id'])
+            || (is_array($group) && !empty($group['origin_expense_id']));
+
+        return $account === 'reimbursement_to'
+            && empty($movement['settles_expense_id'])
+            && $hasOriginExpense;
     }
 
     private function pushLedgerAnnex(array &$annexes, array &$seen, array $annex): void

@@ -235,8 +235,22 @@
         return $account === 'reimbursement_to'
             && (!empty($movement['settles_expense_id']) || !empty($movement['reimbursement_group']));
     };
-    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors, $isCorrectionMovement, $isReimbursementSettlementIncome) {
-        if ($isCorrectionMovement($movement) || $isReimbursementSettlementIncome($movement)) {
+    $isInternalReimbursementBalanceExpense = function (array $movement) {
+        if (($movement['domain'] ?? null) !== 'expense') {
+            return false;
+        }
+
+        $account = $movement['account'] ?? $movement['from_account'] ?? null;
+        $group = $movement['reimbursement_group'] ?? [];
+        $hasOriginExpense = !empty($movement['reimbursement_origin_expense_id'])
+            || (is_array($group) && !empty($group['origin_expense_id']));
+
+        return $account === 'reimbursement_to'
+            && empty($movement['settles_expense_id'])
+            && $hasOriginExpense;
+    };
+    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors, $isCorrectionMovement, $isReimbursementSettlementIncome, $isInternalReimbursementBalanceExpense) {
+        if ($isCorrectionMovement($movement) || $isReimbursementSettlementIncome($movement) || $isInternalReimbursementBalanceExpense($movement)) {
             return [];
         }
 
@@ -276,8 +290,8 @@
 
         return $links;
     };
-    $movementHasDocuments = function (array $movement) use ($isCorrectionMovement, $isReimbursementSettlementIncome, $annexUrlAnchors, $annexReferenceAnchors, $movementReferenceText) {
-        if ($isCorrectionMovement($movement) || $isReimbursementSettlementIncome($movement)) {
+    $movementHasDocuments = function (array $movement) use ($isCorrectionMovement, $isReimbursementSettlementIncome, $isInternalReimbursementBalanceExpense, $annexUrlAnchors, $annexReferenceAnchors, $movementReferenceText) {
+        if ($isCorrectionMovement($movement) || $isReimbursementSettlementIncome($movement) || $isInternalReimbursementBalanceExpense($movement)) {
             return false;
         }
 
@@ -320,6 +334,7 @@
     $movementsWithoutReceiptsGroups = $movements
         ->filter(fn (array $movement) => !$isCorrectionMovement($movement)
             && !$isReimbursementSettlementIncome($movement)
+            && !$isInternalReimbursementBalanceExpense($movement)
             && ($includeIncomeReceiptAnnexes || ($movement['domain'] ?? null) !== 'income')
             && !$movementHasDocuments($movement))
         ->groupBy(fn (array $movement) => $movementGroupType($movement))
