@@ -6,6 +6,8 @@ import {
     ArrowPathIcon,
     BanknotesIcon,
     BuildingLibraryIcon,
+    ChevronDownIcon,
+    ChevronRightIcon,
     DocumentChartBarIcon,
     FunnelIcon,
 } from '@heroicons/vue/24/outline'
@@ -37,6 +39,7 @@ const treasury = ref({
 })
 const engineReport = ref(null)
 const ledgerPage = ref(1)
+const openLedgerAccountSections = ref({})
 const ledgerDateMode = ref('dates')
 const ledgerFilters = ref({
     account: 'all',
@@ -445,10 +448,19 @@ const ledgerAccountGroups = computed(() => {
                     account,
                     label: accountLabels.value[account] || account,
                     rows: [],
+                    totals: {
+                        income: 0,
+                        expenses: 0,
+                        transfers: 0,
+                    },
                 })
             }
 
-            groups.get(account).rows.push(movement)
+            const group = groups.get(account)
+            group.rows.push(movement)
+            group.totals.income += ledgerIncomeAmount(movement) ?? 0
+            group.totals.expenses += ledgerExpenseAmount(movement) ?? 0
+            group.totals.transfers += ledgerTransferAmount(movement) ?? 0
         })
     })
 
@@ -464,6 +476,19 @@ const ledgerDisplaySections = computed(() => ledgerIsAllAccounts.value
         label: null,
         rows: paginatedLedgerMovements.value,
     }])
+const isLedgerSectionOpen = (section) => !ledgerIsAllAccounts.value || openLedgerAccountSections.value[section.key] === true
+const toggleLedgerAccountSection = (section) => {
+    openLedgerAccountSections.value = {
+        ...openLedgerAccountSections.value,
+        [section.key]: !isLedgerSectionOpen(section),
+    }
+}
+const expandAllLedgerSections = () => {
+    openLedgerAccountSections.value = Object.fromEntries(ledgerAccountGroups.value.map((section) => [section.key, true]))
+}
+const collapseAllLedgerSections = () => {
+    openLedgerAccountSections.value = {}
+}
 const receiptLinks = (movement) => {
     const links = []
 
@@ -534,6 +559,7 @@ const loadLedger = async () => {
 
         const payload = await fetchFinanceEngineMovements(params)
         engineReport.value = payload?.data || null
+        openLedgerAccountSections.value = {}
     } catch (error) {
         console.error(error)
         showToast(error?.response?.data?.message || tr('No se pudo cargar el libro contable.', 'Could not load the ledger.'), 'error')
@@ -855,6 +881,28 @@ onMounted(loadData)
                 </div>
 
                 <div class="divide-y divide-gray-100">
+                    <div v-if="ledgerIsAllAccounts && ledgerAccountGroups.length" class="flex flex-col gap-2 border-b border-gray-100 bg-white px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                            {{ tr('Las cuentas estan colapsadas para facilitar la revision.', 'Accounts are collapsed to make review easier.') }}
+                        </span>
+                        <div class="flex gap-2">
+                            <button
+                                type="button"
+                                class="rounded-lg border border-gray-200 px-3 py-1.5 font-semibold text-gray-700 hover:bg-gray-50"
+                                @click="expandAllLedgerSections"
+                            >
+                                {{ tr('Abrir todas', 'Open all') }}
+                            </button>
+                            <button
+                                type="button"
+                                class="rounded-lg border border-gray-200 px-3 py-1.5 font-semibold text-gray-700 hover:bg-gray-50"
+                                @click="collapseAllLedgerSections"
+                            >
+                                {{ tr('Cerrar todas', 'Close all') }}
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="hidden border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:grid lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:gap-2">
                         <span>{{ tr('Fecha', 'Date') }}</span>
                         <span>{{ tr('Concepto', 'Concept') }}</span>
@@ -867,15 +915,33 @@ onMounted(loadData)
                     </div>
 
                     <template v-for="section in ledgerDisplaySections" :key="section.key">
-                        <div v-if="section.label" class="bg-gray-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
-                            {{ section.label }}
-                        </div>
-
-                        <article
-                            v-for="movement in section.rows"
-                            :key="`${section.key}-${movement.movement_id}`"
-                            class="grid min-w-0 gap-2 px-3 py-2.5 text-xs sm:grid-cols-[5.25rem_minmax(0,1fr)] lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:items-start"
+                        <button
+                            v-if="section.label"
+                            type="button"
+                            class="flex w-full items-center justify-between gap-3 bg-gray-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-200"
+                            @click="toggleLedgerAccountSection(section)"
                         >
+                            <span class="flex min-w-0 items-center gap-2">
+                                <ChevronDownIcon v-if="isLedgerSectionOpen(section)" class="h-4 w-4 shrink-0" />
+                                <ChevronRightIcon v-else class="h-4 w-4 shrink-0" />
+                                <span class="truncate">{{ section.label }}</span>
+                                <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] normal-case tracking-normal text-gray-600">
+                                    {{ section.rows.length }} {{ tr('movimientos', 'movements') }}
+                                </span>
+                            </span>
+                            <span class="hidden shrink-0 gap-3 text-[11px] normal-case tracking-normal text-gray-600 sm:flex">
+                                <span class="text-emerald-700">{{ formatMoney(section.totals.income) }}</span>
+                                <span class="text-rose-700">-{{ formatMoney(section.totals.expenses) }}</span>
+                                <span class="text-sky-700">{{ formatMoney(section.totals.transfers) }}</span>
+                            </span>
+                        </button>
+
+                        <template v-if="isLedgerSectionOpen(section)">
+                            <article
+                                v-for="movement in section.rows"
+                                :key="`${section.key}-${movement.movement_id}`"
+                                class="grid min-w-0 gap-2 px-3 py-2.5 text-xs sm:grid-cols-[5.25rem_minmax(0,1fr)] lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:items-start"
+                            >
                             <div class="min-w-0">
                                 <p class="font-semibold text-gray-900">{{ formatDate(movement.date) }}</p>
                                 <div class="mt-1 flex flex-wrap gap-1">
@@ -945,7 +1011,8 @@ onMounted(loadData)
                                     </p>
                                 </div>
                             </div>
-                        </article>
+                            </article>
+                        </template>
                     </template>
 
                     <div v-if="!ledgerLoading && ledgerMovements.length === 0" class="px-3 py-8 text-center text-sm text-gray-500">

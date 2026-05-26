@@ -18,6 +18,8 @@ import {
     BanknotesIcon,
     BuildingLibraryIcon,
     ChartBarIcon,
+    ChevronDownIcon,
+    ChevronRightIcon,
     ExclamationTriangleIcon,
     QuestionMarkCircleIcon,
 } from '@heroicons/vue/24/outline'
@@ -77,6 +79,7 @@ const selectedSettlement = ref(null)
 const settlementSaving = ref(false)
 const settlementError = ref('')
 const ledgerPage = ref(1)
+const openLedgerAccountSections = ref({})
 const LEDGER_PAGE_SIZE = 25
 const settlementForm = ref({
     deposited_at: new Date().toISOString().slice(0, 16),
@@ -448,6 +451,16 @@ const setLedgerPage = (page) => {
 const scrollToLedgerMovement = async (movementKey) => {
     const index = ledgerMovements.value.findIndex((movement) => movement.movement_id === movementKey)
     if (index >= 0) {
+        if (ledgerIsAllAccounts.value) {
+            const movement = ledgerMovements.value[index]
+            const sectionKey = movementAccountKeys(movement)[0]
+            if (sectionKey) {
+                openLedgerAccountSections.value = {
+                    ...openLedgerAccountSections.value,
+                    [sectionKey]: true,
+                }
+            }
+        }
         setLedgerPage(Math.floor(index / LEDGER_PAGE_SIZE) + 1)
         await nextTick()
     }
@@ -551,6 +564,9 @@ const movementBalanceTextForAccount = (movement, account = null) => {
         ? '—'
         : formatMoney(balance.account_balance)
 }
+const ledgerMovementIncomeAmount = (movement) => movement?.domain === 'income' ? Number(movement.amount || 0) : 0
+const ledgerMovementExpenseAmount = (movement) => movement?.domain === 'expense' ? Number(movement.amount || 0) : 0
+const ledgerMovementTransferAmount = (movement) => movement?.domain === 'transfer' ? Number(movement.amount || 0) : 0
 const ledgerAccountGroups = computed(() => {
     const groups = new Map()
 
@@ -562,10 +578,19 @@ const ledgerAccountGroups = computed(() => {
                     account,
                     label: accountLabel(account),
                     rows: [],
+                    totals: {
+                        income: 0,
+                        expenses: 0,
+                        transfers: 0,
+                    },
                 })
             }
 
-            groups.get(account).rows.push(movement)
+            const group = groups.get(account)
+            group.rows.push(movement)
+            group.totals.income += ledgerMovementIncomeAmount(movement)
+            group.totals.expenses += ledgerMovementExpenseAmount(movement)
+            group.totals.transfers += ledgerMovementTransferAmount(movement)
         })
     })
 
@@ -581,6 +606,19 @@ const ledgerDisplaySections = computed(() => ledgerIsAllAccounts.value
         label: null,
         rows: paginatedLedgerMovements.value,
     }])
+const isLedgerSectionOpen = (section) => !ledgerIsAllAccounts.value || openLedgerAccountSections.value[section.key] === true
+const toggleLedgerAccountSection = (section) => {
+    openLedgerAccountSections.value = {
+        ...openLedgerAccountSections.value,
+        [section.key]: !isLedgerSectionOpen(section),
+    }
+}
+const expandAllLedgerSections = () => {
+    openLedgerAccountSections.value = Object.fromEntries(ledgerAccountGroups.value.map((section) => [section.key, true]))
+}
+const collapseAllLedgerSections = () => {
+    openLedgerAccountSections.value = {}
+}
 
 const normalizeClubs = (payload) => {
     const rows = payload?.clubs || []
@@ -660,6 +698,7 @@ const tutorialApplyTreasury = ({ accounts, movements, ledger, eventRows, staffRo
     accountReport.value = { accounts }
     engineReport.value = { movements: ledger }
     eventSettlementRows.value = eventRows
+    openLedgerAccountSections.value = {}
 }
 const tutorialResetSandbox = () => {
     const accounts = [
@@ -913,6 +952,7 @@ async function loadLedger() {
 
         const payload = await fetchFinanceEngineMovements(params)
         engineReport.value = payload?.data || null
+        openLedgerAccountSections.value = {}
     } catch (error) {
         console.error(error)
         showToast(error?.response?.data?.message || tr('No se pudo cargar el libro contable.', 'Could not load the ledger.'), 'error')
@@ -1568,17 +1608,52 @@ onBeforeUnmount(() => {
                     {{ tr('No hay movimientos para los filtros seleccionados.', 'There are no movements for the selected filters.') }}
                 </div>
 
-                <div v-else class="space-y-3 lg:hidden">
-                    <template v-for="section in ledgerDisplaySections" :key="section.key">
-                        <div v-if="section.label" class="rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
-                            {{ section.label }}
-                        </div>
-                        <article
-                            v-for="movement in section.rows"
-                            :key="`${section.key}-${movement.movement_id}`"
-                            :data-ledger-movement="movement.movement_id"
-                            class="rounded-xl border border-gray-200 p-3 scroll-mt-24"
+                <div v-if="ledgerMovements.length && ledgerIsAllAccounts && ledgerAccountGroups.length" class="mb-3 flex flex-col gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                    <span>
+                        {{ tr('Las cuentas estan colapsadas para facilitar la revision.', 'Accounts are collapsed to make review easier.') }}
+                    </span>
+                    <div class="flex gap-2">
+                        <button
+                            type="button"
+                            class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-gray-700 hover:bg-gray-50"
+                            @click="expandAllLedgerSections"
                         >
+                            {{ tr('Abrir todas', 'Open all') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-gray-700 hover:bg-gray-50"
+                            @click="collapseAllLedgerSections"
+                        >
+                            {{ tr('Cerrar todas', 'Close all') }}
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="ledgerMovements.length" class="space-y-3 lg:hidden">
+                    <template v-for="section in ledgerDisplaySections" :key="section.key">
+                        <button
+                            v-if="section.label"
+                            type="button"
+                            class="flex w-full items-center justify-between gap-3 rounded-xl bg-gray-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-200"
+                            @click="toggleLedgerAccountSection(section)"
+                        >
+                            <span class="flex min-w-0 items-center gap-2">
+                                <ChevronDownIcon v-if="isLedgerSectionOpen(section)" class="h-4 w-4 shrink-0" />
+                                <ChevronRightIcon v-else class="h-4 w-4 shrink-0" />
+                                <span class="truncate">{{ section.label }}</span>
+                                <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] normal-case tracking-normal text-gray-600">
+                                    {{ section.rows.length }} {{ tr('movimientos', 'movements') }}
+                                </span>
+                            </span>
+                        </button>
+                        <template v-if="isLedgerSectionOpen(section)">
+                            <article
+                                v-for="movement in section.rows"
+                                :key="`${section.key}-${movement.movement_id}`"
+                                :data-ledger-movement="movement.movement_id"
+                                class="rounded-xl border border-gray-200 p-3 scroll-mt-24"
+                            >
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <p class="font-semibold text-gray-900">{{ movement.concept || movementTypeLabel(movement.kind) }}</p>
@@ -1641,7 +1716,8 @@ onBeforeUnmount(() => {
                                     {{ tr('Corregir', 'Correct') }}
                                 </button>
                             </div>
-                        </article>
+                            </article>
+                        </template>
                     </template>
                 </div>
 
@@ -1665,15 +1741,34 @@ onBeforeUnmount(() => {
                             <template v-for="section in ledgerDisplaySections" :key="section.key">
                                 <tr v-if="section.label" class="bg-gray-100">
                                     <td colspan="10" class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
-                                        {{ section.label }}
+                                        <button
+                                            type="button"
+                                            class="flex w-full items-center justify-between gap-3 text-left hover:text-gray-950"
+                                            @click="toggleLedgerAccountSection(section)"
+                                        >
+                                            <span class="flex min-w-0 items-center gap-2">
+                                                <ChevronDownIcon v-if="isLedgerSectionOpen(section)" class="h-4 w-4 shrink-0" />
+                                                <ChevronRightIcon v-else class="h-4 w-4 shrink-0" />
+                                                <span class="truncate">{{ section.label }}</span>
+                                                <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] normal-case tracking-normal text-gray-600">
+                                                    {{ section.rows.length }} {{ tr('movimientos', 'movements') }}
+                                                </span>
+                                            </span>
+                                            <span class="flex shrink-0 gap-3 text-[11px] normal-case tracking-normal text-gray-600">
+                                                <span class="text-emerald-700">{{ formatMoney(section.totals.income) }}</span>
+                                                <span class="text-red-700">-{{ formatMoney(section.totals.expenses) }}</span>
+                                                <span class="text-sky-700">{{ formatMoney(section.totals.transfers) }}</span>
+                                            </span>
+                                        </button>
                                     </td>
                                 </tr>
-                                <tr
-                                    v-for="movement in section.rows"
-                                    :key="`${section.key}-${movement.movement_id}`"
-                                    :data-ledger-movement="movement.movement_id"
-                                    class="scroll-mt-24"
-                                >
+                                <template v-if="isLedgerSectionOpen(section)">
+                                    <tr
+                                        v-for="movement in section.rows"
+                                        :key="`${section.key}-${movement.movement_id}`"
+                                        :data-ledger-movement="movement.movement_id"
+                                        class="scroll-mt-24"
+                                    >
                                     <td class="whitespace-nowrap px-3 py-2">{{ formatDate(movement.date) }}</td>
                                     <td class="px-3 py-2">{{ domainLabel(movement.domain) }}</td>
                                     <td class="max-w-xs px-3 py-2">
@@ -1741,7 +1836,8 @@ onBeforeUnmount(() => {
                                         </button>
                                         <span v-else class="text-xs text-gray-400">—</span>
                                     </td>
-                                </tr>
+                                    </tr>
+                                </template>
                             </template>
                         </tbody>
                     </table>
