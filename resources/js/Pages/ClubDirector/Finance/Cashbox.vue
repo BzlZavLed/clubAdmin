@@ -351,7 +351,14 @@ const reimbursementTargetLabel = computed(() => {
 })
 const regularExpenseRows = computed(() => expenses.value.filter((expense) => expense.pay_to !== 'reimbursement_to'))
 const reimbursementExpenseRows = computed(() => expenses.value.filter((expense) => expense.pay_to === 'reimbursement_to'))
-const expenseFollowUpRows = computed(() => expenses.value.map((expense) => ({
+const isCorrectionExpense = (expense) => Boolean(
+    expense?.is_cancelled
+    || expense?.related_canceled_movement_id
+    || expense?.canceling_id
+    || expense?.reversed_expense_id
+    || ['cancelled', 'cancellation'].includes(String(expense?.status || '').toLowerCase())
+)
+const expenseFollowUpRows = computed(() => expenses.value.filter((expense) => !isCorrectionExpense(expense)).map((expense) => ({
     key: `${expense.pay_to === 'reimbursement_to' ? 'reimbursement' : 'expense'}-${expense.id}`,
     type: expense.pay_to === 'reimbursement_to' ? 'reimbursement' : 'expense',
     expense,

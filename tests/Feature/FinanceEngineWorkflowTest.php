@@ -1974,6 +1974,8 @@ class FinanceEngineWorkflowTest extends TestCase
 
     public function test_accounting_corrections_link_cancelled_movements_and_reports_show_reversals(): void
     {
+        Storage::fake('public');
+
         [$director, $club] = $this->makeDirectorAndClub();
         $account = $this->createAccount($club, 'club_budget', 'Club Budget', 60);
 
@@ -2039,6 +2041,28 @@ class FinanceEngineWorkflowTest extends TestCase
             'id' => $expenseReverse,
             'canceling_id' => $expense->id,
         ]);
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.receipt.upload', $expense), [
+                'receipt_image' => UploadedFile::fake()->image('corrected-original.jpg'),
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Corrections do not accept receipt uploads.');
+
+        $this->actingAs($director)
+            ->post(route('club.finance-engine.expenses.receipt.upload', Expense::findOrFail($expenseReverse)), [
+                'receipt_image' => UploadedFile::fake()->image('correction.jpg'),
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Corrections do not accept receipt uploads.');
+
+        $cashbox = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', ['club_id' => $club->id]))
+            ->assertOk();
+        $cashboxExpenses = collect($cashbox->json('data.expenses'));
+        $this->assertTrue((bool) $cashboxExpenses->firstWhere('id', $expense->id)['is_cancelled']);
+        $this->assertSame($expenseReverse, $cashboxExpenses->firstWhere('id', $expense->id)['related_canceled_movement_id']);
+        $this->assertSame($expense->id, $cashboxExpenses->firstWhere('id', $expenseReverse)['canceling_id']);
 
         $report = $this->actingAs($director)
             ->getJson(route('financial.accounts', ['club_id' => $club->id]))

@@ -135,6 +135,10 @@ class FinanceBootstrapper
                 'reimbursement_payment_proof_uploaded_by_user_id',
                 'settles_expense_id',
                 'reimbursement_origin_expense_id',
+                'is_cancelled',
+                'related_canceled_movement_id',
+                'canceling_id',
+                'reversed_expense_id',
                 'created_at',
             ]);
 

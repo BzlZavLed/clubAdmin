@@ -141,6 +141,9 @@ class FinanceExpenseWriter
     public function uploadReceipt(Request $request, Expense $expense): JsonResponse
     {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
+        if ($this->isCorrectionExpense($expense)) {
+            return response()->json(['message' => 'Corrections do not accept receipt uploads.'], 422);
+        }
 
         $request->validate([
             'receipt_image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
@@ -166,6 +169,9 @@ class FinanceExpenseWriter
     public function removeReceipt(Request $request, Expense $expense): JsonResponse
     {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
+        if ($this->isCorrectionExpense($expense)) {
+            return response()->json(['message' => 'Corrections do not accept receipt changes.'], 422);
+        }
 
         if (!$expense->receipt_path) {
             return response()->json(['message' => 'No receipt to remove.'], 422);
@@ -192,6 +198,9 @@ class FinanceExpenseWriter
     public function uploadReimbursementPaymentProof(Request $request, Expense $expense): JsonResponse
     {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
+        if ($this->isCorrectionExpense($expense)) {
+            return response()->json(['message' => 'Corrections do not accept reimbursement proof uploads.'], 422);
+        }
 
         if ($expense->pay_to !== 'reimbursement_to') {
             return response()->json(['message' => 'Only reimbursements can accept this payment proof.'], 422);
@@ -233,6 +242,9 @@ class FinanceExpenseWriter
     public function removeReimbursementPaymentProof(Request $request, Expense $expense): JsonResponse
     {
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
+        if ($this->isCorrectionExpense($expense)) {
+            return response()->json(['message' => 'Corrections do not accept reimbursement proof changes.'], 422);
+        }
 
         if (!$expense->reimbursement_payment_proof_path) {
             return response()->json(['message' => 'No reimbursement payment proof to remove.'], 422);
@@ -461,6 +473,14 @@ class FinanceExpenseWriter
             ['club_id' => $clubId, 'pay_to' => $payTo],
             ['label' => $payTo, 'balance' => 0]
         );
+    }
+
+    private function isCorrectionExpense(Expense $expense): bool
+    {
+        return (bool) $expense->is_cancelled
+            || !empty($expense->related_canceled_movement_id)
+            || !empty($expense->canceling_id)
+            || !empty($expense->reversed_expense_id);
     }
 
     private function paymentProofFileField(Request $request): ?string
