@@ -99,6 +99,7 @@ class RepairLedgerReceiptPaths extends Command
     {
         Payment::query()
             ->when($clubId, fn (Builder $query) => $query->where('club_id', $clubId))
+            ->with(['account:id,label,pay_to', 'concept:id,concept'])
             ->whereNotNull('check_image_path')
             ->orderBy('id')
             ->chunkById(200, function ($payments) use ($index, &$stats, $write) {
@@ -118,6 +119,7 @@ class RepairLedgerReceiptPaths extends Command
 
         Expense::query()
             ->when($clubId, fn (Builder $query) => $query->where('club_id', $clubId))
+            ->with(['reimbursementPayee:id,name'])
             ->where(function (Builder $query) use ($fields) {
                 foreach ($fields as $field) {
                     $query->orWhereNotNull($field);
@@ -171,7 +173,7 @@ class RepairLedgerReceiptPaths extends Command
         $filename = $this->filenameFromPath((string) $value);
         if (!$filename) {
             $stats['missing']++;
-            $this->warn("{$label} #{$model->getKey()} {$field}: no filename found in '{$value}'");
+            $this->warn("{$label} #{$model->getKey()} {$field}: no filename found in '{$value}' {$this->movementContext($model)}");
             return;
         }
 
@@ -184,7 +186,7 @@ class RepairLedgerReceiptPaths extends Command
         $replacement = $index['paths_by_name'][$filename] ?? null;
         if (!$replacement) {
             $stats['missing']++;
-            $this->warn("{$label} #{$model->getKey()} {$field}: '{$filename}' not found in scanned storage.");
+            $this->warn("{$label} #{$model->getKey()} {$field}: '{$filename}' not found in scanned storage. {$this->movementContext($model)}");
             return;
         }
 
@@ -224,5 +226,57 @@ class RepairLedgerReceiptPaths extends Command
         $filename = $path ? basename($path) : null;
 
         return $filename && $filename !== '.' ? $filename : null;
+    }
+
+    private function movementContext(Model $model): string
+    {
+        if ($model instanceof FundraiserInvestmentReceipt) {
+            $model->loadMissing(['expense.reimbursementPayee:id,name']);
+            $expense = $model->expense;
+
+            return $expense
+                ? $this->movementContext($expense)
+                : '[movement: fundraiser investment receipt without linked expense]';
+        }
+
+        if ($model instanceof Payment) {
+            return sprintf(
+                '[movement: income | date: %s | account: %s | amount: %s | description: %s]',
+                optional($model->payment_date)->toDateString() ?: '-',
+                $model->account?->label ?: $model->pay_to ?: '-',
+                $this->formatAmount((float) $model->amount_paid),
+                $model->concept?->concept ?: $model->concept_text ?: $this->paymentTypeLabel($model->payment_type)
+            );
+        }
+
+        if ($model instanceof Expense) {
+            return sprintf(
+                '[movement: expense | date: %s | account: %s | amount: %s | description: %s]',
+                optional($model->expense_date)->toDateString() ?: '-',
+                $model->pay_to ?: '-',
+                $this->formatAmount(-1 * (float) $model->amount),
+                $model->description ?: $model->reimbursementPayee?->name ?: $model->reimbursed_to ?: '-'
+            );
+        }
+
+        return '';
+    }
+
+    private function formatAmount(float $amount): string
+    {
+        return ($amount < 0 ? '-' : '') . '$' . number_format(abs($amount), 2);
+    }
+
+    private function paymentTypeLabel(?string $value): string
+    {
+        return match ($value) {
+            'cash' => 'Cash payment',
+            'zelle' => 'Zelle payment',
+            'check' => 'Check payment',
+            'transfer' => 'Transfer payment',
+            'internal' => 'Internal payment',
+            'initial' => 'Initial balance',
+            default => $value ?: '-',
+        };
     }
 }
