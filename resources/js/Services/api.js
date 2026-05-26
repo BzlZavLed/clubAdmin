@@ -476,6 +476,15 @@ export const createFinanceEngineTransfer = async (payload) => {
     return data;
 };
 
+export const updateFinanceEngineMovementDisplayConcept = async (movementType, movementId, payload) => {
+    const { data } = await axios.patch(
+        route('club.finance-engine.movements.display-concept.update', { movementType, movementId }),
+        payload,
+        { headers: { Accept: 'application/json' } }
+    );
+    return data;
+};
+
 export const validateFinanceEngineStaffRemittance = async (remittanceBatchId, clubId = null) => {
     const { data } = await axios.post(route('club.finance-engine.staff-remittances.validate'), {
         remittance_batch_id: remittanceBatchId,

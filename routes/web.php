@@ -688,6 +688,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.expenses.reimburse');
     Route::post('/club-director/finance-engine/transfers', [FinanceEngineController::class, 'storeTransfer'])
         ->name('club.finance-engine.transfers.store');
+    Route::patch('/club-director/finance-engine/movements/{movementType}/{movementId}/display-concept', [FinanceEngineController::class, 'updateMovementDisplayConcept'])
+        ->whereIn('movementType', ['payment', 'expense', 'treasury'])
+        ->whereNumber('movementId')
+        ->name('club.finance-engine.movements.display-concept.update');
     Route::post('/club-director/finance-engine/staff-remittances/validate', [FinanceEngineController::class, 'validateStaffRemittance'])
         ->name('club.finance-engine.staff-remittances.validate');
     Route::post('/club-director/finance-engine/event-settlements/{event}', [FinanceEngineController::class, 'storeEventSettlement'])

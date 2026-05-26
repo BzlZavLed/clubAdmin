@@ -189,6 +189,11 @@ class FinanceEngine
         return $this->writer->storeTransfer($request);
     }
 
+    public function updateMovementDisplayConcept(Request $request, string $movementType, int $movementId)
+    {
+        return $this->writer->updateMovementDisplayConcept($request, $movementType, $movementId);
+    }
+
     public function validateStaffRemittance(Request $request)
     {
         return $this->writer->validateStaffRemittance($request);

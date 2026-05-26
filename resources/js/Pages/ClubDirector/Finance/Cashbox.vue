@@ -25,6 +25,7 @@ import {
     reimburseFinanceEngineExpense,
     removeFinanceEngineExpenseReceipt,
     removeFinanceEngineReimbursementPaymentProof,
+    updateFinanceEngineMovementDisplayConcept,
     uploadFinanceEngineExpenseReceipt,
     uploadFinanceEngineReimbursementPaymentProof,
 } from '@/Services/api'
@@ -61,6 +62,9 @@ const movementPage = ref(1)
 const movementPageSize = ref(10)
 const balanceAccountFilter = ref('all')
 const openReimbursementMovementGroups = ref({})
+const movementConceptForms = ref({})
+const movementConceptBusy = ref({})
+const movementConceptErrors = ref({})
 const openExpenseFollowUpSections = ref({
     missing: false,
     attached: false,
@@ -171,6 +175,7 @@ const recentMovements = computed(() => {
             movement?.movement_id,
             movement?.id,
             movement?.concept,
+            movement?.display_concept,
             movement?.description,
             movement?.reference,
         ].some((value) => String(value || '').toLowerCase().includes(query)))
@@ -593,7 +598,99 @@ const movementAmountLabel = (movement) => {
     if (movement.domain === 'expense') return `-${formatMoney(movement.amount)}`
     return formatMoney(movement.amount)
 }
-const movementGroupTitle = (group) => group.reimbursementGroup?.label || group.movements[0]?.concept || group.movements[0]?.kind || tr('Movimiento', 'Movement')
+const movementDisplayConcept = (movement) => movement?.display_concept || movement?.concept || movement?.reference || movement?.kind || tr('Movimiento', 'Movement')
+const movementConceptKey = (movement) => movement?.movement_id || `${movement?.domain || 'movement'}:${movement?.id || ''}`
+const movementTypeAndId = (movement) => {
+    const [type, id] = String(movement?.movement_id || '').split(':')
+
+    return type && id ? { type, id } : null
+}
+const isEditingMovementConcept = (movement) => movementConceptForms.value[movementConceptKey(movement)]?.editing === true
+const startEditMovementConcept = (movement) => {
+    const key = movementConceptKey(movement)
+    movementConceptForms.value = {
+        ...movementConceptForms.value,
+        [key]: {
+            editing: true,
+            value: movementDisplayConcept(movement),
+        },
+    }
+    movementConceptErrors.value = {
+        ...movementConceptErrors.value,
+        [key]: '',
+    }
+}
+const cancelEditMovementConcept = (movement) => {
+    const key = movementConceptKey(movement)
+    movementConceptForms.value = {
+        ...movementConceptForms.value,
+        [key]: {
+            editing: false,
+            value: movementDisplayConcept(movement),
+        },
+    }
+    movementConceptErrors.value = {
+        ...movementConceptErrors.value,
+        [key]: '',
+    }
+}
+const applyMovementConceptOverride = (movementKey, displayConcept, originalConcept = null, override = null) => {
+    if (!engineReport.value?.movements) return
+
+    engineReport.value = {
+        ...engineReport.value,
+        movements: engineReport.value.movements.map((movement) => {
+            if (movement.movement_id !== movementKey) return movement
+
+            return {
+                ...movement,
+                original_concept: movement.original_concept || originalConcept || movement.concept || null,
+                display_concept: displayConcept || movement.concept || null,
+                concept_override: override,
+            }
+        }),
+    }
+}
+const saveMovementConcept = async (movement) => {
+    const key = movementConceptKey(movement)
+    const target = movementTypeAndId(movement)
+    if (!target || !selectedClubId.value || tutorialActive.value) return
+
+    movementConceptBusy.value = { ...movementConceptBusy.value, [key]: true }
+    movementConceptErrors.value = { ...movementConceptErrors.value, [key]: '' }
+
+    try {
+        const payload = await updateFinanceEngineMovementDisplayConcept(target.type, target.id, {
+            club_id: selectedClubId.value,
+            display_concept: movementConceptForms.value[key]?.value || '',
+        })
+        const data = payload?.data || {}
+        applyMovementConceptOverride(data.movement_key || movement.movement_id, data.display_concept, data.original_concept, data.display_concept ? data : null)
+        movementConceptForms.value = {
+            ...movementConceptForms.value,
+            [key]: {
+                editing: false,
+                value: data.display_concept || data.original_concept || movement.concept || '',
+            },
+        }
+        showToast(payload?.message || tr('Concepto actualizado.', 'Concept updated.'), 'success')
+    } catch (error) {
+        movementConceptErrors.value = {
+            ...movementConceptErrors.value,
+            [key]: error?.response?.data?.message || firstError(normalizeErrors(error), 'display_concept') || tr('No se pudo actualizar el concepto.', 'Could not update concept.'),
+        }
+    } finally {
+        movementConceptBusy.value = { ...movementConceptBusy.value, [key]: false }
+    }
+}
+const movementGroupTitle = (group) => {
+    const originMovementId = group.reimbursementGroup?.origin_movement_id
+    const origin = group.movements.find((movement) => movement.movement_id === originMovementId)
+        || group.movements.find((movement) => movement.reimbursement_group?.role === 'origin_expense')
+        || group.movements[0]
+
+    return movementDisplayConcept(origin) || group.reimbursementGroup?.label || tr('Movimiento', 'Movement')
+}
 const movementGroupSummary = (group) => {
     const reimbursementGroup = group.reimbursementGroup
     if (!reimbursementGroup) return null
@@ -3362,7 +3459,52 @@ onBeforeUnmount(() => {
                                         >
                                             <div class="flex items-start justify-between gap-3">
                                                 <div class="min-w-0">
-                                                    <p class="text-sm font-semibold text-gray-900">{{ row.title }}</p>
+                                                    <div class="flex flex-wrap items-center gap-2">
+                                                        <p class="text-sm font-semibold text-gray-900">{{ row.title }}</p>
+                                                        <button
+                                                            v-if="!tutorialActive"
+                                                            type="button"
+                                                            class="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                                                            @click="startEditMovementConcept(row.movement)"
+                                                        >
+                                                            <PencilSquareIcon class="h-3.5 w-3.5" />
+                                                            {{ tr('Editar concepto', 'Edit concept') }}
+                                                        </button>
+                                                    </div>
+                                                    <div v-if="isEditingMovementConcept(row.movement)" class="mt-2 space-y-2">
+                                                        <input
+                                                            v-model="movementConceptForms[movementConceptKey(row.movement)].value"
+                                                            type="text"
+                                                            maxlength="500"
+                                                            class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                            :aria-label="tr('Concepto visible', 'Display concept')"
+                                                        >
+                                                        <div class="flex flex-wrap items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                                                :disabled="movementConceptBusy[movementConceptKey(row.movement)]"
+                                                                @click="saveMovementConcept(row.movement)"
+                                                            >
+                                                                {{ movementConceptBusy[movementConceptKey(row.movement)] ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                class="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                                                                :disabled="movementConceptBusy[movementConceptKey(row.movement)]"
+                                                                @click="cancelEditMovementConcept(row.movement)"
+                                                            >
+                                                                {{ tr('Cancelar', 'Cancel') }}
+                                                            </button>
+                                                        </div>
+                                                        <p v-if="movementConceptErrors[movementConceptKey(row.movement)]" class="text-xs text-rose-600">
+                                                            {{ movementConceptErrors[movementConceptKey(row.movement)] }}
+                                                        </p>
+                                                    </div>
+                                                    <p v-else class="mt-1 text-xs font-medium text-gray-700">{{ movementDisplayConcept(row.movement) }}</p>
+                                                    <p v-if="row.movement.concept_override && !isEditingMovementConcept(row.movement)" class="mt-1 text-xs text-gray-500">
+                                                        {{ tr('Original', 'Original') }}: {{ row.movement.original_concept || row.movement.concept }}
+                                                    </p>
                                                     <p class="mt-1 text-xs text-gray-500">
                                                         {{ row.movement.movement_id }} · {{ formatDate(row.movement.date) }} · {{ movementLocationDisplay(row.movement) }}
                                                     </p>
@@ -3393,7 +3535,7 @@ onBeforeUnmount(() => {
                                     >
                                         <div class="min-w-0">
                                             <p class="font-semibold text-gray-900">{{ movement.movement_id }}</p>
-                                            <p class="truncate text-xs text-gray-500">{{ movement.concept || movement.kind }}</p>
+                                            <p class="truncate text-xs text-gray-500">{{ movementDisplayConcept(movement) }}</p>
                                         </div>
                                         <div class="text-xs font-semibold text-gray-700">{{ reimbursementRoleLabel(movement.reimbursement_group?.role) }}</div>
                                         <div class="text-gray-600">{{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</div>
@@ -3420,9 +3562,51 @@ onBeforeUnmount(() => {
                                             <span class="rounded-full border px-2 py-1 text-xs font-semibold" :class="movementTone(movement)">
                                                 {{ movement.domain }}
                                             </span>
-                                            <span class="text-sm font-semibold text-gray-900">{{ movement.concept || movement.kind }}</span>
+                                            <span class="text-sm font-semibold text-gray-900">{{ movementDisplayConcept(movement) }}</span>
                                             <span class="text-xs text-gray-500">#{{ movement.movement_id }}</span>
+                                            <button
+                                                v-if="!tutorialActive"
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                                                @click="startEditMovementConcept(movement)"
+                                            >
+                                                <PencilSquareIcon class="h-3.5 w-3.5" />
+                                                {{ tr('Editar concepto', 'Edit concept') }}
+                                            </button>
                                         </div>
+                                        <div v-if="isEditingMovementConcept(movement)" class="mt-2 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                            <input
+                                                v-model="movementConceptForms[movementConceptKey(movement)].value"
+                                                type="text"
+                                                maxlength="500"
+                                                class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                :aria-label="tr('Concepto visible', 'Display concept')"
+                                            >
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                                    :disabled="movementConceptBusy[movementConceptKey(movement)]"
+                                                    @click="saveMovementConcept(movement)"
+                                                >
+                                                    {{ movementConceptBusy[movementConceptKey(movement)] ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                                                    :disabled="movementConceptBusy[movementConceptKey(movement)]"
+                                                    @click="cancelEditMovementConcept(movement)"
+                                                >
+                                                    {{ tr('Cancelar', 'Cancel') }}
+                                                </button>
+                                            </div>
+                                            <p v-if="movementConceptErrors[movementConceptKey(movement)]" class="text-xs text-rose-600">
+                                                {{ movementConceptErrors[movementConceptKey(movement)] }}
+                                            </p>
+                                        </div>
+                                        <p v-if="movement.concept_override && !isEditingMovementConcept(movement)" class="mt-1 text-xs text-gray-500">
+                                            {{ tr('Original', 'Original') }}: {{ movement.original_concept || movement.concept }}
+                                        </p>
                                         <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
                                             <span>{{ tr('Fecha y hora', 'Date and time') }}: {{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</span>
                                             <span>{{ tr('Cuenta', 'Account') }}: {{ movement.account_label || accountLabel(movement.account) }}</span>

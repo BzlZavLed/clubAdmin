@@ -151,6 +151,7 @@
             default => strtoupper($movementId ?: 'MOV'),
         };
     };
+    $movementConceptText = fn (array $movement) => $movement['display_concept'] ?? $movement['concept'] ?? '-';
     $receiptAnnexGroups = $receiptAnnexes
         ->groupBy(fn (array $annex) => $annex['document_type'] ?? 'other')
         ->sortBy(fn ($items, $type) => $appendixGroupOrder[$type] ?? 99)
@@ -498,7 +499,7 @@
                     <td class="type-column">{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
                     <td class="account-column">{{ $movementAccountText($movement) }}</td>
                     <td class="location-column">{{ $movementLocationText($movement) }}</td>
-                    <td class="concept-column">{{ $movement['concept'] ?? '-' }}</td>
+                    <td class="concept-column">{{ $movementConceptText($movement) }}</td>
                     <td class="counterparty-column">{{ $movement['counterparty'] ?? $movement['created_by'] ?? '-' }}</td>
                     <td class="document-column">
                         @if(empty($documents))
@@ -640,7 +641,7 @@
                                 </tr>
                             </table>
                             <table class="annex-meta">
-                                <tr><td style="width:100%;"><div class="annex-label">Concepto</div><div class="annex-value">{{ $movement['concept'] ?? '-' }}</div></td></tr>
+                                <tr><td style="width:100%;"><div class="annex-label">Concepto</div><div class="annex-value">{{ $movementConceptText($movement) }}</div></td></tr>
                             </table>
                             <div class="annex-preview">
                                 <img class="annex-image" src="{{ $annex['data_uri'] }}" alt="{{ $reference }}">
@@ -664,7 +665,7 @@
                             · Monto {{ $money($movement['amount'] ?? 0) }}
                         </div>
                         <div class="annex-compact-meta">
-                            {{ $movement['concept'] ?? '-' }}
+                            {{ $movementConceptText($movement) }}
                             @if(!empty($movement['counterparty']))
                                 · {{ $movement['counterparty'] }}
                             @endif
@@ -697,7 +698,7 @@
 
             @foreach($groupMovements as $movement)
                 <div class="annex-compact-card">
-                    <div class="annex-compact-title">{{ $movementReferenceText($movement) }} - {{ $movement['concept'] ?? '-' }}</div>
+                    <div class="annex-compact-title">{{ $movementReferenceText($movement) }} - {{ $movementConceptText($movement) }}</div>
                     <div class="annex-compact-meta">
                         Referencia {{ $movementReferenceText($movement) }}
                         · Movimiento {{ $movement['movement_id'] ?? '-' }}

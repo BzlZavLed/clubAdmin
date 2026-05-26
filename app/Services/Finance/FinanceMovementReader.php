@@ -5,6 +5,7 @@ namespace App\Services\Finance;
 use App\Models\Club;
 use App\Models\Account;
 use App\Models\Expense;
+use App\Models\FinanceMovementConceptOverride;
 use App\Models\Payment;
 use App\Models\TreasuryMovement;
 use App\Services\AttendanceDuesPaymentService;
@@ -25,6 +26,7 @@ class FinanceMovementReader
             ->merge($this->expenseMovements($club, []))
             ->merge($this->treasuryMovements($club, []));
 
+        $movements = $this->withConceptOverrides($club, $movements);
         $movements = $this->withRunningBalances($movements);
 
         if (!empty($filters['date_from'])) {
@@ -176,6 +178,37 @@ class FinanceMovementReader
     public function summaryForClub(Club $club): array
     {
         return $this->treasuryService->summary($club);
+    }
+
+    private function withConceptOverrides(Club $club, Collection $movements): Collection
+    {
+        $overrides = FinanceMovementConceptOverride::query()
+            ->where('club_id', $club->id)
+            ->get()
+            ->keyBy(fn (FinanceMovementConceptOverride $override) => "{$override->movement_type}:{$override->movement_id}");
+
+        return $movements->map(function (array $row) use ($overrides) {
+            $row['original_concept'] = $row['concept'] ?? null;
+            $row['display_concept'] = $row['concept'] ?? null;
+            $row['concept_override'] = null;
+
+            $movementId = (string) ($row['movement_id'] ?? '');
+            $override = $overrides->get($movementId);
+            if (!$override) {
+                return $row;
+            }
+
+            $row['display_concept'] = $override->display_concept;
+            $row['concept_override'] = [
+                'id' => (int) $override->id,
+                'display_concept' => $override->display_concept,
+                'original_concept' => $override->original_concept,
+                'updated_by_user_id' => $override->updated_by_user_id ? (int) $override->updated_by_user_id : null,
+                'updated_at' => $override->updated_at?->toIso8601String(),
+            ];
+
+            return $row;
+        });
     }
 
     private function paymentMovements(Club $club, array $filters): Collection

@@ -981,7 +981,7 @@ onMounted(loadData)
 
                             <div class="min-w-0">
                                 <p class="break-words text-sm font-semibold leading-5 text-gray-950">
-                                    {{ movement.concept || movement.reference || '—' }}
+                                    {{ movement.display_concept || movement.concept || movement.reference || '—' }}
                                 </p>
                                 <p v-if="correctionText(movement)" class="mt-1 text-xs font-medium text-purple-700">{{ correctionText(movement) }}</p>
                                 <div v-if="receiptLinks(movement).length" class="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">

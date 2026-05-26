@@ -1709,6 +1709,44 @@ class FinanceEngineWorkflowTest extends TestCase
             ->assertOk();
         $settlementPaymentMovement = collect($allMovements->json('data.movements'))->firstWhere('movement_id', "payment:{$settlementPayment->id}");
         $this->assertSame($reimbursementMovement['reimbursement_group']['key'], $settlementPaymentMovement['reimbursement_group']['key']);
+
+        $this->actingAs($director)
+            ->patchJson(route('club.finance-engine.movements.display-concept.update', [
+                'movementType' => 'expense',
+                'movementId' => $pendingReimbursement->id,
+            ]), [
+                'club_id' => $club->id,
+                'display_concept' => 'Reembolso a patrocinador corregido',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.movement_key', "expense:{$pendingReimbursement->id}")
+            ->assertJsonPath('data.display_concept', 'Reembolso a patrocinador corregido');
+
+        $withOverride = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.movements', ['club_id' => $club->id]))
+            ->assertOk();
+        $updatedReimbursementMovement = collect($withOverride->json('data.movements'))->firstWhere('movement_id', "expense:{$pendingReimbursement->id}");
+        $this->assertSame('Reembolso a patrocinador corregido', $updatedReimbursementMovement['display_concept']);
+        $this->assertSame('Reembolso pendiente por: Out of pocket supplies', $updatedReimbursementMovement['concept']);
+        $this->assertSame('Reembolso pendiente por: Out of pocket supplies', $updatedReimbursementMovement['original_concept']);
+
+        $this->actingAs($director)
+            ->patchJson(route('club.finance-engine.movements.display-concept.update', [
+                'movementType' => 'expense',
+                'movementId' => $pendingReimbursement->id,
+            ]), [
+                'club_id' => $club->id,
+                'display_concept' => '',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.display_concept', null);
+
+        $withoutOverride = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.movements', ['club_id' => $club->id]))
+            ->assertOk();
+        $clearedReimbursementMovement = collect($withoutOverride->json('data.movements'))->firstWhere('movement_id', "expense:{$pendingReimbursement->id}");
+        $this->assertSame('Reembolso pendiente por: Out of pocket supplies', $clearedReimbursementMovement['display_concept']);
+        $this->assertNull($clearedReimbursementMovement['concept_override']);
     }
 
     public function test_reimbursements_can_settle_from_source_account_even_when_overall_total_is_negative(): void

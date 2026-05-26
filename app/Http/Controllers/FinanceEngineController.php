@@ -78,6 +78,8 @@ class FinanceEngineController extends Controller
                     'domain' => $movement['domain'] ?? null,
                     'kind' => $movement['kind'] ?? null,
                     'account' => $movement['account'] ?? null,
+                    'concept' => $movement['concept'] ?? null,
+                    'display_concept' => $movement['display_concept'] ?? null,
                     'amount' => $movement['amount'] ?? null,
                     'signed_amount' => $movement['signed_amount'] ?? null,
                     'balance_after' => $movement['balance_after'] ?? null,
@@ -408,7 +410,8 @@ class FinanceEngineController extends Controller
         return [
             'movement_id' => $movement['movement_id'] ?? null,
             'date' => $movement['date'] ?? null,
-            'concept' => $movement['concept'] ?? $movement['reference'] ?? null,
+            'concept' => $movement['display_concept'] ?? $movement['concept'] ?? $movement['reference'] ?? null,
+            'original_concept' => $movement['original_concept'] ?? $movement['concept'] ?? null,
             'counterparty' => $movement['counterparty'] ?? $movement['created_by'] ?? null,
             'amount' => $movement['amount'] ?? null,
             'signed_amount' => $movement['signed_amount'] ?? null,
@@ -429,7 +432,8 @@ class FinanceEngineController extends Controller
             'issued_to_email' => $receipt['issued_to_email'] ?? null,
             'issued_to_type' => $receipt['issued_to_type'] ?? null,
             'date' => $movement['date'] ?? null,
-            'concept' => $movement['concept'] ?? $movement['reference'] ?? null,
+            'concept' => $movement['display_concept'] ?? $movement['concept'] ?? $movement['reference'] ?? null,
+            'original_concept' => $movement['original_concept'] ?? $movement['concept'] ?? null,
             'payer' => $movement['counterparty'] ?? null,
             'received_by' => $movement['created_by'] ?? null,
             'account' => $movement['account_label'] ?? $movement['account'] ?? null,
@@ -706,6 +710,11 @@ class FinanceEngineController extends Controller
     public function storeTransfer(Request $request)
     {
         return $this->financeEngine->storeTransfer($request);
+    }
+
+    public function updateMovementDisplayConcept(Request $request, string $movementType, int $movementId)
+    {
+        return $this->financeEngine->updateMovementDisplayConcept($request, $movementType, $movementId);
     }
 
     public function validateStaffRemittance(Request $request)
