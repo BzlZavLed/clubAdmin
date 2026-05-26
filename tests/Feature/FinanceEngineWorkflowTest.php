@@ -460,6 +460,20 @@ class FinanceEngineWorkflowTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('Recibo RCPT-61', $htmlWithIncomeReceipts);
+
+        $ledgerHtml = view('reports.finance_engine_movements', [
+            'club' => $club,
+            'report' => $report,
+            'generatedAt' => now(),
+            'clubLogoDataUri' => null,
+            'validationUrl' => 'https://example.test/validate',
+            'qrCodeDataUri' => null,
+            'receiptAnnexes' => [],
+            'ledgerOnly' => true,
+        ])->render();
+
+        $this->assertStringContainsString('Comprobante de gasto EXP-13', $ledgerHtml);
+        $this->assertStringContainsString('Comprobante de reembolso REIMB-35', $ledgerHtml);
     }
 
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void

@@ -249,7 +249,21 @@
             && empty($movement['settles_expense_id'])
             && $hasOriginExpense;
     };
-    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors, $isCorrectionMovement, $isReimbursementSettlementIncome, $isInternalReimbursementBalanceExpense) {
+    $proofReferenceText = function (array $movement, array $proof) use ($movementReferenceText) {
+        $movementId = (string) ($movement['movement_id'] ?? '');
+        [, $id] = array_pad(explode(':', $movementId, 2), 2, null);
+
+        return match ($proof['type'] ?? null) {
+            'check_image' => 'PAY-' . $id,
+            'expense_receipt' => 'EXP-' . $id,
+            'reimbursement_payment_proof' => 'REIMB-PAY-' . $id,
+            'reimbursement_receipt' => 'REIMB-' . $id,
+            'fundraiser_investment_receipt' => 'INV-' . $id,
+            'treasury_proof' => 'TREAS-' . $id,
+            default => $movementReferenceText($movement),
+        };
+    };
+    $documentLinks = function (array $movement) use ($proofLabels, $annexUrlAnchors, $annexReferenceAnchors, $isCorrectionMovement, $isReimbursementSettlementIncome, $isInternalReimbursementBalanceExpense, $proofReferenceText) {
         if ($isCorrectionMovement($movement) || $isReimbursementSettlementIncome($movement) || $isInternalReimbursementBalanceExpense($movement)) {
             return [];
         }
@@ -275,6 +289,15 @@
             $proofs[] = $movement['proof'];
         }
 
+        $proofTypeTotals = [];
+        foreach ($proofs as $proof) {
+            if (is_array($proof)) {
+                $type = $proof['type'] ?? 'proof';
+                $proofTypeTotals[$type] = ($proofTypeTotals[$type] ?? 0) + 1;
+            }
+        }
+
+        $proofTypeCounts = [];
         foreach ($proofs as $proof) {
             if (!is_array($proof) || (empty($proof['name']) && empty($proof['url']) && empty($proof['type']))) {
                 continue;
@@ -282,8 +305,15 @@
 
             $type = $proof['type'] ?? null;
             $url = $proof['url'] ?? null;
+            $typeKey = $type ?? 'proof';
+            $proofTypeCounts[$typeKey] = ($proofTypeCounts[$typeKey] ?? 0) + 1;
+            $reference = $proofReferenceText($movement, $proof);
+            if (($proofTypeTotals[$typeKey] ?? 0) > 1) {
+                $reference .= '-' . $proofTypeCounts[$typeKey];
+            }
+
             $links[] = [
-                'label' => $proof['name'] ?? ($proofLabels[$type] ?? 'Comprobante'),
+                'label' => ($proofLabels[$type] ?? 'Comprobante') . ' ' . $reference,
                 'url' => $annexUrlAnchors[$url] ?? $url,
             ];
         }
