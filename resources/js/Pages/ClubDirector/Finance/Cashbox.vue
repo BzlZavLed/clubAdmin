@@ -89,6 +89,10 @@ const tutorialBalances = ref({})
 const tutorialMovements = ref([])
 const tutorialNextId = ref(9000)
 const tutorialReceiptWindow = ref(null)
+const explanationActive = ref(false)
+const explanationStepIndex = ref(0)
+const explanationTargetRect = ref(null)
+const explanationGroup = ref(null)
 const CREATE_CONCEPT_OPTION = '__create_concept__'
 const CUSTOM_PAYER_OPTION = '__custom_payer__'
 const MOVEMENT_PAGE_SIZE_OPTIONS = [10, 15, 20]
@@ -652,6 +656,7 @@ const movementGroupAmountSummary = (group) => {
         : null,
     ].filter(Boolean).join(' · ')
 }
+const explainSelector = (group, target) => `[data-explain-key="${String(group.key).replace(/"/g, '\\"')}"][data-explain-target="${target}"]`
 const isReimbursementMovementGroupOpen = (group) => openReimbursementMovementGroups.value[group.key] === true
 const toggleReimbursementMovementGroup = (group) => {
     openReimbursementMovementGroups.value = {
@@ -748,6 +753,60 @@ const reimbursementAccountingRows = (group) => {
 
     return rows.filter((row) => row.movement)
 }
+const reimbursementExplanationStepsFor = (group) => {
+    if (!group?.reimbursementGroup) return []
+
+    const reimbursementGroup = group.reimbursementGroup
+    const rows = reimbursementAccountingRows(group)
+    const roleStep = (role, title, bodyFactory) => {
+        const row = rows.find((item) => item.role === role)
+        if (!row) return null
+
+        return {
+            id: role,
+            target: explainSelector(group, role),
+            title,
+            body: bodyFactory(row.movement),
+        }
+    }
+
+    return [
+        {
+            id: 'summary',
+            target: explainSelector(group, 'summary'),
+            title: tr('Un solo reembolso agrupado', 'One grouped reimbursement'),
+            body: tr(
+                `Este bloque junta todos los movimientos relacionados con el reembolso de ${formatMoney(reimbursementGroup.reimbursement_amount || reimbursementGroup.origin_amount || 0)} para ${reimbursementGroup.reimbursed_to || 'esta persona'}. Aunque abajo veas varias filas, pertenecen a la misma historia contable.`,
+                `This block groups all movements related to the ${formatMoney(reimbursementGroup.reimbursement_amount || reimbursementGroup.origin_amount || 0)} reimbursement for ${reimbursementGroup.reimbursed_to || 'this person'}. Even though you see several rows below, they belong to the same accounting story.`
+            ),
+        },
+        roleStep('pending_reimbursement', tr('Responsabilidad pendiente', 'Pending liability'), (movement) => tr(
+            `Esta linea registra que el club le debe ${formatMoney(movement.amount)} a ${reimbursementGroup.reimbursed_to || 'la persona'}. Todavia no es el pago final desde la cuenta del club.`,
+            `This line records that the club owes ${formatMoney(movement.amount)} to ${reimbursementGroup.reimbursed_to || 'the person'}. It is not yet the final payout from the club account.`
+        )),
+        roleStep('settlement_credit', tr('Credito interno', 'Internal credit'), (movement) => tr(
+            `Este credito interno entra a ${movementAccountDisplay(movement)} para saldar la cuenta de reembolsos pendientes. Es el puente contable que deja el saldo de reembolso en cero.`,
+            `This internal credit goes into ${movementAccountDisplay(movement)} to settle the pending reimbursement account. It is the accounting bridge that brings the reimbursement balance to zero.`
+        )),
+        roleStep('settlement_expense', tr('Pago real', 'Real payout'), (movement) => tr(
+            `Esta es la salida real de dinero: ${formatMoney(movement.amount)} desde ${movementAccountDisplay(movement)} por ${movementLocationDisplay(movement)}. Esta es la linea que muestra de que cuenta salio el pago.`,
+            `This is the real money out: ${formatMoney(movement.amount)} from ${movementAccountDisplay(movement)} by ${movementLocationDisplay(movement)}. This is the line that shows which account paid it.`
+        )),
+        {
+            id: 'detail',
+            target: explainSelector(group, 'detail'),
+            title: tr('Detalle auditado', 'Auditable detail'),
+            body: tr(
+                'Esta tabla muestra las filas originales del libro: ID, rol, fecha, cuenta, ubicacion y monto firmado. Sirve para auditar el grupo sin perder la lectura resumida de arriba.',
+                'This table shows the original ledger rows: ID, role, date, account, location, and signed amount. It lets you audit the group without losing the summary view above.'
+            ),
+        },
+    ].filter(Boolean)
+}
+const explanationSteps = computed(() => reimbursementExplanationStepsFor(explanationGroup.value))
+const explanationStep = computed(() => explanationSteps.value[explanationStepIndex.value] || explanationSteps.value[0] || null)
+const explanationStepCount = computed(() => explanationSteps.value.length)
+const explanationProgressLabel = computed(() => `${explanationStepIndex.value + 1}/${explanationStepCount.value}`)
 const normalizeErrors = (error) => {
     const errors = error?.response?.data?.errors || {}
     return Object.fromEntries(Object.entries(errors).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]))
@@ -911,6 +970,25 @@ const tutorialCutout = computed(() => {
         height: Math.max(bottom - top, 0),
     }
 })
+const explanationCutout = computed(() => {
+    if (!explanationTargetRect.value) return null
+
+    const margin = 10
+    const { width, height } = viewportSize()
+    const top = Math.max(explanationTargetRect.value.top - margin, 0)
+    const left = Math.max(explanationTargetRect.value.left - margin, 0)
+    const right = Math.min(explanationTargetRect.value.right + margin, width)
+    const bottom = Math.min(explanationTargetRect.value.bottom + margin, height)
+
+    return {
+        top,
+        left,
+        right,
+        bottom,
+        width: Math.max(right - left, 0),
+        height: Math.max(bottom - top, 0),
+    }
+})
 const tutorialMaskStyles = computed(() => {
     const cutout = tutorialCutout.value
     if (!cutout) return []
@@ -922,8 +1000,30 @@ const tutorialMaskStyles = computed(() => {
         { top: px(cutout.top), left: px(cutout.right), width: `calc(100vw - ${px(cutout.right)})`, height: px(cutout.height) },
     ]
 })
+const explanationMaskStyles = computed(() => {
+    const cutout = explanationCutout.value
+    if (!cutout) return []
+
+    return [
+        { top: '0px', left: '0px', width: '100vw', height: px(cutout.top) },
+        { top: px(cutout.bottom), left: '0px', width: '100vw', height: `calc(100vh - ${px(cutout.bottom)})` },
+        { top: px(cutout.top), left: '0px', width: px(cutout.left), height: px(cutout.height) },
+        { top: px(cutout.top), left: px(cutout.right), width: `calc(100vw - ${px(cutout.right)})`, height: px(cutout.height) },
+    ]
+})
 const tutorialHighlightStyle = computed(() => {
     const cutout = tutorialCutout.value
+    if (!cutout) return {}
+
+    return {
+        top: px(cutout.top),
+        left: px(cutout.left),
+        width: px(cutout.width),
+        height: px(cutout.height),
+    }
+})
+const explanationHighlightStyle = computed(() => {
+    const cutout = explanationCutout.value
     if (!cutout) return {}
 
     return {
@@ -955,6 +1055,42 @@ const tutorialPanelStyle = computed(() => {
     }
 
     const panelWidth = Math.min(384, Math.max(280, width - 32))
+    const estimatedHeight = 236
+    const left = Math.min(Math.max(cutout.left, 16), width - panelWidth - 16)
+    let top = cutout.bottom + 12
+
+    if (top + estimatedHeight > height && cutout.top > estimatedHeight + 24) {
+        top = cutout.top - estimatedHeight - 12
+    }
+
+    return {
+        left: px(left),
+        top: px(Math.max(16, Math.min(top, height - estimatedHeight - 16))),
+        width: px(panelWidth),
+    }
+})
+const explanationPanelStyle = computed(() => {
+    const { width, height } = viewportSize()
+    const cutout = explanationCutout.value
+
+    if (width < 640) {
+        return {
+            left: '1rem',
+            right: '1rem',
+            bottom: '1rem',
+        }
+    }
+
+    if (!cutout) {
+        return {
+            left: '50%',
+            top: '50%',
+            width: 'min(24rem, calc(100vw - 2rem))',
+            transform: 'translate(-50%, -50%)',
+        }
+    }
+
+    const panelWidth = Math.min(400, Math.max(300, width - 32))
     const estimatedHeight = 236
     const left = Math.min(Math.max(cutout.left, 16), width - panelWidth - 16)
     let top = cutout.bottom + 12
@@ -1377,6 +1513,38 @@ const updateTutorialTarget = (scrollIntoView = false) => {
         }, scrollIntoView ? 260 : 0)
     })
 }
+const updateExplanationTarget = (scrollIntoView = false) => {
+    if (typeof window === 'undefined' || !explanationActive.value || !explanationStep.value) return
+
+    nextTick(() => {
+        const target = document.querySelector(explanationStep.value.target)
+        if (!target) {
+            explanationTargetRect.value = null
+            return
+        }
+
+        if (scrollIntoView) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+        }
+
+        window.setTimeout(() => {
+            const rect = target.getBoundingClientRect()
+            if (!rect.width && !rect.height) {
+                explanationTargetRect.value = null
+                return
+            }
+
+            explanationTargetRect.value = {
+                top: rect.top,
+                left: rect.left,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+            }
+        }, scrollIntoView ? 260 : 0)
+    })
+}
 
 const startCajaTutorial = () => {
     if (!tutorialActive.value) {
@@ -1386,6 +1554,24 @@ const startCajaTutorial = () => {
     tutorialStepIndex.value = 0
     tutorialActive.value = true
     updateTutorialTarget(true)
+}
+
+const startReimbursementExplanation = (group) => {
+    explanationGroup.value = group
+    explanationStepIndex.value = 0
+    explanationActive.value = true
+    openReimbursementMovementGroups.value = {
+        ...openReimbursementMovementGroups.value,
+        [group.key]: true,
+    }
+    updateExplanationTarget(true)
+}
+
+const closeReimbursementExplanation = () => {
+    explanationActive.value = false
+    explanationTargetRect.value = null
+    explanationGroup.value = null
+    explanationStepIndex.value = 0
 }
 
 const closeCajaTutorial = () => {
@@ -1402,6 +1588,10 @@ const previousTutorialStep = () => {
     tutorialStepIndex.value = Math.max(tutorialStepIndex.value - 1, 0)
 }
 
+const previousExplanationStep = () => {
+    explanationStepIndex.value = Math.max(explanationStepIndex.value - 1, 0)
+}
+
 const nextTutorialStep = () => {
     if (tutorialStepIndex.value >= tutorialStepCount.value - 1) {
         closeCajaTutorial()
@@ -1411,13 +1601,32 @@ const nextTutorialStep = () => {
     tutorialStepIndex.value += 1
 }
 
+const nextExplanationStep = () => {
+    if (explanationStepIndex.value >= explanationStepCount.value - 1) {
+        closeReimbursementExplanation()
+        return
+    }
+
+    explanationStepIndex.value += 1
+}
+
 const handleTutorialViewportChange = () => {
     if (tutorialActive.value) {
         updateTutorialTarget(false)
     }
+    if (explanationActive.value) {
+        updateExplanationTarget(false)
+    }
 }
 
 const handleTutorialKeydown = (event) => {
+    if (explanationActive.value) {
+        if (event.key === 'Escape') closeReimbursementExplanation()
+        if (event.key === 'ArrowRight') nextExplanationStep()
+        if (event.key === 'ArrowLeft') previousExplanationStep()
+        return
+    }
+
     if (!tutorialActive.value) return
     if (event.key === 'Escape') closeCajaTutorial()
     if (event.key === 'ArrowRight') nextTutorialStep()
@@ -2610,6 +2819,12 @@ watch([tutorialActive, tutorialStepIndex], ([active]) => {
     }
 })
 
+watch([explanationActive, explanationStepIndex], ([active]) => {
+    if (active) {
+        updateExplanationTarget(true)
+    }
+})
+
 onMounted(() => {
     loadCaja()
     window.addEventListener('resize', handleTutorialViewportChange)
@@ -3450,6 +3665,8 @@ onBeforeUnmount(() => {
                         <template v-if="group.reimbursementGroup">
                             <button
                                 type="button"
+                                :data-explain-key="group.key"
+                                data-explain-target="summary"
                                 class="flex w-full items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left hover:bg-amber-100"
                                 @click="toggleReimbursementMovementGroup(group)"
                             >
@@ -3469,14 +3686,28 @@ onBeforeUnmount(() => {
                                     {{ movementGroupAmountSummary(group) }}
                                 </span>
                             </button>
-
                             <div v-if="isReimbursementMovementGroupOpen(group)" class="mt-3 space-y-3">
-                                <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Vista contable', 'Accounting view') }}</p>
+                                <div
+                                    class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3"
+                                    :data-explain-key="group.key"
+                                    data-explain-target="accounting"
+                                >
+                                    <div class="flex items-center justify-between gap-3">
+                                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Vista contable', 'Accounting view') }}</p>
+                                        <button
+                                            type="button"
+                                            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50"
+                                            @click="startReimbursementExplanation(group)"
+                                        >
+                                            {{ tr('Explicar', 'Explain') }}
+                                        </button>
+                                    </div>
                                     <div class="mt-2 grid gap-2 lg:grid-cols-2">
                                         <div
                                             v-for="row in reimbursementAccountingRows(group)"
                                             :key="`${group.key}-${row.role}`"
+                                            :data-explain-key="group.key"
+                                            :data-explain-target="row.role"
                                             class="rounded-md border border-gray-200 bg-white px-3 py-2"
                                         >
                                             <div class="flex items-start justify-between gap-3">
@@ -3512,7 +3743,11 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
 
-                                <div class="overflow-hidden rounded-lg border border-gray-200">
+                                <div
+                                    class="overflow-hidden rounded-lg border border-gray-200"
+                                    :data-explain-key="group.key"
+                                    data-explain-target="detail"
+                                >
                                     <div class="grid gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 lg:grid-cols-[1fr_6rem_9rem_8rem_7rem_7rem_8rem]">
                                         <span>{{ tr('Movimiento', 'Movement') }}</span>
                                         <span>{{ tr('Rol', 'Role') }}</span>
@@ -3715,6 +3950,75 @@ onBeforeUnmount(() => {
                             @click="nextTutorialStep"
                         >
                             {{ tutorialStepIndex >= tutorialStepCount - 1 ? tr('Terminar', 'Finish') : tr('Siguiente', 'Next') }}
+                        </button>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <div v-if="explanationActive && explanationStep" class="pointer-events-none fixed inset-0 z-[70]">
+            <template v-if="explanationCutout">
+                <div
+                    v-for="(style, index) in explanationMaskStyles"
+                    :key="`explain-mask-${index}`"
+                    class="absolute bg-gray-950/60"
+                    :style="style"
+                ></div>
+                <div
+                    class="absolute rounded-xl border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(15,23,42,0.08)]"
+                    :style="explanationHighlightStyle"
+                ></div>
+            </template>
+            <div v-else class="absolute inset-0 bg-gray-950/60"></div>
+
+            <aside
+                class="pointer-events-auto fixed rounded-xl border border-gray-200 bg-white p-4 shadow-2xl"
+                :style="explanationPanelStyle"
+                :aria-label="tr('Explicacion de reembolso', 'Reimbursement explanation')"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                            {{ tr('Explicacion', 'Explanation') }} · {{ explanationProgressLabel }}
+                        </p>
+                        <h3 class="mt-1 text-base font-semibold text-gray-950">{{ explanationStep.title }}</h3>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-500 hover:bg-gray-50"
+                        :aria-label="tr('Cerrar explicacion', 'Close explanation')"
+                        @click="closeReimbursementExplanation"
+                    >
+                        ×
+                    </button>
+                </div>
+                <p class="mt-3 text-sm leading-6 text-gray-600">{{ explanationStep.body }}</p>
+                <p v-if="!explanationCutout" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    {{ tr('Esta parte no esta visible ahora; abre el grupo para verla.', 'This part is not visible right now; open the group to see it.') }}
+                </p>
+                <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="explanationStepIndex === 0"
+                        @click="previousExplanationStep"
+                    >
+                        {{ tr('Anterior', 'Previous') }}
+                    </button>
+                    <div class="flex gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                            @click="closeReimbursementExplanation"
+                        >
+                            {{ tr('Salir', 'Exit') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+                            @click="nextExplanationStep"
+                        >
+                            {{ explanationStepIndex >= explanationStepCount - 1 ? tr('Terminar', 'Finish') : tr('Siguiente', 'Next') }}
                         </button>
                     </div>
                 </div>
