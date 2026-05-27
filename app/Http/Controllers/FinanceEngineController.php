@@ -135,6 +135,49 @@ class FinanceEngineController extends Controller
         return response()->json($payload);
     }
 
+    public function movementPdfExports(Request $request)
+    {
+        $validated = $request->validate([
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:25'],
+        ]);
+
+        $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
+
+        $exports = FinanceLedgerExportJob::query()
+            ->where('club_id', $club->id)
+            ->where(function ($query) use ($request) {
+                $query->where('user_id', $request->user()->id)
+                    ->orWhereNull('user_id');
+            })
+            ->latest()
+            ->limit($validated['limit'] ?? 10)
+            ->get()
+            ->map(fn (FinanceLedgerExportJob $export) => [
+                'export_id' => $export->uuid,
+                'status' => $export->status,
+                'message' => match ($export->status) {
+                    'completed' => 'La exportacion del libro contable esta lista.',
+                    'failed' => $export->error_message ?: 'No se pudo generar la exportacion.',
+                    'processing' => 'La exportacion del libro contable se esta generando.',
+                    default => 'La exportacion del libro contable esta en cola.',
+                },
+                'filters' => $export->filters ?? [],
+                'files' => $export->status === 'completed' ? ($export->files['files'] ?? []) : [],
+                'file_name' => $export->files['file_name'] ?? null,
+                'url' => $export->files['url'] ?? null,
+                'size' => $export->files['size'] ?? null,
+                'status_url' => route('club.finance-engine.movements.pdf-export.status', $export),
+                'created_at' => optional($export->created_at)->toIso8601String(),
+                'started_at' => optional($export->started_at)->toIso8601String(),
+                'completed_at' => optional($export->completed_at)->toIso8601String(),
+            ]);
+
+        return response()->json([
+            'data' => $exports,
+        ]);
+    }
+
     private function deferFinanceLedgerExport(FinanceLedgerExportJob $export): void
     {
         $export->update([

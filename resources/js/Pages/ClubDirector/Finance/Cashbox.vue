@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import MovementInlineEditor from '@/Components/Finance/MovementInlineEditor.vue'
+import MovementSummary from '@/Components/Finance/MovementSummary.vue'
 import {
     ArrowPathIcon,
     ArrowUpTrayIcon,
@@ -98,6 +99,9 @@ const TUTORIAL_ACCOUNT = 'club_budget'
 const TUTORIAL_REIMBURSEMENT_ACCOUNT = 'reimbursement_to'
 const IMAGE_RECEIPT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
 const DOCUMENT_RECEIPT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf']
+const IMAGE_RECEIPT_MAX_BYTES = 5 * 1024 * 1024
+const DOCUMENT_RECEIPT_MAX_BYTES = 10 * 1024 * 1024
+const RECEIPT_IMAGE_TARGET_BYTES = 4.5 * 1024 * 1024
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -1035,9 +1039,50 @@ const invalidFileMessage = (extensions) => tr(
     `Tipo de archivo no permitido. Usa ${allowedExtensionText(extensions)}.`,
     `File type not allowed. Use ${allowedExtensionText(extensions)}.`
 )
+const invalidFileSizeMessage = (maxMb) => tr(
+    `El archivo no puede pesar mas de ${maxMb} MB.`,
+    `The file cannot be larger than ${maxMb} MB.`
+)
 const validateReceiptFile = (file, extensions) => {
     if (!file) return true
     return extensions.includes(fileExtension(file))
+}
+const validateReceiptFileSize = (file, maxBytes) => !file || Number(file.size || 0) <= maxBytes
+const receiptUploadFile = async (file) => {
+    if (!file || !file.type?.startsWith('image/') || Number(file.size || 0) <= RECEIPT_IMAGE_TARGET_BYTES) {
+        return file
+    }
+
+    const imageUrl = URL.createObjectURL(file)
+    try {
+        const image = await new Promise((resolve, reject) => {
+            const img = new Image()
+            img.onload = () => resolve(img)
+            img.onerror = reject
+            img.src = imageUrl
+        })
+        const maxSide = 1800
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.width * scale))
+        canvas.height = Math.max(1, Math.round(image.height * scale))
+        const context = canvas.getContext('2d')
+
+        context.fillStyle = '#fff'
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.78))
+        if (!blob || blob.size >= file.size) return file
+
+        const baseName = String(file.name || 'receipt').replace(/\.[^.]+$/, '')
+        return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() })
+    } catch (error) {
+        console.warn('Could not resize receipt before upload.', error)
+        return file
+    } finally {
+        URL.revokeObjectURL(imageUrl)
+    }
 }
 const uploadProgressHandler = (expenseId) => (event) => {
     if (!event.total) {
@@ -1409,6 +1454,15 @@ const setExpenseReceiptFile = (expenseId, event) => {
         setExpenseActionError(expenseId, invalidFileMessage(IMAGE_RECEIPT_EXTENSIONS))
         return
     }
+    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_MAX_BYTES * 2)) {
+        event.target.value = ''
+        expenseReceiptFiles.value = {
+            ...expenseReceiptFiles.value,
+            [expenseId]: null,
+        }
+        setExpenseActionError(expenseId, invalidFileSizeMessage(10))
+        return
+    }
 
     expenseReceiptFiles.value = {
         ...expenseReceiptFiles.value,
@@ -1427,6 +1481,15 @@ const setReimbursementPaymentProofFile = (expenseId, event) => {
             [expenseId]: null,
         }
         setExpenseActionError(expenseId, invalidFileMessage(DOCUMENT_RECEIPT_EXTENSIONS))
+        return
+    }
+    if (file && !validateReceiptFileSize(file, DOCUMENT_RECEIPT_MAX_BYTES)) {
+        event.target.value = ''
+        reimbursementPaymentProofFiles.value = {
+            ...reimbursementPaymentProofFiles.value,
+            [expenseId]: null,
+        }
+        setExpenseActionError(expenseId, invalidFileSizeMessage(10))
         return
     }
 
@@ -1542,7 +1605,7 @@ const toggleEventComponent = (concept, checked) => {
     incomeForm.value.amount_paid = Number(selectedIncomeExpected.value || 0).toFixed(2)
 }
 
-const onIncomeCheckImage = (event) => {
+const onIncomeCheckImage = async (event) => {
     const file = event.target.files?.[0] || null
     if (file && !validateReceiptFile(file, IMAGE_RECEIPT_EXTENSIONS)) {
         event.target.value = ''
@@ -1553,12 +1616,21 @@ const onIncomeCheckImage = (event) => {
         }
         return
     }
+    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_MAX_BYTES * 2)) {
+        event.target.value = ''
+        incomeForm.value.check_image = null
+        incomeErrors.value = {
+            ...incomeErrors.value,
+            check_image: invalidFileSizeMessage(10),
+        }
+        return
+    }
 
     incomeErrors.value = { ...incomeErrors.value, check_image: '' }
-    incomeForm.value.check_image = file
+    incomeForm.value.check_image = await receiptUploadFile(file)
 }
 
-const onExpenseReceipt = (event) => {
+const onExpenseReceipt = async (event) => {
     const file = event.target.files?.[0] || null
     if (file && !validateReceiptFile(file, IMAGE_RECEIPT_EXTENSIONS)) {
         event.target.value = ''
@@ -1569,9 +1641,18 @@ const onExpenseReceipt = (event) => {
         }
         return
     }
+    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_MAX_BYTES * 2)) {
+        event.target.value = ''
+        expenseForm.value.receipt_image = null
+        expenseErrors.value = {
+            ...expenseErrors.value,
+            receipt_image: invalidFileSizeMessage(10),
+        }
+        return
+    }
 
     expenseErrors.value = { ...expenseErrors.value, receipt_image: '' }
-    expenseForm.value.receipt_image = file
+    expenseForm.value.receipt_image = await receiptUploadFile(file)
 }
 
 const resetIncomeForm = () => {
@@ -2337,7 +2418,8 @@ const uploadExpenseReceipt = async (expense) => {
             return
         }
 
-        await uploadFinanceEngineExpenseReceipt(expense.id, { receipt_image: file }, {
+        const uploadFile = await receiptUploadFile(file)
+        await uploadFinanceEngineExpenseReceipt(expense.id, { receipt_image: uploadFile }, {
             onUploadProgress: uploadProgressHandler(expense.id),
         })
         setExpenseUploadProgress(expense.id, 100)
@@ -2408,7 +2490,8 @@ const uploadReimbursementPaymentProof = async (expense) => {
             return
         }
 
-        await uploadFinanceEngineReimbursementPaymentProof(expense.id, { payment_proof_file: file }, {
+        const uploadFile = await receiptUploadFile(file)
+        await uploadFinanceEngineReimbursementPaymentProof(expense.id, { payment_proof_file: uploadFile }, {
             onUploadProgress: uploadProgressHandler(expense.id),
         })
         setExpenseUploadProgress(expense.id, 100)
@@ -3410,13 +3493,12 @@ onBeforeUnmount(() => {
                                                             @updated="handleMovementEditUpdated"
                                                         />
                                                     </div>
-                                                    <p class="mt-1 text-xs font-medium text-gray-700">{{ movementDisplayConcept(row.movement) }}</p>
-                                                    <p v-if="row.movement.concept_override" class="mt-1 text-xs text-gray-500">
-                                                        {{ tr('Original', 'Original') }}: {{ row.movement.original_concept || row.movement.concept }}
-                                                    </p>
-                                                    <p v-if="row.movement.notes" class="mt-1 text-xs text-gray-600">
-                                                        {{ tr('Notas', 'Notes') }}: {{ row.movement.notes }}
-                                                    </p>
+                                                    <MovementSummary
+                                                        :movement="row.movement"
+                                                        :show-reference="false"
+                                                        title-class="text-xs font-medium text-gray-700"
+                                                        notes-class="mt-1 text-xs text-gray-600"
+                                                    />
                                                     <p class="mt-1 text-xs text-gray-500">
                                                         {{ row.movement.movement_id }} · {{ formatDate(row.movement.date) }} · {{ movementLocationDisplay(row.movement) }}
                                                     </p>
@@ -3486,12 +3568,12 @@ onBeforeUnmount(() => {
                                                 @updated="handleMovementEditUpdated"
                                             />
                                         </div>
-                                        <p v-if="movement.concept_override" class="mt-1 text-xs text-gray-500">
-                                            {{ tr('Original', 'Original') }}: {{ movement.original_concept || movement.concept }}
-                                        </p>
-                                        <p v-if="movement.notes" class="mt-1 text-sm text-gray-600">
-                                            {{ tr('Notas', 'Notes') }}: {{ movement.notes }}
-                                        </p>
+                                        <MovementSummary
+                                            :movement="movement"
+                                            :show-reference="false"
+                                            title-class="sr-only"
+                                            notes-class="mt-1 text-sm text-gray-600"
+                                        />
                                         <div class="mt-2 grid gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
                                             <span>{{ tr('Fecha y hora', 'Date and time') }}: {{ formatDateTime(movement.occurred_at || movement.created_at || movement.date) }}</span>
                                             <span>{{ tr('Cuenta', 'Account') }}: {{ movement.account_label || accountLabel(movement.account) }}</span>
@@ -3637,6 +3719,27 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
             </aside>
+        </div>
+
+        <div class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur lg:hidden">
+            <div class="grid grid-cols-4 gap-2 text-xs">
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Efectivo', 'Cash') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(balanceSummary.cash_balance) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Banco', 'Bank') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(balanceSummary.bank_balance) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Disp.', 'Avail.') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(balanceSummary.total_available) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-amber-700">{{ tr('Reemb.', 'Reimb.') }}</p>
+                    <p class="font-semibold text-amber-800">{{ formatMoney(reimbursementBalanceSummary.total_available) }}</p>
+                </div>
+            </div>
         </div>
 
         <div

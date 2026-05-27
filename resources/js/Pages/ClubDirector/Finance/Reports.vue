@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
+import MovementSummary from '@/Components/Finance/MovementSummary.vue'
 import {
     ArrowDownTrayIcon,
     ArrowPathIcon,
@@ -13,6 +14,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import {
     fetchFinanceEngineAccounting,
+    fetchFinanceLedgerExportHistory,
     fetchFinanceEngineMovements,
 } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -53,6 +55,7 @@ const ledgerMonthRange = ref({
 })
 const includeLedgerAnnexes = ref(false)
 const includeIncomeReceiptAnnexes = ref(false)
+const ledgerPreferencesReady = ref(false)
 
 const ledgerIsAllAccounts = computed(() => ledgerFilters.value.account === 'all')
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin' || clubs.value.length > 1)
@@ -210,9 +213,14 @@ watch(includeLedgerAnnexes, (includeAnnexes) => {
 })
 
 const ledgerHasDateLimit = computed(() => Boolean(ledgerFilters.value.date_from || ledgerFilters.value.date_to))
+const ledgerPreferencesKey = computed(() => selectedClubId.value
+    ? `finance-reports-ledger:${props.auth_user?.id || 'user'}:${selectedClubId.value}`
+    : null)
 
 const downloadingLedgerPdf = ref(false)
 const ledgerExportMessage = ref('')
+const ledgerExportHistory = ref([])
+const ledgerExportHistoryLoading = ref(false)
 const exportConfirmationModal = ref({
     show: false,
     title: '',
@@ -228,6 +236,7 @@ const generatedLedgerFilesModal = ref({
 })
 let resolveExportConfirmation = null
 let ledgerExportPollingTimer = null
+let ledgerExportHistoryPollingTimer = null
 
 const closeExportConfirmationModal = (confirmed = false) => {
     exportConfirmationModal.value.show = false
@@ -258,6 +267,20 @@ const closeGeneratedLedgerFilesModal = () => {
     }
 }
 
+const exportStatusLabel = (status) => ({
+    queued: tr('En cola', 'Queued'),
+    processing: tr('Generando', 'Generating'),
+    completed: tr('Listo', 'Ready'),
+    failed: tr('Error', 'Failed'),
+})[status] || status || '—'
+const exportStatusClass = (status) => ({
+    queued: 'bg-gray-100 text-gray-700',
+    processing: 'bg-blue-50 text-blue-700',
+    completed: 'bg-emerald-50 text-emerald-700',
+    failed: 'bg-rose-50 text-rose-700',
+})[status] || 'bg-gray-100 text-gray-700'
+const exportDate = (value) => value ? String(value).replace('T', ' ').slice(0, 16) : '—'
+
 const formatFileSize = (size) => {
     const bytes = Number(size || 0)
     if (!bytes) return ''
@@ -276,6 +299,37 @@ const clearLedgerExportPolling = () => {
         ledgerExportPollingTimer = null
     }
 }
+const clearLedgerExportHistoryPolling = () => {
+    if (ledgerExportHistoryPollingTimer) {
+        window.clearTimeout(ledgerExportHistoryPollingTimer)
+        ledgerExportHistoryPollingTimer = null
+    }
+}
+
+const loadLedgerExportHistory = async ({ silent = false } = {}) => {
+    if (!selectedClubId.value) return
+    if (!silent) ledgerExportHistoryLoading.value = true
+
+    try {
+        const payload = await fetchFinanceLedgerExportHistory({
+            club_id: selectedClubId.value,
+            limit: 10,
+        })
+        ledgerExportHistory.value = payload?.data || []
+
+        clearLedgerExportHistoryPolling()
+        if (ledgerExportHistory.value.some((exportJob) => ['queued', 'processing'].includes(exportJob.status))) {
+            ledgerExportHistoryPollingTimer = window.setTimeout(() => loadLedgerExportHistory({ silent: true }), 5000)
+        }
+    } catch (error) {
+        console.error(error)
+        if (!silent) {
+            showToast(tr('No se pudo cargar el historial de exportaciones.', 'Could not load export history.'), 'error')
+        }
+    } finally {
+        if (!silent) ledgerExportHistoryLoading.value = false
+    }
+}
 
 const finishLedgerExport = (data) => {
     clearLedgerExportPolling()
@@ -285,6 +339,7 @@ const finishLedgerExport = (data) => {
     }
     downloadingLedgerPdf.value = false
     ledgerExportMessage.value = ''
+    loadLedgerExportHistory({ silent: true })
 }
 
 const pollLedgerExport = async (statusUrl) => {
@@ -632,6 +687,49 @@ const normalizeClubs = (payload) => {
         clubs.value = payload.clubs
     }
 }
+const loadLedgerPreferences = () => {
+    ledgerPreferencesReady.value = false
+    const key = ledgerPreferencesKey.value
+    if (!key) return
+
+    try {
+        const saved = JSON.parse(window.localStorage.getItem(key) || '{}')
+        if (saved.filters) {
+            ledgerFilters.value = {
+                account: saved.filters.account || 'all',
+                date_from: saved.filters.date_from || '',
+                date_to: saved.filters.date_to || '',
+            }
+        }
+        if (saved.monthRange) {
+            ledgerMonthRange.value = {
+                from: saved.monthRange.from || '',
+                to: saved.monthRange.to || '',
+            }
+        }
+        ledgerDateMode.value = ['dates', 'months'].includes(saved.dateMode) ? saved.dateMode : 'dates'
+        includeLedgerAnnexes.value = Boolean(saved.includeAnnexes)
+        includeIncomeReceiptAnnexes.value = Boolean(saved.includeIncomeReceiptAnnexes && saved.includeAnnexes)
+        ledgerSearch.value = saved.search || ''
+    } catch (error) {
+        console.warn('Could not load saved finance report filters.', error)
+    } finally {
+        ledgerPreferencesReady.value = true
+    }
+}
+const saveLedgerPreferences = () => {
+    const key = ledgerPreferencesKey.value
+    if (!key || !ledgerPreferencesReady.value) return
+
+    window.localStorage.setItem(key, JSON.stringify({
+        filters: ledgerFilters.value,
+        monthRange: ledgerMonthRange.value,
+        dateMode: ledgerDateMode.value,
+        includeAnnexes: includeLedgerAnnexes.value,
+        includeIncomeReceiptAnnexes: includeIncomeReceiptAnnexes.value,
+        search: ledgerSearch.value,
+    }))
+}
 
 const loadBalances = async () => {
     const payload = await fetchFinanceEngineAccounting(selectedClubId.value)
@@ -677,7 +775,9 @@ const loadData = async () => {
 
     try {
         await loadBalances()
+        loadLedgerPreferences()
         await loadLedger()
+        await loadLedgerExportHistory({ silent: true })
     } catch (error) {
         console.error(error)
         loadError.value = error?.response?.data?.message || tr('No se pudieron cargar los reportes.', 'Could not load the reports.')
@@ -738,8 +838,20 @@ watch(ledgerSearch, () => {
     ledgerPage.value = 1
 })
 
+watch([
+    ledgerFilters,
+    ledgerMonthRange,
+    ledgerDateMode,
+    includeLedgerAnnexes,
+    includeIncomeReceiptAnnexes,
+    ledgerSearch,
+], saveLedgerPreferences, { deep: true })
+
 onMounted(loadData)
-onBeforeUnmount(clearLedgerExportPolling)
+onBeforeUnmount(() => {
+    clearLedgerExportPolling()
+    clearLedgerExportHistoryPolling()
+})
 </script>
 
 <template>
@@ -885,6 +997,62 @@ onBeforeUnmount(clearLedgerExportPolling)
                             </p>
                         </div>
 
+                    </div>
+
+                    <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-900">{{ tr('Exportaciones recientes', 'Recent exports') }}</p>
+                                <p class="text-xs text-gray-500">
+                                    {{ tr('Puedes volver a abrir reportes ya generados para este club.', 'You can reopen previously generated reports for this club.') }}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                :disabled="ledgerExportHistoryLoading"
+                                @click="loadLedgerExportHistory()"
+                            >
+                                <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': ledgerExportHistoryLoading }" />
+                                {{ tr('Actualizar historial', 'Refresh history') }}
+                            </button>
+                        </div>
+                        <div v-if="ledgerExportHistory.length" class="mt-3 space-y-2">
+                            <article
+                                v-for="exportJob in ledgerExportHistory"
+                                :key="exportJob.export_id"
+                                class="rounded-lg border border-gray-200 bg-white p-3 text-xs"
+                            >
+                                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="rounded-full px-2 py-0.5 font-semibold" :class="exportStatusClass(exportJob.status)">
+                                                {{ exportStatusLabel(exportJob.status) }}
+                                            </span>
+                                            <span class="font-semibold text-gray-900">{{ exportDate(exportJob.completed_at || exportJob.started_at || exportJob.created_at) }}</span>
+                                        </div>
+                                        <p class="mt-1 break-words text-gray-500">
+                                            {{ exportJob.message }}
+                                        </p>
+                                    </div>
+                                    <div v-if="exportJob.files?.length" class="flex flex-wrap gap-2 sm:justify-end">
+                                        <a
+                                            v-for="file in exportJob.files"
+                                            :key="`${exportJob.export_id}-${file.url}`"
+                                            :href="file.url"
+                                            target="_blank"
+                                            rel="noopener"
+                                            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-gray-200 px-2.5 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+                                        >
+                                            {{ file.label }} <span v-if="formatFileSize(file.size)" class="ml-1 text-gray-400">({{ formatFileSize(file.size) }})</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                        <p v-else class="mt-3 text-xs text-gray-500">
+                            {{ tr('Todavia no hay exportaciones recientes.', 'There are no recent exports yet.') }}
+                        </p>
                     </div>
 
                     <div class="mt-4 grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(150px,0.75fr)_auto_auto] lg:items-end">
@@ -1092,10 +1260,11 @@ onBeforeUnmount(clearLedgerExportPolling)
                             </div>
 
                             <div class="min-w-0">
-	                                <p class="break-words text-sm font-semibold leading-5 text-gray-950">
-	                                    {{ movement.display_concept || movement.concept || movement.reference || '—' }}
-	                                </p>
-	                                <p v-if="movement.notes" class="mt-1 break-words text-xs text-gray-500">{{ movement.notes }}</p>
+                                <MovementSummary
+                                    :movement="movement"
+                                    title-class="text-sm font-semibold leading-5 text-gray-950"
+                                    notes-class="mt-1 text-xs text-gray-500"
+                                />
 	                                <p v-if="correctionText(movement)" class="mt-1 text-xs font-medium text-purple-700">{{ correctionText(movement) }}</p>
                                 <div v-if="receiptLinks(movement).length" class="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
                                     <a
@@ -1235,6 +1404,32 @@ onBeforeUnmount(clearLedgerExportPolling)
                     </table>
                 </div>
             </section>
+        </div>
+
+        <div class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur lg:hidden">
+            <div class="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Efectivo', 'Cash') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(summaryTotals.cash_balance) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Banco', 'Bank') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(summaryTotals.bank_balance) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Neto', 'Net') }}</p>
+                    <p class="font-semibold" :class="ledgerNet < 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatMoney(ledgerNet) }}</p>
+                </div>
+            </div>
+            <button
+                type="button"
+                class="mt-2 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                :disabled="downloadingLedgerPdf"
+                @click="downloadLedgerPdf"
+            >
+                <ArrowDownTrayIcon class="h-4 w-4" />
+                {{ downloadingLedgerPdf ? tr('Generando...', 'Generating...') : tr('Exportar PDF', 'Export PDF') }}
+            </button>
         </div>
 
         <div

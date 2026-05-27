@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import MovementInlineEditor from '@/Components/Finance/MovementInlineEditor.vue'
+import MovementSummary from '@/Components/Finance/MovementSummary.vue'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
 import {
@@ -1729,7 +1730,11 @@ onBeforeUnmount(() => {
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-2">
-                                        <p class="font-semibold text-gray-900">{{ movementDisplayConcept(movement) }}</p>
+                                        <MovementSummary
+                                            :movement="movement"
+                                            :show-reference="false"
+                                            notes-class="mt-1 text-sm text-gray-600"
+                                        />
                                         <MovementInlineEditor
                                             v-if="!tutorialActive"
                                             :movement="movement"
@@ -1740,7 +1745,6 @@ onBeforeUnmount(() => {
                                         />
                                     </div>
                                     <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
-                                    <p v-if="movement.notes" class="mt-1 text-sm text-gray-600">{{ tr('Notas', 'Notes') }}: {{ movement.notes }}</p>
                                 </div>
                                 <p
                                     class="shrink-0 font-semibold"
@@ -1857,9 +1861,10 @@ onBeforeUnmount(() => {
                                     <td class="max-w-xs px-3 py-2">
                                         <div class="flex items-start gap-2">
                                             <div class="min-w-0">
-                                                <div class="font-medium text-gray-900">{{ movementDisplayConcept(movement) }}</div>
-                                                <div v-if="movement.reference" class="text-xs text-gray-500">{{ movement.reference }}</div>
-                                                <div v-if="movement.notes" class="text-xs text-gray-500">{{ movement.notes }}</div>
+                                                <MovementSummary
+                                                    :movement="movement"
+                                                    title-class="font-medium text-gray-900"
+                                                />
                                             </div>
                                             <MovementInlineEditor
                                                 v-if="!tutorialActive"
@@ -2213,6 +2218,27 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
             </aside>
+        </div>
+
+        <div class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur lg:hidden">
+            <div class="grid grid-cols-4 gap-2 text-xs">
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Efectivo', 'Cash') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(summaryTotals.cash_balance) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Banco', 'Bank') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(summaryTotals.bank_balance) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Total', 'Total') }}</p>
+                    <p class="font-semibold text-gray-950">{{ formatMoney(summaryTotals.total_balance) }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold uppercase tracking-wide text-amber-700">{{ tr('Reemb.', 'Reimb.') }}</p>
+                    <p class="font-semibold text-amber-800">{{ formatMoney(reimbursementBalanceSummary.total_available) }}</p>
+                </div>
+            </div>
         </div>
 
         <div v-if="selectedCorrectionMovement" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

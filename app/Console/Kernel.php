@@ -18,6 +18,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\RepairLedgerReceiptPaths::class,
         \App\Console\Commands\SyncMembersAndStaff::class,
         \App\Console\Commands\SeedPayToOptions::class,
+        \App\Console\Commands\CleanupFinanceLedgerExports::class,
     ];
 
     /**
@@ -25,7 +26,7 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        $schedule->command('finance:cleanup-ledger-exports --days=14')->dailyAt('02:15');
     }
 
     /**

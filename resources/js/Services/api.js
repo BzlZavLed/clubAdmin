@@ -70,6 +70,11 @@ export const downloadBulkReceipts = async (receiptIds, label = "payment-receipts
     }, 4000);
 };
 
+export const fetchFinanceLedgerExportHistory = async (params = {}) => {
+    const { data } = await axios.get(route("club.finance-engine.movements.pdf-exports.index"), { params });
+    return data;
+};
+
 export const assignMemberToClass = async ({ memberId, classId }) => {
     return await axios.post(route("members.assign"), {
         member_id: memberId,
