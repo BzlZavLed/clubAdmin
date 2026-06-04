@@ -104,7 +104,7 @@ class FinanceEventSettlementWriter
             return $allowedClubIds->contains((int) $club->id);
         }
 
-        if (in_array($role, ['club_director', 'club_personal'], true)) {
+        if (in_array($role, ['club_director', 'club_personal', 'treasurer'], true)) {
             return $allowedClubIds->contains((int) $club->id);
         }
 

@@ -75,6 +75,7 @@ class RegisteredUserController extends Controller
         return [
             'superadmin',
             'club_director',
+            'treasurer',
             'club_personal',
             'district_pastor',
             'district_secretary',
@@ -156,6 +157,12 @@ class RegisteredUserController extends Controller
         if (empty($validated['church_id'])) {
             throw ValidationException::withMessages([
                 'church_id' => 'Church is required for this profile.',
+            ]);
+        }
+
+        if ($profileType === 'treasurer' && empty($validated['club_id'])) {
+            throw ValidationException::withMessages([
+                'club_id' => 'Club is required for treasurers.',
             ]);
         }
 
@@ -260,7 +267,7 @@ class RegisteredUserController extends Controller
                 return back()->withErrors(['sub_role' => 'Sub role is required for club personal.'])->withInput();
         }
 
-        if (in_array($validated['profile_type'], ['club_director', 'club_personal'], true) && !empty($validated['club_id'])) {
+        if (in_array($validated['profile_type'], ['club_director', 'club_personal', 'treasurer'], true) && !empty($validated['club_id'])) {
             $clubBelongsToChurch = Club::query()
                 ->withoutGlobalScopes()
                 ->where('status', '!=', 'deleted')
@@ -290,7 +297,7 @@ class RegisteredUserController extends Controller
             'status' => 'active',
         ]);
 
-        if (in_array($validated['profile_type'], ['club_director', 'club_personal'], true) && !empty($validated['club_id'])) {
+        if (in_array($validated['profile_type'], ['club_director', 'club_personal', 'treasurer'], true) && !empty($validated['club_id'])) {
             DB::table('club_user')->updateOrInsert(
                 ['user_id' => $user->id, 'club_id' => $validated['club_id']],
                 ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
@@ -339,7 +346,7 @@ class RegisteredUserController extends Controller
                 return back()->withErrors(['sub_role' => 'Sub role is required for club personal.'])->withInput();
         }
 
-        if (in_array($validated['profile_type'], ['club_director', 'club_personal'], true) && !empty($validated['club_id'])) {
+        if (in_array($validated['profile_type'], ['club_director', 'club_personal', 'treasurer'], true) && !empty($validated['club_id'])) {
             $clubBelongsToChurch = Club::query()
                 ->withoutGlobalScopes()
                 ->where('status', '!=', 'deleted')
@@ -372,7 +379,7 @@ class RegisteredUserController extends Controller
         $user->save();
 
         DB::table('club_user')->where('user_id', $user->id)->delete();
-        if (in_array($validated['profile_type'], ['club_director', 'club_personal'], true) && !empty($validated['club_id'])) {
+        if (in_array($validated['profile_type'], ['club_director', 'club_personal', 'treasurer'], true) && !empty($validated['club_id'])) {
             DB::table('club_user')->updateOrInsert(
                 ['user_id' => $user->id, 'club_id' => $validated['club_id']],
                 ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]

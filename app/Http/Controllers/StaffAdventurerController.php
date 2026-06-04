@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
 use App\Models\ClassMemberAdventurer; // Import the ClassMemberAdventurer model
+use App\Models\Member;
 use App\Models\MemberAdventurer; // Import the MemberAdventurer model
 use App\Models\Staff;
 use App\Models\Club;
@@ -237,6 +238,11 @@ class StaffAdventurerController extends Controller
                         'password' => bcrypt('password'), // Consider sending a reset email later
                     ]
                 );
+
+                if (!$newStaff->user_id) {
+                    $newStaff->user_id = $user->id;
+                    $newStaff->save();
+                }
             }
 
             // Link user to club if staff has an email
@@ -280,7 +286,19 @@ class StaffAdventurerController extends Controller
 
     public function update(Request $request, $id)
     {
-        $staff = StaffAdventurer::findOrFail($id);
+        $staffRecord = Staff::find($id);
+        if ($staffRecord) {
+            if ($staffRecord->type !== 'adventurers') {
+                return $this->updateStaffRecord($request, $staffRecord);
+            }
+
+            $staff = $staffRecord->id_data ? StaffAdventurer::find($staffRecord->id_data) : null;
+            if (!$staff) {
+                return $this->updateStaffRecord($request, $staffRecord);
+            }
+        } else {
+            $staff = StaffAdventurer::findOrFail($id);
+        }
 
         // Preserve original email before updates
         $originalEmail = $staff->email;
@@ -412,6 +430,92 @@ class StaffAdventurerController extends Controller
         }
     }
 
+    private function updateStaffRecord(Request $request, Staff $staffRecord)
+    {
+        $actor = $request->user();
+        if (!$actor || ($actor->profile_type !== 'superadmin' && (int) $actor->club_id !== (int) $staffRecord->club_id)) {
+            return response()->json([
+                'message' => 'Unauthorized.',
+                'success' => false,
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'dob' => ['nullable', 'date'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'cell_phone' => ['nullable', 'string', 'max:50'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'assigned_class' => [
+                'nullable',
+                'integer',
+                Rule::exists('club_classes', 'id')->where(fn ($query) => $query->where('club_id', $staffRecord->club_id)),
+            ],
+        ]);
+
+        $assignedClass = $validated['assigned_class'] ?? null;
+        $clubId = (int) ($validated['club_id'] ?? $staffRecord->club_id);
+        if ($clubId !== (int) $staffRecord->club_id) {
+            return response()->json([
+                'message' => 'Staff cannot be moved to another club from this form.',
+                'success' => false,
+            ], 422);
+        }
+
+        DB::transaction(function () use ($validated, $staffRecord, $assignedClass) {
+            $type = $staffRecord->type === 'temp_pathfinder' ? 'pathfinders' : $staffRecord->type;
+
+            if ($type === 'master_guide') {
+                StaffMasterGuide::updateOrCreate(
+                    ['staff_id' => $staffRecord->id],
+                    [
+                        'club_id' => $staffRecord->club_id,
+                        'user_id' => $staffRecord->user_id,
+                        'staff_id' => $staffRecord->id,
+                        'staff_name' => $validated['name'],
+                        'phone' => $validated['cell_phone'] ?? null,
+                        'address' => $validated['address'] ?? null,
+                        'email' => $validated['email'] ?? null,
+                        'dob' => $validated['dob'] ?? null,
+                        'status' => 'active',
+                    ]
+                );
+            } elseif ($type === 'pathfinders') {
+                StaffPathfinder::updateOrCreate(
+                    ['staff_id' => $staffRecord->id],
+                    [
+                        'club_id' => $staffRecord->club_id,
+                        'user_id' => $staffRecord->user_id,
+                        'staff_id' => $staffRecord->id,
+                        'staff_name' => $validated['name'],
+                        'staff_dob' => $validated['dob'] ?? null,
+                        'staff_age' => !empty($validated['dob']) ? Carbon::parse($validated['dob'])->age : null,
+                        'staff_email' => $validated['email'] ?? null,
+                        'staff_phone' => $validated['cell_phone'] ?? null,
+                    ]
+                );
+            }
+
+            if ($staffRecord->user_id) {
+                User::where('id', $staffRecord->user_id)->update([
+                    'name' => $validated['name'],
+                    'email' => $validated['email'] ?? null,
+                ]);
+            }
+
+            $staffRecord->status = 'active';
+            $staffRecord->save();
+            $this->applyAssignedClassToStaffRecord($staffRecord, (int) $staffRecord->club_id, $assignedClass);
+        });
+
+        return response()->json([
+            'message' => 'Staff member updated.',
+            'staff_id' => $staffRecord->id,
+            'success' => true,
+        ]);
+    }
+
     public function destroy($id)
     {
         $staff = StaffAdventurer::findOrFail($id);
@@ -430,13 +534,17 @@ class StaffAdventurerController extends Controller
         $staffActive = Staff::query()
             ->where('club_id', $clubId)
             ->where('status', 'active')
-            ->with(['user:id,name,email', 'classes:id,class_name', 'assignedCarpetaClassActivation.unionClassCatalog:id,name'])
+            ->with(['club:id,club_name,church_id,church_name', 'user:id,name,email', 'classes:id,class_name', 'assignedCarpetaClassActivation.unionClassCatalog:id,name'])
             ->get()
             ->map(function ($s) {
                 $displayName = $s->user?->name;
+                $adventurerStaff = null;
                 $pathfinderStaff = null;
                 $masterGuideStaff = null;
-                if (in_array($s->type, ['temp_pathfinder', 'pathfinders'], true)) {
+                if ($s->type === 'adventurers' && $s->id_data) {
+                    $adventurerStaff = StaffAdventurer::find($s->id_data);
+                    $displayName = $adventurerStaff?->name ?? $displayName;
+                } elseif (in_array($s->type, ['temp_pathfinder', 'pathfinders'], true)) {
                     $pathfinderStaff = StaffPathfinder::query()
                         ->where(function ($query) use ($s) {
                             $query->where('staff_id', $s->id);
@@ -461,8 +569,11 @@ class StaffAdventurerController extends Controller
                     'id' => $s->id,
                     'type' => in_array($s->type, ['temp_pathfinder', 'pathfinders'], true) ? 'pathfinders' : $s->type,
                     'name' => $displayName,
-                    'email' => $pathfinderStaff?->staff_email ?? $masterGuideStaff?->email ?? $s->user?->email,
+                    'email' => $adventurerStaff?->email ?? $pathfinderStaff?->staff_email ?? $masterGuideStaff?->email ?? $s->user?->email,
                     'club_id' => $s->club_id,
+                    'club_name' => $adventurerStaff?->club_name ?? $s->club?->club_name,
+                    'church_id' => $s->club?->church_id,
+                    'church_name' => $adventurerStaff?->church_name ?? $s->club?->church_name,
                     'status' => $s->status,
                     'class_names' => $s->assignedCarpetaClassActivation
                         ? collect([$s->assignedCarpetaClassActivation->unionClassCatalog?->name])
@@ -472,10 +583,27 @@ class StaffAdventurerController extends Controller
                     'id_data' => $s->id_data,
                     'assigned_class' => $s->assigned_class,
                     'assigned_carpeta_class_activation_id' => $s->assigned_carpeta_class_activation_id,
+                    'date_of_record' => $adventurerStaff?->date_of_record?->toDateString(),
+                    'dob' => $adventurerStaff?->dob?->toDateString(),
+                    'address' => $adventurerStaff?->address ?? $masterGuideStaff?->address,
+                    'city' => $adventurerStaff?->city,
+                    'state' => $adventurerStaff?->state,
+                    'zip' => $adventurerStaff?->zip,
                     'staff_dob' => $pathfinderStaff?->staff_dob ?? $masterGuideStaff?->dob?->toDateString(),
                     'staff_age' => $pathfinderStaff?->staff_age ?? ($masterGuideStaff?->dob ? Carbon::parse($masterGuideStaff->dob)->age : null),
-                    'cell_phone' => $pathfinderStaff?->staff_phone ?? $masterGuideStaff?->phone,
-                    'address' => $masterGuideStaff?->address,
+                    'cell_phone' => $adventurerStaff?->cell_phone ?? $pathfinderStaff?->staff_phone ?? $masterGuideStaff?->phone,
+                    'has_health_limitation' => $adventurerStaff?->has_health_limitation,
+                    'health_limitation_description' => $adventurerStaff?->health_limitation_description,
+                    'experiences' => $adventurerStaff?->experiences,
+                    'award_instruction_abilities' => $adventurerStaff?->award_instruction_abilities,
+                    'unlawful_sexual_conduct' => $adventurerStaff?->unlawful_sexual_conduct,
+                    'unlawful_sexual_conduct_records' => $adventurerStaff?->unlawful_sexual_conduct_records,
+                    'sterling_volunteer_completed' => $adventurerStaff?->sterling_volunteer_completed,
+                    'reference_pastor' => $adventurerStaff?->reference_pastor,
+                    'reference_elder' => $adventurerStaff?->reference_elder,
+                    'reference_other' => $adventurerStaff?->reference_other,
+                    'applicant_signature' => $adventurerStaff?->applicant_signature,
+                    'application_signed_date' => $adventurerStaff?->application_signed_date?->toDateString(),
                     'has_previous_staff_experience' => (bool) ($masterGuideStaff?->has_previous_staff_experience ?? false),
                     'previous_staff_where' => $masterGuideStaff?->previous_staff_where,
                     'is_invested_master_guide' => (bool) ($masterGuideStaff?->is_invested_master_guide ?? false),
@@ -524,17 +652,7 @@ class StaffAdventurerController extends Controller
             })
             ->get()
             ->map(function ($u) use ($clubId, $churchId, $club) {
-                $staffExists = Staff::query()
-                    ->where('club_id', $clubId)
-                    ->whereHas('club', fn ($query) => $query->where('church_id', $churchId))
-                    ->where(function ($query) use ($u) {
-                        $query->where('user_id', $u->id);
-
-                        if (!empty($u->email)) {
-                            $query->orWhereHas('user', fn ($userQuery) => $userQuery->where('email', $u->email));
-                        }
-                    })
-                    ->exists();
+                $staffExists = $this->staffRecordExistsForUser($u, $clubId, $churchId);
 
                 $u->status = $u->status ?: 'active';
                 $u->create_staff = !$staffExists;
@@ -613,6 +731,43 @@ class StaffAdventurerController extends Controller
             'club_user_ids' => $clubUserIds,
             'pending_users' => $pendingUsers,
         ]);
+    }
+
+    private function staffRecordExistsForUser(User $user, int $clubId, int $churchId): bool
+    {
+        $email = trim((string) ($user->email ?? ''));
+
+        return Staff::query()
+            ->where('club_id', $clubId)
+            ->whereHas('club', fn ($query) => $query->where('church_id', $churchId))
+            ->where(function ($query) use ($user, $email, $clubId) {
+                $query->where('user_id', $user->id)
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('email', $user->email));
+
+                if ($email === '') {
+                    return;
+                }
+
+                $query->orWhere(function ($staffQuery) use ($email) {
+                    $staffQuery->where('type', 'adventurers')
+                        ->whereIn('id_data', StaffAdventurer::query()
+                            ->select('id')
+                            ->where('email', $email));
+                })->orWhere(function ($staffQuery) use ($email, $clubId) {
+                    $staffQuery->whereIn('id', StaffPathfinder::query()
+                        ->select('staff_id')
+                        ->where('club_id', $clubId)
+                        ->where('staff_email', $email)
+                        ->whereNotNull('staff_id'));
+                })->orWhere(function ($staffQuery) use ($email, $clubId) {
+                    $staffQuery->whereIn('id', StaffMasterGuide::query()
+                        ->select('staff_id')
+                        ->where('club_id', $clubId)
+                        ->where('email', $email)
+                        ->whereNotNull('staff_id'));
+                });
+            })
+            ->exists();
     }
 
     /**
@@ -758,6 +913,86 @@ class StaffAdventurerController extends Controller
             'user_id' => $user->id,
             'status' => $newStatus,
             'success' => true
+        ]);
+    }
+
+    public function makeTreasurer(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'club_id' => ['required', 'integer', 'exists:clubs,id'],
+        ]);
+
+        $actor = $request->user();
+        if (!$actor || !in_array($actor->profile_type, ['club_director', 'superadmin'], true)) {
+            return response()->json([
+                'message' => 'Unauthorized.',
+                'success' => false,
+            ], 403);
+        }
+
+        $club = Club::findOrFail($validated['club_id']);
+        if ($actor->profile_type !== 'superadmin' && (int) $actor->club_id !== (int) $club->id) {
+            return response()->json([
+                'message' => 'Unauthorized.',
+                'success' => false,
+            ], 403);
+        }
+
+        $belongsToClub = (int) ($user->club_id ?? 0) === (int) $club->id
+            || (int) ($club->user_id ?? 0) === (int) $user->id
+            || DB::table('club_user')
+                ->where('user_id', $user->id)
+                ->where('club_id', $club->id)
+                ->exists()
+            || Member::query()
+                ->where('parent_id', $user->id)
+                ->where('club_id', $club->id)
+                ->exists();
+
+        if (!$belongsToClub) {
+            return response()->json([
+                'message' => 'User does not belong to this club.',
+                'success' => false,
+            ], 422);
+        }
+
+        if (in_array($user->profile_type, ['superadmin', 'club_director'], true)) {
+            return response()->json([
+                'message' => 'This account cannot be converted to treasurer from staff management.',
+                'success' => false,
+            ], 422);
+        }
+
+        DB::transaction(function () use ($user, $club) {
+            $user->forceFill([
+                'profile_type' => 'treasurer',
+                'role_key' => 'treasurer',
+                'scope_type' => 'club',
+                'scope_id' => $club->id,
+                'club_id' => $club->id,
+                'church_id' => $club->church_id,
+                'church_name' => $club->church_name,
+                'status' => 'active',
+            ])->save();
+
+            DB::table('club_user')->updateOrInsert(
+                [
+                    'club_id' => $club->id,
+                    'user_id' => $user->id,
+                ],
+                [
+                    'status' => 'active',
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ]
+            );
+        });
+
+        return response()->json([
+            'message' => 'User marked as treasurer.',
+            'user_id' => $user->id,
+            'profile_type' => 'treasurer',
+            'success' => true,
         ]);
     }
 

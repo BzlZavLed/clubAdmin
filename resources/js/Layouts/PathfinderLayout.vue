@@ -61,6 +61,8 @@ const getNavComponent = () => {
 
     if (profileType === 'club_director') {
         return h(ClubDirectorNav, { isCollapsed: navCollapsed.value })
+    } else if (profileType === 'treasurer') {
+        return h(ClubDirectorNav, { isCollapsed: navCollapsed.value, financeOnly: true })
     } else if (profileType === 'superadmin') {
         return h(SuperAdminNav, { isCollapsed: navCollapsed.value })
     } else if (profileType === 'club_personal') {

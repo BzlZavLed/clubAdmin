@@ -285,7 +285,7 @@ class FinanceCorrectionWriter
 
     private function ensureAccountingAccess($user): void
     {
-        abort_unless(in_array(($user?->profile_type ?? null), ['club_director', 'superadmin'], true), 403, 'Unauthorized.');
+        abort_unless(in_array(($user?->profile_type ?? null), ['club_director', 'treasurer', 'superadmin'], true), 403, 'Unauthorized.');
     }
 
     private function ensurePaymentBelongsToUser($user, Payment $payment): void

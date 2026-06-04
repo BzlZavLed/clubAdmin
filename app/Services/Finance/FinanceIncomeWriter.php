@@ -54,8 +54,8 @@ class FinanceIncomeWriter
         ]);
 
         $isInitial = $validated['payment_type'] === 'initial';
-        if ($isInitial && !in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
-            return response()->json(['message' => 'Saldo inicial solo puede ser registrado por director o superadmin.'], 403);
+        if ($isInitial && !in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
+            return response()->json(['message' => 'Saldo inicial solo puede ser registrado por director, tesorero o superadmin.'], 403);
         }
 
         $isMember = !empty($validated['member_id']);

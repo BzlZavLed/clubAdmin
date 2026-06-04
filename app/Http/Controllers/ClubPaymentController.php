@@ -450,8 +450,8 @@ class ClubPaymentController extends Controller
         ]);
 
         $isInitial = $validated['payment_type'] === 'initial';
-        if ($isInitial && !in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
-            return response()->json(['message' => 'Saldo inicial solo puede ser registrado por director o superadmin.'], 403);
+        if ($isInitial && !in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
+            return response()->json(['message' => 'Saldo inicial solo puede ser registrado por director, tesorero o superadmin.'], 403);
         }
 
         // exactly one payer (unless initial balance)
@@ -797,8 +797,8 @@ class ClubPaymentController extends Controller
     public function update(Request $request, Payment $payment): JsonResponse
     {
         $user = $request->user();
-        if (!in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
-            return response()->json(['message' => 'Solo directores o superadmin pueden editar pagos registrados.'], 403);
+        if (!in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
+            return response()->json(['message' => 'Solo directores, tesoreros o superadmin pueden editar pagos registrados.'], 403);
         }
 
         $allowedClubIds = ClubHelper::clubIdsForUser($user);
@@ -1058,7 +1058,7 @@ class ClubPaymentController extends Controller
     public function approveParentTransfer(Request $request, ParentPaymentSubmission $submission)
     {
         $user = $request->user();
-        if (!in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
+        if (!in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
             abort(403);
         }
 
@@ -1187,7 +1187,7 @@ class ClubPaymentController extends Controller
     public function rejectParentTransfer(Request $request, ParentPaymentSubmission $submission)
     {
         $user = $request->user();
-        if (!in_array($user?->profile_type, ['club_director', 'superadmin'], true)) {
+        if (!in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
             abort(403);
         }
 

@@ -19,7 +19,12 @@ import { useLocale } from '@/Composables/useLocale'
 const openDropdown = ref(null)
 const { t } = useLocale()
 
-const menuItems = computed(() => [
+const props = defineProps({
+    isCollapsed: Boolean,
+    financeOnly: Boolean,
+})
+
+const allMenuItems = computed(() => [
     { id: 'dashboard', name: t('dashboard'), href: '/club-director/dashboard', route: 'club.dashboard', icon: HomeIcon },
     {
         id: 'my_club',
@@ -118,9 +123,9 @@ const menuItems = computed(() => [
     { id: 'club_settings', name: t('club_settings'), href: '/club-director/settings', route: 'club.settings', icon: CogIcon },
 ])
 
-defineProps({
-    isCollapsed: Boolean,
-})
+const menuItems = computed(() => props.financeOnly
+    ? allMenuItems.value.filter((item) => item.id === 'finance')
+    : allMenuItems.value)
 
 function toggleDropdown(itemId) {
     if (openDropdown.value === itemId) {

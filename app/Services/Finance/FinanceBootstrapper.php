@@ -432,7 +432,7 @@ class FinanceBootstrapper
             return $allowedClubIds->contains((int) $club->id);
         }
 
-        return in_array($role, ['club_director', 'club_personal'], true)
+        return in_array($role, ['club_director', 'club_personal', 'treasurer'], true)
             && $allowedClubIds->contains((int) $club->id);
     }
 }

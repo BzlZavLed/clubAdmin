@@ -609,6 +609,12 @@ export const updateUserStatus = async (userId, status_code) => {
     });
 };
 
+export const makeStaffUserTreasurer = async (userId, clubId) => {
+    return await axios.post(route("staff.makeTreasurer", userId), {
+        club_id: clubId,
+    });
+};
+
 export const approveStaff = async (staffId) => {
     return await axios.post(route('staff.approve', staffId))
 }

@@ -30,6 +30,7 @@ class RedirectIfAuthenticated
 
         return match ($role) {
             'club_director' => '/club-director/dashboard',
+            'treasurer' => '/club-director/finance/cashbox',
             'club_personal' => '/club-personal/dashboard',
             'district_pastor', 'district_secretary' => '/district/dashboard',
             'association_youth_director' => '/association/dashboard',

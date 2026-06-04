@@ -39,7 +39,7 @@ const form = useForm({
     assigned_class: "",
     church_name: "",
     church_id: auth_user.church_id,
-    club_name: "" || page.props.user?.club_name,
+    club_name: page.props.user?.club_name || "",
     has_health_limitation: "",
     health_limitation_description: "",
     experiences: [{ position: "", organization: "", date: "" }],
@@ -56,33 +56,57 @@ const form = useForm({
 
 })
 
+const hydrateClubFields = (club = props.club) => {
+    if (!club) return
+
+    form.club_name = club.club_name || page.props.user?.club_name || ""
+    form.club_id = club.id || page.props.user?.club_id || ""
+    form.church_name = club.church_name || form.church_name || ""
+    form.church_id = club.church_id || auth_user.church_id || ""
+}
+
+const hydrateUserFields = (user = props.user) => {
+    if (!user) return
+
+    form.name = user.name || ""
+    form.email = user.email || ""
+    form.church_name = user.church_name || form.church_name || ""
+    form.applicant_signature = user.name || ""
+}
+
 watch(() => props.editingStaff, (staff) => {
     if (staff) {
+        const selectedClass = staff.assigned_carpeta_class_activation_id
+            || staff.assigned_class
+            || staff.assigned_classes?.[0]?.id
+            || ""
+
         Object.assign(form, {
             ...form,
-            name: "",
+            date_of_record: staff.date_of_record || today,
+            name: staff.name || "",
             email: staff.email,
-            dob: staff.dob?.slice(0, 10) || '',
-            address: staff.address,
-            city: staff.city,
-            state: staff.state,
-            zip: staff.zip,
+            dob: (staff.dob || staff.staff_dob || "")?.slice(0, 10) || "",
+            address: staff.address || "",
+            city: staff.city || "",
+            state: staff.state || "",
+            zip: staff.zip || "",
             cell_phone: staff.cell_phone,
             church_name: staff.church_name,
-            club_name: staff.club_name || page.props.user?.club_name || "",
-            church_id: auth_user.church_id,
-            club_id: page.props.user?.club_id || "",
-            assigned_class: staff.assigned_carpeta_class_activation_id || staff.assigned_classes?.[0]?.id || "",
+            club_name: staff.club_name || props.club?.club_name || page.props.user?.club_name || "",
+            church_id: staff.church_id || props.club?.church_id || auth_user.church_id,
+            club_id: staff.club_id || props.club?.id || page.props.user?.club_id || "",
+            assigned_class: selectedClass,
             reference_pastor: staff.reference_pastor,
             reference_elder: staff.reference_elder,
             reference_other: staff.reference_other,
-            applicant_signature: staff.applicant_signature,
-            application_signed_date: today,
+            applicant_signature: staff.applicant_signature || staff.name || "",
+            application_signed_date: staff.application_signed_date || today,
             has_health_limitation: staff.has_health_limitation === true ? 'yes' : 'no',
             health_limitation_description: staff.health_limitation_description,
             experiences: staff.experiences || [{ position: "", organization: "", date: "" }],
             award_instruction_abilities: staff.award_instruction_abilities || [{ name: "", level: "" }],
-            unlawful_sexual_conduct: staff.unlawful_sexual_conduct,
+            unlawful_sexual_conduct: staff.unlawful_sexual_conduct === true || staff.unlawful_sexual_conduct === 'yes' || staff.unlawful_sexual_conduct === '1' ? 'yes' : 'no',
             unlawful_sexual_conduct_records: staff.unlawful_sexual_conduct_records || [{ date_place: "", type: "", reference: "" }],
             sterling_volunteer_completed: staff.sterling_volunteer_completed === true ? 'yes' : 'no',
             create_user_account: false,
@@ -92,24 +116,26 @@ watch(() => props.editingStaff, (staff) => {
 
 watch(() => props.user, (newUser) => {
     if (newUser && !props.editingStaff) {
-        form.name = newUser.name || ""
-        form.email = newUser.email || ""
-        form.church_name = newUser.church_name || ""
-        form.applicant_signature = newUser.name || ""
+        hydrateUserFields(newUser)
     }
 }, { immediate: true })
 
 watch(() => props.club, (newClub) => {
     if (newClub && !props.editingStaff) {
-        form.club_name = newClub.club_name || page.props.user?.club_name || ""
-        form.club_id = newClub.id || page.props.user?.club_id || ""
-        form.church_name = newClub.church_name || ""
-        form.church_id = newClub.church_id || ""
+        hydrateClubFields(newClub)
     }
 }, { immediate: true })
 
 watch(() => props.show, (visible) => {
-    if (!visible) form.reset()
+    if (!visible) {
+        form.reset()
+        return
+    }
+
+    if (!props.editingStaff) {
+        hydrateUserFields()
+        hydrateClubFields()
+    }
 })
 
 const addAbility = () => form.award_instruction_abilities.push({ name: "", level: "" })
@@ -118,7 +144,7 @@ const removeAbility = (index) => form.award_instruction_abilities.splice(index, 
 
 const onSubmit = async () => {
     try {
-        await submitStaffForm(form.data(), props.editingStaff?.id)
+        await submitStaffForm(form.data(), props.editingStaff?.id || null)
         emit('submitted')
         emit('close')
         form.reset()

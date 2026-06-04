@@ -782,6 +782,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
                     'name' => $parent->name,
                     'email' => $parent->email,
                     'club_id' => $parent->club_id,
+                    'profile_type' => $parent->profile_type,
+                    'status' => $parent->status ?: 'active',
                     'children' => $children,
                 ];
             });
@@ -907,6 +909,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::post('/staff/create-user', [StaffAdventurerController::class, 'createUser'])->name('staff.createUser');
     Route::post('/staff/{staff}/link-club', [StaffAdventurerController::class, 'linkToClub'])->name('staff.link-club');
+    Route::post('/staff/{user}/make-treasurer', [StaffAdventurerController::class, 'makeTreasurer'])->name('staff.makeTreasurer');
     Route::get('/staff/{id}/export-word', [StaffAdventurerController::class, 'exportWord'])->name('staff.export-word');
     Route::post('/staff/update-user-account', [StaffAdventurerController::class, 'updateStaffUserAccount'])->name('staff.updateUserAccount');
     Route::post('/staff/update-staff-account', [StaffAdventurerController::class, 'updateStaffAccount'])->name('staff.updateStaffAccount');
@@ -1036,34 +1039,36 @@ Route::middleware(['auth'])->group(function () {
 
     });
 
-    Route::get('/club-personal/dashboard', function () {
-        $user = Auth::user();
-        if ($user) {
-            $user->setAttribute('assigned_class_id', session('assigned_class_id'));
-            $user->setAttribute('assigned_class_name', session('assigned_class_name'));
-        }
-        return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
-            'auth_user' => $user
-        ]);
-    })->name('clubPersonal.dashboard');
+    Route::middleware('profile:club_personal')->group(function () {
+        Route::get('/club-personal/dashboard', function () {
+            $user = Auth::user();
+            if ($user) {
+                $user->setAttribute('assigned_class_id', session('assigned_class_id'));
+                $user->setAttribute('assigned_class_name', session('assigned_class_name'));
+            }
+            return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
+                'auth_user' => $user
+            ]);
+        })->name('clubPersonal.dashboard');
 
 
-    Route::get('/club-personal/assistance-report', [AssistanceReportController::class, 'index'])
-        ->name('club.assistance_report');
-    Route::get('/club-personal/assistance-report/activities', [AssistanceReportController::class, 'requirementActivities'])
-        ->name('club.assistance_report.activities');
+        Route::get('/club-personal/assistance-report', [AssistanceReportController::class, 'index'])
+            ->name('club.assistance_report');
+        Route::get('/club-personal/assistance-report/activities', [AssistanceReportController::class, 'requirementActivities'])
+            ->name('club.assistance_report.activities');
 
-    Route::get('/club-personal/payments', [ClubPaymentController::class, 'index'])
-        ->name('club.payments.index');
-    Route::post('/club-personal/payments', [ClubPaymentController::class, 'store'])->name('club.payments.store');
-    Route::put('/club-personal/payments/{payment}', [ClubPaymentController::class, 'update'])->name('club.payments.update');
-    Route::delete('/club-personal/payments/{payment}', [ClubPaymentController::class, 'destroy'])->name('club.payments.destroy');
-    Route::get('/club-personal/money-custody', [StaffPaymentCustodyController::class, 'index'])
-        ->name('club.personal.money-custody');
-    Route::get('/club-personal/money-custody/data', [StaffPaymentCustodyController::class, 'data'])
-        ->name('club.personal.money-custody.data');
-    Route::post('/club-personal/money-custody/remit', [StaffPaymentCustodyController::class, 'remit'])
-        ->name('club.personal.money-custody.remit');
+        Route::get('/club-personal/payments', [ClubPaymentController::class, 'index'])
+            ->name('club.payments.index');
+        Route::post('/club-personal/payments', [ClubPaymentController::class, 'store'])->name('club.payments.store');
+        Route::put('/club-personal/payments/{payment}', [ClubPaymentController::class, 'update'])->name('club.payments.update');
+        Route::delete('/club-personal/payments/{payment}', [ClubPaymentController::class, 'destroy'])->name('club.payments.destroy');
+        Route::get('/club-personal/money-custody', [StaffPaymentCustodyController::class, 'index'])
+            ->name('club.personal.money-custody');
+        Route::get('/club-personal/money-custody/data', [StaffPaymentCustodyController::class, 'data'])
+            ->name('club.personal.money-custody.data');
+        Route::post('/club-personal/money-custody/remit', [StaffPaymentCustodyController::class, 'remit'])
+            ->name('club.personal.money-custody.remit');
+    });
 
     Route::get('/staff/staff-record', [StaffAdventurerController::class, 'checkStaffRecord'])->name('staff.record');
 

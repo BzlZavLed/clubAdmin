@@ -26,7 +26,8 @@ import {
     fetchClubClasses,
     updateStaffAssignedClass,
     linkStaffToClubUser,
-    createTempStaffPathfinder
+    createTempStaffPathfinder,
+    makeStaffUserTreasurer
 } from '@/Services/api'
 import axios from 'axios'
 import { usePage } from '@inertiajs/vue3';
@@ -384,6 +385,34 @@ const updateStaffUserAccount = async (user, status_code) => {
     } catch (error) {
         console.error('Failed to update user status:', error)
         showToast(tr(`No se pudo ${action} el usuario`, `Could not ${action} the user`), 'error')
+    }
+}
+
+const canMakeTreasurer = (account) => {
+    if (!selectedClub.value?.id || accountStatus(account) !== 'active') return false
+    if (['treasurer', 'club_director', 'superadmin'].includes(account.profile_type)) return false
+    return Number(account.club_id) === Number(selectedClub.value.id)
+        || clubUserIds.value.has(account.id)
+        || account.children?.some(child => Number(child.club_id) === Number(selectedClub.value.id))
+}
+
+const makeTreasurer = async (account) => {
+    if (!selectedClub.value?.id) {
+        showToast(tr('Selecciona un club primero', 'Select a club first'), 'error')
+        return
+    }
+
+    if (!confirm(tr(`¿Seguro que deseas hacer tesorero a ${account.name}?`, `Are you sure you want to make ${account.name} treasurer?`))) return
+
+    try {
+        await makeStaffUserTreasurer(account.id, selectedClub.value.id)
+        account.profile_type = 'treasurer'
+        parentAccounts.value = parentAccounts.value.filter(parent => parent.id !== account.id)
+        showToast(tr('Usuario marcado como tesorero', 'User marked as treasurer'))
+        await fetchStaff(selectedClub.value.id, churchId.value)
+    } catch (error) {
+        console.error('Failed to make treasurer:', error)
+        showToast(error.response?.data?.message || tr('No se pudo marcar como tesorero', 'Could not mark user as treasurer'), 'error')
     }
 }
 
@@ -1048,11 +1077,12 @@ watch(
                                     <th class="p-2 text-left">{{ tr('Padre/Madre', 'Parent') }}</th>
                                     <th class="p-2 text-left">Email</th>
                                     <th class="p-2 text-left">{{ tr('Hijos', 'Children') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-if="!parentAccounts.length">
-                                    <td colspan="3" class="p-3 text-center text-gray-500">{{ tr('No se encontraron cuentas de padres.', 'No parent accounts were found.') }}</td>
+                                    <td colspan="4" class="p-3 text-center text-gray-500">{{ tr('No se encontraron cuentas de padres.', 'No parent accounts were found.') }}</td>
                                 </tr>
                                 <template v-for="parent in parentAccounts" :key="parent.id">
                                     <tr class="border-t">
@@ -1072,6 +1102,14 @@ watch(
                                                 </div>
                                             </div>
                                             <div v-else class="text-gray-500 text-xs">{{ tr('No hay hijos vinculados.', 'No linked children.') }}</div>
+                                        </td>
+                                        <td class="p-2 text-xs">
+                                            <button v-if="canMakeTreasurer(parent)"
+                                                class="px-2 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700"
+                                                @click="makeTreasurer(parent)">
+                                                {{ tr('Hacer tesorero', 'Make treasurer') }}
+                                            </button>
+                                            <span v-else class="text-gray-400 italic">{{ tr('Sin acciones', 'No actions') }}</span>
                                         </td>
                                     </tr>
                                 </template>
@@ -1131,6 +1169,11 @@ watch(
                                                 class="text-green-600 hover:underline" @click="openStaffForm(user)"
                                                 :title="tr('Agregar usuario como personal', 'Add user as staff')">
                                                 <UserPlusIcon class="w-5 h-5 text-green-600" />
+                                            </button>
+                                            <button v-if="canMakeTreasurer(user)"
+                                                class="px-2 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700"
+                                                @click="makeTreasurer(user)">
+                                                {{ tr('Hacer tesorero', 'Make treasurer') }}
                                             </button>
                                             </div>
                                         </template>

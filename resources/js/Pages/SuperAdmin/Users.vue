@@ -38,7 +38,7 @@ const form = useForm({
 const isEditing = computed(() => editingUserId.value !== null)
 const hasSubRoles = computed(() => props.subRoles.length > 0)
 
-const churchScopedProfiles = ['club_director', 'club_personal']
+const churchScopedProfiles = ['club_director', 'club_personal', 'treasurer']
 const districtScopedProfiles = ['district_pastor', 'district_secretary']
 
 const isChurchScoped = computed(() => churchScopedProfiles.includes(form.profile_type))
@@ -242,6 +242,7 @@ const deleteUser = (user) => {
                             <InputLabel for="profile_type" :value="tr('Tipo de perfil', 'Profile type')" />
                             <select id="profile_type" v-model="form.profile_type" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" required>
                                 <option value="club_director">{{ tr('Director de club', 'Club director') }}</option>
+                                <option value="treasurer">{{ tr('Tesorero', 'Treasurer') }}</option>
                                 <option value="club_personal">{{ tr('Personal de club', 'Club staff') }}</option>
                                 <option value="district_pastor">{{ tr('Pastor distrital', 'District pastor') }}</option>
                                 <option value="district_secretary">{{ tr('Secretario distrital', 'District secretary') }}</option>
@@ -287,9 +288,9 @@ const deleteUser = (user) => {
                         </div>
 
                         <div>
-                            <InputLabel for="club_id" :value="tr('Club (opcional)', 'Club (optional)')" />
-                            <select id="club_id" v-model="form.club_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm">
-                                <option value="">{{ tr('Sin club por ahora', 'No club for now') }}</option>
+                            <InputLabel for="club_id" :value="form.profile_type === 'treasurer' ? tr('Club', 'Club') : tr('Club (opcional)', 'Club (optional)')" />
+                            <select id="club_id" v-model="form.club_id" class="mt-1 block w-full rounded-md border-gray-300 p-3 text-base sm:p-2 sm:text-sm" :required="form.profile_type === 'treasurer'">
+                                <option value="">{{ form.profile_type === 'treasurer' ? tr('Selecciona un club', 'Select a club') : tr('Sin club por ahora', 'No club for now') }}</option>
                                 <option v-for="club in filteredClubs" :key="club.id" :value="club.id">
                                     {{ club.status === 'inactive' ? `${club.club_name} (${tr('inactivo', 'inactive')})` : club.club_name }}
                                 </option>
