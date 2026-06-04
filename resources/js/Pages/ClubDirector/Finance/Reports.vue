@@ -221,6 +221,10 @@ const downloadingLedgerPdf = ref(false)
 const ledgerExportMessage = ref('')
 const ledgerExportHistory = ref([])
 const ledgerExportHistoryLoading = ref(false)
+const ledgerExportHistoryOpen = ref(false)
+const printableLedgerExportHistory = computed(() => ledgerExportHistory.value
+    .filter((exportJob) => exportJob?.status === 'completed' && exportJob?.files?.length)
+    .slice(0, 3))
 const exportConfirmationModal = ref({
     show: false,
     title: '',
@@ -280,6 +284,7 @@ const exportStatusClass = (status) => ({
     failed: 'bg-rose-50 text-rose-700',
 })[status] || 'bg-gray-100 text-gray-700'
 const exportDate = (value) => value ? String(value).replace('T', ' ').slice(0, 16) : '—'
+const exportRequester = (exportJob) => exportJob?.requested_by?.name || exportJob?.requested_by?.email || tr('Usuario no disponible', 'User unavailable')
 
 const formatFileSize = (size) => {
     const bytes = Number(size || 0)
@@ -1001,25 +1006,38 @@ onBeforeUnmount(() => {
 
                     <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
                         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <p class="text-sm font-semibold text-gray-900">{{ tr('Exportaciones recientes', 'Recent exports') }}</p>
-                                <p class="text-xs text-gray-500">
-                                    {{ tr('Puedes volver a abrir reportes ya generados para este club.', 'You can reopen previously generated reports for this club.') }}
-                                </p>
-                            </div>
                             <button
                                 type="button"
-                                class="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                                :disabled="ledgerExportHistoryLoading"
-                                @click="loadLedgerExportHistory()"
+                                class="flex min-w-0 items-start gap-2 text-left"
+                                @click="ledgerExportHistoryOpen = !ledgerExportHistoryOpen"
                             >
-                                <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': ledgerExportHistoryLoading }" />
-                                {{ tr('Actualizar historial', 'Refresh history') }}
+                                <ChevronDownIcon v-if="ledgerExportHistoryOpen" class="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                <ChevronRightIcon v-else class="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                <span>
+                                    <span class="block text-sm font-semibold text-gray-900">{{ tr('Exportaciones recientes', 'Recent exports') }}</span>
+                                    <span class="block text-xs text-gray-500">
+                                        {{ tr('Ultimas 3 versiones listas para imprimir.', 'Latest 3 printable versions.') }}
+                                    </span>
+                                </span>
                             </button>
+                            <div class="flex items-center gap-2">
+                                <span v-if="printableLedgerExportHistory.length" class="text-xs font-medium text-gray-500">
+                                    {{ printableLedgerExportHistory.length }} / 3
+                                </span>
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                    :disabled="ledgerExportHistoryLoading"
+                                    @click.stop="loadLedgerExportHistory()"
+                                >
+                                    <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': ledgerExportHistoryLoading }" />
+                                    {{ tr('Actualizar', 'Refresh') }}
+                                </button>
+                            </div>
                         </div>
-                        <div v-if="ledgerExportHistory.length" class="mt-3 space-y-2">
+                        <div v-if="ledgerExportHistoryOpen && printableLedgerExportHistory.length" class="mt-3 space-y-2">
                             <article
-                                v-for="exportJob in ledgerExportHistory"
+                                v-for="exportJob in printableLedgerExportHistory"
                                 :key="exportJob.export_id"
                                 class="rounded-lg border border-gray-200 bg-white p-3 text-xs"
                             >
@@ -1033,6 +1051,10 @@ onBeforeUnmount(() => {
                                         </div>
                                         <p class="mt-1 break-words text-gray-500">
                                             {{ exportJob.message }}
+                                        </p>
+                                        <p class="mt-1 text-gray-500">
+                                            {{ tr('Solicitado por', 'Requested by') }}:
+                                            <span class="font-semibold text-gray-700">{{ exportRequester(exportJob) }}</span>
                                         </p>
                                     </div>
                                     <div v-if="exportJob.files?.length" class="flex flex-wrap gap-2 sm:justify-end">
@@ -1050,7 +1072,7 @@ onBeforeUnmount(() => {
                                 </div>
                             </article>
                         </div>
-                        <p v-else class="mt-3 text-xs text-gray-500">
+                        <p v-else-if="ledgerExportHistoryOpen" class="mt-3 text-xs text-gray-500">
                             {{ tr('Todavia no hay exportaciones recientes.', 'There are no recent exports yet.') }}
                         </p>
                     </div>

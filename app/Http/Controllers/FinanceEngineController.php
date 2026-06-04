@@ -71,6 +71,7 @@ class FinanceEngineController extends Controller
                 $this->deferFinanceLedgerExport($export);
             }
             $export->refresh();
+            $export->loadMissing('user:id,name,email');
 
             $payload = [
                 'success' => true,
@@ -78,6 +79,11 @@ class FinanceEngineController extends Controller
                 'export_id' => $export->uuid,
                 'status' => $export->status,
                 'status_url' => route('club.finance-engine.movements.pdf-export.status', $export),
+                'requested_by' => $export->user ? [
+                    'id' => (int) $export->user->id,
+                    'name' => $export->user->name,
+                    'email' => $export->user->email,
+                ] : null,
                 'message' => 'La exportacion del libro contable esta en proceso.',
             ];
 
@@ -110,6 +116,7 @@ class FinanceEngineController extends Controller
             $this->deferFinanceLedgerExport($export);
             $export->refresh();
         }
+        $export->loadMissing('user:id,name,email');
 
         $payload = [
             'success' => true,
@@ -117,6 +124,11 @@ class FinanceEngineController extends Controller
             'export_id' => $export->uuid,
             'status' => $export->status,
             'status_url' => route('club.finance-engine.movements.pdf-export.status', $export),
+            'requested_by' => $export->user ? [
+                'id' => (int) $export->user->id,
+                'name' => $export->user->name,
+                'email' => $export->user->email,
+            ] : null,
             'message' => match ($export->status) {
                 'completed' => 'La exportacion del libro contable esta lista.',
                 'failed' => $export->error_message ?: 'No se pudo generar la exportacion.',
@@ -146,10 +158,7 @@ class FinanceEngineController extends Controller
 
         $exports = FinanceLedgerExportJob::query()
             ->where('club_id', $club->id)
-            ->where(function ($query) use ($request) {
-                $query->where('user_id', $request->user()->id)
-                    ->orWhereNull('user_id');
-            })
+            ->with('user:id,name,email')
             ->latest()
             ->limit($validated['limit'] ?? 10)
             ->get()
@@ -167,6 +176,11 @@ class FinanceEngineController extends Controller
                 'file_name' => $export->files['file_name'] ?? null,
                 'url' => $export->files['url'] ?? null,
                 'size' => $export->files['size'] ?? null,
+                'requested_by' => $export->user ? [
+                    'id' => (int) $export->user->id,
+                    'name' => $export->user->name,
+                    'email' => $export->user->email,
+                ] : null,
                 'status_url' => route('club.finance-engine.movements.pdf-export.status', $export),
                 'created_at' => optional($export->created_at)->toIso8601String(),
                 'started_at' => optional($export->started_at)->toIso8601String(),

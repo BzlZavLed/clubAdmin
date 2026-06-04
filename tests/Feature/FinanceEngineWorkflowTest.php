@@ -263,6 +263,14 @@ class FinanceEngineWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('file_name', 'finance-ledger.pdf');
+
+        $this->actingAs($director)
+            ->getJson(route('club.finance-engine.movements.pdf-exports.index', [
+                'club_id' => $club->id,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.0.requested_by.name', $director->name)
+            ->assertJsonPath('data.0.requested_by.email', $director->email);
     }
 
     public function test_finance_ledger_receipt_appendix_orders_attached_and_missing_sections_by_reference(): void
@@ -478,6 +486,104 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertStringContainsString('Comprobante de gasto EXP-13', $ledgerHtml);
         $this->assertStringContainsString('Comprobante de reembolso REIMB-35', $ledgerHtml);
         $this->assertStringNotContainsString('<a href="https://example.test/receipts/EXP-13.jpg">Comprobante de gasto EXP-13</a>', $ledgerHtml);
+    }
+
+    public function test_finance_ledger_pdf_groups_all_accounts_with_location_balances(): void
+    {
+        $club = (object) [
+            'club_name' => 'Test Club',
+            'church_name' => 'Test Church',
+        ];
+
+        $report = [
+            'summary' => [
+                'cash_balance' => 15,
+                'bank_balance' => 30,
+                'total_available' => 45,
+                'accounts' => [
+                    [
+                        'account' => 'club_budget',
+                        'label' => 'Club Account',
+                        'cash_balance' => 10,
+                        'bank_balance' => 20,
+                        'total_available' => 30,
+                    ],
+                    [
+                        'account' => 'church_budget',
+                        'label' => 'Church Account',
+                        'cash_balance' => 5,
+                        'bank_balance' => 10,
+                        'total_available' => 15,
+                    ],
+                ],
+            ],
+            'filters' => [],
+            'movements' => [
+                [
+                    'movement_id' => 'payment:1',
+                    'domain' => 'income',
+                    'kind' => 'income',
+                    'date' => '2026-01-01',
+                    'concept' => 'Club dues',
+                    'amount' => 10,
+                    'account' => 'club_budget',
+                    'account_label' => 'Club Account',
+                    'location' => 'cash',
+                    'status' => 'posted',
+                    'balance_after' => [
+                        'account' => 'club_budget',
+                        'account_balance' => 10,
+                    ],
+                ],
+                [
+                    'movement_id' => 'treasury:2',
+                    'domain' => 'transfer',
+                    'kind' => 'account_transfer',
+                    'date' => '2026-01-02',
+                    'concept' => 'Move reserve',
+                    'amount' => 5,
+                    'from_account' => 'club_budget',
+                    'from_account_label' => 'Club Account',
+                    'from_location' => 'cash',
+                    'to_account' => 'church_budget',
+                    'to_account_label' => 'Church Account',
+                    'to_location' => 'bank',
+                    'status' => 'posted',
+                    'balance_after' => [
+                        'from' => [
+                            'account' => 'club_budget',
+                            'account_balance' => 25,
+                        ],
+                        'to' => [
+                            'account' => 'church_budget',
+                            'account_balance' => 15,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $html = view('reports.finance_engine_movements', [
+            'club' => $club,
+            'report' => $report,
+            'generatedAt' => now(),
+            'clubLogoDataUri' => null,
+            'validationUrl' => 'https://example.test/validate',
+            'qrCodeDataUri' => null,
+            'receiptAnnexes' => [],
+            'ledgerOnly' => true,
+            'generatedBy' => (object) ['name' => 'Requester User'],
+        ])->render();
+
+        $this->assertStringContainsString('Resumen por cuenta', $html);
+        $this->assertStringContainsString('Movimientos por cuenta', $html);
+        $this->assertStringContainsString('Solicitado por: Requester User', $html);
+        $this->assertStringContainsString('Club Account', $html);
+        $this->assertStringContainsString('Church Account', $html);
+        $this->assertStringContainsString('$10.00', $html);
+        $this->assertStringContainsString('$20.00', $html);
+        $this->assertStringContainsString('$30.00', $html);
+        $this->assertSame(2, substr_count($html, 'Move reserve'));
     }
 
     public function test_fundraiser_pos_records_sales_with_receipts_inventory_and_event_totals(): void

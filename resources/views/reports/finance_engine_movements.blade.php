@@ -33,6 +33,16 @@
         .muted { color: #6b7280; }
         .summary { display: table; width: 100%; margin: 10px 0 14px; }
         .summary-card { display: table-cell; border: 1px solid #d1d5db; padding: 8px; width: 33.3%; }
+        .account-summary-table { margin: 8px 0 14px; font-size: 9px; }
+        .account-summary-table th, .account-summary-table td { padding: 4px; }
+        .account-section { margin-top: 14px; }
+        .account-section + .account-section { page-break-before: always; }
+        .account-section-header { border: 1px solid #d1d5db; background: #f9fafb; padding: 7px; margin-bottom: 6px; }
+        .account-section-title { font-size: 12px; font-weight: 700; margin: 0 0 4px; }
+        .account-section-balances { width: 100%; border-collapse: collapse; font-size: 9px; }
+        .account-section-balances td { width: 33.333%; border: 0; padding: 2px 6px 0 0; }
+        .account-section-balances .label { color: #6b7280; font-size: 8px; }
+        .account-section-balances .value { font-weight: 700; }
         .amount-in { color: #047857; font-weight: 700; }
         .amount-out { color: #be123c; font-weight: 700; }
         .amount-transfer { color: #0369a1; font-weight: 700; }
@@ -88,6 +98,7 @@
     $annexOnly = $annexOnly ?? false;
     $ledgerOnly = $ledgerOnly ?? false;
     $includeIncomeReceiptAnnexes = $includeIncomeReceiptAnnexes ?? false;
+    $generatedBy = $generatedBy ?? null;
     $movements = collect($report['movements'] ?? []);
     $summary = $report['summary'] ?? [];
     $receiptAnnexes = collect($receiptAnnexes ?? [])->values()->map(function (array $annex, int $index) {
@@ -248,6 +259,63 @@
         }
 
         return $movement['account_label'] ?? $movement['account'] ?? $movement['from_account'] ?? '-';
+    };
+    $movementAccountKeys = function (array $movement) use ($isTransfer) {
+        if ($isTransfer($movement)) {
+            $accounts = collect([
+                $movement['from_account'] ?? $movement['account'] ?? null,
+                $movement['to_account'] ?? $movement['account'] ?? null,
+            ])->filter()->unique()->values()->all();
+
+            return !empty($accounts) ? $accounts : ['unassigned'];
+        }
+
+        $accounts = collect([
+            $movement['account'] ?? $movement['from_account'] ?? $movement['to_account'] ?? null,
+        ])->filter()->unique()->values()->all();
+
+        return !empty($accounts) ? $accounts : ['unassigned'];
+    };
+    foreach ($movements as $movement) {
+        if (!empty($movement['account']) && !empty($movement['account_label'])) {
+            $accountLabels[$movement['account']] = $movement['account_label'];
+        }
+        if (!empty($movement['from_account']) && !empty($movement['from_account_label'])) {
+            $accountLabels[$movement['from_account']] = $movement['from_account_label'];
+        }
+        if (!empty($movement['to_account']) && !empty($movement['to_account_label'])) {
+            $accountLabels[$movement['to_account']] = $movement['to_account_label'];
+        }
+    }
+    $accountBalanceRows = collect($summary['accounts'] ?? [])
+        ->mapWithKeys(function (array $row) use (&$accountLabels) {
+            $account = $row['account'] ?? null;
+            if (!$account) {
+                return [];
+            }
+
+            if (!empty($row['label'])) {
+                $accountLabels[$account] = $row['label'];
+            }
+
+            return [$account => [
+                'account' => $account,
+                'label' => $accountLabels[$account] ?? $row['label'] ?? $account,
+                'cash_balance' => (float) ($row['cash_balance'] ?? 0),
+                'bank_balance' => (float) ($row['bank_balance'] ?? 0),
+                'total_available' => (float) ($row['total_available'] ?? (($row['cash_balance'] ?? 0) + ($row['bank_balance'] ?? 0))),
+            ]];
+        });
+    $accountBalanceFor = function (?string $account) use ($accountBalanceRows, $accountLabels) {
+        $row = $account ? $accountBalanceRows->get($account) : null;
+
+        return $row ?: [
+            'account' => $account,
+            'label' => $account ? ($accountLabels[$account] ?? ($account === 'unassigned' ? 'Cuenta sin asignar' : $account)) : 'Todas las cuentas',
+            'cash_balance' => 0,
+            'bank_balance' => 0,
+            'total_available' => 0,
+        ];
     };
     $movementLocationText = function (array $movement) use ($isTransfer, $locationLabel) {
         if ($isTransfer($movement)) {
@@ -456,11 +524,39 @@
             : '-';
     };
     $isAllAccountsReport = empty($report['filters']['account'] ?? null);
-    $movementSection = [
-        'account' => $report['filters']['account'] ?? null,
-        'label' => $isAllAccountsReport ? 'Todos los movimientos' : null,
-        'movements' => $movements->all(),
-    ];
+    $selectedAccount = $report['filters']['account'] ?? null;
+    $selectedAccountBalance = $accountBalanceFor($selectedAccount);
+    $movementSections = collect();
+
+    if ($isAllAccountsReport) {
+        $sectionsByAccount = [];
+        foreach ($movements as $movement) {
+            foreach ($movementAccountKeys($movement) as $account) {
+                if (!isset($sectionsByAccount[$account])) {
+                    $balanceRow = $accountBalanceFor($account);
+                    $sectionsByAccount[$account] = [
+                        'account' => $account,
+                        'label' => $balanceRow['label'],
+                        'balance' => $balanceRow,
+                        'movements' => [],
+                    ];
+                }
+
+                $sectionsByAccount[$account]['movements'][] = $movement;
+            }
+        }
+
+        $movementSections = collect($sectionsByAccount)
+            ->sortBy(fn (array $section) => $section['label'])
+            ->values();
+    } else {
+        $movementSections = collect([[
+            'account' => $selectedAccount,
+            'label' => $selectedAccountBalance['label'],
+            'balance' => $selectedAccountBalance,
+            'movements' => $movements->all(),
+        ]]);
+    }
 @endphp
 
 <div class="footer">
@@ -475,6 +571,9 @@
         <h1>{{ $annexOnly ? 'Anexos de recibos' : 'Libro contable financiero' }}</h1>
         <div class="muted">{{ $club->club_name ?? 'Club' }}</div>
         <div class="muted">Generado: {{ optional($generatedAt)->format('Y-m-d H:i') }}</div>
+        @if(!empty($generatedBy?->name))
+            <div class="muted">Solicitado por: {{ $generatedBy->name }}</div>
+        @endif
     </div>
     <div class="header-right">
         @if(!empty($clubLogoDataUri))
@@ -487,23 +586,44 @@
 <div class="summary">
     <div class="summary-card">
         <div class="muted">Efectivo</div>
-        <strong>{{ $money($summary['cash_balance'] ?? 0) }}</strong>
+        <strong>{{ $money($isAllAccountsReport ? ($summary['cash_balance'] ?? 0) : ($selectedAccountBalance['cash_balance'] ?? 0)) }}</strong>
     </div>
     <div class="summary-card">
         <div class="muted">Banco</div>
-        <strong>{{ $money($summary['bank_balance'] ?? 0) }}</strong>
+        <strong>{{ $money($isAllAccountsReport ? ($summary['bank_balance'] ?? 0) : ($selectedAccountBalance['bank_balance'] ?? 0)) }}</strong>
     </div>
     <div class="summary-card">
-        <div class="muted">Total disponible</div>
-        <strong>{{ $money($summary['total_available'] ?? (($summary['cash_balance'] ?? 0) + ($summary['bank_balance'] ?? 0))) }}</strong>
+        <div class="muted">{{ $isAllAccountsReport ? 'Total disponible' : 'Total cuenta' }}</div>
+        <strong>{{ $money($isAllAccountsReport ? ($summary['total_available'] ?? (($summary['cash_balance'] ?? 0) + ($summary['bank_balance'] ?? 0))) : ($selectedAccountBalance['total_available'] ?? 0)) }}</strong>
     </div>
 </div>
 
-<h2>Movimientos</h2>
 @if($isAllAccountsReport)
-    <h3 class="section-title">{{ $movementSection['label'] }}</h3>
+    <h2>Resumen por cuenta</h2>
+    <table class="account-summary-table">
+        <thead>
+            <tr>
+                <th>Cuenta</th>
+                <th style="text-align:right;">Efectivo</th>
+                <th style="text-align:right;">Banco</th>
+                <th style="text-align:right;">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($accountBalanceRows->sortBy('label') as $accountRow)
+                <tr>
+                    <td>{{ $accountRow['label'] }}</td>
+                    <td style="text-align:right;">{{ $money($accountRow['cash_balance'] ?? 0) }}</td>
+                    <td style="text-align:right;">{{ $money($accountRow['bank_balance'] ?? 0) }}</td>
+                    <td style="text-align:right;"><strong>{{ $money($accountRow['total_available'] ?? 0) }}</strong></td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
 @endif
-@if(empty($movementSection['movements']))
+
+<h2>Movimientos por cuenta</h2>
+@if($movementSections->isEmpty() || $movementSections->every(fn (array $section) => empty($section['movements'])))
     <table>
         <tbody>
             <tr>
@@ -512,27 +632,49 @@
         </tbody>
     </table>
 @else
-    <table class="ledger-table">
-        <thead>
-            <tr>
-                <th class="date-column">Fecha</th>
-                <th class="type-column">Tipo</th>
-                <th class="account-column">Cuenta</th>
-                <th class="location-column">Ubicacion</th>
-                <th class="concept-column">Concepto</th>
-                <th class="counterparty-column">Contraparte</th>
-                <th class="document-column">Recibo / comprobante</th>
-                <th class="status-column">Estado</th>
-                <th class="amount-column" style="text-align:right;">Monto</th>
-                <th class="balance-column" style="text-align:right;">Balance cuenta</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($movementSection['movements'] as $movement)
-                @php
-                    $direction = $movement['direction'] ?? null;
-                    $documents = $documentLinks($movement);
-                @endphp
+    @foreach($movementSections as $movementSection)
+        <div class="account-section">
+            <div class="account-section-header">
+                <div class="account-section-title">{{ $movementSection['label'] ?? 'Cuenta' }}</div>
+                <table class="account-section-balances">
+                    <tr>
+                        <td>
+                            <div class="label">Efectivo</div>
+                            <div class="value">{{ $money($movementSection['balance']['cash_balance'] ?? 0) }}</div>
+                        </td>
+                        <td>
+                            <div class="label">Banco</div>
+                            <div class="value">{{ $money($movementSection['balance']['bank_balance'] ?? 0) }}</div>
+                        </td>
+                        <td>
+                            <div class="label">Total cuenta</div>
+                            <div class="value">{{ $money($movementSection['balance']['total_available'] ?? 0) }}</div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <table class="ledger-table">
+                <thead>
+                    <tr>
+                        <th class="date-column">Fecha</th>
+                        <th class="type-column">Tipo</th>
+                        <th class="account-column">Cuenta</th>
+                        <th class="location-column">Ubicacion</th>
+                        <th class="concept-column">Concepto</th>
+                        <th class="counterparty-column">Contraparte</th>
+                        <th class="document-column">Recibo / comprobante</th>
+                        <th class="status-column">Estado</th>
+                        <th class="amount-column" style="text-align:right;">Monto</th>
+                        <th class="balance-column" style="text-align:right;">Balance cuenta</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach($movementSection['movements'] as $movement)
+                    @php
+                        $direction = $movement['direction'] ?? null;
+                        $documents = $documentLinks($movement);
+                    @endphp
                 <tr>
                     <td class="date-column">{{ $movement['date'] ?? '-' }}</td>
                     <td class="type-column">{{ $movement['domain'] ?? '-' }}<br><span class="muted">{{ $movement['kind'] ?? '' }}</span></td>
@@ -579,9 +721,11 @@
                     </td>
                     <td style="text-align:right;" class="balance-column balance-cell">{{ $movementBalanceText($movement, $movementSection['account']) }}</td>
                 </tr>
-            @endforeach
-        </tbody>
-    </table>
+                @endforeach
+                </tbody>
+            </table>
+        </div>
+    @endforeach
 @endif
 @endif
 
