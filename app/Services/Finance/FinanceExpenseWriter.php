@@ -14,8 +14,11 @@ use App\Support\ClubHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class FinanceExpenseWriter
 {
@@ -143,29 +146,83 @@ class FinanceExpenseWriter
 
     public function uploadReceipt(Request $request, Expense $expense): JsonResponse
     {
+        Log::info('finance.expense_receipt_upload.started', $this->uploadLogContext($request, $expense, 'receipt_image'));
+
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
         if ($this->isCorrectionExpense($expense)) {
+            Log::warning('finance.expense_receipt_upload.rejected_correction', $this->uploadLogContext($request, $expense, 'receipt_image'));
+
             return response()->json(['message' => 'Corrections do not accept receipt uploads.'], 422);
         }
 
-        $request->validate([
-            'receipt_image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
-        ], $this->receiptValidationMessages());
+        try {
+            $request->validate([
+                'receipt_image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            ], $this->receiptValidationMessages());
+        } catch (ValidationException $e) {
+            Log::warning('finance.expense_receipt_upload.validation_failed', [
+                ...$this->uploadLogContext($request, $expense, 'receipt_image'),
+                'errors' => $e->errors(),
+            ]);
 
-        $path = $request->file('receipt_image')->store('expense-receipts', 'public');
+            throw $e;
+        }
+        Log::info('finance.expense_receipt_upload.validated', $this->uploadLogContext($request, $expense, 'receipt_image'));
+
+        try {
+            $path = $request->file('receipt_image')->store('expense-receipts', 'public');
+        } catch (Throwable $e) {
+            Log::error('finance.expense_receipt_upload.storage_exception', [
+                ...$this->uploadLogContext($request, $expense, 'receipt_image'),
+                'exception' => get_class($e),
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        if (!is_string($path) || $path === '') {
+            Log::error('finance.expense_receipt_upload.storage_failed', $this->uploadLogContext($request, $expense, 'receipt_image'));
+
+            return response()->json([
+                'message' => 'No se pudo guardar el comprobante. Revisa la configuracion de almacenamiento.',
+                'errors' => ['receipt_image' => ['No se pudo guardar el comprobante.']],
+            ], 500);
+        }
 
         if ($expense->receipt_path) {
+            Log::info('finance.expense_receipt_upload.deleting_previous_file', [
+                ...$this->uploadLogContext($request, $expense, 'receipt_image'),
+                'old_receipt_path' => $expense->receipt_path,
+                'new_receipt_path' => $path,
+            ]);
             Storage::disk('public')->delete($expense->receipt_path);
         }
 
-        $expense->update([
+        try {
+            $expense->update([
+                'receipt_path' => $path,
+                'status' => 'completed',
+            ]);
+        } catch (Throwable $e) {
+            Log::error('finance.expense_receipt_upload.database_exception', [
+                ...$this->uploadLogContext($request, $expense, 'receipt_image'),
+                'receipt_path' => $path,
+                'exception' => get_class($e),
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        Log::info('finance.expense_receipt_upload.completed', [
+            ...$this->uploadLogContext($request, $expense->refresh(), 'receipt_image'),
             'receipt_path' => $path,
-            'status' => 'completed',
         ]);
 
         return response()->json([
             'message' => 'Receipt uploaded',
-            'data' => $expense->refresh(),
+            'data' => $this->expenseReceiptPayload($expense),
         ]);
     }
 
@@ -189,7 +246,7 @@ class FinanceExpenseWriter
 
         return response()->json([
             'message' => 'Receipt removed',
-            'data' => $expense->refresh(),
+            'data' => $this->expenseReceiptPayload($expense->refresh()),
         ]);
     }
 
@@ -200,40 +257,98 @@ class FinanceExpenseWriter
 
     public function uploadReimbursementPaymentProof(Request $request, Expense $expense): JsonResponse
     {
+        Log::info('finance.reimbursement_payment_proof_upload.started', $this->uploadLogContext($request, $expense));
+
         $this->ensureExpenseBelongsToUser($request->user(), $expense);
         if ($this->isCorrectionExpense($expense)) {
+            Log::warning('finance.reimbursement_payment_proof_upload.rejected_correction', $this->uploadLogContext($request, $expense));
+
             return response()->json(['message' => 'Corrections do not accept reimbursement proof uploads.'], 422);
         }
 
         if ($expense->pay_to !== 'reimbursement_to') {
+            Log::warning('finance.reimbursement_payment_proof_upload.rejected_not_reimbursement', $this->uploadLogContext($request, $expense));
+
             return response()->json(['message' => 'Only reimbursements can accept this payment proof.'], 422);
         }
 
         $field = $this->paymentProofFileField($request);
         if (!$field) {
+            Log::warning('finance.reimbursement_payment_proof_upload.missing_file', $this->uploadLogContext($request, $expense));
+
             return response()->json([
                 'message' => 'Select a reimbursement payment proof file.',
                 'errors' => ['payment_proof_file' => ['Select a reimbursement payment proof file.']],
             ], 422);
         }
 
-        $request->validate([$field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240']], $this->receiptValidationMessages());
+        try {
+            $request->validate([$field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240']], $this->receiptValidationMessages());
+        } catch (ValidationException $e) {
+            Log::warning('finance.reimbursement_payment_proof_upload.validation_failed', [
+                ...$this->uploadLogContext($request, $expense, $field),
+                'errors' => $e->errors(),
+            ]);
 
-        $path = $request->file($field)->store('reimbursement-payment-proofs', 'public');
+            throw $e;
+        }
+        Log::info('finance.reimbursement_payment_proof_upload.validated', $this->uploadLogContext($request, $expense, $field));
+
+        try {
+            $path = $request->file($field)->store('reimbursement-payment-proofs', 'public');
+        } catch (Throwable $e) {
+            Log::error('finance.reimbursement_payment_proof_upload.storage_exception', [
+                ...$this->uploadLogContext($request, $expense, $field),
+                'exception' => get_class($e),
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        if (!is_string($path) || $path === '') {
+            Log::error('finance.reimbursement_payment_proof_upload.storage_failed', $this->uploadLogContext($request, $expense, $field));
+
+            return response()->json([
+                'message' => 'No se pudo guardar el comprobante de pago. Revisa la configuracion de almacenamiento.',
+                'errors' => [$field => ['No se pudo guardar el comprobante de pago.']],
+            ], 500);
+        }
 
         if ($expense->reimbursement_payment_proof_path) {
+            Log::info('finance.reimbursement_payment_proof_upload.deleting_previous_file', [
+                ...$this->uploadLogContext($request, $expense, $field),
+                'old_payment_proof_path' => $expense->reimbursement_payment_proof_path,
+                'new_payment_proof_path' => $path,
+            ]);
             Storage::disk('public')->delete($expense->reimbursement_payment_proof_path);
         }
 
-        $expense->update([
-            'reimbursement_payment_proof_path' => $path,
-            'reimbursement_payment_proof_uploaded_at' => now(),
-            'reimbursement_payment_proof_uploaded_by_user_id' => $request->user()?->id,
+        try {
+            $expense->update([
+                'reimbursement_payment_proof_path' => $path,
+                'reimbursement_payment_proof_uploaded_at' => now(),
+                'reimbursement_payment_proof_uploaded_by_user_id' => $request->user()?->id,
+            ]);
+        } catch (Throwable $e) {
+            Log::error('finance.reimbursement_payment_proof_upload.database_exception', [
+                ...$this->uploadLogContext($request, $expense, $field),
+                'payment_proof_path' => $path,
+                'exception' => get_class($e),
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        Log::info('finance.reimbursement_payment_proof_upload.completed', [
+            ...$this->uploadLogContext($request, $expense->refresh(), $field),
+            'payment_proof_path' => $path,
         ]);
 
         return response()->json([
             'message' => 'Reimbursement payment proof uploaded',
-            'data' => $expense->refresh(),
+            'data' => $this->expenseReceiptPayload($expense),
         ]);
     }
 
@@ -264,7 +379,7 @@ class FinanceExpenseWriter
 
         return response()->json([
             'message' => 'Reimbursement payment proof removed',
-            'data' => $expense->refresh(),
+            'data' => $this->expenseReceiptPayload($expense->refresh()),
         ]);
     }
 
@@ -493,6 +608,55 @@ class FinanceExpenseWriter
         }
 
         return $request->hasFile('receipt_image') ? 'receipt_image' : null;
+    }
+
+    private function expenseReceiptPayload(Expense $expense): array
+    {
+        return [
+            'id' => (int) $expense->id,
+            'status' => $expense->status,
+            'receipt_path' => $expense->receipt_path,
+            'receipt_url' => $expense->receipt_url,
+            'reimbursement_payment_proof_path' => $expense->reimbursement_payment_proof_path,
+            'reimbursement_payment_proof_url' => $expense->reimbursement_payment_proof_url,
+            'reimbursement_payment_proof_uploaded_at' => optional($expense->reimbursement_payment_proof_uploaded_at)->toDateTimeString(),
+        ];
+    }
+
+    private function uploadLogContext(Request $request, Expense $expense, ?string $field = null): array
+    {
+        return [
+            'expense_id' => (int) $expense->id,
+            'club_id' => (int) $expense->club_id,
+            'pay_to' => $expense->pay_to,
+            'status' => $expense->status,
+            'user_id' => $request->user()?->id,
+            'route' => $request->route()?->getName(),
+            'method' => $request->method(),
+            'path' => '/' . ltrim($request->path(), '/'),
+            'content_length' => $request->server('CONTENT_LENGTH'),
+            'field' => $field,
+            'has_file' => $field ? $request->hasFile($field) : null,
+            'file' => $field ? $this->fileLogContext($request, $field) : null,
+        ];
+    }
+
+    private function fileLogContext(Request $request, string $field): ?array
+    {
+        if (!$request->hasFile($field)) {
+            return null;
+        }
+
+        $file = $request->file($field);
+
+        return [
+            'size' => $file->getSize(),
+            'client_mime' => $file->getClientMimeType(),
+            'detected_mime' => $file->isValid() ? $file->getMimeType() : null,
+            'extension' => strtolower((string) $file->getClientOriginalExtension()),
+            'upload_error' => $file->getError(),
+            'is_valid' => $file->isValid(),
+        ];
     }
 
     private function receiptValidationMessages(): array

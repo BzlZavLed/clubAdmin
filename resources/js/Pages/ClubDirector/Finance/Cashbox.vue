@@ -104,6 +104,7 @@ const TUTORIAL_REIMBURSEMENT_ACCOUNT = 'reimbursement_to'
 const IMAGE_RECEIPT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
 const DOCUMENT_RECEIPT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf']
 const IMAGE_RECEIPT_MAX_BYTES = 5 * 1024 * 1024
+const IMAGE_RECEIPT_SOURCE_MAX_BYTES = 10 * 1024 * 1024
 const DOCUMENT_RECEIPT_MAX_BYTES = 10 * 1024 * 1024
 const RECEIPT_IMAGE_TARGET_BYTES = 4.5 * 1024 * 1024
 
@@ -1663,7 +1664,7 @@ const setExpenseReceiptFile = (expenseId, event) => {
         setExpenseActionError(expenseId, invalidFileMessage(IMAGE_RECEIPT_EXTENSIONS))
         return
     }
-    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_MAX_BYTES * 2)) {
+    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_SOURCE_MAX_BYTES)) {
         event.target.value = ''
         expenseReceiptFiles.value = {
             ...expenseReceiptFiles.value,
@@ -1825,7 +1826,7 @@ const onIncomeCheckImage = async (event) => {
         }
         return
     }
-    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_MAX_BYTES * 2)) {
+    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_SOURCE_MAX_BYTES)) {
         event.target.value = ''
         incomeForm.value.check_image = null
         incomeErrors.value = {
@@ -1836,7 +1837,17 @@ const onIncomeCheckImage = async (event) => {
     }
 
     incomeErrors.value = { ...incomeErrors.value, check_image: '' }
-    incomeForm.value.check_image = await receiptUploadFile(file)
+    const uploadFile = await receiptUploadFile(file)
+    if (uploadFile && !validateReceiptFileSize(uploadFile, IMAGE_RECEIPT_MAX_BYTES)) {
+        event.target.value = ''
+        incomeForm.value.check_image = null
+        incomeErrors.value = {
+            ...incomeErrors.value,
+            check_image: invalidFileSizeMessage(5),
+        }
+        return
+    }
+    incomeForm.value.check_image = uploadFile
 }
 
 const onExpenseReceipt = async (event) => {
@@ -1850,7 +1861,7 @@ const onExpenseReceipt = async (event) => {
         }
         return
     }
-    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_MAX_BYTES * 2)) {
+    if (file && !validateReceiptFileSize(file, IMAGE_RECEIPT_SOURCE_MAX_BYTES)) {
         event.target.value = ''
         expenseForm.value.receipt_image = null
         expenseErrors.value = {
@@ -1861,7 +1872,17 @@ const onExpenseReceipt = async (event) => {
     }
 
     expenseErrors.value = { ...expenseErrors.value, receipt_image: '' }
-    expenseForm.value.receipt_image = await receiptUploadFile(file)
+    const uploadFile = await receiptUploadFile(file)
+    if (uploadFile && !validateReceiptFileSize(uploadFile, IMAGE_RECEIPT_MAX_BYTES)) {
+        event.target.value = ''
+        expenseForm.value.receipt_image = null
+        expenseErrors.value = {
+            ...expenseErrors.value,
+            receipt_image: invalidFileSizeMessage(5),
+        }
+        return
+    }
+    expenseForm.value.receipt_image = uploadFile
 }
 
 const resetIncomeForm = () => {
@@ -2628,6 +2649,10 @@ const uploadExpenseReceipt = async (expense) => {
         }
 
         const uploadFile = await receiptUploadFile(file)
+        if (uploadFile && !validateReceiptFileSize(uploadFile, IMAGE_RECEIPT_MAX_BYTES)) {
+            setExpenseActionError(expense.id, invalidFileSizeMessage(5))
+            return
+        }
         await uploadFinanceEngineExpenseReceipt(expense.id, { receipt_image: uploadFile }, {
             onUploadProgress: uploadProgressHandler(expense.id),
         })
@@ -3288,6 +3313,9 @@ onBeforeUnmount(() => {
                                 class="mt-1 block w-full text-sm text-gray-700"
                                 @change="onExpenseReceipt"
                             />
+                            <p class="mt-1 text-xs text-gray-500">
+                                {{ tr('Formatos permitidos: JPG, PNG o WEBP. Maximo 5 MB despues de comprimir.', 'Allowed formats: JPG, PNG, or WEBP. Maximum 5 MB after compression.') }}
+                            </p>
                             <p v-if="firstError(expenseErrors, 'receipt_image')" class="mt-1 text-xs text-rose-600">{{ firstError(expenseErrors, 'receipt_image') }}</p>
                         </div>
                     </div>
@@ -3372,6 +3400,9 @@ onBeforeUnmount(() => {
                                 class="block w-full text-sm text-gray-700"
                                 @change="setExpenseReceiptFile(expense.id, $event)"
                             />
+                            <p class="text-xs text-gray-500">
+                                {{ tr('Formatos permitidos: JPG, PNG o WEBP. Maximo 5 MB despues de comprimir.', 'Allowed formats: JPG, PNG, or WEBP. Maximum 5 MB after compression.') }}
+                            </p>
                             <div v-if="expenseUploadProgressValue(expense.id) > 0" class="space-y-1">
                                 <div class="h-2 overflow-hidden rounded-full bg-gray-100">
                                     <div
@@ -3546,6 +3577,9 @@ onBeforeUnmount(() => {
                                     class="mt-2 block w-full text-sm text-gray-700"
                                     @change="setReimbursementPaymentProofFile(expense.id, $event)"
                                 />
+                                <p class="mt-1 text-xs text-gray-500">
+                                    {{ tr('Formatos permitidos: JPG, PNG, WEBP o PDF. Maximo 10 MB.', 'Allowed formats: JPG, PNG, WEBP, or PDF. Maximum 10 MB.') }}
+                                </p>
                                 <div v-if="expenseUploadProgressValue(expense.id) > 0" class="mt-2 space-y-1">
                                     <div class="h-2 overflow-hidden rounded-full bg-gray-100">
                                         <div

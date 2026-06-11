@@ -11,6 +11,8 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Exceptions\PostTooLargeException;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -48,6 +50,29 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         Integration::handles($exceptions);
+        $exceptions->render(function (PostTooLargeException $e, $request) {
+            Log::warning('finance.upload.post_too_large', [
+                'route' => $request->route()?->getName(),
+                'method' => $request->method(),
+                'path' => '/' . ltrim($request->path(), '/'),
+                'content_length' => $request->server('CONTENT_LENGTH'),
+                'post_max_size' => ini_get('post_max_size'),
+                'upload_max_filesize' => ini_get('upload_max_filesize'),
+                'user_id' => $request->user()?->id,
+            ]);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'El archivo es demasiado grande para subirlo.',
+                    'errors' => [
+                        'receipt_image' => ['El archivo es demasiado grande para subirlo.'],
+                    ],
+                ], 413);
+            }
+
+            return null;
+        });
+
         $exceptions->reportable(function (Throwable $e) {
             if (app()->runningInConsole()) {
                 return;
