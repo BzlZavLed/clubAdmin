@@ -59,6 +59,7 @@ const reimbursementPayees = ref([])
 const pendingReceipts = ref([])
 const pendingReceiptEmails = ref({})
 const pendingReceiptSending = ref({})
+const showPendingReceipts = ref(false)
 const engineReport = ref(null)
 const movementDomain = ref('all')
 const movementSort = ref('date')
@@ -3044,11 +3045,19 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-if="pendingReceipts.length" class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <button
+                    type="button"
+                    class="flex w-full flex-col gap-2 text-left sm:flex-row sm:items-start sm:justify-between"
+                    @click="showPendingReceipts = !showPendingReceipts"
+                >
                     <div class="flex items-start gap-2">
                         <ExclamationTriangleIcon class="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
                         <div>
-                            <h3 class="text-base font-semibold text-amber-950">{{ tr('Recibos sin enviar', 'Unsent receipts') }}</h3>
+                            <h3 class="flex items-center gap-2 text-base font-semibold text-amber-950">
+                                <ChevronDownIcon v-if="showPendingReceipts" class="h-4 w-4" />
+                                <ChevronRightIcon v-else class="h-4 w-4" />
+                                {{ tr('Recibos sin enviar', 'Unsent receipts') }}
+                            </h3>
                             <p class="mt-1 text-sm text-amber-800">
                                 {{ tr('Agrega un correo aqui o actualiza el perfil del pagador y vuelve a Caja para reintentar.', 'Add an email here or update the payer profile and return to Cashbox to retry.') }}
                             </p>
@@ -3057,9 +3066,9 @@ onBeforeUnmount(() => {
                     <span class="inline-flex w-fit items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
                         {{ pendingReceipts.length }}
                     </span>
-                </div>
+                </button>
 
-                <div class="mt-4 grid gap-3">
+                <div v-if="showPendingReceipts" class="mt-4 grid gap-3">
                     <article
                         v-for="receipt in pendingReceipts"
                         :key="receipt.id"
