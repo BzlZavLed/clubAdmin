@@ -60,6 +60,7 @@ const pendingReceipts = ref([])
 const pendingReceiptEmails = ref({})
 const pendingReceiptSending = ref({})
 const showPendingReceipts = ref(false)
+const pendingReceiptSearch = ref('')
 const engineReport = ref(null)
 const movementDomain = ref('all')
 const movementSort = ref('date')
@@ -166,6 +167,21 @@ const activeClubName = computed(() => currentClub.value?.club_name || clubs.valu
 const summary = computed(() => engineReport.value?.summary || {})
 const summaryAccounts = computed(() => summary.value?.accounts || [])
 const allMovements = computed(() => engineReport.value?.movements || [])
+const filteredPendingReceipts = computed(() => {
+    const query = pendingReceiptSearch.value.trim().toLowerCase()
+
+    if (!query) return pendingReceipts.value
+
+    return pendingReceipts.value.filter((receipt) => [
+        receipt?.receipt_number,
+        receipt?.id,
+        receipt?.payer_name,
+        receipt?.payer_email,
+        receipt?.issued_to_email,
+        receipt?.concept_name,
+        receipt?.reason,
+    ].some((value) => String(value || '').toLowerCase().includes(query)))
+})
 const movementNumericId = (movement) => {
     const match = String(movement?.movement_id || movement?.id || '').match(/(\d+)(?!.*\d)/)
 
@@ -3069,8 +3085,26 @@ onBeforeUnmount(() => {
                 </button>
 
                 <div v-if="showPendingReceipts" class="mt-4 grid gap-3">
+                    <label class="block">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-amber-900">{{ tr('Buscar recibo', 'Search receipt') }}</span>
+                        <input
+                            v-model="pendingReceiptSearch"
+                            type="search"
+                            class="mt-1 w-full rounded-lg border-amber-200 bg-white text-sm shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                            :placeholder="tr('Numero de recibo o identificador', 'Receipt number or identifier')"
+                        />
+                    </label>
+
+                    <p v-if="pendingReceiptSearch.trim()" class="text-xs text-amber-800">
+                        {{ filteredPendingReceipts.length }} / {{ pendingReceipts.length }} {{ tr('recibos encontrados', 'receipts found') }}
+                    </p>
+
+                    <p v-if="!filteredPendingReceipts.length" class="rounded-lg border border-dashed border-amber-300 bg-white px-3 py-3 text-sm text-amber-900">
+                        {{ tr('No se encontraron recibos con ese identificador.', 'No receipts found for that identifier.') }}
+                    </p>
+
                     <article
-                        v-for="receipt in pendingReceipts"
+                        v-for="receipt in filteredPendingReceipts"
                         :key="receipt.id"
                         class="rounded-lg border border-amber-200 bg-white p-3"
                     >
