@@ -203,6 +203,7 @@ const ledgerPdfParams = computed(() => {
     if (ledgerFilters.value.account !== 'all') params.account = ledgerFilters.value.account
     if (ledgerFilters.value.date_from) params.date_from = ledgerFilters.value.date_from
     if (ledgerFilters.value.date_to) params.date_to = ledgerFilters.value.date_to
+    if (ledgerSearch.value.trim()) params.search = ledgerSearch.value.trim()
     if (includeLedgerAnnexes.value) params.include_annexes = 1
     if (includeLedgerAnnexes.value && includeIncomeReceiptAnnexes.value) params.include_income_receipt_annexes = 1
 
@@ -216,7 +217,6 @@ watch(includeLedgerAnnexes, (includeAnnexes) => {
     }
 })
 
-const ledgerHasCompleteDateRange = computed(() => Boolean(ledgerFilters.value.date_from && ledgerFilters.value.date_to))
 const ledgerPreferencesKey = computed(() => selectedClubId.value
     ? `finance-reports-ledger:${props.auth_user?.id || 'user'}:${selectedClubId.value}`
     : null)
@@ -433,11 +433,6 @@ const downloadLedgerPdf = async () => {
 }
 
 const confirmLedgerExportOptions = async () => {
-    if (!ledgerHasCompleteDateRange.value) {
-        showToast(tr('Selecciona fecha inicial y fecha final antes de exportar.', 'Select both a start date and end date before exporting.'), 'error')
-        return false
-    }
-
     if (includeLedgerAnnexes.value) {
         const shouldContinue = await confirmExportAction({
             title: tr('Recibos en PDF separado', 'Receipts in separate PDF'),
@@ -967,7 +962,7 @@ onBeforeUnmount(() => {
                         <div>
                             <h2 class="text-lg font-semibold text-gray-950">{{ tr('Filtros del reporte', 'Report filters') }}</h2>
                             <p class="mt-1 text-sm text-gray-500">
-                                {{ tr('Selecciona cuenta y rango de fechas antes de exportar o revisar el libro contable.', 'Select account and date range before exporting or reviewing the ledger.') }}
+                                {{ tr('Selecciona cuenta, busca movimientos o limita por fechas. Sin fechas se carga todo el libro contable.', 'Select an account, search movements, or limit by dates. Without dates, the full ledger is loaded.') }}
                             </p>
                         </div>
                     </div>
@@ -1141,7 +1136,7 @@ onBeforeUnmount(() => {
                                     <button
                                         type="button"
                                         @click="downloadLedgerPdf"
-                                        :disabled="!ledgerHasCompleteDateRange || downloadingLedgerPdf || emailingLedgerReport"
+                                        :disabled="downloadingLedgerPdf || emailingLedgerReport"
                                         class="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:w-auto"
                                     >
                                         <ArrowDownTrayIcon class="h-4 w-4" />
@@ -1156,21 +1151,17 @@ onBeforeUnmount(() => {
                                             type="email"
                                             class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
                                             :placeholder="tr('correo@ejemplo.com', 'email@example.com')"
-                                            :disabled="!ledgerHasCompleteDateRange || emailingLedgerReport || downloadingLedgerPdf"
+                                            :disabled="emailingLedgerReport || downloadingLedgerPdf"
                                         >
                                         <button
                                             type="button"
                                             class="inline-flex min-h-10 items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-                                            :disabled="!ledgerHasCompleteDateRange || emailingLedgerReport || downloadingLedgerPdf"
+                                            :disabled="emailingLedgerReport || downloadingLedgerPdf"
                                             @click="emailLedgerReport"
                                         >
                                             {{ emailingLedgerReport ? tr('Enviando...', 'Sending...') : tr('Enviar por correo', 'Email report') }}
                                         </button>
                                     </div>
-
-                                    <p v-if="!ledgerHasCompleteDateRange" class="text-xs text-amber-700">
-                                        {{ tr('Selecciona fecha inicial y fecha final para habilitar exportacion y envio.', 'Select start and end dates to enable export and email.') }}
-                                    </p>
 
                                     <p v-if="ledgerExportMessage" class="text-xs text-gray-500">
                                         {{ ledgerExportMessage }}

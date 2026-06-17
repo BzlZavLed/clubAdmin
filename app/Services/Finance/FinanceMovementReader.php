@@ -50,10 +50,66 @@ class FinanceMovementReader
             $movements = $movements->where('domain', $filters['domain']);
         }
 
+        if (!empty($filters['search'])) {
+            $movements = $this->filterBySearch($movements, (string) $filters['search']);
+        }
+
         return $movements
             ->sortByDesc(fn (array $row) => sprintf('%s-%010d', $row['occurred_at'] ?? $row['date'] ?? '0000-00-00 00:00:00', $row['id'] ?? 0))
             ->values()
             ->when(!empty($filters['limit']), fn (Collection $rows) => $rows->take((int) $filters['limit']));
+    }
+
+    private function filterBySearch(Collection $movements, string $search): Collection
+    {
+        $query = mb_strtolower(trim($search));
+
+        if ($query === '') {
+            return $movements;
+        }
+
+        return $movements->filter(fn (array $movement) => collect([
+            $movement['movement_id'] ?? null,
+            $movement['id'] ?? null,
+            $movement['reference'] ?? null,
+            $movement['display_concept'] ?? null,
+            $movement['concept'] ?? null,
+            $movement['original_concept'] ?? null,
+            $movement['notes'] ?? null,
+            $movement['counterparty'] ?? null,
+            $movement['created_by'] ?? null,
+            $movement['account'] ?? null,
+            $movement['account_label'] ?? null,
+            $movement['from_account'] ?? null,
+            $movement['from_account_label'] ?? null,
+            $movement['to_account'] ?? null,
+            $movement['to_account_label'] ?? null,
+            $movement['location'] ?? null,
+            $movement['from_location'] ?? null,
+            $movement['to_location'] ?? null,
+            $movement['payment_type'] ?? null,
+            $movement['status'] ?? null,
+            $movement['kind'] ?? null,
+            $movement['receipt']['number'] ?? null,
+            ...$this->movementProofSearchValues($movement),
+        ])->filter(fn ($value) => $value !== null && $value !== '')
+            ->contains(fn ($value) => str_contains(mb_strtolower((string) $value), $query)));
+    }
+
+    private function movementProofSearchValues(array $movement): array
+    {
+        if (!isset($movement['proofs']) || !is_array($movement['proofs'])) {
+            return [];
+        }
+
+        return collect($movement['proofs'])
+            ->flatMap(fn ($proof) => [
+                $proof['name'] ?? null,
+                $proof['type'] ?? null,
+                $proof['path'] ?? null,
+                $proof['url'] ?? null,
+            ])
+            ->all();
     }
 
     private function withRunningBalances(Collection $movements): Collection

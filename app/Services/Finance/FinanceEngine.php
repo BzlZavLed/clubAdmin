@@ -52,6 +52,7 @@ class FinanceEngine
                 'date_to' => $filters['date_to'] ?? null,
                 'account' => $filters['account'] ?? null,
                 'domain' => $filters['domain'] ?? null,
+                'search' => $filters['search'] ?? null,
                 'limit' => $filters['limit'] ?? null,
             ],
             'summary' => $this->movements->summaryForClub($club),
