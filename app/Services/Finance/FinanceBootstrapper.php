@@ -12,12 +12,14 @@ use App\Models\Expense;
 use App\Models\FinanceReimbursementPayee;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
+use App\Models\PaymentReceipt;
 use App\Models\Staff;
 use App\Models\TreasuryMovement;
 use App\Services\AttendanceDuesPaymentService;
 use App\Services\ClubTreasuryService;
 use App\Services\EventClubSettlementService;
 use App\Services\EventFinanceService;
+use App\Services\PaymentReceiptService;
 use App\Support\BankInfoFormatter;
 use App\Support\ClubHelper;
 
@@ -28,6 +30,7 @@ class FinanceBootstrapper
         private readonly EventFinanceService $eventFinanceService,
         private readonly EventClubSettlementService $settlementService,
         private readonly FinanceMovementReader $movementReader,
+        private readonly PaymentReceiptService $paymentReceiptService,
     ) {
     }
 
@@ -154,6 +157,7 @@ class FinanceBootstrapper
             'accounts' => $accounts->values(),
             'expenses' => $expenses,
             'reimbursement_payees' => $this->reimbursementPayeesForClub($club),
+            'pending_receipts' => $this->pendingManualReceipts($club),
             'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
             'engine_report' => $this->movementReport($club, [
                 'limit' => $filters['limit'] ?? 80,
@@ -328,6 +332,64 @@ class FinanceBootstrapper
                             'receipt_url' => $payment->receipt ? route('payment-receipts.download', $payment->receipt) : null,
                         ];
                     })->values(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function pendingManualReceipts(Club $club): array
+    {
+        $this->paymentReceiptService->resyncPendingForClub((int) $club->id);
+
+        return PaymentReceipt::query()
+            ->where('club_id', $club->id)
+            ->whereIn('delivery_status', ['pending', 'manual_required', 'failed'])
+            ->with([
+                'payment:id,club_id,member_id,staff_id,payer_name,payer_email,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',
+                'payment.member:id,type,id_data,parent_id',
+                'payment.staff:id,type,id_data,user_id',
+                'payment.concept:id,concept,amount,reusable,event_id,event_fee_component_id',
+                'payment.concept.event:id,title,start_at',
+                'payment.allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
+                'payment.allocations.concept:id,concept,event_id,event_fee_component_id',
+                'payment.allocations.concept.event:id,title,start_at',
+                'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+            ])
+            ->latest('issued_at')
+            ->get()
+            ->map(function (PaymentReceipt $receipt) {
+                $payment = $receipt->payment;
+                $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
+                $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
+
+                $reason = match (true) {
+                    $receipt->delivery_status === 'failed' => 'Envio fallido',
+                    $receipt->issued_to_type === 'member_unlinked' => 'Sin padre vinculado',
+                    $receipt->issued_to_type === 'staff_unlinked' => 'Staff sin cuenta vinculada',
+                    empty($receipt->issued_to_email) && $receipt->issued_to_type === 'parent' => 'Padre sin correo',
+                    empty($receipt->issued_to_email) && $receipt->issued_to_type === 'staff' => 'Staff sin correo',
+                    empty($receipt->issued_to_email) && $receipt->issued_to_type === 'external_payer' => 'Pagador externo sin correo',
+                    default => 'Entrega manual requerida',
+                };
+
+                return [
+                    'id' => $receipt->id,
+                    'receipt_number' => $receipt->receipt_number,
+                    'issued_at' => optional($receipt->issued_at)->toDateString(),
+                    'issued_to_type' => $receipt->issued_to_type,
+                    'issued_to_email' => $receipt->issued_to_email,
+                    'delivery_status' => $receipt->delivery_status,
+                    'last_downloaded_at' => optional($receipt->last_downloaded_at)->toDateTimeString(),
+                    'member_name' => $memberDetail['name'] ?? null,
+                    'staff_name' => $staffDetail['name'] ?? null,
+                    'payer_name' => $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name,
+                    'payer_email' => $payment?->payer_email,
+                    'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text,
+                    'amount_paid' => (float) ($payment?->amount_paid ?? 0),
+                    'payment_date' => optional($payment?->payment_date)->toDateString(),
+                    'reason' => $reason,
+                    'download_url' => route('payment-receipts.download', $receipt),
                 ];
             })
             ->values()

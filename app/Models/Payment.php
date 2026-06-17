@@ -18,6 +18,7 @@ class Payment extends Model
         'member_id',
         'staff_id',
         'payer_name',
+        'payer_email',
         'amount_paid',
         'expected_amount',
         'payment_date',

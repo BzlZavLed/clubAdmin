@@ -76,6 +76,13 @@ const menuItems = computed(() => [
                 icon: DocumentTextIcon
             },
             {
+                id: 'mail_logs',
+                name: t('mail_logs'),
+                href: '/super-admin/mail-logs',
+                route: 'superadmin.mail-logs.index',
+                icon: DocumentTextIcon
+            },
+            {
                 id: 'presence_log',
                 name: t('presence_log'),
                 href: '/super-admin/presence-log',

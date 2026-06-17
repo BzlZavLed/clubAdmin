@@ -16,6 +16,7 @@ import {
     fetchFinanceEngineAccounting,
     fetchFinanceLedgerExportHistory,
     fetchFinanceEngineMovements,
+    sendFinanceLedgerReportEmail,
 } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
@@ -55,6 +56,8 @@ const ledgerMonthRange = ref({
 })
 const includeLedgerAnnexes = ref(false)
 const includeIncomeReceiptAnnexes = ref(false)
+const ledgerReportEmail = ref('')
+const emailingLedgerReport = ref(false)
 const ledgerPreferencesReady = ref(false)
 
 const ledgerIsAllAccounts = computed(() => ledgerFilters.value.account === 'all')
@@ -194,7 +197,7 @@ const monthOptions = computed(() => [
     { value: 12, label: tr('Diciembre', 'December') },
 ])
 
-const ledgerPdfUrl = computed(() => {
+const ledgerPdfParams = computed(() => {
     const params = { limit: 5000 }
     if (selectedClubId.value) params.club_id = selectedClubId.value
     if (ledgerFilters.value.account !== 'all') params.account = ledgerFilters.value.account
@@ -203,8 +206,9 @@ const ledgerPdfUrl = computed(() => {
     if (includeLedgerAnnexes.value) params.include_annexes = 1
     if (includeLedgerAnnexes.value && includeIncomeReceiptAnnexes.value) params.include_income_receipt_annexes = 1
 
-    return route('club.finance-engine.movements.pdf', params)
+    return params
 })
+const ledgerPdfUrl = computed(() => route('club.finance-engine.movements.pdf', ledgerPdfParams.value))
 
 watch(includeLedgerAnnexes, (includeAnnexes) => {
     if (!includeAnnexes) {
@@ -212,7 +216,7 @@ watch(includeLedgerAnnexes, (includeAnnexes) => {
     }
 })
 
-const ledgerHasDateLimit = computed(() => Boolean(ledgerFilters.value.date_from || ledgerFilters.value.date_to))
+const ledgerHasCompleteDateRange = computed(() => Boolean(ledgerFilters.value.date_from && ledgerFilters.value.date_to))
 const ledgerPreferencesKey = computed(() => selectedClubId.value
     ? `finance-reports-ledger:${props.auth_user?.id || 'user'}:${selectedClubId.value}`
     : null)
@@ -382,44 +386,8 @@ const pollLedgerExport = async (statusUrl) => {
 }
 
 const downloadLedgerPdf = async () => {
-    if (!ledgerHasDateLimit.value) {
-        const shouldContinue = await confirmExportAction({
-            title: tr('Exportar sin rango', 'Export without range'),
-            message: tr(
-                'No seleccionaste un rango de fechas o meses. Exportar sin limite puede generar un archivo muy grande y tardar bastante en descargar.',
-                'No date or month range is selected. Exporting without a limit can generate a very large file and take a while to download.'
-            ),
-            confirmLabel: tr('Continuar exportacion', 'Continue export'),
-            cancelLabel: tr('Cancelar', 'Cancel'),
-        })
-
-        if (!shouldContinue) return
-    }
-
-    if (includeLedgerAnnexes.value) {
-        const shouldContinue = await confirmExportAction({
-            title: tr('Recibos en PDF separado', 'Receipts in separate PDF'),
-            message: tr(
-                'Los recibos se generaran en un PDF separado del libro contable. Esto hace la descarga mas rapida y confiable.',
-                'Receipts will be generated in a separate PDF from the ledger. This makes the download faster and more reliable.'
-            ),
-            confirmLabel: tr('Generar archivos', 'Generate files'),
-            cancelLabel: tr('Cancelar', 'Cancel'),
-            confirmClass: 'bg-emerald-600 text-white hover:bg-emerald-700',
-            files: [
-                {
-                    label: tr('Libro contable', 'Ledger'),
-                    name: 'finance-ledger.pdf',
-                },
-                {
-                    label: tr('Recibos y comprobantes', 'Receipts and proofs'),
-                    name: 'finance-ledger-receipts.pdf',
-                },
-            ],
-        })
-
-        if (!shouldContinue) return
-    }
+    const shouldContinue = await confirmLedgerExportOptions()
+    if (!shouldContinue) return
 
     downloadingLedgerPdf.value = true
 
@@ -450,7 +418,7 @@ const downloadLedgerPdf = async () => {
         }
 
         throw new Error('No PDF URL returned.')
-       
+
     } catch (error) {
         console.error(error)
         showToast(tr('No se pudo descargar el PDF del libro contable. Intenta de nuevo.', 'Could not download the ledger PDF. Please try again.'), 'error')
@@ -461,6 +429,67 @@ const downloadLedgerPdf = async () => {
         if (!ledgerExportPollingTimer) {
             downloadingLedgerPdf.value = false
         }
+    }
+}
+
+const confirmLedgerExportOptions = async () => {
+    if (!ledgerHasCompleteDateRange.value) {
+        showToast(tr('Selecciona fecha inicial y fecha final antes de exportar.', 'Select both a start date and end date before exporting.'), 'error')
+        return false
+    }
+
+    if (includeLedgerAnnexes.value) {
+        const shouldContinue = await confirmExportAction({
+            title: tr('Recibos en PDF separado', 'Receipts in separate PDF'),
+            message: tr(
+                'Los recibos se generaran en un PDF separado del libro contable. Esto hace la descarga mas rapida y confiable.',
+                'Receipts will be generated in a separate PDF from the ledger. This makes the download faster and more reliable.'
+            ),
+            confirmLabel: tr('Generar archivos', 'Generate files'),
+            cancelLabel: tr('Cancelar', 'Cancel'),
+            confirmClass: 'bg-emerald-600 text-white hover:bg-emerald-700',
+            files: [
+                {
+                    label: tr('Libro contable', 'Ledger'),
+                    name: 'finance-ledger.pdf',
+                },
+                {
+                    label: tr('Recibos y comprobantes', 'Receipts and proofs'),
+                    name: 'finance-ledger-receipts.pdf',
+                },
+            ],
+        })
+
+        if (!shouldContinue) return
+    }
+
+    return true
+}
+
+const emailLedgerReport = async () => {
+    const recipient = ledgerReportEmail.value.trim()
+    if (!recipient) {
+        showToast(tr('Escribe un correo destino para enviar el reporte.', 'Enter a recipient email to send the report.'), 'error')
+        return
+    }
+
+    const shouldContinue = await confirmLedgerExportOptions()
+    if (!shouldContinue) return
+
+    emailingLedgerReport.value = true
+    try {
+        await sendFinanceLedgerReportEmail({
+            ...ledgerPdfParams.value,
+            email: recipient,
+        })
+        showToast(tr('Reporte financiero enviado por correo.', 'Financial report sent by email.'), 'success')
+        ledgerReportEmail.value = ''
+        loadLedgerExportHistory({ silent: true })
+    } catch (error) {
+        console.error(error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar el reporte por correo.', 'Could not send the report by email.'), 'error')
+    } finally {
+        emailingLedgerReport.value = false
     }
 }
 
@@ -936,145 +965,11 @@ onBeforeUnmount(() => {
                 <div class="border-b border-gray-100 p-4">
                     <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-950">{{ tr('Libro contable general', 'General accounting ledger') }}</h2>
+                            <h2 class="text-lg font-semibold text-gray-950">{{ tr('Filtros del reporte', 'Report filters') }}</h2>
                             <p class="mt-1 text-sm text-gray-500">
-                                {{ tr('Filtra por cuenta o rango de fechas. Las correcciones y movimientos cancelados se muestran junto al movimiento original.', 'Filter by account or date range. Corrections and cancelled movements are shown with the original movement.') }}
+                                {{ tr('Selecciona cuenta y rango de fechas antes de exportar o revisar el libro contable.', 'Select account and date range before exporting or reviewing the ledger.') }}
                             </p>
                         </div>
-                        <!-- <a
-                            :href="ledgerPdfUrl"
-                            class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                            <ArrowDownTrayIcon class="h-4 w-4" />
-                            {{ tr('PDF libro', 'Ledger PDF') }}
-                        </a> -->
-
-                        <div class="flex flex-col gap-2 sm:items-end">
-                            <label class="inline-flex items-start gap-2 text-sm font-medium text-gray-700">
-                                <input
-                                    v-model="includeLedgerAnnexes"
-                                    type="checkbox"
-                                    class="mt-0.5 rounded border-gray-300 text-red-600 shadow-sm focus:ring-red-500"
-                                >
-                                <span class="leading-5">
-                                    {{ tr('Incluir anexos de recibos', 'Include receipt appendices') }}
-                                    <span class="block text-xs font-normal text-gray-500">
-                                        {{ tr('Se generan como PDF separado para evitar archivos pesados.', 'Generated as a separate PDF to avoid oversized files.') }}
-                                    </span>
-                                </span>
-                            </label>
-
-                            <label
-                                v-if="includeLedgerAnnexes"
-                                class="inline-flex items-start gap-2 text-sm font-medium text-gray-700"
-                            >
-                                <input
-                                    v-model="includeIncomeReceiptAnnexes"
-                                    type="checkbox"
-                                    class="mt-0.5 rounded border-gray-300 text-red-600 shadow-sm focus:ring-red-500"
-                                >
-                                <span class="leading-5">
-                                    {{ tr('Incluir recibos de ingresos', 'Include income receipts') }}
-                                    <span class="block text-xs font-normal text-gray-500">
-                                        {{ tr('Los comprobantes de gastos y pagos de reembolso se incluyen por defecto.', 'Expense receipts and reimbursement payment proofs are included by default.') }}
-                                    </span>
-                                </span>
-                            </label>
-
-                            <button
-                                type="button"
-                                @click="downloadLedgerPdf"
-                                :disabled="downloadingLedgerPdf"
-                                class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                            >
-                                <ArrowDownTrayIcon class="h-4 w-4" />
-
-                                <span v-if="downloadingLedgerPdf">
-                                    {{ tr('Generando...', 'Generating...') }}
-                                </span>
-
-                                <span v-else>
-                                    {{ tr('PDF libro', 'Ledger PDF') }}
-                                </span>
-                            </button>
-                            <p v-if="ledgerExportMessage" class="max-w-xs text-xs text-gray-500">
-                                {{ ledgerExportMessage }}
-                            </p>
-                        </div>
-
-                    </div>
-
-                    <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <button
-                                type="button"
-                                class="flex min-w-0 items-start gap-2 text-left"
-                                @click="ledgerExportHistoryOpen = !ledgerExportHistoryOpen"
-                            >
-                                <ChevronDownIcon v-if="ledgerExportHistoryOpen" class="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                                <ChevronRightIcon v-else class="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                                <span>
-                                    <span class="block text-sm font-semibold text-gray-900">{{ tr('Exportaciones recientes', 'Recent exports') }}</span>
-                                    <span class="block text-xs text-gray-500">
-                                        {{ tr('Ultimas 3 versiones listas para imprimir.', 'Latest 3 printable versions.') }}
-                                    </span>
-                                </span>
-                            </button>
-                            <div class="flex items-center gap-2">
-                                <span v-if="printableLedgerExportHistory.length" class="text-xs font-medium text-gray-500">
-                                    {{ printableLedgerExportHistory.length }} / 3
-                                </span>
-                                <button
-                                    type="button"
-                                    class="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                                    :disabled="ledgerExportHistoryLoading"
-                                    @click.stop="loadLedgerExportHistory()"
-                                >
-                                    <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': ledgerExportHistoryLoading }" />
-                                    {{ tr('Actualizar', 'Refresh') }}
-                                </button>
-                            </div>
-                        </div>
-                        <div v-if="ledgerExportHistoryOpen && printableLedgerExportHistory.length" class="mt-3 space-y-2">
-                            <article
-                                v-for="exportJob in printableLedgerExportHistory"
-                                :key="exportJob.export_id"
-                                class="rounded-lg border border-gray-200 bg-white p-3 text-xs"
-                            >
-                                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                    <div class="min-w-0">
-                                        <div class="flex flex-wrap items-center gap-2">
-                                            <span class="rounded-full px-2 py-0.5 font-semibold" :class="exportStatusClass(exportJob.status)">
-                                                {{ exportStatusLabel(exportJob.status) }}
-                                            </span>
-                                            <span class="font-semibold text-gray-900">{{ exportDate(exportJob.completed_at || exportJob.started_at || exportJob.created_at) }}</span>
-                                        </div>
-                                        <p class="mt-1 break-words text-gray-500">
-                                            {{ exportJob.message }}
-                                        </p>
-                                        <p class="mt-1 text-gray-500">
-                                            {{ tr('Solicitado por', 'Requested by') }}:
-                                            <span class="font-semibold text-gray-700">{{ exportRequester(exportJob) }}</span>
-                                        </p>
-                                    </div>
-                                    <div v-if="exportJob.files?.length" class="flex flex-wrap gap-2 sm:justify-end">
-                                        <a
-                                            v-for="file in exportJob.files"
-                                            :key="`${exportJob.export_id}-${file.url}`"
-                                            :href="file.url"
-                                            target="_blank"
-                                            rel="noopener"
-                                            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-gray-200 px-2.5 py-1 font-semibold text-gray-700 hover:bg-gray-50"
-                                        >
-                                            {{ file.label }} <span v-if="formatFileSize(file.size)" class="ml-1 text-gray-400">({{ formatFileSize(file.size) }})</span>
-                                        </a>
-                                    </div>
-                                </div>
-                            </article>
-                        </div>
-                        <p v-else-if="ledgerExportHistoryOpen" class="mt-3 text-xs text-gray-500">
-                            {{ tr('Todavia no hay exportaciones recientes.', 'There are no recent exports yet.') }}
-                        </p>
                     </div>
 
                     <div class="mt-4 grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(150px,0.75fr)_auto_auto] lg:items-end">
@@ -1187,6 +1082,191 @@ onBeforeUnmount(() => {
                         </p>
                     </div>
                 </div>
+            </section>
+
+            <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div class="border-b border-gray-100 p-4">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-950">{{ tr('Exportar y enviar', 'Export and send') }}</h2>
+                            <p class="mt-1 text-sm text-gray-500">
+                                {{ tr('Descarga el libro contable o envia el reporte financiero por correo usando los filtros actuales.', 'Download the ledger or email the financial report using the current filters.') }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 border-t border-gray-100 pt-4">
+                        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                            <div>
+                                <h3 class="text-sm font-semibold text-gray-950">{{ tr('Opciones de exportacion', 'Export options') }}</h3>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    {{ tr('Usa los filtros actuales para descargar o enviar el reporte financiero.', 'Uses the current filters to download or email the financial report.') }}
+                                </p>
+                            </div>
+                            <div class="grid gap-3 lg:grid-cols-2 xl:max-w-4xl">
+                                <div class="space-y-2">
+                                    <label class="inline-flex items-start gap-2 text-sm font-medium text-gray-700">
+                                        <input
+                                            v-model="includeLedgerAnnexes"
+                                            type="checkbox"
+                                            class="mt-0.5 rounded border-gray-300 text-red-600 shadow-sm focus:ring-red-500"
+                                        >
+                                        <span class="leading-5">
+                                            {{ tr('Incluir anexos de recibos', 'Include receipt appendices') }}
+                                            <span class="block text-xs font-normal text-gray-500">
+                                                {{ tr('Se generan como PDF separado para evitar archivos pesados.', 'Generated as a separate PDF to avoid oversized files.') }}
+                                            </span>
+                                        </span>
+                                    </label>
+
+                                    <label
+                                        v-if="includeLedgerAnnexes"
+                                        class="inline-flex items-start gap-2 text-sm font-medium text-gray-700"
+                                    >
+                                        <input
+                                            v-model="includeIncomeReceiptAnnexes"
+                                            type="checkbox"
+                                            class="mt-0.5 rounded border-gray-300 text-red-600 shadow-sm focus:ring-red-500"
+                                        >
+                                        <span class="leading-5">
+                                            {{ tr('Incluir recibos de ingresos', 'Include income receipts') }}
+                                            <span class="block text-xs font-normal text-gray-500">
+                                                {{ tr('Los comprobantes de gastos y pagos de reembolso se incluyen por defecto.', 'Expense receipts and reimbursement payment proofs are included by default.') }}
+                                            </span>
+                                        </span>
+                                    </label>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <button
+                                        type="button"
+                                        @click="downloadLedgerPdf"
+                                        :disabled="!ledgerHasCompleteDateRange || downloadingLedgerPdf || emailingLedgerReport"
+                                        class="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:w-auto"
+                                    >
+                                        <ArrowDownTrayIcon class="h-4 w-4" />
+                                        <span>{{ downloadingLedgerPdf ? tr('Generando...', 'Generating...') : tr('PDF libro', 'Ledger PDF') }}</span>
+                                    </button>
+
+                                    <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                                        <label class="sr-only" for="ledger-report-email">{{ tr('Correo destino', 'Recipient email') }}</label>
+                                        <input
+                                            id="ledger-report-email"
+                                            v-model="ledgerReportEmail"
+                                            type="email"
+                                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                            :placeholder="tr('correo@ejemplo.com', 'email@example.com')"
+                                            :disabled="!ledgerHasCompleteDateRange || emailingLedgerReport || downloadingLedgerPdf"
+                                        >
+                                        <button
+                                            type="button"
+                                            class="inline-flex min-h-10 items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                                            :disabled="!ledgerHasCompleteDateRange || emailingLedgerReport || downloadingLedgerPdf"
+                                            @click="emailLedgerReport"
+                                        >
+                                            {{ emailingLedgerReport ? tr('Enviando...', 'Sending...') : tr('Enviar por correo', 'Email report') }}
+                                        </button>
+                                    </div>
+
+                                    <p v-if="!ledgerHasCompleteDateRange" class="text-xs text-amber-700">
+                                        {{ tr('Selecciona fecha inicial y fecha final para habilitar exportacion y envio.', 'Select start and end dates to enable export and email.') }}
+                                    </p>
+
+                                    <p v-if="ledgerExportMessage" class="text-xs text-gray-500">
+                                        {{ ledgerExportMessage }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <button
+                                type="button"
+                                class="flex min-w-0 items-start gap-2 text-left"
+                                @click="ledgerExportHistoryOpen = !ledgerExportHistoryOpen"
+                            >
+                                <ChevronDownIcon v-if="ledgerExportHistoryOpen" class="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                <ChevronRightIcon v-else class="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                <span>
+                                    <span class="block text-sm font-semibold text-gray-900">{{ tr('Exportaciones recientes', 'Recent exports') }}</span>
+                                    <span class="block text-xs text-gray-500">
+                                        {{ tr('Ultimas 3 versiones listas para imprimir.', 'Latest 3 printable versions.') }}
+                                    </span>
+                                </span>
+                            </button>
+                            <div class="flex items-center gap-2">
+                                <span v-if="printableLedgerExportHistory.length" class="text-xs font-medium text-gray-500">
+                                    {{ printableLedgerExportHistory.length }} / 3
+                                </span>
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                    :disabled="ledgerExportHistoryLoading"
+                                    @click.stop="loadLedgerExportHistory()"
+                                >
+                                    <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': ledgerExportHistoryLoading }" />
+                                    {{ tr('Actualizar', 'Refresh') }}
+                                </button>
+                            </div>
+                        </div>
+                        <div v-if="ledgerExportHistoryOpen && printableLedgerExportHistory.length" class="mt-3 space-y-2">
+                            <article
+                                v-for="exportJob in printableLedgerExportHistory"
+                                :key="exportJob.export_id"
+                                class="rounded-lg border border-gray-200 bg-white p-3 text-xs"
+                            >
+                                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="rounded-full px-2 py-0.5 font-semibold" :class="exportStatusClass(exportJob.status)">
+                                                {{ exportStatusLabel(exportJob.status) }}
+                                            </span>
+                                            <span class="font-semibold text-gray-900">{{ exportDate(exportJob.completed_at || exportJob.started_at || exportJob.created_at) }}</span>
+                                        </div>
+                                        <p class="mt-1 break-words text-gray-500">
+                                            {{ exportJob.message }}
+                                        </p>
+                                        <p class="mt-1 text-gray-500">
+                                            {{ tr('Solicitado por', 'Requested by') }}:
+                                            <span class="font-semibold text-gray-700">{{ exportRequester(exportJob) }}</span>
+                                        </p>
+                                    </div>
+                                    <div v-if="exportJob.files?.length" class="flex flex-wrap gap-2 sm:justify-end">
+                                        <a
+                                            v-for="file in exportJob.files"
+                                            :key="`${exportJob.export_id}-${file.url}`"
+                                            :href="file.url"
+                                            target="_blank"
+                                            rel="noopener"
+                                            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-gray-200 px-2.5 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+                                        >
+                                            {{ file.label }} <span v-if="formatFileSize(file.size)" class="ml-1 text-gray-400">({{ formatFileSize(file.size) }})</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                        <p v-else-if="ledgerExportHistoryOpen" class="mt-3 text-xs text-gray-500">
+                            {{ tr('Todavia no hay exportaciones recientes.', 'There are no recent exports yet.') }}
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div class="border-b border-gray-100 p-4">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-950">{{ tr('Libro contable general', 'General accounting ledger') }}</h2>
+                            <p class="mt-1 text-sm text-gray-500">
+                                {{ tr('Filtra por cuenta o rango de fechas. Las correcciones y movimientos cancelados se muestran junto al movimiento original.', 'Filter by account or date range. Corrections and cancelled movements are shown with the original movement.') }}
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
 
                 <div class="grid gap-2 border-b border-gray-100 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                     <div class="rounded-lg bg-emerald-50 px-3 py-2">
@@ -1207,8 +1287,8 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div class="divide-y divide-gray-100">
-                    <div v-if="ledgerIsAllAccounts && ledgerAccountGroups.length" class="flex flex-col gap-2 border-b border-gray-100 bg-white px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                <div class="divide-y divide-gray-100 px-3 py-2 sm:px-4">
+                    <div v-if="ledgerIsAllAccounts && ledgerAccountGroups.length" class="flex flex-col gap-2 border-b border-gray-100 bg-white px-3 py-3 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
                         <span>
                             {{ tr('Las cuentas estan colapsadas para facilitar la revision.', 'Accounts are collapsed to make review easier.') }}
                         </span>
@@ -1230,7 +1310,7 @@ onBeforeUnmount(() => {
                         </div>
                     </div>
 
-                    <div class="hidden border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:grid lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:gap-2">
+                    <div class="hidden border-b border-gray-100 bg-gray-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:grid lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:gap-3">
                         <span>{{ tr('Fecha', 'Date') }}</span>
                         <span>{{ tr('Concepto', 'Concept') }}</span>
                         <span>{{ tr('Cuenta / ubicacion', 'Account / location') }}</span>
@@ -1245,7 +1325,7 @@ onBeforeUnmount(() => {
                         <button
                             v-if="section.label"
                             type="button"
-                            class="flex w-full items-center justify-between gap-3 bg-gray-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-200"
+                            class="flex w-full items-center justify-between gap-3 bg-gray-100 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-200"
                             @click="toggleLedgerAccountSection(section)"
                         >
                             <span class="flex min-w-0 items-center gap-2">
@@ -1267,7 +1347,7 @@ onBeforeUnmount(() => {
                             <article
                                 v-for="movement in section.rows"
                                 :key="`${section.key}-${movement.movement_id}`"
-                                class="grid min-w-0 gap-2 px-3 py-2.5 text-xs sm:grid-cols-[5.25rem_minmax(0,1fr)] lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:items-start"
+                                class="grid min-w-0 gap-3 px-4 py-4 text-xs sm:grid-cols-[5.25rem_minmax(0,1fr)] lg:grid-cols-[5.25rem_minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(4.6rem,0.42fr)_minmax(5.6rem,0.5fr)] lg:items-start"
                             >
                             <div class="min-w-0">
                                 <p class="font-semibold text-gray-900">{{ formatDate(movement.date) }}</p>
@@ -1391,67 +1471,41 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto px-3 py-2 sm:px-4">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
-                                <th class="px-3 py-3">{{ tr('Cuenta', 'Account') }}</th>
-                                <th class="px-3 py-3 text-right">{{ tr('Efectivo', 'Cash') }}</th>
-                                <th class="px-3 py-3 text-right">{{ tr('Banco', 'Bank') }}</th>
-                                <th class="px-3 py-3 text-right">{{ tr('Balance', 'Balance') }}</th>
+                                <th class="px-4 py-3">{{ tr('Cuenta', 'Account') }}</th>
+                                <th class="px-4 py-3 text-right">{{ tr('Efectivo', 'Cash') }}</th>
+                                <th class="px-4 py-3 text-right">{{ tr('Banco', 'Bank') }}</th>
+                                <th class="px-4 py-3 text-right">{{ tr('Balance', 'Balance') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 bg-white">
                             <tr v-for="account in accountBalanceRows" :key="account.account">
-                                <td class="px-3 py-3">
+                                <td class="px-4 py-4">
                                     <p class="font-semibold text-gray-950">{{ account.label }}</p>
                                     <p class="text-xs text-gray-500">{{ account.account }}</p>
                                 </td>
-                                <td class="whitespace-nowrap px-3 py-3 text-right font-semibold text-emerald-700">{{ formatMoney(account.cash_balance) }}</td>
-                                <td class="whitespace-nowrap px-3 py-3 text-right font-semibold text-blue-700">{{ formatMoney(account.bank_balance) }}</td>
-                                <td class="whitespace-nowrap px-3 py-3 text-right font-semibold text-gray-950">{{ formatMoney(account.total_available) }}</td>
+                                <td class="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-700">{{ formatMoney(account.cash_balance) }}</td>
+                                <td class="whitespace-nowrap px-4 py-4 text-right font-semibold text-blue-700">{{ formatMoney(account.bank_balance) }}</td>
+                                <td class="whitespace-nowrap px-4 py-4 text-right font-semibold text-gray-950">{{ formatMoney(account.total_available) }}</td>
                             </tr>
                             <tr v-if="accountBalanceRows.length === 0">
-                                <td colspan="4" class="px-3 py-8 text-center text-gray-500">{{ tr('No hay cuentas para mostrar.', 'No accounts to show.') }}</td>
+                                <td colspan="4" class="px-4 py-8 text-center text-gray-500">{{ tr('No hay cuentas para mostrar.', 'No accounts to show.') }}</td>
                             </tr>
                         </tbody>
                         <tfoot class="border-t border-gray-200 bg-gray-50">
                             <tr>
-                                <td class="px-3 py-3 font-semibold text-gray-950">{{ tr('Resumen general', 'General summary') }}</td>
-                                <td class="whitespace-nowrap px-3 py-3 text-right font-semibold text-emerald-800">{{ formatMoney(summaryTotals.cash_balance) }}</td>
-                                <td class="whitespace-nowrap px-3 py-3 text-right font-semibold text-blue-800">{{ formatMoney(summaryTotals.bank_balance) }}</td>
-                                <td class="whitespace-nowrap px-3 py-3 text-right font-semibold text-gray-950">{{ formatMoney(summaryTotals.total_available) }}</td>
+                                <td class="px-4 py-4 font-semibold text-gray-950">{{ tr('Resumen general', 'General summary') }}</td>
+                                <td class="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-800">{{ formatMoney(summaryTotals.cash_balance) }}</td>
+                                <td class="whitespace-nowrap px-4 py-4 text-right font-semibold text-blue-800">{{ formatMoney(summaryTotals.bank_balance) }}</td>
+                                <td class="whitespace-nowrap px-4 py-4 text-right font-semibold text-gray-950">{{ formatMoney(summaryTotals.total_available) }}</td>
                             </tr>
                         </tfoot>
                     </table>
                 </div>
             </section>
-        </div>
-
-        <div class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur lg:hidden">
-            <div class="grid grid-cols-3 gap-2 text-xs">
-                <div>
-                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Efectivo', 'Cash') }}</p>
-                    <p class="font-semibold text-gray-950">{{ formatMoney(summaryTotals.cash_balance) }}</p>
-                </div>
-                <div>
-                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Banco', 'Bank') }}</p>
-                    <p class="font-semibold text-gray-950">{{ formatMoney(summaryTotals.bank_balance) }}</p>
-                </div>
-                <div>
-                    <p class="font-semibold uppercase tracking-wide text-gray-500">{{ tr('Neto', 'Net') }}</p>
-                    <p class="font-semibold" :class="ledgerNet < 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatMoney(ledgerNet) }}</p>
-                </div>
-            </div>
-            <button
-                type="button"
-                class="mt-2 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
-                :disabled="downloadingLedgerPdf"
-                @click="downloadLedgerPdf"
-            >
-                <ArrowDownTrayIcon class="h-4 w-4" />
-                {{ downloadingLedgerPdf ? tr('Generando...', 'Generating...') : tr('Exportar PDF', 'Export PDF') }}
-            </button>
         </div>
 
         <div

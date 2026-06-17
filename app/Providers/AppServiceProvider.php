@@ -42,6 +42,8 @@ use App\Models\EventBudgetItem;
 use App\Models\EventParticipant;
 use App\Models\EventDocument;
 use App\Policies\EventPolicy;
+use App\Models\MailDeliveryLog;
+use Illuminate\Mail\Events\MessageSent;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -148,6 +150,36 @@ class AppServiceProvider extends ServiceProvider
                 'ip' => request()?->ip(),
                 'user_agent' => request()?->userAgent(),
             ]);
+        });
+
+        Event::listen(MessageSent::class, function (MessageSent $event) {
+            $headers = $event->message->getHeaders();
+            $emailUidHeader = $headers->get('X-Club-Portal-Mail-ID');
+            $resendIdHeader = $headers->get('X-Resend-Email-ID');
+
+            if (!$emailUidHeader || !$resendIdHeader) {
+                return;
+            }
+
+            $mailLog = MailDeliveryLog::query()
+                ->where('email_uid', $emailUidHeader->getBodyAsString())
+                ->latest()
+                ->first();
+
+            if (!$mailLog) {
+                return;
+            }
+
+            $metadata = $mailLog->metadata ?: [];
+            $metadata['provider'] = 'resend';
+            $metadata['provider_message_id'] = $resendIdHeader->getBodyAsString();
+
+            $mailLog->forceFill([
+                'provider' => 'resend',
+                'provider_message_id' => $resendIdHeader->getBodyAsString(),
+                'last_provider_event_at' => now(),
+                'metadata' => $metadata,
+            ])->save();
         });
     }
 }

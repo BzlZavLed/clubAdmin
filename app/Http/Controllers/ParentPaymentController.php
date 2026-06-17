@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\SendParentPaymentSubmissionEmail;
 use App\Models\Event;
 use App\Models\Account;
 use App\Models\BankInfo;
@@ -76,7 +77,10 @@ class ParentPaymentController extends Controller
 
         $receiptImagePath = $request->file('receipt_image')->store('payments/transfers', 'public');
 
-        ParentPaymentSubmission::query()->create([
+        $club = Club::withoutGlobalScopes()->find($charge['club_id']);
+        $clubReceiptEmail = $club?->club_email;
+
+        $submission = ParentPaymentSubmission::query()->create([
             'club_id' => $charge['club_id'],
             'payment_concept_id' => $charge['concept_id'],
             'member_id' => $charge['member_id'],
@@ -90,13 +94,21 @@ class ParentPaymentController extends Controller
             'payment_type' => 'transfer',
             'reference' => $validated['reference'] ?? null,
             'receipt_image_path' => $receiptImagePath,
+            'club_receipt_email' => $clubReceiptEmail,
+            'club_receipt_email_status' => $clubReceiptEmail ? 'queued' : 'manual_required',
             'notes' => $validated['notes'] ?? null,
             'status' => 'pending',
         ]);
 
+        if ($clubReceiptEmail) {
+            SendParentPaymentSubmissionEmail::dispatch($submission->id)->afterCommit();
+        }
+
         return redirect()
             ->route('parent.payments.index')
-            ->with('success', 'Comprobante enviado para validación del club.');
+            ->with('success', $clubReceiptEmail
+                ? 'Comprobante enviado para validación del club y remitido por correo.'
+                : 'Comprobante enviado para validación del club. El club no tiene correo configurado.');
     }
 
     protected function clubDepositAccountsForParent($user): Collection
@@ -105,7 +117,7 @@ class ParentPaymentController extends Controller
             ->where('parent_id', $user->id)
             ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
             ->where('status', '!=', 'deleted')
-            ->with(['club:id,club_name,club_type,evaluation_system'])
+            ->with(['club:id,club_name,club_type,evaluation_system,club_email'])
             ->get(['id', 'type', 'id_data', 'club_id', 'parent_id', 'status']);
 
         if ($members->isEmpty()) {
@@ -143,6 +155,7 @@ class ParentPaymentController extends Controller
                     'club_id' => (int) $clubId,
                     'club_name' => $club?->club_name,
                     'club_type' => $club?->club_type,
+                    'club_email' => $club?->club_email,
                     'club_type_label' => $this->clubTypeLabel($club?->club_type),
                     'evaluation_system' => $club?->evaluation_system,
                     'account_label' => $bankPayload['label'] ?? $account?->label ?? 'Presupuesto del club',
@@ -181,7 +194,7 @@ class ParentPaymentController extends Controller
             ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
             ->where('status', '!=', 'deleted')
             ->with([
-                'club:id,club_name',
+                'club:id,club_name,club_email',
                 'class:id,class_name',
             ])
             ->get(['id', 'type', 'id_data', 'club_id', 'class_id', 'parent_id', 'status']);
@@ -198,7 +211,7 @@ class ParentPaymentController extends Controller
             ->whereIn('club_id', $clubIds)
             ->where('status', 'active')
             ->with([
-                'club:id,club_name',
+                'club:id,club_name,club_email',
                 'scopes' => function ($query) {
                     $query->whereNull('deleted_at')
                         ->with(['class:id,class_name']);
@@ -349,6 +362,7 @@ class ParentPaymentController extends Controller
                     'row_key' => $key,
                     'club_id' => (int) $concept->club_id,
                     'club_name' => $member->club?->club_name ?: $concept->club?->club_name,
+                    'club_email' => $member->club?->club_email ?: $concept->club?->club_email,
                     'member_id' => (int) $member->id,
                     'member_name' => $memberDetail['name'] ?? '—',
                     'member_type' => $member->type,
@@ -500,7 +514,7 @@ class ParentPaymentController extends Controller
         return ParentPaymentSubmission::query()
             ->where('parent_user_id', $user->id)
             ->with([
-                'club:id,club_name',
+                'club:id,club_name,club_email',
                 'member:id,type,id_data',
                 'event:id,title,start_at',
                 'reviewedBy:id,name',
@@ -514,6 +528,9 @@ class ParentPaymentController extends Controller
                 return [
                     'id' => $submission->id,
                     'club_name' => $submission->club?->club_name,
+                    'club_email' => $submission->club_receipt_email ?: $submission->club?->club_email,
+                    'club_receipt_email_status' => $submission->club_receipt_email_status,
+                    'club_receipt_emailed_at' => optional($submission->club_receipt_emailed_at)->toDateTimeString(),
                     'member_name' => $memberDetail['name'] ?? '—',
                     'concept_name' => $submission->concept_text,
                     'event_title' => $submission->event?->title,

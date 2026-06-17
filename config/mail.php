@@ -115,4 +115,10 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    'payment_receipts' => [
+        'auto_send' => env('PAYMENT_RECEIPTS_AUTO_EMAIL', false),
+    ],
+
+    'monthly_limit' => env('MAIL_MONTHLY_LIMIT', 3000),
+
 ];

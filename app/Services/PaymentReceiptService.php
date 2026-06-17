@@ -2,19 +2,25 @@
 
 namespace App\Services;
 
+use App\Jobs\SendPaymentReceiptEmail;
 use App\Models\Club;
 use App\Models\Payment;
 use App\Models\PaymentReceipt;
 use App\Models\User;
+use App\Services\Mail\MailerService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 
 class PaymentReceiptService
 {
+    public function __construct(private readonly MailerService $mailerService)
+    {
+    }
+
     public function syncForPayment(Payment $payment): PaymentReceipt
     {
-        $payment->loadMissing([
+        $payment->load([
             'club:id,club_name',
             'member:id,type,id_data,parent_id',
             'staff:id,type,id_data,user_id',
@@ -44,9 +50,12 @@ class PaymentReceiptService
             $issuedToType = 'staff_unlinked';
         } elseif ($payment->payer_name) {
             $issuedToType = 'external_payer';
+            $issuedToEmail = $payment->payer_email;
         }
 
-        return DB::transaction(function () use ($payment, $parentUserId, $staffUserId, $issuedToType, $issuedToEmail) {
+        $shouldQueueEmail = false;
+
+        $receipt = DB::transaction(function () use ($payment, $parentUserId, $staffUserId, $issuedToType, $issuedToEmail, &$shouldQueueEmail) {
             Club::query()
                 ->whereKey($payment->club_id)
                 ->lockForUpdate()
@@ -61,6 +70,7 @@ class PaymentReceiptService
             $receiptYear = (int) $issuedAt->format('Y');
             $clubCode = $receipt?->club_code ?: $this->clubCodeForPayment($payment);
             $clubSequence = $receipt?->club_sequence ?: $this->nextClubSequence((int) $payment->club_id, $receiptYear);
+            $deliveryStatus = $this->deliveryStatusForSync($receipt, $issuedToEmail);
 
             $payload = [
                 'club_id' => $payment->club_id,
@@ -75,9 +85,13 @@ class PaymentReceiptService
                 'issued_to_type' => $issuedToType,
                 'issued_to_email' => $issuedToEmail,
                 'issued_at' => $issuedAt,
-                'delivery_status' => 'pending',
+                'delivery_status' => $deliveryStatus,
                 'deleted_at' => null,
             ];
+
+            $shouldQueueEmail = (bool) $issuedToEmail
+                && config('mail.payment_receipts.auto_send', false)
+                && (!$receipt || in_array($receipt->delivery_status, ['pending', 'manual_required'], true) || empty($receipt->issued_to_email));
 
             if ($receipt) {
                 $receipt->fill($payload)->save();
@@ -89,6 +103,14 @@ class PaymentReceiptService
                 ...$payload,
             ]);
         });
+
+        if ($shouldQueueEmail) {
+            $receipt->forceFill(['delivery_status' => 'queued'])->save();
+            $mailLog = $this->mailerService->queuePaymentReceipt($receipt);
+            SendPaymentReceiptEmail::dispatch($receipt->id, $mailLog->id)->afterCommit();
+        }
+
+        return $receipt;
     }
 
     public function deleteForPayment(Payment $payment): void
@@ -96,6 +118,42 @@ class PaymentReceiptService
         PaymentReceipt::query()
             ->where('payment_id', $payment->id)
             ->delete();
+    }
+
+    public function queueEmail(PaymentReceipt $receipt, string $email): PaymentReceipt
+    {
+        $receipt->load('payment:id,member_id,staff_id,payer_email');
+
+        DB::transaction(function () use ($receipt, $email): void {
+            $receipt->forceFill([
+                'issued_to_email' => $email,
+                'delivery_status' => 'queued',
+                'delivered_at' => null,
+            ])->save();
+
+            if ($receipt->payment && !$receipt->payment->member_id && !$receipt->payment->staff_id) {
+                $receipt->payment->forceFill(['payer_email' => $email])->save();
+            }
+        });
+
+        $mailLog = $this->mailerService->queuePaymentReceipt($receipt);
+        SendPaymentReceiptEmail::dispatch($receipt->id, $mailLog->id)->afterCommit();
+
+        return $receipt->refresh();
+    }
+
+    public function resyncPendingForClub(int $clubId): void
+    {
+        PaymentReceipt::query()
+            ->where('club_id', $clubId)
+            ->whereIn('delivery_status', ['pending', 'manual_required', 'failed'])
+            ->with('payment')
+            ->get()
+            ->each(function (PaymentReceipt $receipt): void {
+                if ($receipt->payment) {
+                    $this->syncForPayment($receipt->payment);
+                }
+            });
     }
 
     public function publicDownloadUrl(PaymentReceipt $receipt): string
@@ -111,6 +169,19 @@ class PaymentReceiptService
     protected function receiptNumber($issuedAt, string $clubCode, int $clubSequence): string
     {
         return sprintf('RCPT-%s-%s-%06d', $issuedAt->format('Y'), $clubCode, $clubSequence);
+    }
+
+    protected function deliveryStatusForSync(?PaymentReceipt $receipt, ?string $issuedToEmail): string
+    {
+        if (!$issuedToEmail) {
+            return 'manual_required';
+        }
+
+        if (!$receipt || $receipt->delivery_status === 'manual_required') {
+            return 'pending';
+        }
+
+        return $receipt->delivery_status ?: 'pending';
     }
 
     protected function clubCodeForPayment(Payment $payment): string

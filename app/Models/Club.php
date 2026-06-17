@@ -12,6 +12,7 @@ class Club extends Model
         'user_id',
         'club_name',
         'church_name',
+        'club_email',
         'director_name',
         'creation_date',
         'pastor_name',
@@ -98,6 +99,18 @@ class Club extends Model
     public function localObjectives()
     {
         return $this->hasMany(ClubObjective::class)->orderBy('name');
+    }
+
+    public function pathfinderAnnualApplications()
+    {
+        return $this->hasMany(PathfinderAnnualApplication::class)->latest('application_year');
+    }
+
+    public function pathfinderMonthlyReports()
+    {
+        return $this->hasMany(PathfinderMonthlyReport::class)
+            ->orderByDesc('report_year')
+            ->orderByDesc('id');
     }
 
     public function reportsAssistance()

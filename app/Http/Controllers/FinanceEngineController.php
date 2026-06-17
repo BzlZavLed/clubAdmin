@@ -15,6 +15,7 @@ use App\Models\Payment;
 use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
 use App\Services\Finance\FinanceLedgerPdfGenerator;
+use App\Services\Mail\MailerService;
 use App\Support\ClubHelper;
 use App\Support\GeneratedPdfResponse;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -105,6 +106,51 @@ class FinanceEngineController extends Controller
         ]);
 
         return redirect()->away($payload['url']);
+    }
+
+    public function emailMovementsPdf(Request $request, FinanceLedgerPdfGenerator $ledgerPdfGenerator, MailerService $mailerService)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email:rfc,dns', 'max:255'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'account' => ['nullable', 'string', 'max:255'],
+            'domain' => ['nullable', 'in:income,expense,transfer'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
+            'include_annexes' => ['nullable', 'boolean'],
+            'include_income_receipt_annexes' => ['nullable', 'boolean'],
+        ]);
+
+        $recipient = $validated['email'];
+        unset($validated['email']);
+
+        $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);
+        $filters = [
+            ...$validated,
+            'club_id' => $club->id,
+            'limit' => $validated['limit'] ?? 5000,
+        ];
+
+        $payload = $ledgerPdfGenerator->generate($club, $request->user(), $filters);
+        $mailLog = $mailerService->sendFinanceLedgerReport(
+            clubId: $club->id,
+            recipientEmail: $recipient,
+            exportPayload: $payload,
+            filters: $filters,
+            userId: $request->user()->id,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Reporte financiero enviado por correo.',
+            'mail' => [
+                'id' => $mailLog->email_uid,
+                'status' => $mailLog->status,
+                'recipient_email' => $mailLog->recipient_email,
+            ],
+            'files' => $payload['files'] ?? [],
+        ]);
     }
 
     public function movementPdfExportStatus(Request $request, FinanceLedgerExportJob $export)

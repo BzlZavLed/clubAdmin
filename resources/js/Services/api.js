@@ -75,6 +75,11 @@ export const fetchFinanceLedgerExportHistory = async (params = {}) => {
     return data;
 };
 
+export const sendFinanceLedgerReportEmail = async (payload = {}) => {
+    const { data } = await axios.post(route("club.finance-engine.movements.pdf.email"), payload);
+    return data;
+};
+
 export const assignMemberToClass = async ({ memberId, classId }) => {
     return await axios.post(route("members.assign"), {
         member_id: memberId,
@@ -167,6 +172,17 @@ export const downloadMemberZip = async (ids, clubType = null) => {
     URL.revokeObjectURL(link.href);
 };
 
+export const sendMemberZipToConference = async ({ ids, clubType = null, clubId, email }) => {
+    const { data } = await axios.post(route("members.export-zip.send-conference"), {
+        member_ids: ids,
+        club_type: clubType,
+        club_id: clubId,
+        email,
+    });
+
+    return data;
+};
+
 export const uploadPathfinderInsuranceCard = async (memberId, file) => {
     const fd = new FormData();
     fd.append("insurance_card_image", file);
@@ -197,6 +213,16 @@ export const downloadStaffZip = async (ids) => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
+};
+
+export const sendStaffZipToConference = async ({ ids, clubId, email }) => {
+    const { data } = await axios.post(route("export.zip.send-conference", { type: "staff" }), {
+        staff_adventurer_ids: ids,
+        club_id: clubId,
+        email,
+    });
+
+    return data;
 };
 
 export const deleteClassById = async (classId) => {
@@ -355,6 +381,13 @@ export const createFinanceEngineConcept = async (payload) => {
 export const createFinanceEngineIncome = async (payload) => {
     const { data } = await axios.post(route('club.finance-engine.income.store'), financeEngineFormData(payload), {
         headers: financeEngineFormHeaders,
+    });
+    return data;
+};
+
+export const sendPaymentReceiptEmail = async (receiptId, payload) => {
+    const { data } = await axios.post(route('payment-receipts.send', { receipt: receiptId }), payload, {
+        headers: { Accept: 'application/json' },
     });
     return data;
 };
@@ -571,6 +604,48 @@ export const updateClubObjective = async (clubId, objectiveId, payload) => {
 
 export const deleteClubObjective = async (clubId, objectiveId) => {
     const { data } = await axios.delete(route('clubs.objectives.destroy', { club: clubId, objective: objectiveId }));
+    return data;
+};
+
+export const savePathfinderAnnualApplication = async (clubId, payload) => {
+    const { data } = await axios.post(route('clubs.pathfinder-annual-applications.store', { club: clubId }), payload);
+    return data;
+};
+
+export const sendPathfinderAnnualApplication = async (clubId, applicationId, email) => {
+    const { data } = await axios.post(route('clubs.pathfinder-annual-applications.send', {
+        club: clubId,
+        application: applicationId,
+    }), { email });
+    return data;
+};
+
+export const savePathfinderAnnualApplicationDirectorSignature = async (clubId, applicationId, payload) => {
+    const { data } = await axios.post(route('clubs.pathfinder-annual-applications.director-signature', {
+        club: clubId,
+        application: applicationId,
+    }), payload);
+    return data;
+};
+
+export const requestPathfinderAnnualApplicationSignature = async (clubId, applicationId, payload) => {
+    const { data } = await axios.post(route('clubs.pathfinder-annual-applications.signature-requests', {
+        club: clubId,
+        application: applicationId,
+    }), payload);
+    return data;
+};
+
+export const savePathfinderMonthlyReport = async (clubId, payload) => {
+    const { data } = await axios.post(route('clubs.pathfinder-monthly-reports.store', { club: clubId }), payload);
+    return data;
+};
+
+export const sendPathfinderMonthlyReport = async (clubId, reportId, email) => {
+    const { data } = await axios.post(route('clubs.pathfinder-monthly-reports.send', {
+        club: clubId,
+        report: reportId,
+    }), { email });
     return data;
 };
 
@@ -895,6 +970,11 @@ export const fetchMyChurchAdminCatalog = async (payload) => {
 
 export const saveMyChurchAdminConfig = async (payload) => {
     const { data } = await axios.post(route('club.settings.save'), payload)
+    return data
+}
+
+export const updateClubContact = async (payload) => {
+    const { data } = await axios.patch(route('club.settings.contact'), payload)
     return data
 }
 

@@ -18,7 +18,7 @@ class ClubSettingsController extends Controller
     {
         $user = $request->user();
         $clubIds = ClubHelper::clubIdsForUser($user);
-        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'logo_path']);
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'logo_path', 'club_email']);
         $selectedClubId = $this->resolveSelectedClubId($request, $clubs);
 
         if ($selectedClubId) {
@@ -36,6 +36,27 @@ class ClubSettingsController extends Controller
             'selected_club_id' => $selectedClubId,
             'integration_config' => $config,
             'club_logo_url' => $clubLogoService->url($clubs->firstWhere('id', (int) $selectedClubId)),
+            'selected_club' => $selectedClubId
+                ? $clubs->firstWhere('id', (int) $selectedClubId)?->only(['id', 'club_name', 'club_email'])
+                : null,
+        ]);
+    }
+
+    public function updateContact(Request $request)
+    {
+        $payload = $request->validate([
+            'club_id' => ['required', 'integer'],
+            'club_email' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $club->forceFill([
+            'club_email' => $payload['club_email'] ?? null,
+        ])->save();
+
+        return response()->json([
+            'status' => 'ok',
+            'club' => $club->only(['id', 'club_name', 'club_email']),
         ]);
     }
 

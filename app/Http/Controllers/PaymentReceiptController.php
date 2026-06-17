@@ -4,28 +4,25 @@ namespace App\Http\Controllers;
 
 use App\Models\PaymentReceipt;
 use App\Models\Member;
-use App\Models\FundraiserSale;
-use App\Services\ClubLogoService;
 use App\Services\DocumentValidationService;
-use App\Services\Finance\FinanceFundraiserService;
+use App\Services\PaymentReceiptPdfService;
 use App\Services\PaymentReceiptService;
 use App\Support\ClubHelper;
 use App\Support\GeneratedPdfResponse;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class PaymentReceiptController extends Controller
 {
-    public function download(Request $request, PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
+    public function download(Request $request, PaymentReceipt $receipt, PaymentReceiptPdfService $receiptPdfService)
     {
         $receipt = $this->loadReceiptContext($receipt);
         $this->authorizeReceipt($request->user(), $receipt);
         $this->markAsDownloaded(collect([$receipt]));
 
         return GeneratedPdfResponse::fromDomPdf(
-            $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService, $request->user()),
+            $receiptPdfService->make($receipt, $request->user()),
             'generated/payment-receipts',
             $receipt->receipt_number,
             "{$receipt->receipt_number}.pdf",
@@ -33,13 +30,13 @@ class PaymentReceiptController extends Controller
         );
     }
 
-    public function publicDownload(Request $request, PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
+    public function publicDownload(Request $request, PaymentReceipt $receipt, PaymentReceiptPdfService $receiptPdfService)
     {
         $receipt = $this->loadReceiptContext($receipt);
         $this->markAsDownloaded(collect([$receipt]));
 
         return GeneratedPdfResponse::fromDomPdf(
-            $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService),
+            $receiptPdfService->make($receipt),
             'generated/payment-receipts',
             $receipt->receipt_number,
             "{$receipt->receipt_number}.pdf",
@@ -58,7 +55,7 @@ class PaymentReceiptController extends Controller
         ]);
     }
 
-    public function downloadBulk(Request $request, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService)
+    public function downloadBulk(Request $request, PaymentReceiptPdfService $receiptPdfService)
     {
         $validated = $request->validate([
             'receipt_ids' => ['required', 'array', 'min:1'],
@@ -94,13 +91,35 @@ class PaymentReceiptController extends Controller
         foreach ($receipts as $receipt) {
             $zip->addFromString(
                 "{$receipt->receipt_number}.pdf",
-                $this->makeReceiptPdf($receipt, $documentValidationService, $clubLogoService, $request->user())->output()
+                $receiptPdfService->make($receipt, $request->user())->output()
             );
         }
 
         $zip->close();
 
         return response()->download($zipPath, "{$zipName}.zip")->deleteFileAfterSend(true);
+    }
+
+    public function sendManual(Request $request, PaymentReceipt $receipt, PaymentReceiptService $paymentReceiptService)
+    {
+        $receipt = $this->loadReceiptContext($receipt);
+        $this->authorizeReceipt($request->user(), $receipt);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        $receipt = $paymentReceiptService->queueEmail($receipt, $validated['email']);
+
+        return response()->json([
+            'message' => 'Receipt email queued.',
+            'data' => [
+                'id' => $receipt->id,
+                'receipt_number' => $receipt->receipt_number,
+                'issued_to_email' => $receipt->issued_to_email,
+                'delivery_status' => $receipt->delivery_status,
+            ],
+        ]);
     }
 
     public function parentIndex(Request $request)
@@ -256,127 +275,6 @@ class PaymentReceiptController extends Controller
 
     protected function loadReceiptContext(PaymentReceipt $receipt): PaymentReceipt
     {
-        $receipt->loadMissing([
-            'club:id,club_name,church_name,logo_path',
-            'payment.club:id,club_name,church_name,logo_path',
-            'payment.member:id,type,id_data,parent_id',
-            'payment.staff:id,type,id_data,user_id',
-            'payment.concept:id,concept,amount,reusable',
-            'payment.allocations:id,payment_id,payment_concept_id,event_fee_component_id,amount',
-            'payment.allocations.concept:id,concept,event_id,event_fee_component_id',
-            'payment.allocations.concept.event:id,title,start_at',
-            'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
-            'payment.account:id,club_id,pay_to,label',
-            'payment.receivedBy:id,name,email',
-            'parentUser:id,name,email',
-            'staffUser:id,name,email',
-        ]);
-
-        return $receipt;
-    }
-
-    protected function makeReceiptPdf(PaymentReceipt $receipt, DocumentValidationService $documentValidationService, ClubLogoService $clubLogoService, $generatedBy = null)
-    {
-        $payment = $receipt->payment;
-        $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
-        $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
-        $club = $receipt->club ?? $payment?->club;
-        $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name ?? '—';
-        $conceptName = $this->receiptConceptName($payment);
-        $fundraiserOrder = $this->fundraiserOrderForPayment($payment);
-        $isCancellationReceipt = $payment && (
-            (float) $payment->amount_paid < 0
-            || !empty($payment->canceling_id)
-            || !empty($payment->reversed_payment_id)
-        );
-        $receiptTitle = $isCancellationReceipt ? 'Recibo de cancelación' : 'Recibo de ingreso';
-        $generatedAt = now();
-        $validation = $documentValidationService->create(
-            documentType: $isCancellationReceipt ? 'payment_cancellation_receipt' : 'payment_receipt',
-            title: $receiptTitle,
-            snapshot: [
-                'receipt_id' => $receipt->id,
-                'receipt_number' => $receipt->receipt_number,
-                'issued_at' => optional($receipt->issued_at)->toISOString(),
-                'club_id' => $club?->id,
-                'payment_id' => $payment?->id,
-                'payment_date' => optional($payment?->payment_date)->toDateString(),
-                'amount_paid' => $payment?->amount_paid,
-                'payment_type' => $payment?->payment_type,
-                'concept' => $conceptName,
-                'account' => $payment?->account?->label ?? $payment?->pay_to,
-                'recipient_name' => $recipientName,
-                'recipient_email' => $receipt->issued_to_email,
-                'is_cancellation' => $isCancellationReceipt,
-                'canceling_payment_id' => $payment?->canceling_id ?: $payment?->reversed_payment_id,
-                'member_name' => $memberDetail['name'] ?? null,
-                'staff_name' => $staffDetail['name'] ?? null,
-                'payer_name' => $payment?->payer_name,
-                'fundraiser_order' => $fundraiserOrder,
-            ],
-            metadata: [
-                'Recibo' => $receipt->receipt_number,
-                'Club' => $club?->club_name ?? '—',
-                'Pagador' => $recipientName,
-                'Concepto' => $conceptName,
-                'Importe' => '$' . number_format((float) ($payment?->amount_paid ?? 0), 2),
-            ],
-            generatedBy: $generatedBy,
-            generatedAt: $generatedAt,
-        );
-
-        return Pdf::loadView('pdf.payment_receipt', [
-            'receipt' => $receipt,
-            'payment' => $payment,
-            'club' => $club,
-            'member_name' => $memberDetail['name'] ?? null,
-            'staff_name' => $staffDetail['name'] ?? null,
-            'recipient_name' => $recipientName,
-            'recipient_email' => $receipt->issued_to_email,
-            'concept_name' => $conceptName,
-            'receiptTitle' => $receiptTitle,
-            'isCancellationReceipt' => $isCancellationReceipt,
-            'originalPaymentId' => $payment?->canceling_id ?: $payment?->reversed_payment_id,
-            'fundraiserOrder' => $fundraiserOrder,
-            'clubLogoDataUri' => $clubLogoService->dataUri($club),
-            'validationUrl' => $validation['url'],
-            'qrCodeDataUri' => $validation['qr_code_data_uri'],
-        ])->setPaper('a4');
-    }
-
-    protected function fundraiserOrderForPayment($payment): ?array
-    {
-        if (
-            !$payment
-            || $payment->source_type !== FinanceFundraiserService::SOURCE_TYPE
-            || !$payment->source_id
-        ) {
-            return null;
-        }
-
-        $sale = FundraiserSale::query()
-            ->with(['fundraiserEvent:id,name,fundraiser_type', 'items'])
-            ->whereKey($payment->source_id)
-            ->where('payment_id', $payment->id)
-            ->first();
-
-        if (!$sale) {
-            return null;
-        }
-
-        return [
-            'event_name' => $sale->fundraiserEvent?->name,
-            'event_type' => $sale->fundraiserEvent?->fundraiser_type,
-            'customer_name' => $sale->customer_name,
-            'sale_date' => optional($sale->sale_date)->toDateString(),
-            'payment_type' => $sale->payment_type,
-            'total_amount' => (float) $sale->total_amount,
-            'items' => $sale->items->map(fn ($item) => [
-                'name' => $item->item_name,
-                'quantity' => (int) $item->quantity,
-                'unit_price' => (float) $item->unit_price,
-                'line_total' => (float) $item->line_total,
-            ])->values()->all(),
-        ];
+        return app(PaymentReceiptPdfService::class)->loadReceiptContext($receipt);
     }
 }

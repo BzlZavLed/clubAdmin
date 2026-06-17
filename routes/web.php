@@ -50,9 +50,15 @@ use App\Http\Controllers\ClassInvestitureRequirementController;
 use App\Http\Controllers\ClubPersonalInvestitureProgressController;
 use App\Http\Controllers\SuperAdminContextController;
 use App\Http\Controllers\SuperAdminEventTaskFormCatalogController;
+use App\Http\Controllers\SuperAdminMailLogController;
 use App\Http\Controllers\SuperAdminParentPortalController;
 use App\Http\Controllers\SuperAdminPresenceController;
+use App\Http\Controllers\MailTrackingController;
+use App\Http\Controllers\ResendWebhookController;
 use App\Http\Controllers\PaymentReceiptController;
+use App\Http\Controllers\PathfinderAnnualApplicationController;
+use App\Http\Controllers\PathfinderMonthlyReportController;
+use App\Http\Controllers\PublicPathfinderAnnualApplicationSignatureController;
 use App\Http\Controllers\ReimbursementReceiptController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\UnionWorkplanController;
@@ -104,6 +110,12 @@ Route::get('/payment-receipts/{receipt}/public-download', [PaymentReceiptControl
 Route::get('/payment-receipts/{receipt}/qr', [PaymentReceiptController::class, 'publicQr'])
     ->middleware('signed')
     ->name('payment-receipts.public-qr');
+Route::get('/mail-tracking/{mailLog}/open.gif', [MailTrackingController::class, 'open'])
+    ->middleware('signed')
+    ->name('mail-tracking.open');
+Route::post('/webhooks/resend', [ResendWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1')
+    ->name('webhooks.resend');
 Route::get('/reimbursement-receipts/{expense}/{token}', [ReimbursementReceiptController::class, 'show'])
     ->middleware('throttle:60,1')
     ->name('reimbursement-receipts.show');
@@ -116,6 +128,12 @@ Route::get('/reimbursement-receipts/{expense}/{token}/download', [ReimbursementR
 Route::get('/reimbursement-receipts/{expense}/{token}/qr', [ReimbursementReceiptController::class, 'qr'])
     ->middleware('throttle:60,1')
     ->name('reimbursement-receipts.qr');
+Route::get('/pathfinder-annual-applications/sign/{token}', [PublicPathfinderAnnualApplicationSignatureController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('pathfinder-annual-applications.signatures.show');
+Route::post('/pathfinder-annual-applications/sign/{token}', [PublicPathfinderAnnualApplicationSignatureController::class, 'submit'])
+    ->middleware('throttle:30,1')
+    ->name('pathfinder-annual-applications.signatures.submit');
 Route::get('/fundraisers/{fundraiserEvent}/kitchen', [FinanceEngineController::class, 'fundraiserKitchen'])
     ->middleware('signed')
     ->name('fundraisers.kitchen.show');
@@ -350,6 +368,7 @@ Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/payment-receipts/{receipt}/download', [PaymentReceiptController::class, 'download'])->name('payment-receipts.download');
+    Route::post('/payment-receipts/{receipt}/send', [PaymentReceiptController::class, 'sendManual'])->name('payment-receipts.send');
     Route::post('/payment-receipts/download-bulk', [PaymentReceiptController::class, 'downloadBulk'])->name('payment-receipts.download-bulk');
 });
 
@@ -395,6 +414,8 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
         ->name('superadmin.members.parent-account.store');
     Route::get('/super-admin/ai-logs', [\App\Http\Controllers\SuperAdminAiLogController::class, 'index'])
         ->name('superadmin.ai-logs.index');
+    Route::get('/super-admin/mail-logs', [SuperAdminMailLogController::class, 'index'])
+        ->name('superadmin.mail-logs.index');
     Route::get('/super-admin/presence-log', [SuperAdminPresenceController::class, 'index'])
         ->name('superadmin.presence-log.index');
     Route::get('/super-admin/event-task-forms', [SuperAdminEventTaskFormCatalogController::class, 'index'])
@@ -646,6 +667,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.fundraisers');
     Route::get('/club-director/finance-engine/movements/pdf', [FinanceEngineController::class, 'movementsPdf'])
         ->name('club.finance-engine.movements.pdf');
+    Route::post('/club-director/finance-engine/movements/pdf/email', [FinanceEngineController::class, 'emailMovementsPdf'])
+        ->name('club.finance-engine.movements.pdf.email');
     Route::get('/club-director/finance-engine/movements/pdf-exports', [FinanceEngineController::class, 'movementPdfExports'])
         ->name('club.finance-engine.movements.pdf-exports.index');
     Route::get('/club-director/finance-engine/movements/pdf-exports/{export}/status', [FinanceEngineController::class, 'movementPdfExportStatus'])
@@ -813,6 +836,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/club-director/settings', [ClubSettingsController::class, 'index'])->name('club.settings');
     Route::post('/club-director/settings/logo', [ClubSettingsController::class, 'uploadLogo'])->name('club.settings.logo');
     Route::delete('/club-director/settings/logo', [ClubSettingsController::class, 'removeLogo'])->name('club.settings.logo.destroy');
+    Route::patch('/club-director/settings/contact', [ClubSettingsController::class, 'updateContact'])->name('club.settings.contact');
     Route::post('/club-director/settings/catalog', [ClubSettingsController::class, 'fetchCatalog'])->name('club.settings.catalog');
     Route::post('/club-director/settings/save', [ClubSettingsController::class, 'saveConfig'])->name('club.settings.save');
 
@@ -888,6 +912,14 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/clubs/{club}/objectives', [\App\Http\Controllers\ClubObjectiveController::class, 'store'])->name('clubs.objectives.store');
     Route::put('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'update'])->name('clubs.objectives.update');
     Route::delete('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'destroy'])->name('clubs.objectives.destroy');
+    Route::post('/clubs/{club}/pathfinder-annual-applications', [PathfinderAnnualApplicationController::class, 'store'])->name('clubs.pathfinder-annual-applications.store');
+    Route::get('/clubs/{club}/pathfinder-annual-applications/{application}/download', [PathfinderAnnualApplicationController::class, 'download'])->name('clubs.pathfinder-annual-applications.download');
+    Route::post('/clubs/{club}/pathfinder-annual-applications/{application}/send', [PathfinderAnnualApplicationController::class, 'send'])->name('clubs.pathfinder-annual-applications.send');
+    Route::post('/clubs/{club}/pathfinder-annual-applications/{application}/director-signature', [PathfinderAnnualApplicationController::class, 'saveDirectorSignature'])->name('clubs.pathfinder-annual-applications.director-signature');
+    Route::post('/clubs/{club}/pathfinder-annual-applications/{application}/signature-requests', [PathfinderAnnualApplicationController::class, 'requestSignature'])->name('clubs.pathfinder-annual-applications.signature-requests');
+    Route::post('/clubs/{club}/pathfinder-monthly-reports', [PathfinderMonthlyReportController::class, 'store'])->name('clubs.pathfinder-monthly-reports.store');
+    Route::get('/clubs/{club}/pathfinder-monthly-reports/{report}/download', [PathfinderMonthlyReportController::class, 'download'])->name('clubs.pathfinder-monthly-reports.download');
+    Route::post('/clubs/{club}/pathfinder-monthly-reports/{report}/send', [PathfinderMonthlyReportController::class, 'send'])->name('clubs.pathfinder-monthly-reports.send');
 
     // Members
     Route::post('/members', [MemberAdventurerController::class, 'store'])->name('members.store');
@@ -901,6 +933,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/members/{id}/export-pathfinder-pdf', [MemberAdventurerController::class, 'exportPathfinderPdf'])->name('members.export-pathfinder-pdf');
     Route::post('/members/{id}/insurance-card', [MemberAdventurerController::class, 'uploadPathfinderInsuranceCard'])->name('members.pathfinder.insurance-card.upload');
     Route::post('/members/export-zip', [ExportController::class, 'exportZip'])->name('members.export-zip');
+    Route::post('/members/export-zip/send-conference', [ExportController::class, 'sendMemberZipToConference'])->name('members.export-zip.send-conference');
     Route::post('/members/class-member-assignments', [MemberAdventurerController::class, 'assignMember'])->name('members.assign');
     Route::post('/members/class-member-assignments/undo', [MemberAdventurerController::class, 'undoLastAssignment'])->name('members.assignment.undo');
 
@@ -925,6 +958,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     // Export ZIP
     Route::post('/export/{type}/zip', [ExportController::class, 'exportZip'])->name('export.zip');
+    Route::post('/export/{type}/zip/send-conference', [ExportController::class, 'sendMemberZipToConference'])->name('export.zip.send-conference');
 
     // Debug route
     Route::get('/test-template-access', function () {

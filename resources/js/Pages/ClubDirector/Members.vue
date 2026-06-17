@@ -27,6 +27,7 @@ import {
     undoClassAssignment,
     deleteMemberById,
     downloadMemberZip,
+    sendMemberZipToConference,
     uploadPathfinderInsuranceCard,
     updateMasterGuideMemberYear,
 } from '@/Services/api'
@@ -60,6 +61,9 @@ const insuranceUploadMember = ref(null)
 const selectedMemberIds = ref(new Set())
 const selectAll = ref(false)
 const selectedTab = ref('members')
+const showConferenceEmailForm = ref(false)
+const conferenceEmail = ref('')
+const sendingConferenceExport = ref(false)
 const programYearUpdatingIds = ref(new Set())
 const classSummaryPdfOptions = ref({
     include_contact: false,
@@ -70,7 +74,7 @@ const classSummaryPdfOptions = ref({
 const activeTabClass = 'border-b-2 border-blue-600 text-blue-600 font-semibold pb-2'
 const inactiveTabClass = 'text-gray-500 hover:text-gray-700 pb-2'
 const isMasterGuideClub = computed(() => selectedClub.value?.club_type === 'master_guide')
-const memberDetailsColspan = computed(() => isMasterGuideClub.value ? 7 : 10)
+const memberDetailsColspan = computed(() => isMasterGuideClub.value ? 6 : 7)
 const programYearOptions = [1, 2]
 
 // Fetch clubs
@@ -206,7 +210,7 @@ const handleMemberDelete = async ({ id, notes }) => {
     }
 }
 
-// Bulk delete or download
+// Bulk delete, download, or email export
 const handleBulkAction = async (action, type = null) => {
     if (selectedMemberIds.value.size === 0) {
         showToast(tr('No hay miembros seleccionados.', 'No members selected.'), 'info')
@@ -243,6 +247,49 @@ const handleBulkAction = async (action, type = null) => {
         } catch (err) {
             console.error(`Failed to download ${type} ZIP:`, err)
         }
+    }
+
+    if (action === 'send_conference') {
+        showConferenceEmailForm.value = true
+    }
+}
+
+const sendSelectedMembersToConference = async () => {
+    if (!selectedClub.value?.id) {
+        showToast(tr('Selecciona un club primero', 'Select a club first'), 'error')
+        return
+    }
+
+    if (selectedMemberIds.value.size === 0) {
+        showToast(tr('No hay miembros seleccionados.', 'No members selected.'), 'info')
+        return
+    }
+
+    if (!conferenceEmail.value.trim()) {
+        showToast(tr('Ingresa el correo de la conferencia.', 'Enter the conference email.'), 'error')
+        return
+    }
+
+    try {
+        sendingConferenceExport.value = true
+        await sendMemberZipToConference({
+            ids: Array.from(selectedMemberIds.value),
+            clubType: selectedClub.value?.club_type || null,
+            clubId: selectedClub.value.id,
+            email: conferenceEmail.value.trim(),
+        })
+
+        showToast(tr('Paquete enviado a conferencia.', 'Package sent to conference.'), 'success')
+        showConferenceEmailForm.value = false
+        conferenceEmail.value = ''
+    } catch (error) {
+        console.error('Failed to send member export to conference:', error)
+        showToast(
+            error.response?.data?.message || tr('No se pudo enviar el paquete a conferencia.', 'Could not send the package to conference.'),
+            'error'
+        )
+    } finally {
+        sendingConferenceExport.value = false
     }
 }
 
@@ -597,14 +644,47 @@ watch(filteredMembers, () => {
                             <span>{{ tr('Seleccionar todo', 'Select all') }}</span>
                         </label>
                         <select v-if="selectedMemberIds.size > 0"
-                            @change="e => handleBulkAction(e.target.value, 'member')"
+                            @change="e => { handleBulkAction(e.target.value, 'member'); e.target.value = '' }"
                             class="w-full rounded border p-2 px-4 text-sm sm:w-60">
                             <option value="" disabled selected>{{ tr('Acciones masivas', 'Bulk actions') }}</option>
                             <option value="delete">{{ tr('Eliminar seleccionados', 'Delete selected') }}</option>
                             <option v-if="!isMasterGuideClub" value="download">{{ tr('Descargar formularios', 'Download forms') }}</option>
+                            <option v-if="!isMasterGuideClub" value="send_conference">{{ tr('Enviar a conferencia', 'Send to conference') }}</option>
                         </select>
                     </div>
                     <span class="text-sm text-gray-600">{{ selectedMemberIds.size }} {{ tr('seleccionados', 'selected') }}</span>
+                </div>
+                <div v-if="showConferenceEmailForm" class="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
+                    <div class="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-blue-950">{{ tr('Correo de la conferencia', 'Conference email') }}</label>
+                            <input
+                                v-model="conferenceEmail"
+                                type="email"
+                                class="w-full rounded border-blue-200 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                placeholder="conference@example.com"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="sendingConferenceExport"
+                            @click="sendSelectedMembersToConference"
+                        >
+                            {{ sendingConferenceExport ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50"
+                            :disabled="sendingConferenceExport"
+                            @click="showConferenceEmailForm = false"
+                        >
+                            {{ tr('Cancelar', 'Cancel') }}
+                        </button>
+                    </div>
+                    <p class="mt-2 text-xs text-blue-900">
+                        {{ tr('Se generara el mismo ZIP de formularios seleccionados y se enviara como adjunto.', 'The same ZIP of selected forms will be generated and sent as an attachment.') }}
+                    </p>
                 </div>
                 <div class="space-y-3 sm:hidden">
                     <article v-for="member in paginatedMembers" :key="`mobile-member-${member.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
@@ -728,20 +808,17 @@ watch(filteredMembers, () => {
                         {{ tr('No se encontraron miembros con ese criterio.', 'No members matched that criteria.') }}
                     </div>
                 </div>
-                <div class="hidden overflow-x-auto rounded border sm:block">
-                <table :class="[isMasterGuideClub ? 'w-full table-auto' : 'min-w-[1120px] w-full', 'text-sm']">
+                <div class="hidden rounded border sm:block">
+                <table class="w-full table-fixed text-sm">
                     <thead class="bg-gray-200">
                         <tr>
-                            <th class="p-2 text-left"></th>
+                            <th class="w-10 p-2 text-left"></th>
                             <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
-                            <th class="p-2 text-left">SDA</th>
-                            <th v-if="!isMasterGuideClub" class="p-2 text-left">{{ contactColumnLabel }}</th>
-                            <th v-if="!isMasterGuideClub" class="p-2 text-left">{{ tr('Direccion', 'Address') }}</th>
-                            <th class="p-2 text-left">{{ progressColumnLabel }}</th>
-                            <th class="p-2 text-left">{{ tr('Inscripción', 'Enrollment') }}</th>
-                            <th class="p-2 text-left">{{ tr('Seguro', 'Insurance') }}</th>
-                            <th v-if="!isMasterGuideClub" class="p-2 text-left">{{ phoneColumnLabel }}</th>
-                            <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
+                            <th v-if="!isMasterGuideClub" class="w-[18%] p-2 text-left">{{ contactColumnLabel }}</th>
+                            <th class="w-[16%] p-2 text-left">{{ progressColumnLabel }}</th>
+                            <th class="w-28 p-2 text-left">{{ tr('Inscripción', 'Enrollment') }}</th>
+                            <th class="w-24 p-2 text-left">{{ tr('Seguro', 'Insurance') }}</th>
+                            <th class="w-36 p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -753,13 +830,11 @@ watch(filteredMembers, () => {
                                         :checked="selectedMemberIds.has(member.id)"
                                         @change="() => toggleSelectMember(member.id)" />
                                 </td>
-                                <td class="p-2 font-semibold">{{ member.applicant_name }}</td>
-                                <td class="p-2">
-                                    <span :class="sdaBadgeClass(member.is_sda !== false)">
-                                        {{ member.is_sda !== false ? 'SDA' : tr('Cuidado pastoral', 'Pastoral care') }}
-                                    </span>
+                                <td class="p-2 align-top">
+                                    <div class="break-words font-semibold text-gray-900">{{ member.applicant_name }}</div>
+                                    <div class="mt-1 text-xs text-gray-500">{{ member.is_sda !== false ? 'SDA' : tr('Cuidado pastoral', 'Pastoral care') }}</div>
                                 </td>
-                                <td v-if="!isMasterGuideClub" class="p-2">
+                                <td v-if="!isMasterGuideClub" class="p-2 align-top">
                                     <a
                                         v-if="!isMasterGuideClub && parentPortalUrl(member)"
                                         :href="parentPortalUrl(member)"
@@ -770,10 +845,10 @@ watch(filteredMembers, () => {
                                     >
                                         {{ contactColumnValue(member) }}
                                     </a>
-                                    <span v-else>{{ contactColumnValue(member) }}</span>
+                                    <span v-else class="break-words">{{ contactColumnValue(member) }}</span>
+                                    <div class="mt-1 break-words text-xs text-gray-500">{{ phoneColumnValue(member) }}</div>
                                 </td>
-                                <td v-if="!isMasterGuideClub" class="p-2">{{ member.home_address }}</td>
-                                <td class="p-2">
+                                <td class="p-2 align-top">
                                     <select
                                         v-if="member.member_type === 'master_guide'"
                                         :value="Number(member.program_year || 1)"
@@ -783,48 +858,48 @@ watch(filteredMembers, () => {
                                     >
                                         <option v-for="year in programYearOptions" :key="year" :value="year">{{ programYearLabel(year) }}</option>
                                     </select>
-                                    <span v-else>{{ lastCompletedDisplay(member) }}</span>
+                                    <span v-else class="break-words">{{ lastCompletedDisplay(member) }}</span>
                                 </td>
-                                <td class="p-2">
+                                <td class="p-2 align-top">
                                     <span :class="paymentBadgeClass(member.enrollment_paid)">
                                         {{ member.enrollment_paid ? tr('Pagada', 'Paid') : tr('Pendiente', 'Pending') }}
                                     </span>
                                 </td>
-                                <td class="p-2">
+                                <td class="p-2 align-top">
                                     <span v-if="selectedClub?.evaluation_system === 'carpetas'" :class="paymentBadgeClass(member.insurance_paid)">
                                         {{ member.insurance_paid ? tr('Pagado', 'Paid') : tr('Pendiente', 'Pending') }}
                                     </span>
                                     <span v-else class="text-xs text-gray-400">N/A</span>
                                 </td>
-                                <td v-if="!isMasterGuideClub" class="p-2">{{ phoneColumnValue(member) }}</td>
-                                <td class="p-2">
-                                    <button class="text-green-600 hover:underline" @click="toggleExpanded(member.id)">
+                                <td class="p-2 align-top">
+                                    <div class="flex flex-wrap items-center gap-3">
+                                    <button class="text-green-600 hover:underline" @click="toggleExpanded(member.id)" :title="tr('Ver detalles', 'View details')">
                                         <component
                                         :is="expandedRows.has(member.id) ? MinusIcon : PlusIcon"
                                         class="w-4 h-4 inline"
                                         />
-                                    </button> &nbsp;&nbsp;
+                                    </button>
                                     <button class="text-blue-600 hover:underline"
-                                        @click="editMember(member)">
+                                        @click="editMember(member)"
+                                        :title="tr('Editar', 'Edit')">
                                         <PencilIcon class="w-4 h-4 inline" />
                                     </button>
-                                    &nbsp;&nbsp;
                                     <button v-if="member.member_type === 'temp_pathfinder'" class="text-amber-600 hover:underline"
-                                        @click="triggerInsuranceUpload(member)">
+                                        @click="triggerInsuranceUpload(member)"
+                                        :title="tr('Subir seguro', 'Upload insurance')">
                                         <CameraIcon class="w-4 h-4 inline" />
                                     </button>
-                                    <span v-if="member.member_type === 'temp_pathfinder'">&nbsp;&nbsp;</span>
                                     <button class="text-red-600 hover:underline"
-                                        @click="deleteMember(member)">
+                                        @click="deleteMember(member)"
+                                        :title="tr('Eliminar', 'Delete')">
                                         <TrashIcon class="w-4 h-4 inline" />
                                     </button>
-                                    &nbsp;&nbsp;
                                     <button class="text-blue-600 hover:underline"
-                                        @click="downloadWord(member)">  
+                                        @click="downloadWord(member)"
+                                        :title="tr('Descargar formulario', 'Download form')">  
                                         <DocumentArrowDownIcon class="w-4 h-4 inline" />
                                     </button>
-
-                                    
+                                    </div>
                                 </td>
                             </tr>
 

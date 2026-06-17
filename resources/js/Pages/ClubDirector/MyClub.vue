@@ -6,7 +6,7 @@ import { useAuth } from '@/Composables/useAuth'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
 import { refreshPage } from '@/Helpers/general'
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, nextTick, ref, watch, onMounted } from 'vue'
 
 import {
     fetchClubsByUserId,
@@ -20,6 +20,12 @@ import {
     createClubObjective,
     updateClubObjective,
     deleteClubObjective,
+    savePathfinderAnnualApplication,
+    sendPathfinderAnnualApplication,
+    savePathfinderAnnualApplicationDirectorSignature,
+    requestPathfinderAnnualApplicationSignature,
+    savePathfinderMonthlyReport,
+    sendPathfinderMonthlyReport,
     deleteClassById,
     activateCarpetaClassForClub,
     createOrUpdateClass,
@@ -71,6 +77,27 @@ const showRequirementFormByClass = ref({})
 const objectiveDraftByClub = ref({})
 const editingObjectiveByClub = ref({})
 const showObjectiveFormByClub = ref({})
+const annualApplicationDraftByClub = ref({})
+const annualApplicationEmailByClub = ref({})
+const savingAnnualApplicationByClub = ref({})
+const sendingAnnualApplicationByClub = ref({})
+const annualApplicationPastorEmailByClub = ref({})
+const annualApplicationHeadElderEmailByClub = ref({})
+const annualApplicationHeadElderNameByClub = ref({})
+const annualApplicationDirectorSignatureModeByClub = ref({})
+const savingDirectorSignatureByClub = ref({})
+const requestingAnnualApplicationSignatureByClub = ref({})
+const annualApplicationJotformModeByClub = ref({})
+const directorSignatureCanvasByClub = ref({})
+const directorSignatureDrawingByClub = ref({})
+const directorSignatureHasDrawingByClub = ref({})
+const monthlyReportDraftByClub = ref({})
+const monthlyReportEmailByClub = ref({})
+const savingMonthlyReportByClub = ref({})
+const sendingMonthlyReportByClub = ref({})
+const monthlyReportVolunteerFilesByClub = ref({})
+const monthlyReportActivityFilesByClub = ref({})
+const monthlyReportJotformModeByClub = ref({})
 
 // 🧠 Derived data
 const church_name = computed(() => user.value.church_name || tr('Iglesia desconocida', 'Unknown church'))
@@ -218,6 +245,8 @@ const fetchClubs = async () => {
     try {
         const data = await fetchClubsByUserId(user.value.id)
         clubs.value = Array.isArray(data) ? data : []
+        annualApplicationDraftByClub.value = {}
+        monthlyReportDraftByClub.value = {}
         hasClub.value = clubs.value.length > 0
         if (!clubId.value && clubs.value.length && !isSuperadmin.value) {
             clubId.value = clubs.value[0].id
@@ -550,6 +579,586 @@ const getClubObjectives = (club) => {
         .filter(objective => objective.status !== 'inactive')
         .slice()
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+}
+
+const isPathfinderHonorsClub = (club) => club?.club_type === 'pathfinders' && (club?.evaluation_system || 'honors') === 'honors'
+const pathfinderClubs = computed(() => filteredClubs.value.filter(isPathfinderHonorsClub))
+const currentApplicationYear = computed(() => {
+    return String(new Date().getFullYear())
+})
+const annualApplicationYearOptions = (club) => {
+    const currentYear = new Date().getFullYear()
+    const baseYears = Array.from({ length: 8 }, (_, index) => String(currentYear + 1 - index))
+    const existingYears = getAnnualApplications(club).map(application => String(application.application_year))
+
+    return Array.from(new Set([...baseYears, ...existingYears]))
+        .sort((a, b) => Number(b) - Number(a))
+}
+const defaultDueDateForApplicationYear = (year = currentApplicationYear.value) => {
+    const numericYear = Number.parseInt(String(year), 10)
+    const dueYear = Number.isFinite(numericYear) ? numericYear - 1 : new Date().getFullYear() - 1
+
+    return `${dueYear}-10-10`
+}
+const annualApplicationJotformUrl = 'https://form.jotform.com/252098248383061'
+
+const getAnnualApplications = (club) => (
+    Array.isArray(club?.pathfinder_annual_applications)
+        ? club.pathfinder_annual_applications
+        : []
+)
+
+const findAnnualApplication = (club, year = currentApplicationYear.value) => (
+    getAnnualApplications(club).find(application => application.application_year === year) || null
+)
+
+const annualApplicationDefaults = (club, year = currentApplicationYear.value) => ({
+    id: null,
+    application_year: year,
+    due_date: defaultDueDateForApplicationYear(year),
+    sponsoring_church: club?.church_name || '',
+    pastor: club?.pastor_name || '',
+    elected_club_director: club?.director_name || user.value?.name || '',
+    mailing_address: '',
+    director_phone_number: '',
+    church_pastor_signature: '',
+    head_elder_signature: '',
+    club_director_signature: club?.director_name || user.value?.name || '',
+    board_approval_date: '',
+    pdf_url: null,
+    delivery_status: null,
+    last_sent_to_email: null,
+    sent_at: null,
+    signatures_complete: false,
+    signatures: [],
+})
+
+const normalizeAnnualApplicationDraft = (club, application) => ({
+    ...annualApplicationDefaults(club, application?.application_year || currentApplicationYear.value),
+    ...(application || {}),
+    signatures_complete: application?.signatures_complete ?? hasCompleteAnnualApplicationSignatures(application),
+})
+
+const hasCompleteAnnualApplicationSignatures = (application) => {
+    const signedRoles = new Set((application?.signatures || [])
+        .filter(signature => signature?.signed_at)
+        .map(signature => signature.role))
+
+    return ['director', 'pastor', 'head_elder'].every(role => signedRoles.has(role))
+}
+
+const hydrateAnnualApplicationSignatureState = (clubId, club, application) => {
+    annualApplicationDirectorSignatureModeByClub.value[clubId] ||= 'typed'
+    annualApplicationPastorEmailByClub.value[clubId] ||= club?.church?.pastor_email || ''
+    const pastorSignature = (application?.signatures || []).find(signature => signature.role === 'pastor')
+    const headElderSignature = (application?.signatures || []).find(signature => signature.role === 'head_elder')
+    if (pastorSignature?.signer_email) {
+        annualApplicationPastorEmailByClub.value[clubId] = pastorSignature.signer_email
+    }
+    if (headElderSignature?.signer_name) {
+        annualApplicationHeadElderNameByClub.value[clubId] = headElderSignature.signer_name
+    }
+    if (headElderSignature?.signer_email) {
+        annualApplicationHeadElderEmailByClub.value[clubId] = headElderSignature.signer_email
+    }
+}
+
+const getAnnualApplicationDraft = (club) => {
+    const clubKey = club?.id
+    if (!clubKey) return annualApplicationDefaults(club)
+
+    if (!annualApplicationDraftByClub.value[clubKey]) {
+        const existing = findAnnualApplication(club)
+        annualApplicationDraftByClub.value[clubKey] = normalizeAnnualApplicationDraft(club, existing)
+        hydrateAnnualApplicationSignatureState(clubKey, club, annualApplicationDraftByClub.value[clubKey])
+    }
+
+    return annualApplicationDraftByClub.value[clubKey]
+}
+
+const selectAnnualApplication = (club, application) => {
+    if (!club?.id || !application) return
+    annualApplicationDraftByClub.value[club.id] = normalizeAnnualApplicationDraft(club, application)
+    hydrateAnnualApplicationSignatureState(club.id, club, annualApplicationDraftByClub.value[club.id])
+}
+
+const selectAnnualApplicationYear = (club, year) => {
+    if (!club?.id || !year) return
+    const existing = findAnnualApplication(club, year)
+    annualApplicationDraftByClub.value[club.id] = normalizeAnnualApplicationDraft(club, existing || { application_year: year })
+    hydrateAnnualApplicationSignatureState(club.id, club, annualApplicationDraftByClub.value[club.id])
+}
+
+const cleanAnnualApplicationForm = (club) => {
+    if (!club?.id) return
+    const year = getAnnualApplicationDraft(club).application_year || currentApplicationYear.value
+    annualApplicationDraftByClub.value[club.id] = annualApplicationDefaults(club, year)
+    annualApplicationDirectorSignatureModeByClub.value[club.id] = 'typed'
+    annualApplicationPastorEmailByClub.value[club.id] = club?.church?.pastor_email || ''
+    annualApplicationHeadElderNameByClub.value[club.id] = ''
+    annualApplicationHeadElderEmailByClub.value[club.id] = ''
+    directorSignatureHasDrawingByClub.value[club.id] = false
+    nextTick(() => configureDirectorSignatureCanvas(club.id))
+}
+
+const syncAnnualApplicationToClub = (clubId, application) => {
+    const club = clubs.value.find(item => Number(item.id) === Number(clubId))
+    if (!club) return
+    const existing = getAnnualApplications(club)
+    const next = existing.filter(item => Number(item.id) !== Number(application.id))
+    next.unshift(application)
+    club.pathfinder_annual_applications = next
+    annualApplicationDraftByClub.value[clubId] = normalizeAnnualApplicationDraft(club, application)
+    hydrateAnnualApplicationSignatureState(clubId, club, application)
+}
+
+const annualApplicationSignatures = (club) => getAnnualApplicationDraft(club).signatures || []
+
+const annualApplicationSignature = (club, role) => (
+    annualApplicationSignatures(club).find(signature => signature.role === role) || {
+        role,
+        status: 'pending',
+        signer_name: '',
+        signer_email: '',
+        signed_at: null,
+    }
+)
+
+const signatureStatusLabel = (signature) => {
+    if (signature?.signed_at) return tr('Firmado', 'Signed')
+    if (signature?.requested_at) return tr('Solicitud enviada', 'Request sent')
+    return tr('Pendiente', 'Pending')
+}
+
+const signatureStatusClass = (signature) => {
+    if (signature?.signed_at) return 'bg-emerald-100 text-emerald-800'
+    if (signature?.requested_at) return 'bg-amber-100 text-amber-800'
+    return 'bg-gray-100 text-gray-700'
+}
+
+const setDirectorSignatureCanvas = (clubId, element) => {
+    if (!element) return
+    if (directorSignatureCanvasByClub.value[clubId] === element) return
+    directorSignatureCanvasByClub.value[clubId] = element
+    nextTick(() => configureDirectorSignatureCanvas(clubId))
+}
+
+const configureDirectorSignatureCanvas = (clubId) => {
+    const canvas = directorSignatureCanvasByClub.value[clubId]
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const ratio = window.devicePixelRatio || 1
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio))
+    canvas.height = Math.max(1, Math.floor(rect.height * ratio))
+    const context = canvas.getContext('2d')
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.strokeStyle = '#111827'
+    context.lineWidth = 2.5 * ratio
+    context.lineCap = 'round'
+    context.lineJoin = 'round'
+    directorSignatureHasDrawingByClub.value[clubId] = false
+}
+
+const directorSignaturePoint = (clubId, event) => {
+    const canvas = directorSignatureCanvasByClub.value[clubId]
+    const rect = canvas.getBoundingClientRect()
+    return {
+        x: (event.clientX - rect.left) * (canvas.width / rect.width),
+        y: (event.clientY - rect.top) * (canvas.height / rect.height),
+    }
+}
+
+const startDirectorSignature = (clubId, event) => {
+    const canvas = directorSignatureCanvasByClub.value[clubId]
+    if (!canvas) return
+    directorSignatureDrawingByClub.value[clubId] = true
+    directorSignatureHasDrawingByClub.value[clubId] = true
+    const context = canvas.getContext('2d')
+    const point = directorSignaturePoint(clubId, event)
+    context.beginPath()
+    context.moveTo(point.x, point.y)
+}
+
+const drawDirectorSignature = (clubId, event) => {
+    if (!directorSignatureDrawingByClub.value[clubId]) return
+    const canvas = directorSignatureCanvasByClub.value[clubId]
+    if (!canvas) return
+    const context = canvas.getContext('2d')
+    const point = directorSignaturePoint(clubId, event)
+    context.lineTo(point.x, point.y)
+    context.stroke()
+}
+
+const stopDirectorSignature = (clubId) => {
+    directorSignatureDrawingByClub.value[clubId] = false
+}
+
+const saveDirectorSignature = async (club) => {
+    let draft = getAnnualApplicationDraft(club)
+    if (!draft.id) {
+        const savedApplication = await saveAnnualApplication(club)
+        if (!savedApplication) return
+        draft = getAnnualApplicationDraft(club)
+    }
+
+    const mode = annualApplicationDirectorSignatureModeByClub.value[club.id] || 'typed'
+    const signerName = String(draft.club_director_signature || draft.elected_club_director || user.value?.name || '').trim()
+
+    if (!signerName) {
+        showToast(tr('Indica el nombre del director', 'Enter the director name'), 'error')
+        return
+    }
+
+    if (mode === 'drawn' && !directorSignatureHasDrawingByClub.value[club.id]) {
+        showToast(tr('Dibuja la firma del director', 'Draw the director signature'), 'error')
+        return
+    }
+
+    savingDirectorSignatureByClub.value[club.id] = true
+    try {
+        const payload = {
+            signature_type: mode,
+            signer_name: signerName,
+            signature_text: mode === 'typed' ? signerName : null,
+            signature_data: mode === 'drawn' ? directorSignatureCanvasByClub.value[club.id]?.toDataURL('image/png') : null,
+        }
+        const response = await savePathfinderAnnualApplicationDirectorSignature(club.id, draft.id, payload)
+        syncAnnualApplicationToClub(club.id, response.data)
+        showToast(tr('Firma del director guardada', 'Director signature saved'), 'success')
+    } catch (error) {
+        console.error('Failed to save director signature:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo guardar la firma', 'Could not save the signature'), 'error')
+    } finally {
+        savingDirectorSignatureByClub.value[club.id] = false
+    }
+}
+
+const requestAnnualApplicationSignature = async (club, role) => {
+    const draft = getAnnualApplicationDraft(club)
+    if (!draft.id) {
+        showToast(tr('Guarda la aplicacion antes de pedir firmas', 'Save the application before requesting signatures'), 'error')
+        return
+    }
+
+    const email = role === 'pastor'
+        ? String(annualApplicationPastorEmailByClub.value[club.id] || club?.church?.pastor_email || '').trim()
+        : String(annualApplicationHeadElderEmailByClub.value[club.id] || '').trim()
+    const name = role === 'pastor'
+        ? String(draft.pastor || club?.church?.pastor_name || '').trim()
+        : String(annualApplicationHeadElderNameByClub.value[club.id] || '').trim()
+
+    if (!email) {
+        showToast(tr('Indica el correo destino', 'Enter the recipient email'), 'error')
+        return
+    }
+
+    const key = `${club.id}-${role}`
+    requestingAnnualApplicationSignatureByClub.value[key] = true
+    try {
+        const response = await requestPathfinderAnnualApplicationSignature(club.id, draft.id, { role, email, name })
+        syncAnnualApplicationToClub(club.id, response.data)
+        showToast(tr('Solicitud de firma enviada', 'Signature request sent'), 'success')
+    } catch (error) {
+        console.error('Failed to request signature:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar la solicitud de firma', 'Could not send the signature request'), 'error')
+    } finally {
+        requestingAnnualApplicationSignatureByClub.value[key] = false
+    }
+}
+
+const saveAnnualApplication = async (club) => {
+    const draft = getAnnualApplicationDraft(club)
+    if (!draft.application_year?.trim()) {
+        showToast(tr('Indica el año de aplicacion', 'Enter the application year'), 'error')
+        return
+    }
+    if (!draft.sponsoring_church?.trim()) {
+        showToast(tr('Indica la iglesia patrocinadora', 'Enter the sponsoring church'), 'error')
+        return
+    }
+
+    savingAnnualApplicationByClub.value[club.id] = true
+    try {
+        const payload = {
+            ...draft,
+        }
+        const response = await savePathfinderAnnualApplication(club.id, payload)
+        syncAnnualApplicationToClub(club.id, response.data)
+        showToast(tr('Aplicacion anual guardada', 'Annual application saved'), 'success')
+        return response.data
+    } catch (error) {
+        console.error('Failed to save annual application:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo guardar la aplicacion anual', 'Could not save the annual application'), 'error')
+        return null
+    } finally {
+        savingAnnualApplicationByClub.value[club.id] = false
+    }
+}
+
+const downloadAnnualApplication = (club) => {
+    const draft = getAnnualApplicationDraft(club)
+    if (!draft.id) {
+        showToast(tr('Guarda la aplicacion antes de descargar el PDF', 'Save the application before downloading the PDF'), 'error')
+        return
+    }
+    window.open(route('clubs.pathfinder-annual-applications.download', {
+        club: club.id,
+        application: draft.id,
+    }), '_blank')
+}
+
+const sendAnnualApplication = async (club) => {
+    const draft = getAnnualApplicationDraft(club)
+    const email = String(annualApplicationEmailByClub.value[club.id] || '').trim()
+    if (!draft.id) {
+        showToast(tr('Guarda la aplicacion antes de enviarla', 'Save the application before sending it'), 'error')
+        return
+    }
+    if (!draft.signatures_complete) {
+        showToast(tr('La aplicacion requiere las tres firmas antes de enviarse', 'The application requires all three signatures before sending'), 'error')
+        return
+    }
+    if (!email) {
+        showToast(tr('Indica el correo destino', 'Enter the recipient email'), 'error')
+        return
+    }
+
+    sendingAnnualApplicationByClub.value[club.id] = true
+    try {
+        const response = await sendPathfinderAnnualApplication(club.id, draft.id, email)
+        syncAnnualApplicationToClub(club.id, response.data)
+        annualApplicationEmailByClub.value[club.id] = ''
+        showToast(tr('Aplicacion anual enviada', 'Annual application sent'), 'success')
+    } catch (error) {
+        console.error('Failed to send annual application:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar la aplicacion anual', 'Could not send the annual application'), 'error')
+    } finally {
+        sendingAnnualApplicationByClub.value[club.id] = false
+    }
+}
+
+const monthlyReportAreas = ['West', 'Central-West', 'Central-East', 'North-East', 'North-West', 'Eastern Shore', 'South']
+const monthlyReportMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const pathfinderMonthlyReportClubs = computed(() => filteredClubs.value.filter(isPathfinderHonorsClub))
+const currentReportYear = computed(() => String(new Date().getFullYear()))
+const currentReportMonth = computed(() => monthlyReportMonths[new Date().getMonth()])
+const monthlyReportJotformUrl = 'https://form.jotform.com/252724787908169'
+
+const getMonthlyReports = (club) => (
+    Array.isArray(club?.pathfinder_monthly_reports)
+        ? club.pathfinder_monthly_reports
+        : []
+)
+
+const findMonthlyReport = (club, year = currentReportYear.value, month = currentReportMonth.value) => (
+    getMonthlyReports(club).find(report => String(report.report_year) === String(year) && report.report_month === month) || null
+)
+
+const monthlyReportDefaults = (club, year = currentReportYear.value, month = currentReportMonth.value) => ({
+    id: null,
+    report_year: year,
+    report_month: month,
+    full_name: user.value?.name || '',
+    email: user.value?.email || '',
+    area: '',
+    church_and_club_name: [club?.church_name, club?.club_name].filter(Boolean).join(' - '),
+    pathfinders_count: '',
+    tlt_count: '',
+    staff_count: '',
+    meetings_count: '',
+    bible_studies_count: '',
+    baptisms_count: '',
+    campouts_count: '',
+    field_trips_count: '',
+    honors_completed_count: '',
+    honors_completed_list: '',
+    outreach_activities: '',
+    notable_activities: '',
+    may_share_photos: '',
+    pdf_url: null,
+    last_sent_to_email: null,
+    delivery_status: null,
+    sent_at: null,
+    attachments: [],
+})
+
+const getMonthlyReportDraft = (club) => {
+    const clubKey = club?.id
+    if (!clubKey) return monthlyReportDefaults(club)
+
+    if (!monthlyReportDraftByClub.value[clubKey]) {
+        const existing = findMonthlyReport(club)
+        monthlyReportDraftByClub.value[clubKey] = {
+            ...monthlyReportDefaults(club, existing?.report_year || currentReportYear.value, existing?.report_month || currentReportMonth.value),
+            ...(existing || {}),
+            may_share_photos: existing?.may_share_photos === null || existing?.may_share_photos === undefined
+                ? ''
+                : String(existing.may_share_photos),
+        }
+    }
+
+    return monthlyReportDraftByClub.value[clubKey]
+}
+
+const normalizeMonthlyReportDraft = (club, report) => ({
+    ...monthlyReportDefaults(club, report?.report_year || currentReportYear.value, report?.report_month || currentReportMonth.value),
+    ...(report || {}),
+    may_share_photos: report?.may_share_photos === null || report?.may_share_photos === undefined
+        ? ''
+        : String(report.may_share_photos),
+})
+
+const selectMonthlyReport = (club, report) => {
+    if (!club?.id || !report) return
+    monthlyReportDraftByClub.value[club.id] = normalizeMonthlyReportDraft(club, report)
+    monthlyReportVolunteerFilesByClub.value[club.id] = []
+    monthlyReportActivityFilesByClub.value[club.id] = []
+}
+
+const startNewMonthlyReport = (club) => {
+    if (!club?.id) return
+    monthlyReportDraftByClub.value[club.id] = monthlyReportDefaults(club)
+    monthlyReportVolunteerFilesByClub.value[club.id] = []
+    monthlyReportActivityFilesByClub.value[club.id] = []
+}
+
+const syncMonthlyReportToClub = (clubId, report) => {
+    const club = clubs.value.find(item => Number(item.id) === Number(clubId))
+    if (!club) return
+    const existing = getMonthlyReports(club)
+    const next = existing.filter(item => Number(item.id) !== Number(report.id))
+    next.unshift(report)
+    club.pathfinder_monthly_reports = next
+    monthlyReportDraftByClub.value[clubId] = normalizeMonthlyReportDraft(club, report)
+}
+
+const setMonthlyReportFiles = (target, clubId, event) => {
+    const files = Array.from(event.target.files || [])
+
+    if (target?.value) {
+        target.value[clubId] = files
+        return
+    }
+
+    target[clubId] = files
+}
+
+const monthlyReportAttachments = (club, kind) => (
+    (getMonthlyReportDraft(club).attachments || []).filter(attachment => attachment.kind === kind)
+)
+
+const selectedMonthlyReportFileCount = (target, clubId) => {
+    const source = target?.value || target || {}
+
+    return (source[clubId] || []).length
+}
+
+const monthlyReportFormData = (club, draft) => {
+    const formData = new FormData()
+    const scalarFields = [
+        'report_year',
+        'report_month',
+        'full_name',
+        'email',
+        'area',
+        'church_and_club_name',
+        'pathfinders_count',
+        'tlt_count',
+        'staff_count',
+        'meetings_count',
+        'bible_studies_count',
+        'baptisms_count',
+        'campouts_count',
+        'field_trips_count',
+        'honors_completed_count',
+        'honors_completed_list',
+        'outreach_activities',
+        'notable_activities',
+    ]
+
+    scalarFields.forEach(field => {
+        formData.append(field, draft[field] ?? '')
+    })
+
+    if (draft.may_share_photos !== '') {
+        formData.append('may_share_photos', draft.may_share_photos)
+    }
+
+    ;(monthlyReportVolunteerFilesByClub.value[club.id] || []).forEach(file => {
+        formData.append('volunteer_proofs[]', file)
+    })
+    ;(monthlyReportActivityFilesByClub.value[club.id] || []).forEach(file => {
+        formData.append('activity_photos[]', file)
+    })
+
+    return formData
+}
+
+const saveMonthlyReport = async (club) => {
+    const draft = getMonthlyReportDraft(club)
+    if (!draft.report_year?.trim() || !draft.report_month?.trim()) {
+        showToast(tr('Indica año y mes', 'Enter year and month'), 'error')
+        return
+    }
+    if (!draft.church_and_club_name?.trim()) {
+        showToast(tr('Indica iglesia y club', 'Enter church and club name'), 'error')
+        return
+    }
+
+    savingMonthlyReportByClub.value[club.id] = true
+    try {
+        const response = await savePathfinderMonthlyReport(club.id, monthlyReportFormData(club, draft))
+        syncMonthlyReportToClub(club.id, response.data)
+        monthlyReportVolunteerFilesByClub.value[club.id] = []
+        monthlyReportActivityFilesByClub.value[club.id] = []
+        showToast(tr('Reporte mensual guardado', 'Monthly report saved'), 'success')
+        return response.data
+    } catch (error) {
+        console.error('Failed to save monthly report:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo guardar el reporte mensual', 'Could not save the monthly report'), 'error')
+        return null
+    } finally {
+        savingMonthlyReportByClub.value[club.id] = false
+    }
+}
+
+const downloadMonthlyReport = (club) => {
+    const draft = getMonthlyReportDraft(club)
+    if (!draft.id) {
+        showToast(tr('Guarda el reporte antes de descargar', 'Save the report before downloading'), 'error')
+        return
+    }
+    window.open(route('clubs.pathfinder-monthly-reports.download', {
+        club: club.id,
+        report: draft.id,
+    }), '_blank')
+}
+
+const sendMonthlyReport = async (club) => {
+    const draft = getMonthlyReportDraft(club)
+    const email = String(monthlyReportEmailByClub.value[club.id] || '').trim()
+    if (!draft.id) {
+        showToast(tr('Guarda el reporte antes de enviarlo', 'Save the report before sending it'), 'error')
+        return
+    }
+    if (!email) {
+        showToast(tr('Indica el correo destino', 'Enter the recipient email'), 'error')
+        return
+    }
+
+    sendingMonthlyReportByClub.value[club.id] = true
+    try {
+        const response = await sendPathfinderMonthlyReport(club.id, draft.id, email)
+        syncMonthlyReportToClub(club.id, response.data)
+        monthlyReportEmailByClub.value[club.id] = ''
+        showToast(tr('Reporte mensual enviado', 'Monthly report sent'), 'success')
+    } catch (error) {
+        console.error('Failed to send monthly report:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar el reporte mensual', 'Could not send the monthly report'), 'error')
+    } finally {
+        sendingMonthlyReportByClub.value[club.id] = false
+    }
 }
 
 const getObjectiveDraft = (clubId) => {
@@ -1205,6 +1814,679 @@ onMounted(fetchClubs);
                         <p v-else-if="clubLimitReached" class="text-sm text-amber-700">
                             {{ tr('Ya tienes el maximo de 2 clubes asignados.', 'You already have the maximum of 2 assigned clubs.') }}
                         </p>
+                    </div>
+                </div>
+            </details>
+
+            <details v-if="pathfinderClubs.length" class="border rounded">
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Aplicacion anual', 'Annual Application') }}</summary>
+                <div class="space-y-4 p-4">
+                    <div
+                        v-for="club in pathfinderClubs"
+                        :key="`annual-application-${club.id}`"
+                        class="rounded border bg-white p-4"
+                    >
+                        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">{{ club.club_name }}</h3>
+                                <p class="text-sm text-gray-600">{{ tr('Formulario anual para clubes de Conquistadores.', 'Annual form for Pathfinder clubs.') }}</p>
+                            </div>
+                            <div class="flex flex-col gap-2 sm:items-end">
+                                <span class="inline-flex w-fit rounded bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
+                                    {{ getAnnualApplicationDraft(club).application_year }}
+                                </span>
+                                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                        v-model="annualApplicationJotformModeByClub[club.id]"
+                                        type="checkbox"
+                                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    {{ tr('Usar Jotform', 'Use Jotform') }}
+                                </label>
+                            </div>
+                        </div>
+
+                        <div v-if="annualApplicationJotformModeByClub[club.id]" class="overflow-hidden rounded border border-gray-200 bg-white">
+                            <div class="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                {{ tr('Al usar Jotform, las respuestas no se guardan en este sistema. No apareceran en el historial, no generaran el PDF interno y no usaran el flujo de firmas del portal.', 'Using Jotform means responses are not stored in this system. They will not appear in history, generate the internal PDF, or use the portal signature workflow.') }}
+                            </div>
+                            <iframe
+                                :src="annualApplicationJotformUrl"
+                                title="Pathfinder Club Yearly Application Jotform"
+                                class="h-[780px] w-full border-0"
+                            ></iframe>
+                        </div>
+
+                        <template v-else>
+                        <div class="mb-5 border-b pb-4">
+                            <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-gray-900">{{ tr('Aplicaciones historicas', 'Historical applications') }}</h4>
+                                    <p class="text-xs text-gray-500">
+                                        {{ tr('El sistema mantiene una aplicacion por club y año.', 'The system keeps one application per club and year.') }}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="w-fit rounded bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-800"
+                                    @click="cleanAnnualApplicationForm(club)"
+                                >
+                                    {{ tr('Limpiar formulario actual', 'Clear current form') }}
+                                </button>
+                            </div>
+
+                            <div v-if="getAnnualApplications(club).length" class="overflow-hidden rounded border border-gray-200">
+                                <div class="hidden grid-cols-[1fr_1fr_1fr_auto] gap-3 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase text-gray-600 md:grid">
+                                    <span>{{ tr('Año', 'Year') }}</span>
+                                    <span>{{ tr('Estado', 'Status') }}</span>
+                                    <span>{{ tr('Ultimo envio', 'Last sent') }}</span>
+                                    <span class="text-right">{{ tr('Accion', 'Action') }}</span>
+                                </div>
+                                <div
+                                    v-for="application in getAnnualApplications(club)"
+                                    :key="`annual-application-row-${application.id}`"
+                                    class="grid gap-2 border-t border-gray-200 px-3 py-3 text-sm md:grid-cols-[1fr_1fr_1fr_auto] md:items-center"
+                                    :class="Number(getAnnualApplicationDraft(club).id) === Number(application.id) ? 'bg-blue-50' : 'bg-white'"
+                                >
+                                    <div>
+                                        <div class="font-semibold text-gray-900">{{ application.application_year }}</div>
+                                        <div v-if="application.application_year === currentApplicationYear" class="text-xs text-blue-700">
+                                            {{ tr('Año actual', 'Current year') }}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span
+                                            class="rounded px-2 py-1 text-xs font-semibold"
+                                            :class="(application.signatures_complete ?? hasCompleteAnnualApplicationSignatures(application)) ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                                        >
+                                            {{ (application.signatures_complete ?? hasCompleteAnnualApplicationSignatures(application)) ? tr('Completa', 'Complete') : tr('Pendiente', 'Pending') }}
+                                        </span>
+                                    </div>
+                                    <div class="text-gray-700">
+                                        <span v-if="application.last_sent_to_email">{{ application.last_sent_to_email }}</span>
+                                        <span v-else class="text-gray-500">{{ tr('No enviada', 'Not sent') }}</span>
+                                        <div v-if="application.sent_at" class="text-xs text-gray-500">{{ application.sent_at }}</div>
+                                    </div>
+                                    <div class="flex justify-start md:justify-end">
+                                        <button
+                                            type="button"
+                                            class="rounded border border-blue-600 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                                            @click="selectAnnualApplication(club, application)"
+                                        >
+                                            {{ Number(getAnnualApplicationDraft(club).id) === Number(application.id) ? tr('Abierta', 'Open') : tr('Abrir', 'Open') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <p v-else class="rounded border border-dashed border-gray-300 px-3 py-3 text-sm text-gray-500">
+                                {{ tr('No hay aplicaciones anuales guardadas todavia.', 'No annual applications saved yet.') }}
+                            </p>
+
+                            <p v-if="!findAnnualApplication(club, currentApplicationYear)" class="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                                {{ tr('No hay aplicacion guardada para el año actual. El formulario esta listo para crear una nueva.', 'No saved application exists for the current year. The form is ready to create a new one.') }}
+                            </p>
+                        </div>
+
+                        <div class="mb-4 max-w-xs">
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Año de aplicacion', 'Application year') }}</label>
+                            <select
+                                v-model="getAnnualApplicationDraft(club).application_year"
+                                class="mt-1 w-full rounded border p-2"
+                                @change="event => selectAnnualApplicationYear(club, event.target.value)"
+                            >
+                                <option
+                                    v-for="year in annualApplicationYearOptions(club)"
+                                    :key="year"
+                                    :value="year"
+                                >
+                                    {{ year }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Iglesia patrocinadora', 'Sponsoring church') }}</label>
+                                <input
+                                    v-model="getAnnualApplicationDraft(club).sponsoring_church"
+                                    type="text"
+                                    class="mt-1 w-full rounded border p-2"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Pastor', 'Pastor') }}</label>
+                                <input
+                                    v-model="getAnnualApplicationDraft(club).pastor"
+                                    type="text"
+                                    class="mt-1 w-full rounded border p-2"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Director electo', 'Elected club director') }}</label>
+                                <input
+                                    v-model="getAnnualApplicationDraft(club).elected_club_director"
+                                    type="text"
+                                    class="mt-1 w-full rounded border p-2"
+                                />
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Direccion postal', 'Mailing address') }}</label>
+                                <input
+                                    v-model="getAnnualApplicationDraft(club).mailing_address"
+                                    type="text"
+                                    class="mt-1 w-full rounded border p-2"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Telefono del director', 'Director phone number') }}</label>
+                                <input
+                                    v-model="getAnnualApplicationDraft(club).director_phone_number"
+                                    type="text"
+                                    class="mt-1 w-full rounded border p-2"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="mt-5">
+                            <div class="mb-5 space-y-4 rounded border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-800">
+                                <div>
+                                    <h4 class="font-semibold text-gray-900">{{ tr('The Philosophy of Pathfindering', 'The Philosophy of Pathfindering') }}</h4>
+                                    <p class="mt-2">
+                                        The purpose of having a Pathfinder Club is to lead its membership into a growing, redemptive relationship with Christ, and to build its membership into responsible, mature individuals and to involve its membership in active selfless service. All Pathfinder leaders are Christians, working hand in hand with parents, teachers, and pastors providing optimum opportunities for Christian development, The Pathfinder Club is an extension of the home, school and church, it is an experiential environment where growth and learning flourish. The membership involves youth in grades 5-10 who have a desire for group activities ranging from community and world mission projects to nature, out door work and camping activities
+                                    </p>
+                                    <p class="mt-3">
+                                        AY Pathfindering class curriculum and AY Honors. Above all, Pathfindering gives youth an environment in which to actively expand their personal experience with Christ.
+                                    </p>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-gray-900">{{ tr('Your Commitment to Pathfindering', 'Your Commitment to Pathfindering') }}</h4>
+                                    <p class="mt-2">
+                                        We, the undersigned, have read, understand, and are in full agreement with the above Philosophy of Pathfindering and agree to support our club through those means with which the Lord has blessed this church, including finances, staff volunteers, securing a place to meet, transportation on outings, and other such needs as my arise in the fulfillment of this ministry, and to assist and support the work of the Pathfinder ministry in this conference and around the world.
+                                    </p>
+                                </div>
+                            </div>
+                            <h4 class="text-sm font-semibold text-gray-900">{{ tr('Firmas', 'Signatures') }}</h4>
+                            <div class="mt-3">
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Fecha de aprobacion de junta', 'Date of Board Approval') }}</label>
+                                <input v-model="getAnnualApplicationDraft(club).board_approval_date" type="date" class="mt-1 w-full rounded border p-2 md:max-w-xs" />
+                            </div>
+
+                            <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                                <div class="rounded border border-gray-200 bg-white p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h5 class="font-semibold text-gray-900">{{ tr('Director del club', 'Club director') }}</h5>
+                                            <p class="text-xs text-gray-500">{{ user?.email || '' }}</p>
+                                        </div>
+                                        <span class="rounded px-2 py-1 text-xs font-semibold" :class="signatureStatusClass(annualApplicationSignature(club, 'director'))">
+                                            {{ signatureStatusLabel(annualApplicationSignature(club, 'director')) }}
+                                        </span>
+                                    </div>
+
+                                    <div class="mt-3">
+                                        <label class="block text-sm font-medium text-gray-700">{{ tr('Nombre del firmante', 'Signer name') }}</label>
+                                        <input v-model="getAnnualApplicationDraft(club).club_director_signature" type="text" class="mt-1 w-full rounded border p-2" />
+                                    </div>
+
+                                    <div class="mt-3 inline-flex rounded border border-gray-300 bg-gray-50 p-1 text-sm">
+                                        <button
+                                            type="button"
+                                            class="rounded px-3 py-1"
+                                            :class="(annualApplicationDirectorSignatureModeByClub[club.id] || 'typed') === 'typed' ? 'bg-white font-semibold shadow-sm' : 'text-gray-600'"
+                                            @click="annualApplicationDirectorSignatureModeByClub[club.id] = 'typed'"
+                                        >
+                                            {{ tr('Texto', 'Typed') }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="rounded px-3 py-1"
+                                            :class="annualApplicationDirectorSignatureModeByClub[club.id] === 'drawn' ? 'bg-white font-semibold shadow-sm' : 'text-gray-600'"
+                                            @click="() => { annualApplicationDirectorSignatureModeByClub[club.id] = 'drawn'; nextTick(() => configureDirectorSignatureCanvas(club.id)) }"
+                                        >
+                                            {{ tr('Dibujar', 'Draw') }}
+                                        </button>
+                                    </div>
+
+                                    <div v-if="annualApplicationDirectorSignatureModeByClub[club.id] === 'drawn'" class="mt-3">
+                                        <div class="mb-2 flex items-center justify-between">
+                                            <label class="text-sm font-medium text-gray-700">{{ tr('Firma', 'Signature') }}</label>
+                                            <button type="button" class="text-xs font-semibold text-gray-600 hover:text-gray-950" @click="configureDirectorSignatureCanvas(club.id)">
+                                                {{ tr('Limpiar', 'Clear') }}
+                                            </button>
+                                        </div>
+                                        <canvas
+                                            :ref="element => setDirectorSignatureCanvas(club.id, element)"
+                                            class="h-40 w-full touch-none rounded border border-gray-300 bg-white"
+                                            @pointerdown.prevent="event => startDirectorSignature(club.id, event)"
+                                            @pointermove.prevent="event => drawDirectorSignature(club.id, event)"
+                                            @pointerup.prevent="() => stopDirectorSignature(club.id)"
+                                            @pointercancel.prevent="() => stopDirectorSignature(club.id)"
+                                            @pointerleave.prevent="() => stopDirectorSignature(club.id)"
+                                        ></canvas>
+                                    </div>
+
+                                    <img
+                                        v-if="annualApplicationSignature(club, 'director').signature_url"
+                                        :src="annualApplicationSignature(club, 'director').signature_url"
+                                        alt="Firma del director"
+                                        class="mt-3 max-h-20 rounded border bg-white"
+                                    />
+
+                                    <button
+                                        type="button"
+                                        class="mt-3 w-full rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+                                        :disabled="savingDirectorSignatureByClub[club.id]"
+                                        @click="saveDirectorSignature(club)"
+                                    >
+                                        {{ savingDirectorSignatureByClub[club.id] ? tr('Guardando firma...', 'Saving signature...') : tr('Guardar firma', 'Save signature') }}
+                                    </button>
+                                </div>
+
+                                <div class="rounded border border-gray-200 bg-white p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h5 class="font-semibold text-gray-900">{{ tr('Pastor de iglesia', 'Church pastor') }}</h5>
+                                            <p class="text-xs text-gray-500">{{ annualApplicationSignature(club, 'pastor').signer_email || club?.church?.pastor_email || tr('Sin correo configurado', 'No email configured') }}</p>
+                                        </div>
+                                        <span class="rounded px-2 py-1 text-xs font-semibold" :class="signatureStatusClass(annualApplicationSignature(club, 'pastor'))">
+                                            {{ signatureStatusLabel(annualApplicationSignature(club, 'pastor')) }}
+                                        </span>
+                                    </div>
+                                    <input
+                                        v-model="annualApplicationPastorEmailByClub[club.id]"
+                                        type="email"
+                                        class="mt-3 w-full rounded border p-2"
+                                        :placeholder="tr('Correo del pastor', 'Pastor email')"
+                                    />
+                                    <img
+                                        v-if="annualApplicationSignature(club, 'pastor').signature_url"
+                                        :src="annualApplicationSignature(club, 'pastor').signature_url"
+                                        alt="Firma del pastor"
+                                        class="mt-3 max-h-20 rounded border bg-white"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="mt-3 w-full rounded bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700 disabled:opacity-60"
+                                        :disabled="requestingAnnualApplicationSignatureByClub[`${club.id}-pastor`] || !getAnnualApplicationDraft(club).id"
+                                        @click="requestAnnualApplicationSignature(club, 'pastor')"
+                                    >
+                                        {{ requestingAnnualApplicationSignatureByClub[`${club.id}-pastor`] ? tr('Enviando...', 'Sending...') : tr('Enviar para firma', 'Send for signature') }}
+                                    </button>
+                                </div>
+
+                                <div class="rounded border border-gray-200 bg-white p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h5 class="font-semibold text-gray-900">{{ tr('Primer anciano', 'Head elder') }}</h5>
+                                            <p class="text-xs text-gray-500">{{ annualApplicationSignature(club, 'head_elder').signer_email || tr('Correo manual', 'Manual email') }}</p>
+                                        </div>
+                                        <span class="rounded px-2 py-1 text-xs font-semibold" :class="signatureStatusClass(annualApplicationSignature(club, 'head_elder'))">
+                                            {{ signatureStatusLabel(annualApplicationSignature(club, 'head_elder')) }}
+                                        </span>
+                                    </div>
+                                    <input
+                                        v-model="annualApplicationHeadElderNameByClub[club.id]"
+                                        type="text"
+                                        class="mt-3 w-full rounded border p-2"
+                                        :placeholder="tr('Nombre del primer anciano', 'Head elder name')"
+                                    />
+                                    <input
+                                        v-model="annualApplicationHeadElderEmailByClub[club.id]"
+                                        type="email"
+                                        class="mt-2 w-full rounded border p-2"
+                                        :placeholder="tr('Correo del primer anciano', 'Head elder email')"
+                                    />
+                                    <img
+                                        v-if="annualApplicationSignature(club, 'head_elder').signature_url"
+                                        :src="annualApplicationSignature(club, 'head_elder').signature_url"
+                                        alt="Firma del primer anciano"
+                                        class="mt-3 max-h-20 rounded border bg-white"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="mt-3 w-full rounded bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700 disabled:opacity-60"
+                                        :disabled="requestingAnnualApplicationSignatureByClub[`${club.id}-head_elder`] || !getAnnualApplicationDraft(club).id"
+                                        @click="requestAnnualApplicationSignature(club, 'head_elder')"
+                                    >
+                                        {{ requestingAnnualApplicationSignatureByClub[`${club.id}-head_elder`] ? tr('Enviando...', 'Sending...') : tr('Enviar para firma', 'Send for signature') }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 grid gap-3 border-t pt-4 lg:grid-cols-[auto_auto_1fr_auto] lg:items-center">
+                            <button
+                                type="button"
+                                class="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="savingAnnualApplicationByClub[club.id]"
+                                @click="saveAnnualApplication(club)"
+                            >
+                                {{ savingAnnualApplicationByClub[club.id] ? tr('Guardando...', 'Saving...') : tr('Guardar aplicacion', 'Save application') }}
+                            </button>
+                            <button
+                                type="button"
+                                class="rounded bg-gray-700 px-4 py-2 text-sm text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="!getAnnualApplicationDraft(club).id"
+                                @click="downloadAnnualApplication(club)"
+                            >
+                                {{ tr('Descargar PDF', 'Download PDF') }}
+                            </button>
+                            <input
+                                v-model="annualApplicationEmailByClub[club.id]"
+                                type="email"
+                                class="w-full rounded border p-2"
+                                :placeholder="tr('Correo destino', 'Recipient email')"
+                            />
+                            <button
+                                type="button"
+                                class="rounded bg-emerald-700 px-4 py-2 text-sm text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="sendingAnnualApplicationByClub[club.id] || !getAnnualApplicationDraft(club).id || !getAnnualApplicationDraft(club).signatures_complete"
+                                @click="sendAnnualApplication(club)"
+                            >
+                                {{ sendingAnnualApplicationByClub[club.id] ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
+                            </button>
+                        </div>
+
+                        <p v-if="!getAnnualApplicationDraft(club).id" class="mt-2 text-sm text-amber-700">
+                            {{ tr('Primero guarda la aplicacion para habilitar envio y firmas externas.', 'Save the application first to enable sending and external signatures.') }}
+                        </p>
+                        <p v-else-if="!getAnnualApplicationDraft(club).signatures_complete" class="mt-2 text-sm text-amber-700">
+                            {{ tr('Para enviar, primero completa las tres firmas requeridas.', 'Complete all three required signatures before sending.') }}
+                        </p>
+
+                        <p v-if="getAnnualApplicationDraft(club).last_sent_to_email" class="mt-2 text-xs text-gray-500">
+                            {{ tr('Ultimo envio', 'Last sent') }}:
+                            {{ getAnnualApplicationDraft(club).last_sent_to_email }}
+                            <span v-if="getAnnualApplicationDraft(club).sent_at">({{ getAnnualApplicationDraft(club).sent_at }})</span>
+                        </p>
+                        </template>
+                    </div>
+                </div>
+            </details>
+
+            <details v-if="pathfinderMonthlyReportClubs.length" class="border rounded">
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">{{ tr('Reporte mensual', 'Monthly Report') }}</summary>
+                <div class="space-y-4 p-4">
+                    <div
+                        v-for="club in pathfinderMonthlyReportClubs"
+                        :key="`monthly-report-${club.id}`"
+                        class="rounded border bg-white p-4"
+                    >
+                        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">{{ club.club_name }}</h3>
+                                <p class="text-sm text-gray-600">{{ tr('Reporte mensual de actividades Pathfinder.', 'Monthly Pathfinder activity report.') }}</p>
+                            </div>
+                            <div class="flex flex-col gap-2 sm:items-end">
+                                <span class="inline-flex w-fit rounded bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
+                                    {{ getMonthlyReportDraft(club).report_month }} {{ getMonthlyReportDraft(club).report_year }}
+                                </span>
+                                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                        v-model="monthlyReportJotformModeByClub[club.id]"
+                                        type="checkbox"
+                                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    {{ tr('Usar Jotform', 'Use Jotform') }}
+                                </label>
+                            </div>
+                        </div>
+
+                        <div v-if="monthlyReportJotformModeByClub[club.id]" class="overflow-hidden rounded border border-gray-200 bg-white">
+                            <div class="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                {{ tr('Al usar Jotform, las respuestas no se guardan en este sistema. No apareceran en el historial de reportes ni tendran seguimiento interno.', 'Using Jotform means responses are not stored in this system. They will not appear in report history or have internal accountability tracking.') }}
+                            </div>
+                            <iframe
+                                :src="monthlyReportJotformUrl"
+                                title="Pathfinder Club Monthly Report Jotform"
+                                class="h-[780px] w-full border-0"
+                            ></iframe>
+                        </div>
+
+                        <template v-else>
+                        <div class="mb-5 border-b pb-4">
+                            <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <h4 class="text-sm font-semibold text-gray-900">{{ tr('Reportes enviados', 'Submitted reports') }}</h4>
+                                <button
+                                    type="button"
+                                    class="w-fit rounded bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-800"
+                                    @click="startNewMonthlyReport(club)"
+                                >
+                                    {{ tr('Nuevo reporte', 'New report') }}
+                                </button>
+                            </div>
+
+                            <div v-if="getMonthlyReports(club).length" class="overflow-hidden rounded border border-gray-200">
+                                <div class="hidden grid-cols-[1fr_1fr_1fr_auto] gap-3 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase text-gray-600 md:grid">
+                                    <span>{{ tr('Periodo', 'Period') }}</span>
+                                    <span>{{ tr('Ultimo envio', 'Last sent') }}</span>
+                                    <span>{{ tr('Evidencias', 'Evidence') }}</span>
+                                    <span class="text-right">{{ tr('Accion', 'Action') }}</span>
+                                </div>
+                                <div
+                                    v-for="report in getMonthlyReports(club)"
+                                    :key="`monthly-report-row-${report.id}`"
+                                    class="grid gap-2 border-t border-gray-200 px-3 py-3 text-sm md:grid-cols-[1fr_1fr_1fr_auto] md:items-center"
+                                    :class="Number(getMonthlyReportDraft(club).id) === Number(report.id) ? 'bg-blue-50' : 'bg-white'"
+                                >
+                                    <div>
+                                        <div class="font-semibold text-gray-900">{{ report.report_month }} {{ report.report_year }}</div>
+                                        <div class="text-xs text-gray-500 md:hidden">{{ tr('Periodo', 'Period') }}</div>
+                                    </div>
+                                    <div class="text-gray-700">
+                                        <span v-if="report.last_sent_to_email">{{ report.last_sent_to_email }}</span>
+                                        <span v-else class="text-gray-500">{{ tr('No enviado', 'Not sent') }}</span>
+                                        <div v-if="report.sent_at" class="text-xs text-gray-500">{{ report.sent_at }}</div>
+                                    </div>
+                                    <div class="text-gray-700">
+                                        {{ (report.attachments || []).length }}
+                                    </div>
+                                    <div class="flex justify-start md:justify-end">
+                                        <button
+                                            type="button"
+                                            class="rounded border border-blue-600 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                                            @click="selectMonthlyReport(club, report)"
+                                        >
+                                            {{ Number(getMonthlyReportDraft(club).id) === Number(report.id) ? tr('Abierto', 'Open') : tr('Abrir', 'Open') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <p v-else class="rounded border border-dashed border-gray-300 px-3 py-3 text-sm text-gray-500">
+                                {{ tr('No hay reportes mensuales guardados todavia.', 'No monthly reports saved yet.') }}
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Nombre completo', 'Full Name') }}</label>
+                                <input v-model="getMonthlyReportDraft(club).full_name" type="text" class="mt-1 w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Correo', 'Email') }}</label>
+                                <input v-model="getMonthlyReportDraft(club).email" type="email" class="mt-1 w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Area', 'Area') }}</label>
+                                <select v-model="getMonthlyReportDraft(club).area" class="mt-1 w-full rounded border p-2">
+                                    <option value="">{{ tr('Selecciona area', 'Select area') }}</option>
+                                    <option v-for="area in monthlyReportAreas" :key="area" :value="area">{{ area }}</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Iglesia y club', 'Church AND Club Name') }}</label>
+                                <input v-model="getMonthlyReportDraft(club).church_and_club_name" type="text" class="mt-1 w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Año', 'Year') }}</label>
+                                <input v-model="getMonthlyReportDraft(club).report_year" type="text" class="mt-1 w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Mes reportado', 'Month Reporting On') }}</label>
+                                <select v-model="getMonthlyReportDraft(club).report_month" class="mt-1 w-full rounded border p-2">
+                                    <option v-for="month in monthlyReportMonths" :key="month" :value="month">{{ month }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700"># {{ tr('Pathfinders', 'Pathfinders') }}</label>
+                                <input v-model="getMonthlyReportDraft(club).pathfinders_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700"># TLT's</label>
+                                <input v-model="getMonthlyReportDraft(club).tlt_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700"># {{ tr('Staff', 'Staff') }}</label>
+                                <input v-model="getMonthlyReportDraft(club).staff_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                            </div>
+                        </div>
+
+                        <div class="mt-5">
+                            <h4 class="text-sm font-semibold text-gray-900">{{ tr('Informacion del mes', "This Month's Meeting Info") }}</h4>
+                            <div class="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700"># {{ tr('Reuniones', 'Meetings') }}</label>
+                                    <input v-model="getMonthlyReportDraft(club).meetings_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700"># {{ tr('Estudios biblicos', 'Bible Studies') }}</label>
+                                    <input v-model="getMonthlyReportDraft(club).bible_studies_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700"># {{ tr('Bautismos', 'Baptisms') }}</label>
+                                    <input v-model="getMonthlyReportDraft(club).baptisms_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700"># {{ tr('Campamentos', 'Campouts') }}</label>
+                                    <input v-model="getMonthlyReportDraft(club).campouts_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700"># {{ tr('Salidas', 'Field Trips') }}</label>
+                                    <input v-model="getMonthlyReportDraft(club).field_trips_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700"># {{ tr('Honores', 'Honors Completed') }}</label>
+                                    <input v-model="getMonthlyReportDraft(club).honors_completed_count" type="number" min="0" class="mt-1 w-full rounded border p-2" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Honores completados', 'Pathfinder Honors completed') }}</label>
+                                <textarea v-model="getMonthlyReportDraft(club).honors_completed_list" rows="4" class="mt-1 w-full rounded border p-2"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Actividades de alcance', 'Outreach activities') }}</label>
+                                <textarea v-model="getMonthlyReportDraft(club).outreach_activities" rows="4" class="mt-1 w-full rounded border p-2"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">{{ tr('Actividades destacadas', 'Notable Pathfinder activities') }}</label>
+                                <textarea v-model="getMonthlyReportDraft(club).notable_activities" rows="4" class="mt-1 w-full rounded border p-2"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                            <div class="rounded border border-gray-200 bg-gray-50 p-4">
+                                <label class="block text-sm font-semibold text-gray-900">{{ tr('Pruebas de voluntarios verificados', 'Verified Volunteer proof') }}</label>
+                                <input
+                                    type="file"
+                                    multiple
+                                    class="mt-2 w-full rounded border bg-white p-2 text-sm"
+                                    @change="event => setMonthlyReportFiles(monthlyReportVolunteerFilesByClub, club.id, event)"
+                                />
+                                <p v-if="selectedMonthlyReportFileCount(monthlyReportVolunteerFilesByClub, club.id)" class="mt-2 text-xs text-blue-700">
+                                    {{ selectedMonthlyReportFileCount(monthlyReportVolunteerFilesByClub, club.id) }} {{ tr('archivo(s) listos para guardar', 'file(s) ready to save') }}
+                                </p>
+                                <div v-if="monthlyReportAttachments(club, 'volunteer_proof').length" class="mt-3 space-y-1 text-sm">
+                                    <a
+                                        v-for="attachment in monthlyReportAttachments(club, 'volunteer_proof')"
+                                        :key="attachment.id"
+                                        :href="attachment.url"
+                                        target="_blank"
+                                        class="block truncate text-blue-700 hover:underline"
+                                    >
+                                        {{ attachment.original_name }}
+                                    </a>
+                                </div>
+                            </div>
+
+                            <div class="rounded border border-gray-200 bg-gray-50 p-4">
+                                <label class="block text-sm font-semibold text-gray-900">{{ tr('Fotos de actividades/eventos', "This month's activities/events pictures") }}</label>
+                                <input
+                                    type="file"
+                                    multiple
+                                    class="mt-2 w-full rounded border bg-white p-2 text-sm"
+                                    @change="event => setMonthlyReportFiles(monthlyReportActivityFilesByClub, club.id, event)"
+                                />
+                                <p v-if="selectedMonthlyReportFileCount(monthlyReportActivityFilesByClub, club.id)" class="mt-2 text-xs text-blue-700">
+                                    {{ selectedMonthlyReportFileCount(monthlyReportActivityFilesByClub, club.id) }} {{ tr('archivo(s) listos para guardar', 'file(s) ready to save') }}
+                                </p>
+                                <div v-if="monthlyReportAttachments(club, 'activity_photo').length" class="mt-3 space-y-1 text-sm">
+                                    <a
+                                        v-for="attachment in monthlyReportAttachments(club, 'activity_photo')"
+                                        :key="attachment.id"
+                                        :href="attachment.url"
+                                        target="_blank"
+                                        class="block truncate text-blue-700 hover:underline"
+                                    >
+                                        {{ attachment.original_name }}
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5">
+                            <label class="block text-sm font-medium text-gray-700">{{ tr('Permiso para compartir fotos', 'May we share your pictures?') }}</label>
+                            <select v-model="getMonthlyReportDraft(club).may_share_photos" class="mt-1 w-full rounded border p-2 md:max-w-xs">
+                                <option value="">{{ tr('Selecciona', 'Select') }}</option>
+                                <option value="1">{{ tr('Si', 'Yes') }}</option>
+                                <option value="0">{{ tr('No', 'No') }}</option>
+                            </select>
+                        </div>
+
+                        <div class="mt-5 grid gap-3 border-t pt-4 lg:grid-cols-[auto_auto_1fr_auto] lg:items-center">
+                            <button
+                                type="button"
+                                class="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="savingMonthlyReportByClub[club.id]"
+                                @click="saveMonthlyReport(club)"
+                            >
+                                {{ savingMonthlyReportByClub[club.id] ? tr('Guardando...', 'Saving...') : tr('Guardar reporte', 'Save report') }}
+                            </button>
+                            <button
+                                type="button"
+                                class="rounded bg-gray-700 px-4 py-2 text-sm text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="!getMonthlyReportDraft(club).id"
+                                @click="downloadMonthlyReport(club)"
+                            >
+                                {{ tr('Descargar PDF', 'Download PDF') }}
+                            </button>
+                            <input
+                                v-model="monthlyReportEmailByClub[club.id]"
+                                type="email"
+                                class="w-full rounded border p-2"
+                                :placeholder="tr('Correo destino', 'Recipient email')"
+                            />
+                            <button
+                                type="button"
+                                class="rounded bg-emerald-700 px-4 py-2 text-sm text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="sendingMonthlyReportByClub[club.id] || !getMonthlyReportDraft(club).id"
+                                @click="sendMonthlyReport(club)"
+                            >
+                                {{ sendingMonthlyReportByClub[club.id] ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
+                            </button>
+                        </div>
+
+                        <p v-if="!getMonthlyReportDraft(club).id" class="mt-2 text-sm text-amber-700">
+                            {{ tr('Primero guarda el reporte mensual para habilitar descarga y envio.', 'Save the monthly report first to enable download and sending.') }}
+                        </p>
+                        <p v-if="getMonthlyReportDraft(club).last_sent_to_email" class="mt-2 text-xs text-gray-500">
+                            {{ tr('Ultimo envio', 'Last sent') }}:
+                            {{ getMonthlyReportDraft(club).last_sent_to_email }}
+                            <span v-if="getMonthlyReportDraft(club).sent_at">({{ getMonthlyReportDraft(club).sent_at }})</span>
+                        </p>
+                        </template>
                     </div>
                 </div>
             </details>

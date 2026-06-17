@@ -23,6 +23,7 @@ import {
     updateStaffStatus,
     updateUserStatus,
     downloadStaffZip,
+    sendStaffZipToConference,
     fetchClubClasses,
     updateStaffAssignedClass,
     linkStaffToClubUser,
@@ -86,6 +87,9 @@ const activeTab = ref('active')
 const activeStaffTab = ref('active')
 const clubUserIds = ref(new Set())
 const tempStaffModalVisible = ref(false)
+const showConferenceEmailForm = ref(false)
+const conferenceEmail = ref('')
+const sendingConferenceExport = ref(false)
 
 const activeChurchId = computed(() => activeClub.value?.church_id || user.value?.church_id || null)
 const activeChurchName = computed(() => activeClub.value?.church_name || user.value?.church_name || null)
@@ -110,6 +114,7 @@ const selectableClubs = computed(() => {
 })
 const canSelectStaffClub = computed(() => isSuperadmin.value ? selectableClubs.value.length > 0 : selectableClubs.value.length > 1)
 const isMasterGuideStaffClub = computed(() => selectedClub.value?.club_type === 'master_guide')
+const staffDetailsColspan = computed(() => 5)
 
 // ✅ Create staff eligibility map
 const createStaffMap = computed(() => {
@@ -457,6 +462,22 @@ const handleBulkAction = async (action) => {
     }
 
     const ids = Array.from(selectedStaffIds.value)
+
+    if (action === 'download') {
+        try {
+            await downloadStaffZip(ids)
+        } catch (error) {
+            console.error('Staff ZIP download failed:', error)
+            showToast(tr('No se pudo descargar el ZIP de personal.', 'Could not download the staff ZIP.'), 'error')
+        }
+        return
+    }
+
+    if (action === 'send_conference') {
+        showConferenceEmailForm.value = true
+        return
+    }
+
     const isReactivate = action === 'reactivate'
     const statusCode = isReactivate ? 423 : 301
     const confirmText = isReactivate
@@ -476,6 +497,44 @@ const handleBulkAction = async (action) => {
     } catch (error) {
         console.error('Bulk action failed:', error)
         toast.error(tr('Actualizacion masiva fallida', 'Bulk update failed'))
+    }
+}
+
+const sendSelectedStaffToConference = async () => {
+    if (!selectedClub.value?.id) {
+        showToast(tr('Selecciona un club primero', 'Select a club first'), 'error')
+        return
+    }
+
+    if (selectedStaffIds.value.size === 0) {
+        showToast(tr('No hay personal seleccionado.', 'No staff selected.'))
+        return
+    }
+
+    if (!conferenceEmail.value.trim()) {
+        showToast(tr('Ingresa el correo de la conferencia.', 'Enter the conference email.'), 'error')
+        return
+    }
+
+    try {
+        sendingConferenceExport.value = true
+        await sendStaffZipToConference({
+            ids: Array.from(selectedStaffIds.value),
+            clubId: selectedClub.value.id,
+            email: conferenceEmail.value.trim(),
+        })
+
+        showToast(tr('Paquete de personal enviado a conferencia.', 'Staff package sent to conference.'), 'success')
+        showConferenceEmailForm.value = false
+        conferenceEmail.value = ''
+    } catch (error) {
+        console.error('Failed to send staff export to conference:', error)
+        showToast(
+            error.response?.data?.message || tr('No se pudo enviar el paquete de personal a conferencia.', 'Could not send the staff package to conference.'),
+            'error'
+        )
+    } finally {
+        sendingConferenceExport.value = false
     }
 }
 
@@ -695,7 +754,7 @@ watch(
                             <span>{{ tr('Seleccionar todo', 'Select all') }}</span>
                         </label>
                         <select v-if="selectedStaffIds.size > 0"
-                            @change="e => handleBulkAction(e.target.value, 'staff')"
+                            @change="e => { handleBulkAction(e.target.value); e.target.value = '' }"
                             class="w-full rounded border p-2 px-4 text-sm sm:w-60">
                             <option value="" disabled selected>{{ tr('Acciones masivas', 'Bulk actions') }}</option>
 
@@ -704,12 +763,45 @@ watch(
                             </option>
 
                             <option value="download">{{ tr('Descargar formularios', 'Download forms') }}</option>
+                            <option value="send_conference">{{ tr('Enviar a conferencia', 'Send to conference') }}</option>
                         </select>
                     </div>
                     <span class="text-sm text-gray-600">{{ selectedStaffIds.size }} {{ tr('seleccionados', 'selected') }}</span>
                 </div>
+                <div v-if="showConferenceEmailForm" class="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
+                    <div class="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-blue-950">{{ tr('Correo de la conferencia', 'Conference email') }}</label>
+                            <input
+                                v-model="conferenceEmail"
+                                type="email"
+                                class="w-full rounded border-blue-200 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                placeholder="conference@example.com"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="sendingConferenceExport"
+                            @click="sendSelectedStaffToConference"
+                        >
+                            {{ sendingConferenceExport ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50"
+                            :disabled="sendingConferenceExport"
+                            @click="showConferenceEmailForm = false"
+                        >
+                            {{ tr('Cancelar', 'Cancel') }}
+                        </button>
+                    </div>
+                    <p class="mt-2 text-xs text-blue-900">
+                        {{ tr('Se generara el mismo ZIP de formularios de personal seleccionado y se enviara como adjunto.', 'The same ZIP of selected staff forms will be generated and sent as an attachment.') }}
+                    </p>
+                </div>
 
-                <div class="space-y-3 sm:hidden">
+                <div class="space-y-3 lg:hidden">
                     <article v-for="person in filteredStaff" :key="`mobile-staff-${person.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
                         <div class="flex items-start gap-3">
                             <input
@@ -843,42 +935,56 @@ watch(
                     </div>
                 </div>
 
-                <div class="hidden overflow-x-auto rounded border sm:block">
-                <table class="w-full text-sm" :class="isMasterGuideStaffClub ? 'min-w-[760px]' : 'min-w-[1100px]'">
+                <div class="hidden rounded border lg:block">
+                <table class="w-full table-fixed text-sm">
                     <thead class="bg-gray-200">
                         <tr>
-                            <th class="p-2 text-left"></th>
+                            <th class="w-10 p-2 text-left"></th>
                             <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
-                            <th v-if="!isMasterGuideStaffClub" class="p-2 text-left">{{ tr('Fecha de nacimiento', 'Date of birth') }}</th>
-                            <th v-if="!isMasterGuideStaffClub" class="p-2 text-left">{{ tr('Direccion', 'Address') }}</th>
-                            <!-- <th class="p-2 text-left">Class</th> -->
-                            <th v-if="!isMasterGuideStaffClub" class="p-2 text-left">{{ tr('Celular', 'Cell phone') }}</th>
-                            <th class="p-2 text-left w-16">Email</th>
-                            <th class="p-2 text-left">{{ tr('Estado', 'Status') }}</th>
-                            <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
-                            <th class="p-2 text-left">{{ isMasterGuideStaffClub ? tr('Año asignado', 'Assigned year') : tr('Clases asignadas', 'Assigned classes') }}</th>
-
+                            <th class="w-24 p-2 text-left">{{ tr('Estado', 'Status') }}</th>
+                            <th class="w-[28%] p-2 text-left">{{ isMasterGuideStaffClub ? tr('Año asignado', 'Assigned year') : tr('Clases asignadas', 'Assigned classes') }}</th>
+                            <th class="w-40 p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <template v-for="person in filteredStaff" :key="person.id">
                             <tr class="border-t">
-                                <td class="p-2 text-xs">
+                                <td class="p-2 align-top text-xs">
                                     <input type="checkbox" :value="person.id" :checked="selectedStaffIds.has(person.id)"
                                         @change="() => toggleSelectStaff(person.id)" />
                                 </td>
-                                <td class="p-2 text-xs">{{ person.name }}</td>
-                                <td v-if="!isMasterGuideStaffClub" class="p-2 text-xs">{{ dobDisplay(person) }}</td>
-                                <td v-if="!isMasterGuideStaffClub" class="p-2 text-xs">{{ person.address }}</td>
-                                <!-- <td class="p-2">{{ person.assigned_classes?.[0]?.class_name ?? '—' }}</td> -->
-                                <td v-if="!isMasterGuideStaffClub" class="p-2 text-xs">{{ person.cell_phone }}</td>
-                                <td class="p-2 text-xs w-16 truncate">
-                                    <a :href="`mailto:${person.email}`" class="text-blue-600 hover:underline block">
-                                        {{ person.email }}
+                                <td class="p-2 align-top text-xs">
+                                    <div class="break-words font-semibold text-gray-900">{{ person.name }}</div>
+                                    <a :href="`mailto:${person.email}`" class="mt-1 block break-all text-blue-600 hover:underline">
+                                        {{ person.email || '—' }}
                                     </a>
                                 </td>
-                                <td class="p-2 text-xs">{{ person.status }}</td>
-                                <td class="p-2 space-x-1 text-xs">
+                                <td class="p-2 align-top text-xs">
+                                    <span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-700">{{ person.status }}</span>
+                                </td>
+                                <td class="p-2 align-top text-xs">
+                                    <div class="break-words font-medium text-gray-900">{{ classDisplay(person) }}</div>
+                                    <div class="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                                        <select
+                                            v-model="assignedClassChanges[person.id]"
+                                            class="w-full min-w-0 rounded border p-1 text-xs"
+                                        >
+                                            <option disabled value="">{{ isMasterGuideStaffClub ? tr('Seleccionar año', 'Select year') : tr('Seleccionar clase', 'Select class') }}</option>
+                                            <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
+                                                {{ cls.class_name }}
+                                            </option>
+                                        </select>
+                                        <button
+                                            @click="() => saveAssignedClass(person)"
+                                            :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
+                                            class="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                                        >
+                                            {{ isUpdatingClass[person.id] ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
+                                        </button>
+                                    </div>
+                                </td>
+                                <td class="p-2 align-top text-xs">
+                                    <div class="flex flex-wrap items-center gap-3">
                                     <!-- Toggle Details -->
                                     <button @click="toggleExpanded(person.id)" class="text-green-600"
                                         :title="tr('Ver detalles', 'View details')">
@@ -921,39 +1027,20 @@ watch(
                                     <button
                                         v-if="person.type !== 'pathfinders'"
                                         class="text-indigo-600 hover:underline"
-                                        @click="openEditStaffModal(person)">
+                                        @click="openEditStaffModal(person)"
+                                        :title="tr('Editar', 'Edit')">
                                         <PencilIcon class="w-4 h-4 inline" />
                                     </button>
-                                </td>
-                                <td class="p-2 text-xs">
-                                    {{ classDisplay(person) }}
-                                    <div class="mt-1 flex items-center gap-2">
-                                        <select
-                                            v-model="assignedClassChanges[person.id]"
-                                            class="border p-1 rounded text-xs"
-                                        >
-                                            <option disabled value="">{{ isMasterGuideStaffClub ? tr('Seleccionar año', 'Select year') : tr('Seleccionar clase', 'Select class') }}</option>
-                                            <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
-                                                {{ cls.class_name }}
-                                            </option>
-                                        </select>
-                                        <button
-                                            @click="() => saveAssignedClass(person)"
-                                            :disabled="!assignedClassChanges[person.id] || isUpdatingClass[person.id]"
-                                            class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                                        >
-                                            {{ isUpdatingClass[person.id] ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
-                                        </button>
                                     </div>
                                 </td>
                             </tr>
 
                             <tr v-if="expandedRows.has(person.id)" class="bg-gray-50 border-t">
-                                <td :colspan="isMasterGuideStaffClub ? 6 : 9" class="p-4 text-gray-700">
+                                <td :colspan="staffDetailsColspan" class="p-4 text-gray-700">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div v-if="isMasterGuideStaffClub"><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ dobDisplay(person) }}</div>
-                                        <div v-if="isMasterGuideStaffClub"><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ person.address || '—' }}</div>
-                                        <div v-if="isMasterGuideStaffClub"><strong>{{ tr('Celular', 'Cell phone') }}:</strong> {{ person.cell_phone || '—' }}</div>
+                                        <div><strong>{{ tr('Fecha de nacimiento', 'Date of birth') }}:</strong> {{ dobDisplay(person) }}</div>
+                                        <div><strong>{{ tr('Celular', 'Cell phone') }}:</strong> {{ person.cell_phone || '—' }}</div>
+                                        <div><strong>{{ tr('Direccion', 'Address') }}:</strong> {{ person.address || '—' }}</div>
                                         <div><strong>{{ tr('Ciudad/Estado/Codigo postal', 'City/State/ZIP code') }}:</strong> {{ person.city }}, {{ person.state }} {{
                                             person.zip }}</div>
                                         <div><strong>{{ tr('Nombre del club', 'Club name') }}:</strong> {{ person.club_name }}</div>
@@ -1070,25 +1157,57 @@ watch(
                     </div>
 
                     <template v-if="activeTab === 'parents'">
-                        <div class="overflow-x-auto rounded border">
-                        <table class="min-w-[720px] w-full text-sm">
+                        <div class="space-y-3 lg:hidden">
+                            <article v-if="!parentAccounts.length" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                                {{ tr('No se encontraron cuentas de padres.', 'No parent accounts were found.') }}
+                            </article>
+                            <article v-for="parent in parentAccounts" :key="`parent-card-${parent.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                                <div class="min-w-0">
+                                    <h3 class="break-words text-sm font-semibold text-gray-900">{{ parent.name }}</h3>
+                                    <a :href="`mailto:${parent.email}`" class="mt-1 block break-all text-xs text-blue-700 hover:underline">{{ parent.email || '—' }}</a>
+                                </div>
+                                <div class="mt-3">
+                                    <p class="text-xs font-medium text-gray-500">{{ tr('Hijos', 'Children') }}</p>
+                                    <div v-if="parent.children?.length" class="mt-2 space-y-2">
+                                        <div v-for="child in parent.children" :key="`parent-card-child-${child.id}`" class="rounded border bg-gray-50 p-2">
+                                            <div class="font-semibold text-xs text-gray-900">{{ child.name || '—' }}</div>
+                                            <div class="mt-1 text-[11px] text-gray-600">{{ tr('Club', 'Club') }}: {{ child.club_name || child.club_id || '—' }}</div>
+                                            <div class="text-[11px] text-gray-600">{{ tr('Tipo', 'Type') }}: {{ child.member_type }}</div>
+                                            <div class="text-[11px] text-gray-600">{{ tr('ID de clase', 'Class ID') }}: {{ child.class_id || '—' }}</div>
+                                        </div>
+                                    </div>
+                                    <p v-else class="mt-2 text-xs text-gray-500">{{ tr('No hay hijos vinculados.', 'No linked children.') }}</p>
+                                </div>
+                                <div class="mt-3">
+                                    <button v-if="canMakeTreasurer(parent)"
+                                        class="w-full rounded bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                                        @click="makeTreasurer(parent)">
+                                        {{ tr('Hacer tesorero', 'Make treasurer') }}
+                                    </button>
+                                    <span v-else class="text-xs italic text-gray-400">{{ tr('Sin acciones', 'No actions') }}</span>
+                                </div>
+                            </article>
+                        </div>
+                        <div class="hidden rounded border lg:block">
+                        <table class="w-full table-fixed text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">{{ tr('Padre/Madre', 'Parent') }}</th>
-                                    <th class="p-2 text-left">Email</th>
+                                    <th class="p-2 text-left">{{ tr('Cuenta', 'Account') }}</th>
                                     <th class="p-2 text-left">{{ tr('Hijos', 'Children') }}</th>
-                                    <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
+                                    <th class="w-36 p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-if="!parentAccounts.length">
-                                    <td colspan="4" class="p-3 text-center text-gray-500">{{ tr('No se encontraron cuentas de padres.', 'No parent accounts were found.') }}</td>
+                                    <td colspan="3" class="p-3 text-center text-gray-500">{{ tr('No se encontraron cuentas de padres.', 'No parent accounts were found.') }}</td>
                                 </tr>
                                 <template v-for="parent in parentAccounts" :key="parent.id">
                                     <tr class="border-t">
-                                        <td class="p-2 text-xs">{{ parent.name }}</td>
-                                        <td class="p-2 text-xs">{{ parent.email }}</td>
-                                        <td class="p-2 text-xs">
+                                        <td class="p-2 align-top text-xs">
+                                            <div class="break-words font-semibold text-gray-900">{{ parent.name }}</div>
+                                            <a :href="`mailto:${parent.email}`" class="mt-1 block break-all text-blue-700 hover:underline">{{ parent.email || '—' }}</a>
+                                        </td>
+                                        <td class="p-2 align-top text-xs">
                                             <div v-if="parent.children?.length" class="space-y-1">
                                                 <div v-for="child in parent.children" :key="child.id"
                                                     class="border rounded p-2 bg-gray-50">
@@ -1103,7 +1222,7 @@ watch(
                                             </div>
                                             <div v-else class="text-gray-500 text-xs">{{ tr('No hay hijos vinculados.', 'No linked children.') }}</div>
                                         </td>
-                                        <td class="p-2 text-xs">
+                                        <td class="p-2 align-top text-xs">
                                             <button v-if="canMakeTreasurer(parent)"
                                                 class="px-2 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700"
                                                 @click="makeTreasurer(parent)">
@@ -1118,30 +1237,98 @@ watch(
                         </div>
                     </template>
                     <template v-else-if="activeTab !== 'pending'">
-                        <div class="overflow-x-auto rounded border">
-                        <table class="min-w-[960px] w-full text-sm">
+                        <div class="space-y-3 lg:hidden">
+                            <article v-if="!filteredUsers.length" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                                {{ tr('No hay cuentas para mostrar.', 'No accounts to show.') }}
+                            </article>
+                            <article v-for="account in filteredUsers" :key="`account-card-${account.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h3 class="break-words text-sm font-semibold text-gray-900">{{ account.name }}</h3>
+                                        <a :href="`mailto:${account.email}`" class="mt-1 block break-all text-xs text-blue-700 hover:underline">{{ account.email || '—' }}</a>
+                                    </div>
+                                    <span class="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-700">{{ accountStatus(account) }}</span>
+                                </div>
+                                <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Rol', 'Role') }}</dt>
+                                        <dd class="break-words font-medium text-gray-900">{{ account.profile_type }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-gray-500">{{ tr('Club', 'Club') }}</dt>
+                                        <dd class="break-words font-medium text-gray-900">{{ account.club_name || account.club_id || '—' }}</dd>
+                                    </div>
+                                    <div class="col-span-2">
+                                        <dt class="text-gray-500">{{ tr('Iglesia', 'Church') }}</dt>
+                                        <dd class="break-words font-medium text-gray-900">{{ account.church_name || '—' }}</dd>
+                                    </div>
+                                    <div class="col-span-2">
+                                        <dt class="text-gray-500">{{ tr('Subrol', 'Subrole') }}</dt>
+                                        <dd>
+                                            <select class="mt-1 w-full rounded border p-2 text-xs" v-model="account.sub_role">
+                                                <option value="">-- {{ tr('Seleccionar subrol', 'Select subrole') }} --</option>
+                                                <option v-for="role in subRoles" :key="`card-role-${role.id}`" :value="role.key">
+                                                    {{ role.label }}
+                                                </option>
+                                            </select>
+                                        </dd>
+                                    </div>
+                                </dl>
+                                <div class="mt-3 grid gap-2">
+                                    <template v-if="accountStatus(account) === 'active'">
+                                        <button @click="changePassword(account)" class="rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
+                                            {{ tr('Cambiar contraseña', 'Change password') }}
+                                        </button>
+                                        <button v-if="canMakeTreasurer(account)"
+                                            class="rounded bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                                            @click="makeTreasurer(account)">
+                                            {{ tr('Hacer tesorero', 'Make treasurer') }}
+                                        </button>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <button @click="updateStaffUserAccount(account, 301)" class="rounded border px-3 py-2 text-xs font-semibold text-red-700">
+                                                {{ tr('Desactivar', 'Deactivate') }}
+                                            </button>
+                                            <button v-if="createStaffMap[account.id]"
+                                                class="rounded border px-3 py-2 text-xs font-semibold text-green-700"
+                                                @click="openStaffForm(account)">
+                                                {{ tr('Agregar personal', 'Add staff') }}
+                                            </button>
+                                        </div>
+                                    </template>
+                                    <button v-else @click="updateStaffUserAccount(account, 423)" class="rounded border px-3 py-2 text-xs font-semibold text-blue-700">
+                                        {{ tr('Reactivar cuenta', 'Reactivate account') }}
+                                    </button>
+                                </div>
+                            </article>
+                        </div>
+                        <div class="hidden rounded border lg:block">
+                        <table class="w-full table-fixed text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
-                                    <th class="p-2 text-left">Email</th>
-                                    <th class="p-2 text-left">{{ tr('Club', 'Club') }}</th>
-                                    <th class="p-2 text-left">{{ tr('Rol', 'Role') }}</th>
-                                    <th class="p-2 text-left">{{ tr('Subrol', 'Subrole') }}</th>
-                                    <th class="p-2 text-left">{{ tr('Iglesia', 'Church') }}</th>
-                                    <th class="p-2 text-left">{{ tr('Estado', 'Status') }}</th>
-                                    <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Cuenta', 'Account') }}</th>
+                                    <th class="w-28 p-2 text-left">{{ tr('Rol', 'Role') }}</th>
+                                    <th class="w-44 p-2 text-left">{{ tr('Subrol', 'Subrole') }}</th>
+                                    <th class="w-24 p-2 text-left">{{ tr('Estado', 'Status') }}</th>
+                                    <th class="w-56 p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-for="user in filteredUsers" :key="user.id" class="border-t">
-                                    <td class="p-2 text-xs">{{ user.name }}</td>
-                                    <td class="p-2 text-xs">{{ user.email }}</td>
-                                    <td class="p-2 text-xs">{{ user.club_name || user.club_id || '—' }}</td>
-                                    <td class="p-2 text-xs">{{ user.profile_type }}</td>
+                                    <td class="p-2 align-top text-xs">
+                                        <div class="break-words font-semibold text-gray-900">{{ user.name }}</div>
+                                        <a :href="`mailto:${user.email}`" class="mt-1 block break-all text-blue-700 hover:underline">{{ user.email || '—' }}</a>
+                                        <div class="mt-1 break-words text-gray-500">
+                                            {{ tr('Club', 'Club') }}: {{ user.club_name || user.club_id || '—' }}
+                                        </div>
+                                        <div class="break-words text-gray-500">
+                                            {{ tr('Iglesia', 'Church') }}: {{ user.church_name || '—' }}
+                                        </div>
+                                    </td>
+                                    <td class="p-2 align-top text-xs break-words">{{ user.profile_type }}</td>
 
 
-                                    <td class="p-2 capitalize text-xs">
-                                        <select id="sub_role" class="border p-1 rounded text-xs" v-model="user.sub_role">
+                                    <td class="p-2 align-top capitalize text-xs">
+                                        <select id="sub_role" class="w-full min-w-0 rounded border p-1 text-xs" v-model="user.sub_role">
                                             <option value="">-- {{ tr('Seleccionar subrol', 'Select subrole') }} --</option>
                                             <option v-for="role in subRoles" :key="role.id" :value="role.key">
                                                 {{ role.label }}
@@ -1151,11 +1338,12 @@ watch(
 
 
                                     <!-- <td class="p-2 capitalize text-xs">{{ user.sub_role }}</td> -->
-                                    <td class="p-2 text-xs">{{ user.church_name }}</td>
-                                    <td class="p-2 text-xs">{{ accountStatus(user) }}</td>
-                                    <td class="p-2 text-xs">
+                                    <td class="p-2 align-top text-xs">
+                                        <span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-700">{{ accountStatus(user) }}</span>
+                                    </td>
+                                    <td class="p-2 align-top text-xs">
                                         <template v-if="accountStatus(user) === 'active'">
-                                            <div class="flex flex-wrap items-center gap-2">
+                                            <div class="flex flex-col items-start gap-2">
                                                 <button @click="changePassword(user)"class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
                                                     {{ tr('Cambiar contraseña', 'Change password') }}
                                                 </button>
@@ -1193,24 +1381,41 @@ watch(
                         </div>
                     </template>
                     <template v-else>
-                        <div class="overflow-x-auto rounded border">
-                        <table class="min-w-[680px] w-full text-sm">
+                        <div class="space-y-3 lg:hidden">
+                            <article v-if="!filteredPendingUsers.length" class="rounded border border-dashed p-4 text-center text-sm text-gray-500">
+                                {{ tr('No hay solicitudes pendientes.', 'No pending requests.') }}
+                            </article>
+                            <article v-for="pendingUser in filteredPendingUsers" :key="`pending-card-${pendingUser.id}`" class="rounded-lg border bg-white p-3 shadow-sm">
+                                <h3 class="break-words text-sm font-semibold text-gray-900">{{ pendingUser.name }}</h3>
+                                <a :href="`mailto:${pendingUser.email}`" class="mt-1 block break-all text-xs text-blue-700 hover:underline">{{ pendingUser.email || '—' }}</a>
+                                <p class="mt-2 text-xs capitalize text-gray-600">{{ pendingUser.profile_type.replace('_',' ') }}</p>
+                                <div class="mt-3 grid grid-cols-2 gap-2">
+                                    <button class="rounded bg-green-600 px-3 py-2 text-xs font-semibold text-white" @click="approvePending(pendingUser.id)">{{ tr('Aprobar', 'Approve') }}</button>
+                                    <button class="rounded border border-red-200 px-3 py-2 text-xs font-semibold text-red-700" @click="rejectPending(pendingUser.id)">{{ tr('Rechazar', 'Reject') }}</button>
+                                </div>
+                            </article>
+                        </div>
+                        <div class="hidden rounded border lg:block">
+                        <table class="w-full table-fixed text-sm">
                             <thead class="bg-gray-100">
                                 <tr>
-                                    <th class="p-2 text-left">{{ tr('Nombre', 'Name') }}</th>
-                                    <th class="p-2 text-left">Email</th>
-                                    <th class="p-2 text-left">{{ tr('Rol', 'Role') }}</th>
-                                    <th class="p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
+                                    <th class="p-2 text-left">{{ tr('Cuenta', 'Account') }}</th>
+                                    <th class="w-32 p-2 text-left">{{ tr('Rol', 'Role') }}</th>
+                                    <th class="w-36 p-2 text-left">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-for="u in filteredPendingUsers" :key="u.id" class="border-t">
-                                    <td class="p-2 text-xs">{{ u.name }}</td>
-                                    <td class="p-2 text-xs">{{ u.email }}</td>
-                                    <td class="p-2 text-xs capitalize">{{ u.profile_type.replace('_',' ') }}</td>
-                                    <td class="p-2 text-xs space-x-2">
+                                    <td class="p-2 align-top text-xs">
+                                        <div class="break-words font-semibold text-gray-900">{{ u.name }}</div>
+                                        <a :href="`mailto:${u.email}`" class="mt-1 block break-all text-blue-700 hover:underline">{{ u.email || '—' }}</a>
+                                    </td>
+                                    <td class="p-2 align-top text-xs capitalize">{{ u.profile_type.replace('_',' ') }}</td>
+                                    <td class="p-2 align-top text-xs">
+                                        <div class="flex flex-col items-start gap-2">
                                         <button class="text-green-700" @click="approvePending(u.id)">{{ tr('Aprobar', 'Approve') }}</button>
                                         <button class="text-red-600" @click="rejectPending(u.id)">{{ tr('Rechazar', 'Reject') }}</button>
+                                        </div>
                                     </td>
                                 </tr>
                                 <tr v-if="filteredPendingUsers.length === 0">

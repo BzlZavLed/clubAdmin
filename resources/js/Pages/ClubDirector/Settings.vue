@@ -11,6 +11,7 @@ import {
     removeClubLogo,
     saveMyChurchAdminConfig,
     updateClubBankInfo,
+    updateClubContact,
     uploadClubLogo
 } from '@/Services/api'
 
@@ -30,6 +31,10 @@ const props = defineProps({
     },
     club_logo_url: {
         type: String,
+        default: null
+    },
+    selected_club: {
+        type: Object,
         default: null
     }
 })
@@ -59,6 +64,8 @@ const saving = ref(false)
 const logoUrl = ref(props.club_logo_url || null)
 const logoUploading = ref(false)
 const logoInput = ref(null)
+const clubEmail = ref(props.selected_club?.club_email || '')
+const contactSaving = ref(false)
 const bankInfoRows = ref([])
 const bankInfoForms = ref({})
 const bankInfoLoading = ref(false)
@@ -90,6 +97,29 @@ watch(selectedClubId, (val) => {
 watch(() => props.club_logo_url, (value) => {
     logoUrl.value = value || null
 })
+
+watch(() => props.selected_club, (value) => {
+    clubEmail.value = value?.club_email || ''
+})
+
+async function saveContact() {
+    if (!hasClubSelected.value) return
+    contactSaving.value = true
+    try {
+        const data = await updateClubContact({
+            club_id: selectedClubId.value,
+            club_email: clubEmail.value || null,
+        })
+        clubEmail.value = data.club?.club_email || ''
+        showToast(tr('Correo del club guardado', 'Club email saved'))
+    } catch (error) {
+        console.error(error)
+        const message = error?.response?.data?.message || tr('No se pudo guardar el correo del club', 'Could not save the club email')
+        showToast(message, 'error')
+    } finally {
+        contactSaving.value = false
+    }
+}
 
 async function loadBankInfo() {
     if (!hasClubSelected.value) {
@@ -283,6 +313,34 @@ onMounted(() => {
                         @change="handleLogoSelected"
                     />
                     <span class="text-xs text-gray-500">{{ tr('PNG, JPG o WEBP. Máximo 4MB.', 'PNG, JPG, or WEBP. Maximum 4MB.') }}</span>
+                </div>
+            </div>
+
+            <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-800">{{ tr('Correo de pagos del club', 'Club Payment Email') }}</h2>
+                        <p class="text-sm text-gray-600">{{ tr('Los comprobantes enviados por padres se remiten a este correo para revisión del club.', 'Payment proofs submitted by parents are forwarded to this email for club review.') }}</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                        :disabled="contactSaving || !hasClubSelected"
+                        @click="saveContact"
+                    >
+                        {{ contactSaving ? tr('Guardando...', 'Saving...') : tr('Guardar', 'Save') }}
+                    </button>
+                </div>
+
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">{{ tr('Correo receptor de comprobantes', 'Payment proof recipient email') }}</label>
+                    <input
+                        v-model="clubEmail"
+                        type="email"
+                        class="w-full rounded border px-3 py-2 text-sm"
+                        placeholder="tesoreria@club.org"
+                        :disabled="!hasClubSelected"
+                    />
                 </div>
             </div>
 

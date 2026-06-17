@@ -20,6 +20,9 @@ class ParentPaymentSubmission extends Model
         'payment_type',
         'reference',
         'receipt_image_path',
+        'club_receipt_email',
+        'club_receipt_email_status',
+        'club_receipt_emailed_at',
         'notes',
         'status',
         'reviewed_by_user_id',
@@ -32,6 +35,7 @@ class ParentPaymentSubmission extends Model
         'expected_amount' => 'decimal:2',
         'amount' => 'decimal:2',
         'payment_date' => 'date',
+        'club_receipt_emailed_at' => 'datetime',
         'reviewed_at' => 'datetime',
     ];
 

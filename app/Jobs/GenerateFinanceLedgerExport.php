@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\FinanceLedgerExportJob;
 use App\Services\Finance\FinanceLedgerPdfGenerator;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -27,7 +28,10 @@ class GenerateFinanceLedgerExport implements ShouldQueue
     public function handle(FinanceLedgerPdfGenerator $generator): void
     {
         $export = FinanceLedgerExportJob::query()
-            ->with(['club', 'user'])
+            ->with([
+                'club' => fn ($query) => $query->withoutGlobalScopes(),
+                'user',
+            ])
             ->findOrFail($this->exportJobId);
 
         $export->update([
@@ -37,6 +41,14 @@ class GenerateFinanceLedgerExport implements ShouldQueue
         ]);
 
         try {
+            if (!$export->club) {
+                throw (new ModelNotFoundException)->setModel(\App\Models\Club::class, [$export->club_id]);
+            }
+
+            if (!$export->user) {
+                throw (new ModelNotFoundException)->setModel(\App\Models\User::class, [$export->user_id]);
+            }
+
             $payload = $generator->generate($export->club, $export->user, $export->filters ?? []);
 
             $export->update([

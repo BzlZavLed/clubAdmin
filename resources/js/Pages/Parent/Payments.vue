@@ -81,6 +81,23 @@ const statusClass = (status) => {
     }
 }
 
+const clubReceiptEmailLabel = (submission) => {
+    switch (submission.club_receipt_email_status) {
+        case 'sent':
+            return submission.club_email
+                ? tr(`Correo enviado al club: ${submission.club_email}`, `Email sent to club: ${submission.club_email}`)
+                : tr('Correo enviado al club', 'Email sent to club')
+        case 'queued':
+            return tr('Correo al club en cola', 'Email to club queued')
+        case 'failed':
+            return tr('No se pudo enviar el correo al club', 'Could not email the club')
+        case 'manual_required':
+            return tr('El club no tiene correo configurado; el comprobante queda en plataforma.', 'The club has no email configured; the proof remains in the platform.')
+        default:
+            return null
+    }
+}
+
 const depositAccountLines = (account) => {
     if (!account) return []
     return [
@@ -467,6 +484,9 @@ const standaloneReceipts = computed(() => props.receipts.filter(receipt => !allC
                                 </div>
                                 <div v-if="submission.review_notes" class="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
                                     {{ submission.review_notes }}
+                                </div>
+                                <div v-if="clubReceiptEmailLabel(submission)" class="text-xs text-gray-500">
+                                    {{ clubReceiptEmailLabel(submission) }}
                                 </div>
                             </div>
 

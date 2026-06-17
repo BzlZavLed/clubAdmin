@@ -27,6 +27,7 @@ import {
     reimburseFinanceEngineExpense,
     removeFinanceEngineExpenseReceipt,
     removeFinanceEngineReimbursementPaymentProof,
+    sendPaymentReceiptEmail,
     uploadFinanceEngineExpenseReceipt,
     uploadFinanceEngineReimbursementPaymentProof,
 } from '@/Services/api'
@@ -55,6 +56,9 @@ const concepts = ref([])
 const accounts = ref([])
 const expenses = ref([])
 const reimbursementPayees = ref([])
+const pendingReceipts = ref([])
+const pendingReceiptEmails = ref({})
+const pendingReceiptSending = ref({})
 const engineReport = ref(null)
 const movementDomain = ref('all')
 const movementSort = ref('date')
@@ -116,6 +120,7 @@ const incomeForm = ref({
     selected_event_concept_ids: [],
     payer_key: '',
     payer_name: '',
+    payer_email: '',
     concept_text: '',
     pay_to: 'club_budget',
     amount_paid: '',
@@ -1361,6 +1366,7 @@ const tutorialPrefillSavedIncome = () => {
         selected_event_concept_ids: [],
         payer_key: `member:${TUTORIAL_MEMBER_ID}`,
         payer_name: '',
+        payer_email: '',
         concept_text: '',
         pay_to: TUTORIAL_ACCOUNT,
         amount_paid: '25.00',
@@ -1379,6 +1385,7 @@ const tutorialPrefillManualIncome = () => {
         selected_event_concept_ids: [],
         payer_key: CUSTOM_PAYER_OPTION,
         payer_name: 'Donante Tutorial',
+        payer_email: 'donante@example.com',
         concept_text: 'Donacion visitante tutorial',
         pay_to: TUTORIAL_ACCOUNT,
         amount_paid: '60.00',
@@ -1739,6 +1746,11 @@ const loadCaja = async (clubId = null, quiet = false) => {
         concepts.value = Array.isArray(data.concepts) ? data.concepts : []
         expenses.value = Array.isArray(data.expenses) ? data.expenses : []
         reimbursementPayees.value = Array.isArray(data.reimbursement_payees) ? data.reimbursement_payees : []
+        pendingReceipts.value = Array.isArray(data.pending_receipts) ? data.pending_receipts : []
+        pendingReceiptEmails.value = pendingReceipts.value.reduce((emails, receipt) => {
+            emails[receipt.id] = receipt.issued_to_email || receipt.payer_email || emails[receipt.id] || ''
+            return emails
+        }, { ...pendingReceiptEmails.value })
         mergeAccounts(data.accounts || [], [])
         engineReport.value = data.engine_report || null
         ensureReimbursementForms()
@@ -1767,12 +1779,41 @@ const refreshCaja = () => {
 
     return loadCaja(selectedClubId.value, true)
 }
+
+const sendPendingReceipt = async (receipt) => {
+    const email = String(pendingReceiptEmails.value[receipt.id] || '').trim()
+    if (!email) {
+        showToast(tr('Ingresa un correo para enviar el recibo.', 'Enter an email to send the receipt.'), 'warning')
+        return
+    }
+
+    pendingReceiptSending.value = {
+        ...pendingReceiptSending.value,
+        [receipt.id]: true,
+    }
+
+    try {
+        await sendPaymentReceiptEmail(receipt.id, { email })
+        showToast(tr(`Recibo en cola para ${email}.`, `Receipt queued for ${email}.`), 'success')
+        await refreshCaja()
+    } catch (error) {
+        console.error(error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar el recibo.', 'Could not send the receipt.'), 'error')
+    } finally {
+        pendingReceiptSending.value = {
+            ...pendingReceiptSending.value,
+            [receipt.id]: false,
+        }
+    }
+}
+
 const onClubChange = () => {
     if (tutorialActive.value) return
 
     incomeForm.value.concept_key = ''
     incomeForm.value.payer_key = ''
     incomeForm.value.payer_name = ''
+    incomeForm.value.payer_email = ''
     movementPage.value = 1
     loadCaja(selectedClubId.value)
 }
@@ -1892,6 +1933,7 @@ const resetIncomeForm = () => {
         selected_event_concept_ids: [],
         payer_key: '',
         payer_name: '',
+        payer_email: '',
         concept_text: '',
         pay_to: defaultOperatingPayTo(),
         amount_paid: '',
@@ -2525,7 +2567,10 @@ const submitIncome = async () => {
 
         if (payerType === 'member') payload.member_id = payerId
         if (payerType === 'staff') payload.staff_id = payerId
-        if (incomeForm.value.payer_key === CUSTOM_PAYER_OPTION) payload.payer_name = incomeForm.value.payer_name
+        if (incomeForm.value.payer_key === CUSTOM_PAYER_OPTION) {
+            payload.payer_name = incomeForm.value.payer_name
+            payload.payer_email = incomeForm.value.payer_email
+        }
 
         if (incomeForm.value.mode === 'manual') {
             payload.concept_text = incomeForm.value.concept_text
@@ -2546,8 +2591,23 @@ const submitIncome = async () => {
             return
         }
 
-        await createFinanceEngineIncome(payload)
-        showToast(tr('Ingreso guardado.', 'Income saved.'), 'success')
+        const response = await createFinanceEngineIncome(payload)
+        const receipt = response?.data?.receipt
+        const receiptEmail = receipt?.issued_to_email
+        const receiptStatus = receipt?.delivery_status
+        const emailQueued = ['queued', 'sent'].includes(receiptStatus)
+        const emailFailed = receiptStatus === 'failed'
+        const manualRequired = receiptStatus === 'manual_required'
+
+        if (emailQueued && receiptEmail) {
+            showToast(tr(`Ingreso guardado. Recibo enviado a ${receiptEmail}.`, `Income saved. Receipt sent to ${receiptEmail}.`), 'success')
+        } else if (emailFailed) {
+            showToast(tr('Ingreso guardado, pero no se pudo enviar el recibo por correo.', 'Income saved, but the receipt email could not be sent.'), 'error')
+        } else if (manualRequired) {
+            showToast(tr('Ingreso guardado. Este pagador no tiene correo registrado; entrega el recibo manualmente.', 'Income saved. This payer has no registered email; deliver the receipt manually.'), 'warning')
+        } else {
+            showToast(tr('Ingreso guardado.', 'Income saved.'), 'success')
+        }
         resetIncomeForm()
         await refreshCaja()
     } catch (error) {
@@ -2983,6 +3043,82 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
+            <section v-if="pendingReceipts.length" class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div class="flex items-start gap-2">
+                        <ExclamationTriangleIcon class="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                        <div>
+                            <h3 class="text-base font-semibold text-amber-950">{{ tr('Recibos sin enviar', 'Unsent receipts') }}</h3>
+                            <p class="mt-1 text-sm text-amber-800">
+                                {{ tr('Agrega un correo aqui o actualiza el perfil del pagador y vuelve a Caja para reintentar.', 'Add an email here or update the payer profile and return to Cashbox to retry.') }}
+                            </p>
+                        </div>
+                    </div>
+                    <span class="inline-flex w-fit items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
+                        {{ pendingReceipts.length }}
+                    </span>
+                </div>
+
+                <div class="mt-4 grid gap-3">
+                    <article
+                        v-for="receipt in pendingReceipts"
+                        :key="receipt.id"
+                        class="rounded-lg border border-amber-200 bg-white p-3"
+                    >
+                        <div class="grid gap-3 lg:grid-cols-[1fr_minmax(220px,320px)_auto] lg:items-end">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <DocumentTextIcon class="h-4 w-4 text-amber-700" />
+                                    <p class="text-sm font-semibold text-gray-950">{{ receipt.receipt_number }}</p>
+                                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ receipt.reason }}</span>
+                                </div>
+                                <p class="mt-1 text-sm text-gray-700">
+                                    {{ receipt.payer_name || tr('Pagador no definido', 'Payer not set') }}
+                                    <span class="text-gray-400">·</span>
+                                    {{ receipt.concept_name || tr('Ingreso', 'Income') }}
+                                    <span class="text-gray-400">·</span>
+                                    {{ formatMoney(receipt.amount_paid) }}
+                                </p>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    {{ formatDate(receipt.payment_date || receipt.issued_at) }}
+                                </p>
+                            </div>
+
+                            <label class="block">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Correo para envio', 'Delivery email') }}</span>
+                                <input
+                                    v-model="pendingReceiptEmails[receipt.id]"
+                                    type="email"
+                                    class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    :placeholder="tr('correo@ejemplo.com', 'email@example.com')"
+                                />
+                            </label>
+
+                            <div class="flex flex-wrap gap-2 lg:justify-end">
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="Boolean(pendingReceiptSending[receipt.id])"
+                                    @click="sendPendingReceipt(receipt)"
+                                >
+                                    <ArrowUpTrayIcon class="h-4 w-4" />
+                                    {{ pendingReceiptSending[receipt.id] ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
+                                </button>
+                                <a
+                                    :href="receipt.download_url"
+                                    target="_blank"
+                                    rel="noopener"
+                                    class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                >
+                                    <DocumentTextIcon class="h-4 w-4" />
+                                    PDF
+                                </a>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
             <section class="grid gap-5 xl:grid-cols-2">
                 <form data-tour="cashbox-income-form" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" @submit.prevent="submitIncome">
                     <div class="mb-4 flex items-center gap-2">
@@ -3088,8 +3224,8 @@ onBeforeUnmount(() => {
                                 <option :value="CUSTOM_PAYER_OPTION">{{ tr('+ Pagador externo / otro', '+ External / other payer') }}</option>
                                 <option v-for="payer in payerOptions" :key="payer.value" :value="payer.value">{{ payer.label }}</option>
                             </select>
-                            <p v-if="firstError(incomeErrors, 'member_id') || firstError(incomeErrors, 'staff_id') || firstError(incomeErrors, 'payer_name')" class="mt-1 text-xs text-rose-600">
-                                {{ firstError(incomeErrors, 'member_id') || firstError(incomeErrors, 'staff_id') || firstError(incomeErrors, 'payer_name') }}
+                            <p v-if="firstError(incomeErrors, 'member_id') || firstError(incomeErrors, 'staff_id') || firstError(incomeErrors, 'payer_name') || firstError(incomeErrors, 'payer_email')" class="mt-1 text-xs text-rose-600">
+                                {{ firstError(incomeErrors, 'member_id') || firstError(incomeErrors, 'staff_id') || firstError(incomeErrors, 'payer_name') || firstError(incomeErrors, 'payer_email') }}
                             </p>
                         </div>
 
@@ -3101,6 +3237,17 @@ onBeforeUnmount(() => {
                                 class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
                                 :placeholder="tr('Ej. Donante invitado', 'Example: Guest donor')"
                             />
+                        </div>
+
+                        <div v-if="incomeForm.payer_key === CUSTOM_PAYER_OPTION">
+                            <label class="text-sm font-medium text-gray-700">{{ tr('Correo del pagador', 'Payer email') }}</label>
+                            <input
+                                v-model="incomeForm.payer_email"
+                                type="email"
+                                class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                :placeholder="tr('correo@ejemplo.com', 'email@example.com')"
+                            />
+                            <p v-if="firstError(incomeErrors, 'payer_email')" class="mt-1 text-xs text-rose-600">{{ firstError(incomeErrors, 'payer_email') }}</p>
                         </div>
 
                         <div>

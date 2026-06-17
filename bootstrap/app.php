@@ -38,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->validateCsrfTokens(except: [
             'setup/superadmin',
+            'webhooks/resend',
         ]);
 
         // All aliases together

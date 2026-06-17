@@ -35,6 +35,10 @@ export const generalTranslations = {
         es: 'AI logs',
         en: 'AI logs',
     },
+    mail_logs: {
+        es: 'Correos enviados',
+        en: 'Sent emails',
+    },
     application: {
         es: 'Solicitud',
         en: 'Application',

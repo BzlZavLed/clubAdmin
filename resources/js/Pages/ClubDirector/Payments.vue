@@ -10,9 +10,10 @@ import {
     CurrencyDollarIcon,
     PhotoIcon,
     ArrowPathIcon,
+    ArrowUpTrayIcon,
     UserGroupIcon
 } from '@heroicons/vue/24/outline'
-import { createClubPayment, updateClubPayment, downloadBulkReceipts } from '@/Services/api'
+import { createClubPayment, updateClubPayment, downloadBulkReceipts, sendPaymentReceiptEmail } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
 import { useLocale } from '@/Composables/useLocale'
 
@@ -650,6 +651,19 @@ const bulkDownloadKey = ref(null)
 const showPendingReceipts = ref(false)
 const showPendingParentTransfers = ref(true)
 const activeParentTransferAction = ref(null)
+const pendingReceiptEmails = ref({})
+const pendingReceiptSending = ref({})
+
+watch(
+    () => props.pending_receipts,
+    (receipts) => {
+        pendingReceiptEmails.value = (receipts || []).reduce((emails, receipt) => {
+            emails[receipt.id] = receipt.issued_to_email || receipt.payer_email || emails[receipt.id] || ''
+            return emails
+        }, { ...pendingReceiptEmails.value })
+    },
+    { immediate: true }
+)
 
 const slugifyLabel = (value) => String(value || 'payment-receipts')
     .normalize('NFD')
@@ -671,6 +685,33 @@ const downloadReceiptGroup = async (group) => {
         }, 1500)
     } finally {
         bulkDownloadKey.value = null
+    }
+}
+
+const sendPendingReceipt = async (receipt) => {
+    const email = String(pendingReceiptEmails.value[receipt.id] || '').trim()
+    if (!email) {
+        showToast(tr('Ingresa un correo para enviar el recibo.', 'Enter an email to send the receipt.'), 'warning')
+        return
+    }
+
+    pendingReceiptSending.value = {
+        ...pendingReceiptSending.value,
+        [receipt.id]: true,
+    }
+
+    try {
+        await sendPaymentReceiptEmail(receipt.id, { email })
+        showToast(tr(`Recibo en cola para ${email}.`, `Receipt queued for ${email}.`), 'success')
+        reloadPaymentData()
+    } catch (error) {
+        console.error(error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar el recibo.', 'Could not send the receipt.'), 'error')
+    } finally {
+        pendingReceiptSending.value = {
+            ...pendingReceiptSending.value,
+            [receipt.id]: false,
+        }
     }
 }
 
@@ -1401,7 +1442,12 @@ const setFormMode = (mode) => {
                                                 <div class="text-xs text-gray-500">${{ Number(receipt.amount_paid || 0).toFixed(2) }}</div>
                                             </td>
                                             <td class="px-3 py-2">
-                                                {{ receipt.issued_to_email || tr('Sin correo', 'No email') }}
+                                                <input
+                                                    v-model="pendingReceiptEmails[receipt.id]"
+                                                    type="email"
+                                                    class="w-56 rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                                    :placeholder="tr('correo@ejemplo.com', 'email@example.com')"
+                                                />
                                             </td>
                                             <td class="px-3 py-2">
                                                 <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -1412,9 +1458,20 @@ const setFormMode = (mode) => {
                                                 {{ formatDateTimeLocal(receipt.last_downloaded_at) }}
                                             </td>
                                             <td class="px-3 py-2">
-                                                <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
-                                                    {{ tr('Descargar', 'Download') }}
-                                                </a>
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        class="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                                        :disabled="Boolean(pendingReceiptSending[receipt.id])"
+                                                        @click="sendPendingReceipt(receipt)"
+                                                    >
+                                                        <ArrowUpTrayIcon class="h-4 w-4" />
+                                                        {{ pendingReceiptSending[receipt.id] ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
+                                                    </button>
+                                                    <a :href="receipt.download_url" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
+                                                        {{ tr('Descargar', 'Download') }}
+                                                    </a>
+                                                </div>
                                             </td>
                                         </tr>
                                     </tbody>

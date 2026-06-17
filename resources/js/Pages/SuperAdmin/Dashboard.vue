@@ -132,6 +132,23 @@ const clearContext = async () => {
         </p>
       </div>
 
+      <div class="grid gap-3 sm:grid-cols-2">
+        <a
+          :href="route('superadmin.mail-logs.index')"
+          class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-red-200 hover:bg-red-50"
+        >
+          <p class="text-sm font-semibold text-gray-900">{{ tr('Correos enviados', 'Sent emails') }}</p>
+          <p class="mt-1 text-sm text-gray-600">{{ tr('Revisa el consumo mensual, errores y recibos enviados por correo.', 'Review monthly usage, errors, and emailed receipts.') }}</p>
+        </a>
+        <a
+          :href="route('superadmin.ai-logs.index')"
+          class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50"
+        >
+          <p class="text-sm font-semibold text-gray-900">{{ tr('Logs de AI', 'AI logs') }}</p>
+          <p class="mt-1 text-sm text-gray-600">{{ tr('Audita solicitudes y respuestas de AI.', 'Audit AI requests and responses.') }}</p>
+        </a>
+      </div>
+
       <div class="bg-white border rounded-lg shadow-sm p-4 space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

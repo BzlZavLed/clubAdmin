@@ -441,6 +441,7 @@ class ClubPaymentController extends Controller
             'member_id' => ['nullable', 'integer', 'exists:members,id'],
             'staff_id' => ['nullable', 'integer', 'exists:staff,id'],
             'payer_name' => ['nullable', 'string', 'max:255'],
+            'payer_email' => ['nullable', 'email', 'max:255'],
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
             'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'transfer', 'initial'])],
@@ -743,6 +744,7 @@ class ClubPaymentController extends Controller
                 'member_id' => $validated['member_id'] ?? null,
                 'staff_id' => $validated['staff_id'] ?? null,
                 'payer_name' => $validated['payer_name'] ?? null,
+                'payer_email' => $validated['payer_email'] ?? null,
                 'amount_paid' => $amountPaid,
                 'expected_amount' => $expected,
                 'balance_due_after' => $balanceAfter,
@@ -1592,15 +1594,13 @@ class ClubPaymentController extends Controller
 
     protected function pendingManualReceiptsForClub(int $clubId): array
     {
+        $this->paymentReceiptService->resyncPendingForClub($clubId);
+
         return PaymentReceipt::query()
             ->where('club_id', $clubId)
-            ->where('delivery_status', 'pending')
-            ->where(function ($query) {
-                $query->whereIn('issued_to_type', ['member_unlinked', 'staff_unlinked'])
-                    ->orWhereNull('issued_to_email');
-            })
+            ->whereIn('delivery_status', ['pending', 'manual_required', 'failed'])
             ->with([
-                'payment:id,club_id,member_id,staff_id,payer_name,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',
+                'payment:id,club_id,member_id,staff_id,payer_name,payer_email,amount_paid,payment_date,payment_type,payment_concept_id,concept_text',
                 'payment.member:id,type,id_data,parent_id',
                 'payment.staff:id,type,id_data,user_id',
                 'payment.concept:id,concept,amount,reusable,event_id,event_fee_component_id',
@@ -1618,10 +1618,12 @@ class ClubPaymentController extends Controller
                 $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
 
                 $reason = match (true) {
+                    $receipt->delivery_status === 'failed' => 'Envio fallido',
                     $receipt->issued_to_type === 'member_unlinked' => 'Sin padre vinculado',
                     $receipt->issued_to_type === 'staff_unlinked' => 'Staff sin cuenta vinculada',
                     empty($receipt->issued_to_email) && $receipt->issued_to_type === 'parent' => 'Padre sin correo',
                     empty($receipt->issued_to_email) && $receipt->issued_to_type === 'staff' => 'Staff sin correo',
+                    empty($receipt->issued_to_email) && $receipt->issued_to_type === 'external_payer' => 'Pagador externo sin correo',
                     default => 'Entrega manual requerida',
                 };
 
@@ -1631,10 +1633,12 @@ class ClubPaymentController extends Controller
                     'issued_at' => optional($receipt->issued_at)->toDateString(),
                     'issued_to_type' => $receipt->issued_to_type,
                     'issued_to_email' => $receipt->issued_to_email,
+                    'delivery_status' => $receipt->delivery_status,
                     'last_downloaded_at' => optional($receipt->last_downloaded_at)->toDateTimeString(),
                     'member_name' => $memberDetail['name'] ?? null,
                     'staff_name' => $staffDetail['name'] ?? null,
                     'payer_name' => $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name,
+                    'payer_email' => $payment?->payer_email,
                     'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text,
                     'amount_paid' => (float) ($payment?->amount_paid ?? 0),
                     'payment_date' => optional($payment?->payment_date)->toDateString(),

@@ -41,6 +41,7 @@ class FinanceIncomeWriter
             'member_id' => ['nullable', 'integer', 'exists:members,id'],
             'staff_id' => ['nullable', 'integer', 'exists:staff,id'],
             'payer_name' => ['nullable', 'string', 'max:255'],
+            'payer_email' => ['nullable', 'email', 'max:255'],
             'amount_paid' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
             'payment_type' => ['required', Rule::in(['zelle', 'cash', 'check', 'transfer', 'initial'])],
@@ -243,6 +244,7 @@ class FinanceIncomeWriter
                 'member_id' => $validated['member_id'] ?? null,
                 'staff_id' => $validated['staff_id'] ?? null,
                 'payer_name' => $validated['payer_name'] ?? null,
+                'payer_email' => $validated['payer_email'] ?? null,
                 'amount_paid' => $amountPaid,
                 'expected_amount' => $expected,
                 'balance_due_after' => $balanceAfter,
@@ -285,6 +287,8 @@ class FinanceIncomeWriter
         $payment->setAttribute('receipt', [
             'id' => $receipt->id,
             'receipt_number' => $receipt->receipt_number,
+            'delivery_status' => $receipt->delivery_status,
+            'issued_to_email' => $receipt->issued_to_email,
         ]);
 
         return response()->json(['message' => 'Payment recorded', 'data' => $payment], 201);
