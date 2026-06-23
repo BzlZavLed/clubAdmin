@@ -1079,6 +1079,12 @@ class ClubPaymentController extends Controller
         $payTo = $concept?->pay_to ?: ($submission->pay_to ?: 'club_budget');
         $club = Club::withoutGlobalScopes()->findOrFail((int) $submission->club_id);
         if (!$this->treasuryService->hasClubBankInfo($club)) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Registra la cuenta bancaria del club antes de aprobar transferencias de padres.',
+                ], 422);
+            }
+
             return back()->withErrors([
                 'parent_transfer' => 'Registra la cuenta bancaria del club antes de aprobar transferencias de padres.',
             ]);
@@ -1094,9 +1100,15 @@ class ClubPaymentController extends Controller
             try {
                 $this->assertRequiredEventComponentsSelected(collect([$concept]), (int) $submission->member_id, null);
             } catch (ValidationException $exception) {
+                $message = collect($exception->errors())->flatten()->first()
+                    ?: 'Primero debe pagarse el concepto obligatorio del evento.';
+
+                if ($request->expectsJson()) {
+                    return response()->json(['message' => $message], 422);
+                }
+
                 return back()->withErrors([
-                    'parent_transfer' => collect($exception->errors())->flatten()->first()
-                        ?: 'Primero debe pagarse el concepto obligatorio del evento.',
+                    'parent_transfer' => $message,
                 ]);
             }
         }
@@ -1112,12 +1124,24 @@ class ClubPaymentController extends Controller
 
             $remainingBefore = max($expected - $priorPaid, 0.0);
             if ($remainingBefore <= 0.0001) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Ese cargo ya fue cubierto antes de aprobar esta transferencia.',
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'parent_transfer' => 'Ese cargo ya fue cubierto antes de aprobar esta transferencia.',
                 ]);
             }
 
             if ($amountPaid > $remainingBefore) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'El comprobante excede el saldo pendiente actual del cargo.',
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'parent_transfer' => 'El comprobante excede el saldo pendiente actual del cargo.',
                 ]);
@@ -1183,6 +1207,10 @@ class ClubPaymentController extends Controller
 
         $this->paymentReceiptService->syncForPayment($payment);
 
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Transferencia aprobada y recibo generado.']);
+        }
+
         return back()->with('success', 'Transferencia aprobada y recibo generado.');
     }
 
@@ -1207,6 +1235,10 @@ class ClubPaymentController extends Controller
             'reviewed_at' => now(),
             'review_notes' => $validated['review_notes'] ?? null,
         ]);
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Transferencia rechazada.']);
+        }
 
         return back()->with('success', 'Transferencia rechazada.');
     }

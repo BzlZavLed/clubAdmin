@@ -6,11 +6,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -32,6 +33,7 @@ class User extends Authenticatable
         'status',
         'must_change_password',
         'last_seen_at',
+        'mobile_member_id',
     ];
 
     /**
@@ -89,6 +91,11 @@ class User extends Authenticatable
     public function church()
     {
         return $this->belongsTo(Church::class);
+    }
+
+    public function mobileMember()
+    {
+        return $this->belongsTo(Member::class, 'mobile_member_id');
     }
 
     public function createdEvents()

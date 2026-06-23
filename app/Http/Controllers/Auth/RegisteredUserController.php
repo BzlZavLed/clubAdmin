@@ -77,6 +77,7 @@ class RegisteredUserController extends Controller
             'club_director',
             'treasurer',
             'club_personal',
+            'parent',
             'district_pastor',
             'district_secretary',
             'association_youth_director',

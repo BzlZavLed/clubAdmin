@@ -17,6 +17,10 @@ class WorkplanEvent extends Model
         'title',
         'description',
         'location',
+        'is_offsite',
+        'location_tracking_allowed',
+        'location_tracking_requires_parent_consent',
+        'location_tracking_disclosure',
         'department_id',
         'objective_id',
         'local_objective_id',
@@ -33,6 +37,9 @@ class WorkplanEvent extends Model
         'end_date' => 'date',
         'is_generated' => 'boolean',
         'is_edited' => 'boolean',
+        'is_offsite' => 'boolean',
+        'location_tracking_allowed' => 'boolean',
+        'location_tracking_requires_parent_consent' => 'boolean',
     ];
 
     public function workplan()
@@ -48,6 +55,16 @@ class WorkplanEvent extends Model
     public function classPlans()
     {
         return $this->hasMany(ClassPlan::class);
+    }
+
+    public function tasks()
+    {
+        return $this->hasMany(WorkplanTask::class);
+    }
+
+    public function locationTrackingSessions()
+    {
+        return $this->hasMany(LocationTrackingSession::class);
     }
 
     public function localObjective()

@@ -38,7 +38,7 @@ const form = useForm({
 const isEditing = computed(() => editingUserId.value !== null)
 const hasSubRoles = computed(() => props.subRoles.length > 0)
 
-const churchScopedProfiles = ['club_director', 'club_personal', 'treasurer']
+const churchScopedProfiles = ['club_director', 'club_personal', 'treasurer', 'parent']
 const districtScopedProfiles = ['district_pastor', 'district_secretary']
 
 const isChurchScoped = computed(() => churchScopedProfiles.includes(form.profile_type))
@@ -244,6 +244,7 @@ const deleteUser = (user) => {
                                 <option value="club_director">{{ tr('Director de club', 'Club director') }}</option>
                                 <option value="treasurer">{{ tr('Tesorero', 'Treasurer') }}</option>
                                 <option value="club_personal">{{ tr('Personal de club', 'Club staff') }}</option>
+                                <option value="parent">{{ tr('Padre/Madre', 'Parent') }}</option>
                                 <option value="district_pastor">{{ tr('Pastor distrital', 'District pastor') }}</option>
                                 <option value="district_secretary">{{ tr('Secretario distrital', 'District secretary') }}</option>
                                 <option value="association_youth_director">{{ tr('Dir. de jóvenes asociación', 'Association youth director') }}</option>

@@ -50,4 +50,14 @@ class ClassPlan extends Model
     {
         return $this->belongsTo(ClassInvestitureRequirement::class, 'investiture_requirement_id');
     }
+
+    public function tasks()
+    {
+        return $this->hasMany(WorkplanTask::class);
+    }
+
+    public function locationTrackingSessions()
+    {
+        return $this->hasMany(LocationTrackingSession::class);
+    }
 }

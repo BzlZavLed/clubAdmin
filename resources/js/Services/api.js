@@ -392,6 +392,20 @@ export const sendPaymentReceiptEmail = async (receiptId, payload) => {
     return data;
 };
 
+export const approveParentPaymentTransfer = async (submissionId, payload = {}) => {
+    const { data } = await axios.post(route('club.director.payments.parent-transfers.approve', { submission: submissionId }), payload, {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
+export const rejectParentPaymentTransfer = async (submissionId, payload = {}) => {
+    const { data } = await axios.post(route('club.director.payments.parent-transfers.reject', { submission: submissionId }), payload, {
+        headers: { Accept: 'application/json' },
+    });
+    return data;
+};
+
 export const createFinanceEngineFundraiserEvent = async (payload) => {
     const { data } = await axios.post(route('club.finance-engine.fundraisers.store'), financeEngineFormData(payload), {
         headers: financeEngineFormHeaders,

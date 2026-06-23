@@ -24,9 +24,11 @@ import {
     createFinanceEngineExpense,
     createFinanceEngineIncome,
     fetchFinanceEngineCashbox,
+    approveParentPaymentTransfer,
     reimburseFinanceEngineExpense,
     removeFinanceEngineExpenseReceipt,
     removeFinanceEngineReimbursementPaymentProof,
+    rejectParentPaymentTransfer,
     sendPaymentReceiptEmail,
     uploadFinanceEngineExpenseReceipt,
     uploadFinanceEngineReimbursementPaymentProof,
@@ -57,10 +59,14 @@ const accounts = ref([])
 const expenses = ref([])
 const reimbursementPayees = ref([])
 const pendingReceipts = ref([])
+const pendingParentTransfers = ref([])
 const pendingReceiptEmails = ref({})
 const pendingReceiptSending = ref({})
 const showPendingReceipts = ref(false)
+const showPendingParentTransfers = ref(true)
 const pendingReceiptSearch = ref('')
+const parentTransferActionBusy = ref({})
+const parentTransferError = ref('')
 const engineReport = ref(null)
 const movementDomain = ref('all')
 const movementSort = ref('date')
@@ -1764,6 +1770,7 @@ const loadCaja = async (clubId = null, quiet = false) => {
         expenses.value = Array.isArray(data.expenses) ? data.expenses : []
         reimbursementPayees.value = Array.isArray(data.reimbursement_payees) ? data.reimbursement_payees : []
         pendingReceipts.value = Array.isArray(data.pending_receipts) ? data.pending_receipts : []
+        pendingParentTransfers.value = Array.isArray(data.pending_parent_transfers) ? data.pending_parent_transfers : []
         pendingReceiptEmails.value = pendingReceipts.value.reduce((emails, receipt) => {
             emails[receipt.id] = receipt.issued_to_email || receipt.payer_email || emails[receipt.id] || ''
             return emails
@@ -1784,6 +1791,44 @@ const loadCaja = async (clubId = null, quiet = false) => {
     } finally {
         loading.value = false
         refreshing.value = false
+    }
+}
+
+const setParentTransferBusy = (transferId, action, busy) => {
+    parentTransferActionBusy.value = {
+        ...parentTransferActionBusy.value,
+        [transferId]: busy ? action : null,
+    }
+}
+
+const approveParentTransfer = async (transfer) => {
+    parentTransferError.value = ''
+    setParentTransferBusy(transfer.id, 'approve', true)
+
+    try {
+        const response = await approveParentPaymentTransfer(transfer.id)
+        showToast(response?.message || tr('Transferencia aprobada y recibo generado.', 'Transfer approved and receipt generated.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        parentTransferError.value = error?.response?.data?.message || tr('No se pudo aprobar la transferencia.', 'Could not approve the transfer.')
+    } finally {
+        setParentTransferBusy(transfer.id, 'approve', false)
+    }
+}
+
+const rejectParentTransfer = async (transfer) => {
+    const reviewNotes = window.prompt(tr('Motivo del rechazo (opcional)', 'Rejection reason (optional)')) || ''
+    parentTransferError.value = ''
+    setParentTransferBusy(transfer.id, 'reject', true)
+
+    try {
+        const response = await rejectParentPaymentTransfer(transfer.id, { review_notes: reviewNotes })
+        showToast(response?.message || tr('Transferencia rechazada.', 'Transfer rejected.'), 'success')
+        await refreshCaja()
+    } catch (error) {
+        parentTransferError.value = error?.response?.data?.message || tr('No se pudo rechazar la transferencia.', 'Could not reject the transfer.')
+    } finally {
+        setParentTransferBusy(transfer.id, 'reject', false)
     }
 }
 
@@ -3057,6 +3102,103 @@ onBeforeUnmount(() => {
                             {{ formatMoney(reimbursementBalanceSummary.total_available) }}
                         </p>
                     </div>
+                </div>
+            </section>
+
+            <section v-if="pendingParentTransfers.length" class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <button
+                    type="button"
+                    class="flex w-full flex-col gap-2 text-left sm:flex-row sm:items-start sm:justify-between"
+                    @click="showPendingParentTransfers = !showPendingParentTransfers"
+                >
+                    <div class="flex items-start gap-2">
+                        <BanknotesIcon class="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                        <div>
+                            <h3 class="flex items-center gap-2 text-base font-semibold text-blue-950">
+                                <ChevronDownIcon v-if="showPendingParentTransfers" class="h-4 w-4" />
+                                <ChevronRightIcon v-else class="h-4 w-4" />
+                                {{ tr('Transferencias de padres por validar', 'Parent transfers to validate') }}
+                            </h3>
+                            <p class="mt-1 text-sm text-blue-800">
+                                {{ tr('Revisa el comprobante subido desde la app, aprueba el ingreso y Caja generara el recibo.', 'Review the proof uploaded from the app, approve the income, and Cashbox will generate the receipt.') }}
+                            </p>
+                        </div>
+                    </div>
+                    <span class="inline-flex w-fit items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-900">
+                        {{ pendingParentTransfers.length }}
+                    </span>
+                </button>
+
+                <div v-if="parentTransferError" class="mt-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
+                    {{ parentTransferError }}
+                </div>
+
+                <div v-if="showPendingParentTransfers" class="mt-4 grid gap-3">
+                    <article
+                        v-for="transfer in pendingParentTransfers"
+                        :key="transfer.id"
+                        class="rounded-lg border border-blue-200 bg-white p-3"
+                    >
+                        <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(180px,260px)_auto] lg:items-start">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <p class="text-sm font-semibold text-gray-950">{{ transfer.member_name }}</p>
+                                    <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                                        {{ transfer.concept_name || tr('Ingreso', 'Income') }}
+                                    </span>
+                                </div>
+                                <p class="mt-1 text-sm text-gray-700">
+                                    {{ transfer.parent_name || tr('Padre no definido', 'Parent not set') }}
+                                    <span v-if="transfer.parent_email" class="text-gray-400">·</span>
+                                    <span v-if="transfer.parent_email">{{ transfer.parent_email }}</span>
+                                </p>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    {{ tr('Fecha de pago', 'Payment date') }}: {{ formatDate(transfer.payment_date) }}
+                                    <span v-if="transfer.reference">
+                                        · Ref. {{ transfer.reference }}
+                                    </span>
+                                </p>
+                                <p v-if="transfer.notes" class="mt-1 text-xs text-gray-500">{{ transfer.notes }}</p>
+                            </div>
+
+                            <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ tr('Monto enviado', 'Submitted amount') }}</div>
+                                <div class="mt-1 text-base font-semibold text-gray-950">{{ formatMoney(transfer.amount) }}</div>
+                                <div v-if="transfer.expected_amount !== null && transfer.expected_amount !== undefined" class="mt-1 text-xs text-gray-500">
+                                    {{ tr('Esperado', 'Expected') }}: {{ formatMoney(transfer.expected_amount) }}
+                                </div>
+                                <a
+                                    v-if="transfer.receipt_image_url"
+                                    :href="transfer.receipt_image_url"
+                                    target="_blank"
+                                    rel="noopener"
+                                    class="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:underline"
+                                >
+                                    {{ tr('Ver comprobante', 'View proof') }}
+                                </a>
+                            </div>
+
+                            <div class="flex flex-wrap gap-2 lg:justify-end">
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="Boolean(parentTransferActionBusy[transfer.id])"
+                                    @click="approveParentTransfer(transfer)"
+                                >
+                                    <CheckCircleIcon class="h-4 w-4" />
+                                    {{ parentTransferActionBusy[transfer.id] === 'approve' ? tr('Aprobando...', 'Approving...') : tr('Aprobar', 'Approve') }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="Boolean(parentTransferActionBusy[transfer.id])"
+                                    @click="rejectParentTransfer(transfer)"
+                                >
+                                    {{ parentTransferActionBusy[transfer.id] === 'reject' ? tr('Rechazando...', 'Rejecting...') : tr('Rechazar', 'Reject') }}
+                                </button>
+                            </div>
+                        </div>
+                    </article>
                 </div>
             </section>
 

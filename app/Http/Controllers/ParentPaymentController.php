@@ -111,7 +111,7 @@ class ParentPaymentController extends Controller
                 : 'Comprobante enviado para validación del club. El club no tiene correo configurado.');
     }
 
-    protected function clubDepositAccountsForParent($user): Collection
+    public function clubDepositAccountsForParent($user): Collection
     {
         $members = Member::query()
             ->where('parent_id', $user->id)
@@ -187,7 +187,7 @@ class ParentPaymentController extends Controller
         };
     }
 
-    protected function expectedPaymentsForParent($user): Collection
+    public function expectedPaymentsForParent($user): Collection
     {
         $members = Member::query()
             ->where('parent_id', $user->id)
@@ -509,7 +509,7 @@ class ParentPaymentController extends Controller
             ->map(fn (array $links) => collect($links)->unique('id')->values()->all());
     }
 
-    protected function transferSubmissionsForParent($user): Collection
+    public function transferSubmissionsForParent($user): Collection
     {
         return ParentPaymentSubmission::query()
             ->where('parent_user_id', $user->id)
@@ -552,7 +552,7 @@ class ParentPaymentController extends Controller
             });
     }
 
-    protected function receiptsForParent($user): Collection
+    public function receiptsForParent($user): Collection
     {
         $memberIds = Member::query()
             ->where('parent_id', $user->id)

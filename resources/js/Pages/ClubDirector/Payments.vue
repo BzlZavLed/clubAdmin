@@ -939,6 +939,28 @@ const setFormMode = (mode) => {
             <main class="px-4 pb-24 sm:px-6">
                 <FinanceWorkflowNav class="mb-6" />
 
+                <div
+                    v-if="props.pending_parent_transfers.length"
+                    class="mb-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950"
+                >
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <div class="font-semibold">
+                                {{ props.pending_parent_transfers.length }} {{ tr('transferencia de padre pendiente', 'pending parent transfer') }}
+                            </div>
+                            <div class="mt-1 text-blue-800">
+                                {{ tr('Club activo', 'Active club') }}: {{ currentClubName }}. {{ tr('Valida el comprobante para generar el recibo.', 'Validate the proof to generate the receipt.') }}
+                            </div>
+                        </div>
+                        <a
+                            href="#pending-parent-transfers"
+                            class="inline-flex w-fit rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                        >
+                            {{ tr('Ver pendientes', 'View pending') }}
+                        </a>
+                    </div>
+                </div>
+
                 <section class="space-y-6">
                     <div class="rounded-2xl border border-gray-200 p-4 shadow-sm sm:p-5">
                         <div class="flex flex-col gap-4 border-b border-gray-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1275,7 +1297,7 @@ const setFormMode = (mode) => {
                     </div>
                 </section>
 
-                <section class="mt-6 rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm">
+                <section id="pending-parent-transfers" class="mt-6 scroll-mt-24 rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm">
                     <button
                         type="button"
                         class="flex w-full items-center justify-between gap-3 text-left"

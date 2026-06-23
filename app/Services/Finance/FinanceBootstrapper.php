@@ -13,6 +13,7 @@ use App\Models\FinanceReimbursementPayee;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
+use App\Models\ParentPaymentSubmission;
 use App\Models\Staff;
 use App\Models\TreasuryMovement;
 use App\Services\AttendanceDuesPaymentService;
@@ -158,11 +159,47 @@ class FinanceBootstrapper
             'expenses' => $expenses,
             'reimbursement_payees' => $this->reimbursementPayeesForClub($club),
             'pending_receipts' => $this->pendingManualReceipts($club),
+            'pending_parent_transfers' => $this->pendingParentTransfers($club),
             'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
             'engine_report' => $this->movementReport($club, [
                 'limit' => $filters['limit'] ?? 80,
             ]),
         ];
+    }
+
+    private function pendingParentTransfers(Club $club): array
+    {
+        return ParentPaymentSubmission::query()
+            ->where('club_id', $club->id)
+            ->where('status', 'pending')
+            ->with([
+                'member:id,type,id_data',
+                'parentUser:id,name,email',
+                'event:id,title,start_at',
+            ])
+            ->latest()
+            ->get()
+            ->map(function (ParentPaymentSubmission $submission) {
+                $memberDetail = ClubHelper::memberDetail($submission->member);
+
+                return [
+                    'id' => (int) $submission->id,
+                    'member_name' => $memberDetail['name'] ?? '—',
+                    'parent_name' => $submission->parentUser?->name ?? '—',
+                    'parent_email' => $submission->parentUser?->email,
+                    'concept_name' => $submission->concept_text,
+                    'event_title' => $submission->event?->title,
+                    'expected_amount' => $submission->expected_amount !== null ? (float) $submission->expected_amount : null,
+                    'amount' => (float) $submission->amount,
+                    'payment_date' => optional($submission->payment_date)->toDateString(),
+                    'reference' => $submission->reference,
+                    'notes' => $submission->notes,
+                    'receipt_image_url' => $submission->receipt_image_path ? asset('storage/' . $submission->receipt_image_path) : null,
+                    'created_at' => optional($submission->created_at)->toDateTimeString(),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function accountingData($user, Club $club, array $filters = []): array
