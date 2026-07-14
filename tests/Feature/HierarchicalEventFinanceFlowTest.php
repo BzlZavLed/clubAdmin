@@ -1111,6 +1111,23 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             'email_verified_at' => now(),
         ]);
 
+        $inactiveClub = Club::withoutGlobalScopes()->create([
+            'user_id' => $superadmin->id,
+            'club_name' => 'Inactive Legacy Club',
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'director_name' => $superadmin->name,
+            'creation_date' => now()->toDateString(),
+            'club_type' => 'pathfinders',
+            'status' => 'inactive',
+        ]);
+
+        $this->actingAs($superadmin)
+            ->withSession(['superadmin_context' => ['club_id' => $inactiveClub->id]])
+            ->getJson(route('club.finance-engine.cashbox'))
+            ->assertOk()
+            ->assertJsonPath('data.club.id', $club->id);
+
         $session = ['superadmin_context' => ['club_id' => $club->id]];
 
         $this->actingAs($superadmin)

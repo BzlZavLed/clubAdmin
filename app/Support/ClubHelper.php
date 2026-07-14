@@ -84,15 +84,29 @@ class ClubHelper
             $contextChurchId = session('superadmin_context.church_id');
 
             if ($contextClubId) {
-                return collect([(int) $contextClubId]);
+                $activeContextClubId = Club::query()
+                    ->whereKey((int) $contextClubId)
+                    ->value('id');
+
+                if ($activeContextClubId) {
+                    return collect([(int) $activeContextClubId]);
+                }
+
+                session()->forget('superadmin_context.club_id');
             }
 
             if ($contextChurchId) {
-                return Club::query()
+                $contextClubIds = Club::query()
                     ->where('church_id', (int) $contextChurchId)
                     ->pluck('id')
                     ->unique()
                     ->values();
+
+                if ($contextClubIds->isNotEmpty()) {
+                    return $contextClubIds;
+                }
+
+                session()->forget('superadmin_context.church_id');
             }
 
             return Club::query()
@@ -443,11 +457,17 @@ class ClubHelper
     {
         $ids = self::clubIdsForUser($user);
 
+        abort_if($ids->isEmpty(), 403, 'No active club is assigned to this account.');
+
         if ($clubId) {
-            return Club::query()
+            $club = Club::query()
                 ->whereIn('id', $ids)
                 ->where('id', $clubId)
-                ->firstOrFail();
+                ->first();
+
+            abort_unless($club, 403, 'The selected club is inactive or is not available to this account.');
+
+            return $club;
         }
 
         $activeClub = self::activeClubForUser($user);
@@ -458,7 +478,11 @@ class ClubHelper
                 ->firstOrFail();
         }
 
-        return Club::query()->whereIn('id', $ids)->firstOrFail();
+        $club = Club::query()->whereIn('id', $ids)->first();
+
+        abort_unless($club, 403, 'No active club is assigned to this account.');
+
+        return $club;
     }
 
     /**
