@@ -91,6 +91,8 @@ const expenseActionBusy = ref({})
 const expenseActionErrors = ref({})
 const expenseUploadProgress = ref({})
 const showConceptModal = ref(false)
+const showConceptManagerModal = ref(false)
+const conceptModalSource = ref('income')
 const savingConcept = ref(false)
 const showReimbursementOverflowModal = ref(false)
 const tutorialActive = ref(false)
@@ -270,6 +272,7 @@ const filteredConcepts = computed(() => {
     if (!selectedClubId.value) return concepts.value
     return concepts.value.filter((concept) => Number(concept.club_id) === Number(selectedClubId.value))
 })
+const sortedFilteredConcepts = computed(() => filteredConcepts.value.slice().sort((a, b) => Number(b.id) - Number(a.id)))
 const filteredMembers = computed(() => {
     if (!selectedClubId.value) return members.value
     return members.value.filter((member) => Number(member.club_id) === Number(selectedClubId.value))
@@ -2027,7 +2030,17 @@ const resetExpenseForm = () => {
     if (expenseReceiptInput.value) expenseReceiptInput.value.value = ''
 }
 
-const openConceptModal = () => {
+const openConceptManager = () => {
+    showConceptManagerModal.value = true
+}
+
+const closeConceptManager = () => {
+    showConceptManagerModal.value = false
+}
+
+const openConceptModal = (source = 'income') => {
+    conceptModalSource.value = source
+    showConceptManagerModal.value = false
     conceptErrors.value = {}
     conceptForm.value = {
         concept: '',
@@ -2048,6 +2061,27 @@ const closeConceptModal = () => {
     if (savingConcept.value) return
     showConceptModal.value = false
     conceptErrors.value = {}
+    if (conceptModalSource.value === 'manager') {
+        showConceptManagerModal.value = true
+    }
+}
+
+const conceptTypeLabel = (concept) => concept?.type === 'optional'
+    ? tr('Opcional', 'Optional')
+    : tr('Obligatorio', 'Mandatory')
+
+const conceptScopeLabel = (concept) => {
+    const scopes = Array.isArray(concept?.scopes) ? concept.scopes : []
+    if (!scopes.length) return tr('Sin alcance', 'No scope')
+
+    return scopes.map((scope) => {
+        if (scope.scope_type === 'club_wide') return tr('Todo el club', 'Whole club')
+        if (scope.scope_type === 'staff_wide') return tr('Todo el personal', 'All staff')
+        if (scope.scope_type === 'class') return `${tr('Clase', 'Class')}: ${scope.class?.class_name || `#${scope.class_id}`}`
+        if (scope.scope_type === 'member') return `${tr('Miembro', 'Member')}: ${scope.member?.applicant_name || `#${scope.member_id}`}`
+        if (scope.scope_type === 'staff') return `${tr('Personal', 'Staff')}: ${scope.staff?.name || `#${scope.staff_id}`}`
+        return scope.scope_type || tr('Sin alcance', 'No scope')
+    }).join(' · ')
 }
 
 const openReimbursementOverflowModal = () => {
@@ -2592,7 +2626,7 @@ const submitConcept = async () => {
         const conceptId = response?.data?.id
         await loadCaja(selectedClubId.value, true)
 
-        if (conceptId) {
+        if (conceptId && conceptModalSource.value === 'income') {
             incomeForm.value.mode = 'existing'
             incomeForm.value.concept_key = `concept:${conceptId}`
             incomeForm.value.pay_to = conceptForm.value.pay_to
@@ -2601,6 +2635,9 @@ const submitConcept = async () => {
         }
 
         showConceptModal.value = false
+        if (conceptModalSource.value === 'manager') {
+            showConceptManagerModal.value = true
+        }
         showToast(tr('Concepto creado.', 'Concept created.'), 'success')
     } catch (error) {
         conceptErrors.value = normalizeErrors(error)
@@ -3019,6 +3056,15 @@ onBeforeUnmount(() => {
                         <div v-else class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-800">
                             {{ activeClubName }}
                         </div>
+                        <button
+                            type="button"
+                            class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+                            @click="openConceptManager"
+                        >
+                            <CurrencyDollarIcon class="h-4 w-4" />
+                            {{ tr('Conceptos de pago', 'Payment concepts') }}
+                            <span class="rounded-full bg-white px-2 py-0.5 text-xs text-emerald-700">{{ filteredConcepts.length }}</span>
+                        </button>
                         <button
                             type="button"
                             data-tour="cashbox-tutorial-toggle"
@@ -4535,6 +4581,76 @@ onBeforeUnmount(() => {
                     </button>
                 </div>
             </form>
+        </div>
+
+        <div
+            v-if="showConceptManagerModal"
+            class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+            @click.self="closeConceptManager"
+        >
+            <section class="max-h-[85vh] w-full overflow-y-auto rounded-t-xl bg-white p-4 shadow-xl sm:max-w-2xl sm:rounded-xl sm:p-6">
+                <div class="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ tr('Conceptos de pago', 'Payment concepts') }}</h3>
+                        <p class="mt-1 text-sm text-gray-500">
+                            {{ activeClubName }} · {{ filteredConcepts.length }} {{ tr('conceptos activos', 'active concepts') }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-500 hover:bg-gray-50"
+                        :aria-label="tr('Cerrar conceptos', 'Close concepts')"
+                        @click="closeConceptManager"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                <div class="mt-4">
+                    <button
+                        type="button"
+                        class="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 sm:w-auto"
+                        @click="openConceptModal('manager')"
+                    >
+                        <CurrencyDollarIcon class="h-4 w-4" />
+                        {{ tr('Crear concepto nuevo', 'Create new concept') }}
+                    </button>
+                </div>
+
+                <div v-if="sortedFilteredConcepts.length" class="mt-4 space-y-2">
+                    <article
+                        v-for="concept in sortedFilteredConcepts"
+                        :key="concept.id"
+                        class="rounded-lg border border-gray-200 bg-gray-50 p-3"
+                    >
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h4 class="font-semibold text-gray-950">{{ concept.concept }}</h4>
+                                    <span class="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-gray-600">
+                                        {{ conceptTypeLabel(concept) }}
+                                    </span>
+                                    <span v-if="concept.reusable" class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                                        {{ tr('Reutilizable', 'Reusable') }}
+                                    </span>
+                                </div>
+                                <p class="mt-1 text-xs text-gray-600">{{ conceptScopeLabel(concept) }}</p>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    {{ accountLabel(concept.pay_to) }}
+                                    <template v-if="concept.payment_expected_by">
+                                        · {{ tr('Vence', 'Due') }} {{ formatDate(concept.payment_expected_by) }}
+                                    </template>
+                                </p>
+                            </div>
+                            <strong class="shrink-0 text-base text-gray-950">{{ formatMoney(concept.amount) }}</strong>
+                        </div>
+                    </article>
+                </div>
+
+                <p v-else class="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-600">
+                    {{ tr('Este club todavia no tiene conceptos de pago activos.', 'This club does not have active payment concepts yet.') }}
+                </p>
+            </section>
         </div>
 
         <div

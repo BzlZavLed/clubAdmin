@@ -5,6 +5,7 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL: `${apiBaseUrl.replace(/\/$/, '')}/api/mobile`,
+  timeout: 15000,
   headers: {
     Accept: 'application/json',
   },
