@@ -57,6 +57,17 @@ class ClubController extends Controller
             'status' => 'active',
             'reusable' => true,
         ]);
+
+        $scope = PaymentConceptScope::withTrashed()->firstOrNew([
+            'payment_concept_id' => $concept->id,
+            'scope_type' => 'club_wide',
+            'club_id' => $club->id,
+            'class_id' => null,
+            'member_id' => null,
+            'staff_id' => null,
+        ]);
+        $scope->deleted_at = null;
+        $scope->save();
     }
 
     protected function resolveEvaluationSystemForChurch(Church $church): string

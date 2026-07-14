@@ -21,6 +21,20 @@
               <ion-label>
                 <h2>{{ club.club_name }}</h2>
                 <p>{{ clubTypeLabel(club.club_type) }}</p>
+                <div class="club-costs">
+                  <div class="club-costs-heading">
+                    <span>Basic costs</span>
+                    <strong v-if="club.basic_costs?.length">{{ formatMoney(club.basic_cost_total) }}</strong>
+                  </div>
+                  <div v-for="cost in club.basic_costs || []" :key="cost.row_key" class="club-cost-row">
+                    <div>
+                      <strong>{{ cost.concept_name }}</strong>
+                      <span>{{ cost.member_name }}<template v-if="cost.due_date"> · Due {{ cost.due_date }}</template></span>
+                    </div>
+                    <strong>{{ formatMoney(cost.expected_amount) }}</strong>
+                  </div>
+                  <span v-if="!club.basic_costs?.length" class="club-costs-empty">No basic costs published.</span>
+                </div>
               </ion-label>
             </ion-item>
           </ion-list>
@@ -93,5 +107,62 @@ function clubTypeLabel(type: string) {
   return type || 'Club';
 }
 
+function formatMoney(value: number | string | null | undefined) {
+  return `$${Number(value || 0).toFixed(2)}`;
+}
+
 onMounted(load);
 </script>
+
+<style scoped>
+.club-costs {
+  border-top: 1px solid var(--ion-color-step-150, #e5e7eb);
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.club-costs-heading,
+.club-cost-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.club-costs-heading {
+  color: var(--ion-color-medium);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.club-costs-heading strong {
+  color: var(--ion-color-dark);
+}
+
+.club-cost-row {
+  margin-top: 8px;
+}
+
+.club-cost-row div {
+  min-width: 0;
+}
+
+.club-cost-row strong,
+.club-cost-row span,
+.club-costs-empty {
+  display: block;
+}
+
+.club-cost-row strong {
+  color: var(--ion-color-dark);
+  font-size: 13px;
+}
+
+.club-cost-row span,
+.club-costs-empty {
+  color: var(--ion-color-medium);
+  font-size: 12px;
+  margin-top: 2px;
+}
+</style>

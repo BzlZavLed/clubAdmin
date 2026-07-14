@@ -29,10 +29,36 @@ class MobileParentController extends Controller
         $expectedPayments = $payments->expectedPaymentsForParent($user);
         $receipts = $payments->receiptsForParent($user);
         $workplan = $this->workplanPayload($user);
+        $basicCostsByClub = $expectedPayments
+            ->filter(fn (array $payment) => !$payment['event_id'] && $payment['concept_type'] === 'mandatory')
+            ->groupBy('club_id');
+        $clubs = $membership['clubs']->map(function (array $club) use ($basicCostsByClub) {
+            $basicCosts = collect($basicCostsByClub->get($club['id'], []))
+                ->map(fn (array $payment) => [
+                    'row_key' => $payment['row_key'],
+                    'concept_id' => $payment['concept_id'],
+                    'concept_name' => $payment['concept_name'],
+                    'member_id' => $payment['member_id'],
+                    'member_name' => $payment['member_name'],
+                    'expected_amount' => $payment['expected_amount'],
+                    'paid_amount' => $payment['paid_amount'],
+                    'remaining_amount' => $payment['remaining_amount'],
+                    'due_date' => $payment['due_date'],
+                    'reusable' => $payment['reusable'],
+                    'status' => $payment['status'],
+                ])
+                ->values();
+
+            return [
+                ...$club,
+                'basic_costs' => $basicCosts,
+                'basic_cost_total' => round((float) $basicCosts->sum('expected_amount'), 2),
+            ];
+        })->values();
 
         return response()->json([
             'church' => $membership['church'],
-            'clubs' => $membership['clubs'],
+            'clubs' => $clubs,
             'children' => $children,
             'payment_summary' => [
                 'due_count' => $expectedPayments->whereIn('status', ['due', 'optional'])->count(),

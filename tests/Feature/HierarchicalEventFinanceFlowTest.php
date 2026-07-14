@@ -762,6 +762,30 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         ]);
         $member = $this->createPathfinderMember($club, $parent, 'North Camper');
 
+        $basicCost = PaymentConcept::create([
+            'club_id' => $club->id,
+            'concept' => 'Cuota de inscripción',
+            'amount' => 35,
+            'type' => 'mandatory',
+            'pay_to' => 'club_budget',
+            'status' => 'active',
+            'created_by' => $clubDirector->id,
+            'reusable' => false,
+        ]);
+        $basicCost->scopes()->create([
+            'scope_type' => 'club_wide',
+            'club_id' => $club->id,
+        ]);
+
+        $this->actingAs($parent)
+            ->getJson(route('api.mobile.parent.dashboard'))
+            ->assertOk()
+            ->assertJsonPath('clubs.0.id', $club->id)
+            ->assertJsonPath('clubs.0.basic_cost_total', 35)
+            ->assertJsonPath('clubs.0.basic_costs.0.concept_name', 'Cuota de inscripción')
+            ->assertJsonPath('clubs.0.basic_costs.0.member_name', 'North Camper')
+            ->assertJsonPath('clubs.0.basic_costs.0.expected_amount', 35);
+
         BankInfo::query()->where('bankable_type', Club::class)
             ->where('bankable_id', $club->id)
             ->where('pay_to', 'club_budget')
