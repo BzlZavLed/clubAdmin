@@ -15,6 +15,72 @@ class SuperAdminEventTaskFormCatalogTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_superadmin_can_filter_event_planner_by_club(): void
+    {
+        $superadmin = User::factory()->create([
+            'profile_type' => 'superadmin',
+            'role_key' => 'superadmin',
+            'scope_type' => 'global',
+            'status' => 'active',
+        ]);
+        $director = User::factory()->create([
+            'profile_type' => 'club_director',
+            'role_key' => 'club_director',
+            'status' => 'active',
+        ]);
+        $northClub = Club::create([
+            'user_id' => $director->id,
+            'club_name' => 'North Pathfinders',
+            'church_name' => 'North Church',
+            'director_name' => $director->name,
+            'creation_date' => now()->toDateString(),
+            'club_type' => 'pathfinders',
+            'status' => 'active',
+        ]);
+        $southClub = Club::create([
+            'user_id' => $director->id,
+            'club_name' => 'South Pathfinders',
+            'church_name' => 'South Church',
+            'director_name' => $director->name,
+            'creation_date' => now()->toDateString(),
+            'club_type' => 'pathfinders',
+            'status' => 'active',
+        ]);
+
+        $northEvent = Event::create([
+            'club_id' => $northClub->id,
+            'scope_type' => 'club',
+            'scope_id' => $northClub->id,
+            'created_by_user_id' => $director->id,
+            'title' => 'North Campout',
+            'event_type' => 'campout',
+            'start_at' => now()->addMonth(),
+            'timezone' => 'America/New_York',
+            'status' => 'draft',
+        ]);
+        $southEvent = Event::create([
+            'club_id' => $southClub->id,
+            'scope_type' => 'club',
+            'scope_id' => $southClub->id,
+            'created_by_user_id' => $director->id,
+            'title' => 'South Campout',
+            'event_type' => 'campout',
+            'start_at' => now()->addMonth(),
+            'timezone' => 'America/New_York',
+            'status' => 'draft',
+        ]);
+
+        $response = $this->actingAs($superadmin)
+            ->get(route('events.index', ['club_id' => $northClub->id]))
+            ->assertOk();
+        $props = $response->viewData('page')['props'];
+
+        $this->assertTrue($props['canSelectClub']);
+        $this->assertSame($northClub->id, $props['selectedClubId']);
+        $this->assertSame([$northEvent->id], collect($props['events']['data'])->pluck('id')->all());
+        $this->assertNotContains($southEvent->id, collect($props['events']['data'])->pluck('id')->all());
+    }
+
     public function test_superadmin_can_create_global_task_form_schema(): void
     {
         $superadmin = User::factory()->create([

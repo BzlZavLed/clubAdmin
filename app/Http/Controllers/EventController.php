@@ -41,6 +41,20 @@ class EventController extends Controller
 
         $user = $request->user();
         $query = $this->accessibleEventsQuery($user);
+        $canSelectClub = ($user->profile_type ?? null) === 'superadmin';
+        $selectedClubId = null;
+
+        if ($canSelectClub && $request->filled('club_id')) {
+            $selectedClubId = (int) $request->integer('club_id');
+            abort_unless(Club::query()->whereKey($selectedClubId)->exists(), 422, 'The selected club is not available.');
+
+            $query->where(function ($builder) use ($selectedClubId) {
+                $builder->where(function ($clubEvents) use ($selectedClubId) {
+                    $clubEvents->where('scope_type', 'club')
+                        ->where('scope_id', $selectedClubId);
+                })->orWhereHas('targetClubs', fn ($targeted) => $targeted->whereKey($selectedClubId));
+            });
+        }
 
         if ($request->filled('status')) {
             $status = (string) $request->string('status');
@@ -86,7 +100,12 @@ class EventController extends Controller
 
         return Inertia::render('EventPlanner/Index', [
             'events' => $events,
-            'filters' => $request->only(['status', 'event_type', 'start_from', 'start_to']),
+            'filters' => $request->only(['status', 'event_type', 'start_from', 'start_to', 'club_id']),
+            'canSelectClub' => $canSelectClub,
+            'clubs' => $canSelectClub
+                ? Club::query()->orderBy('club_name')->get(['id', 'club_name'])
+                : [],
+            'selectedClubId' => $selectedClubId,
         ]);
     }
 

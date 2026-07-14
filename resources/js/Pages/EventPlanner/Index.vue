@@ -7,6 +7,9 @@ import { useLocale } from '@/Composables/useLocale'
 const props = defineProps({
     events: Object,
     filters: Object,
+    clubs: { type: Array, default: () => [] },
+    canSelectClub: { type: Boolean, default: false },
+    selectedClubId: { type: [Number, String], default: null },
 })
 
 const filters = reactive({
@@ -14,6 +17,7 @@ const filters = reactive({
     event_type: props.filters?.event_type || '',
     start_from: props.filters?.start_from || '',
     start_to: props.filters?.start_to || '',
+    club_id: props.selectedClubId || props.filters?.club_id || '',
 })
 const { tr } = useLocale()
 
@@ -80,7 +84,11 @@ const deleteEvent = (event) => {
             </div>
 
             <div class="rounded-lg border bg-white p-4">
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <select v-if="canSelectClub" v-model="filters.club_id" class="w-full rounded border px-3 py-2 text-sm">
+                        <option value="">{{ tr('Todos los clubes', 'All clubs') }}</option>
+                        <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
+                    </select>
                     <select v-model="filters.status" class="w-full rounded border px-3 py-2 text-sm">
                         <option value="">{{ tr('Todos los estados', 'All statuses') }}</option>
                         <option value="draft">{{ tr('Borrador', 'Draft') }}</option>
