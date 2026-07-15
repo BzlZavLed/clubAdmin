@@ -80,7 +80,7 @@ class FinanceConceptWriter
             'payee_id' => ['nullable', 'integer'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'scopes' => ['required', 'array', 'min:1'],
-            'scopes.*.scope_type' => ['required_with:scopes', Rule::in(['club_wide', 'class', 'member', 'staff_wide', 'staff'])],
+            'scopes.*.scope_type' => ['required_with:scopes', Rule::in(['club_wide', 'class', 'member', 'member_excluded', 'staff_wide', 'staff'])],
             'scopes.*.club_id' => ['nullable', 'integer', 'exists:clubs,id'],
             'scopes.*.class_id' => ['nullable', 'integer', 'exists:club_classes,id'],
             'scopes.*.member_id' => ['nullable', 'integer', 'exists:members,id'],
@@ -133,7 +133,7 @@ class FinanceConceptWriter
             $valid = match ($type) {
                 'club_wide' => !empty($scope['club_id']),
                 'class' => !empty($scope['class_id']),
-                'member' => !empty($scope['member_id']),
+                'member', 'member_excluded' => !empty($scope['member_id']),
                 'staff_wide' => !empty($scope['club_id']),
                 'staff' => !empty($scope['staff_id']),
                 default => false,

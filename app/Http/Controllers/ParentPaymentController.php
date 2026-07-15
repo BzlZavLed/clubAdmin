@@ -336,6 +336,14 @@ class ParentPaymentController extends Controller
             }
 
             $matchedMembers = $matchedMembers->unique('id')->values();
+            $excludedMemberIds = $concept->scopes
+                ->where('scope_type', 'member_excluded')
+                ->pluck('member_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $matchedMembers = $matchedMembers
+                ->reject(fn (Member $member) => in_array((int) $member->id, $excludedMemberIds, true))
+                ->values();
             if ($matchedMembers->isEmpty()) {
                 continue;
             }

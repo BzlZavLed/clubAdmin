@@ -71,10 +71,7 @@ const saveEdit = async () => {
 }
 
 const remove = async (charge) => {
-    const scopeWarning = ['Individual charge', 'Cargo individual'].includes(charge.scope_label)
-        ? tr('¿Eliminar este cargo individual?', 'Remove this individual charge?')
-        : tr('Este cargo aplica a más miembros. ¿Deseas desactivarlo para todo el alcance?', 'This charge applies to more members. Deactivate it for its entire scope?')
-    if (!window.confirm(scopeWarning)) return
+    if (!window.confirm(tr('¿Eliminar este cargo solo para este miembro?', 'Remove this charge only for this member?'))) return
 
     saving.value = true
     error.value = ''

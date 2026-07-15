@@ -499,6 +499,10 @@ class FinanceIncomeWriter
                 return false;
             }
 
+            if ($concept->scopes->contains(fn ($scope) => $scope->scope_type === 'member_excluded' && (int) $scope->member_id === (int) $memberId)) {
+                return false;
+            }
+
             return $concept->scopes->contains(function ($scope) use ($concept, $member, $memberId) {
                 return match ($scope->scope_type) {
                     'member' => (int) $scope->member_id === (int) $memberId,

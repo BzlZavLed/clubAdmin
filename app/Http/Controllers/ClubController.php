@@ -1250,7 +1250,7 @@ class ClubController extends Controller
             'payee_id'             => ['nullable','integer'],
             'status'               => [$create ? 'required' : 'sometimes', Rule::in(['active','inactive'])],
             'scopes'               => [$create ? 'required' : 'sometimes','array','min:1'],
-            'scopes.*.scope_type'  => ['required_with:scopes', Rule::in(['club_wide','class','member','staff_wide','staff'])],
+            'scopes.*.scope_type'  => ['required_with:scopes', Rule::in(['club_wide','class','member','member_excluded','staff_wide','staff'])],
             'scopes.*.club_id'     => ['nullable','integer','exists:clubs,id'],
             'scopes.*.class_id'    => ['nullable','integer','exists:club_classes,id'],
             'scopes.*.member_id'   => ['nullable','integer','exists:members,id'],
@@ -1325,7 +1325,7 @@ class ClubController extends Controller
             $ok = match ($t) {
                 'club_wide'  => !empty($s['club_id']),
                 'class'      => !empty($s['class_id']),
-                'member'     => !empty($s['member_id']),
+                'member', 'member_excluded' => !empty($s['member_id']),
                 'staff_wide' => !empty($s['club_id']),
                 'staff'      => !empty($s['staff_id']),
                 default      => false,

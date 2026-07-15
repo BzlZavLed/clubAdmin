@@ -19,6 +19,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\SyncMembersAndStaff::class,
         \App\Console\Commands\SeedPayToOptions::class,
         \App\Console\Commands\CleanupFinanceLedgerExports::class,
+        \App\Console\Commands\RepairMemberStatusSync::class,
     ];
 
     /**

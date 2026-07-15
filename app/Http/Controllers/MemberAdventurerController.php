@@ -92,21 +92,20 @@ class MemberAdventurerController extends Controller
         $this->authorizeMemberFinance($request, $member);
         abort_unless((int) $paymentConcept->club_id === (int) $member->club_id && !$paymentConcept->event_id, 422, 'Event charges must be managed in Event Planner.');
 
-        // An individual charge is removed only for this member.  Other scopes
-        // intentionally remain global; the UI makes that impact explicit.
-        $individualScopes = $paymentConcept->scopes()
-            ->where('scope_type', 'member')
-            ->where('member_id', $member->id);
-        if ($individualScopes->exists()) {
-            $individualScopes->delete();
-            if (!$paymentConcept->scopes()->whereNull('deleted_at')->exists()) {
-                $paymentConcept->update(['status' => 'inactive']);
-            }
-        } else {
-            $paymentConcept->update(['status' => 'inactive']);
-        }
+        DB::transaction(function () use ($paymentConcept, $member) {
+            // Preserve the shared concept and exclude only this unified member.
+            // This also handles concepts with both individual and broader scopes.
+            $paymentConcept->scopes()->updateOrCreate(
+                ['scope_type' => 'member_excluded', 'member_id' => $member->id],
+                ['club_id' => null, 'class_id' => null, 'staff_id' => null]
+            );
+            $paymentConcept->scopes()
+                ->where('scope_type', 'member')
+                ->where('member_id', $member->id)
+                ->delete();
+        });
 
-        return response()->json(['message' => 'Charge removed.']);
+        return response()->json(['message' => 'Charge removed for this member.']);
     }
 
     private function authorizeMemberFinance(Request $request, Member $member): void
@@ -472,13 +471,7 @@ class MemberAdventurerController extends Controller
                 abort(403, 'Unauthorized');
             }
 
-            $pathfinder->update(['status' => 'deleted']);
-
-            Member::query()
-                ->whereIn('type', ['pathfinders', 'temp_pathfinder'])
-                ->where('club_id', $pathfinder->club_id)
-                ->where('id_data', $pathfinder->id)
-                ->update(['status' => 'deleted']);
+            $this->markMemberAndDetailDeleted($pathfinder, ['pathfinders', 'temp_pathfinder']);
 
             return response()->json(['message' => 'Member deleted.']);
         }
@@ -490,16 +483,7 @@ class MemberAdventurerController extends Controller
                 abort(403, 'Unauthorized');
             }
 
-            $masterGuide->update([
-                'status' => 'deleted',
-                'notes_deleted' => $validated['notes_deleted'] ?? null,
-            ]);
-
-            Member::query()
-                ->where('type', 'master_guide')
-                ->where('club_id', $masterGuide->club_id)
-                ->where('id_data', $masterGuide->id)
-                ->update(['status' => 'deleted']);
+            $this->markMemberAndDetailDeleted($masterGuide, ['master_guide'], $validated['notes_deleted'] ?? null);
 
             return response()->json(['message' => 'Member deleted.']);
         }
@@ -510,18 +494,31 @@ class MemberAdventurerController extends Controller
             abort(403, 'Unauthorized');
         }
 
-        $member->update([
-            'status' => 'deleted',
-            'notes_deleted' => $validated['notes_deleted'] ?? null,
-        ]);
-
-        Member::query()
-            ->where('type', 'adventurers')
-            ->where('club_id', $member->club_id)
-            ->where('id_data', $member->id)
-            ->update(['status' => 'deleted']);
+        $this->markMemberAndDetailDeleted($member, ['adventurers'], $validated['notes_deleted'] ?? null);
 
         return response()->json(['message' => 'Member deleted.']);
+    }
+
+    /** Keep the unified membership row and its detail row in one transaction. */
+    protected function markMemberAndDetailDeleted($detail, array $types, ?string $notesDeleted = null): void
+    {
+        DB::transaction(function () use ($detail, $types, $notesDeleted) {
+            $lockedDetail = $detail->newQuery()->whereKey($detail->getKey())->lockForUpdate()->firstOrFail();
+            $detailPayload = ['status' => 'deleted'];
+            if (in_array('notes_deleted', $lockedDetail->getFillable(), true)) {
+                $detailPayload['notes_deleted'] = $notesDeleted;
+            }
+
+            $lockedDetail->update($detailPayload);
+
+            $unified = Member::query()
+                ->whereIn('type', $types)
+                ->where('club_id', $lockedDetail->club_id)
+                ->where('id_data', $lockedDetail->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $unified->update(['status' => 'deleted']);
+        });
     }
 
     public function update(Request $request, $id)
