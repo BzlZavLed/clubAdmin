@@ -46,6 +46,7 @@ watch(() => props.show, (show) => {
 const beginEdit = (charge) => {
     editing.value = {
         ...charge,
+        type: charge.concept_type || charge.type || 'mandatory',
         payment_expected_by: charge.due_date || '',
     }
 }
