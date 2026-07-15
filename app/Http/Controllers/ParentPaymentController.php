@@ -19,6 +19,7 @@ use App\Support\ClubHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
+use Illuminate\Support\Str;
 
 class ParentPaymentController extends Controller
 {
@@ -305,7 +306,10 @@ class ParentPaymentController extends Controller
 
         foreach ($concepts as $concept) {
             $event = $concept->event_id ? $eventsById->get((int) $concept->event_id) : null;
-            $isRecurringMeetingCharge = (bool) $concept->reusable && !$event;
+            $isEnrollmentCharge = $this->isEnrollmentCharge($concept->concept);
+            $isRecurringMeetingCharge = (bool) $concept->reusable && !$event && !$isEnrollmentCharge;
+            $isEffectivelyReusable = (bool) $concept->reusable && !$isEnrollmentCharge;
+            $chargeIsReusable = !$isRecurringMeetingCharge && $isEffectivelyReusable;
             $plannedMeetingCount = $isRecurringMeetingCharge
                 ? (int) ($workplanMeetingCounts[(int) $concept->club_id] ?? 0)
                 : null;
@@ -375,17 +379,17 @@ class ParentPaymentController extends Controller
                 $expectedAmount = $isRecurringMeetingCharge
                     ? round((float) ($concept->amount ?? 0.0) * $plannedMeetingCount, 2)
                     : (float) ($concept->amount ?? 0.0);
-                $remainingAmount = !$isRecurringMeetingCharge && $concept->reusable
+                $remainingAmount = !$isRecurringMeetingCharge && $isEffectivelyReusable
                     ? 0.0
                     : max($expectedAmount - $paidAmount, 0.0);
-                $availableAmount = !$isRecurringMeetingCharge && $concept->reusable
+                $availableAmount = !$isRecurringMeetingCharge && $isEffectivelyReusable
                     ? $expectedAmount
                     : max($remainingAmount - $pendingAmount, 0.0);
                 $receiptLinks = $receiptLinksByCharge->get($key, []);
 
                 $isRequired = (bool) ($concept->eventFeeComponent?->is_required ?? true);
                 $status = $isRequired ? 'due' : 'optional';
-                if (!$concept->reusable && $remainingAmount <= 0.0001) {
+                if (!$chargeIsReusable && $remainingAmount <= 0.0001) {
                     $status = 'paid';
                 } elseif ($pendingAmount > 0.0001) {
                     $status = 'pending_review';
@@ -423,7 +427,7 @@ class ParentPaymentController extends Controller
                     'primary_receipt_url' => $receiptLinks[0]['download_url'] ?? null,
                     // The recurring concept remains reusable in Cashbox, but
                     // this annual expected row has a finite workplan total.
-                    'reusable' => !$isRecurringMeetingCharge && (bool) $concept->reusable,
+                    'reusable' => $chargeIsReusable,
                     'is_recurring_meeting_charge' => $isRecurringMeetingCharge,
                     'planned_meeting_count' => $plannedMeetingCount,
                     'due_date' => optional($concept->payment_expected_by)->toDateString(),
@@ -433,12 +437,12 @@ class ParentPaymentController extends Controller
                     'event_title' => $event?->title,
                     'event_component_label' => $concept->eventFeeComponent?->label,
                     'event_start_at' => $event?->start_at?->toDateTimeString(),
-                    'can_submit_transfer' => (bool) $depositAccount && ($concept->reusable || $availableAmount > 0.0001),
+                    'can_submit_transfer' => (bool) $depositAccount && ($chargeIsReusable || $availableAmount > 0.0001),
                     'transfer_blocked_reason' => !$depositAccount
                         ? 'El club todavia no ha publicado datos bancarios para recibir transferencias.'
-                        : ((!$concept->reusable && $remainingAmount <= 0.0001)
+                        : ((!$chargeIsReusable && $remainingAmount <= 0.0001)
                             ? 'Este cargo ya esta cubierto.'
-                            : ((!$concept->reusable && $availableAmount <= 0.0001)
+                            : ((!$chargeIsReusable && $availableAmount <= 0.0001)
                                 ? 'Ya hay comprobantes en revision que cubren el saldo pendiente.'
                                 : null)),
                 ]);
@@ -472,6 +476,16 @@ class ParentPaymentController extends Controller
                 ['concept_name', 'asc'],
             ])
             ->values();
+    }
+
+    /** Enrollment/registration is always one fixed expected payment, never a per-meeting cuota. */
+    private function isEnrollmentCharge(?string $concept): bool
+    {
+        $name = Str::lower(Str::ascii((string) $concept));
+
+        return str_contains($name, 'inscripcion')
+            || str_contains($name, 'enrollment')
+            || str_contains($name, 'registration');
     }
 
     protected function receiptLinksByConceptAndMember(Collection $memberIds, Collection $conceptIds): Collection

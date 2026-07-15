@@ -48,14 +48,14 @@ class ClubController extends Controller
             'status' => 'active',
             'created_by' => auth()->id(),
             'amount' => $amount,
-            'reusable' => true,
+            'reusable' => false,
         ]);
 
         $concept->update([
             'amount' => $amount,
             'type' => 'mandatory',
             'status' => 'active',
-            'reusable' => true,
+            'reusable' => false,
         ]);
 
         $scope = PaymentConceptScope::withTrashed()->firstOrNew([

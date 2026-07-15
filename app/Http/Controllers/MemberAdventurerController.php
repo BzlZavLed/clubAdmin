@@ -415,7 +415,7 @@ class MemberAdventurerController extends Controller
                 'status' => 'active',
                 'created_by' => auth()->id(),
                 'amount' => $enrollmentAmount,
-                'reusable' => true,
+                'reusable' => false,
             ]
         );
 
@@ -423,7 +423,7 @@ class MemberAdventurerController extends Controller
             'amount' => $enrollmentAmount,
             'status' => 'active',
             'type' => 'mandatory',
-            'reusable' => true,
+            'reusable' => false,
         ]);
 
         $account = Account::firstOrCreate(

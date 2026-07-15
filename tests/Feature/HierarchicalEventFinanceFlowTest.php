@@ -54,8 +54,18 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         ]);
         $cuota->scopes()->create(['scope_type' => 'club_wide', 'club_id' => $club->id]);
 
+        $enrollment = PaymentConcept::create([
+            'club_id' => $club->id, 'concept' => 'Cuota de inscripción', 'amount' => 35,
+            'type' => 'mandatory', 'pay_to' => 'club_budget', 'status' => 'active',
+            'created_by' => $director->id, 'reusable' => true,
+        ]);
+        $enrollment->scopes()->create(['scope_type' => 'club_wide', 'club_id' => $club->id]);
+
         $payments = app(ParentPaymentController::class);
         $this->assertNull($payments->expectedPaymentsForParent($parent)->firstWhere('concept_id', $cuota->id));
+        $enrollmentCharge = $payments->expectedPaymentsForParent($parent)->firstWhere('concept_id', $enrollment->id);
+        $this->assertSame(35.0, $enrollmentCharge['expected_amount']);
+        $this->assertFalse($enrollmentCharge['is_recurring_meeting_charge']);
 
         $workplan = Workplan::create(['club_id' => $club->id, 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
         foreach ([['2026-01-10', 'sabbath'], ['2026-01-18', 'sunday'], ['2026-02-14', 'sabbath'], ['2026-02-20', 'special']] as [$date, $type]) {
@@ -70,6 +80,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
         $this->assertSame(30.0, $charge['expected_amount']);
         $this->assertSame(30.0, $charge['remaining_amount']);
         $this->assertFalse($charge['reusable']);
+        $this->assertSame(35.0, $payments->expectedPaymentsForParent($parent)->firstWhere('concept_id', $enrollment->id)['expected_amount']);
     }
 
     public function test_association_event_flows_down_to_targeted_clubs_and_supports_incremental_redeposit_receipts(): void
