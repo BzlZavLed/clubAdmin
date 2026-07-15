@@ -7,6 +7,9 @@
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding">
+      <ion-refresher slot="fixed" @ionRefresh="refreshPayments">
+        <ion-refresher-content />
+      </ion-refresher>
       <h2 class="section-title">Expected</h2>
       <ion-list inset>
         <ion-item v-for="payment in expected" :key="payment.row_key" button @click="openPayment(payment)">
@@ -167,6 +170,8 @@ import {
   IonModal,
   IonNote,
   IonPage,
+  IonRefresher,
+  IonRefresherContent,
   IonTextarea,
   IonTitle,
   IonToolbar,
@@ -235,6 +240,14 @@ async function loadPayments() {
   expected.value = payload.expected_payments || [];
   transferSubmissions.value = payload.transfer_submissions || [];
   receipts.value = payload.receipts || [];
+}
+
+async function refreshPayments(event: any) {
+  try {
+    await loadPayments();
+  } finally {
+    event.target.complete();
+  }
 }
 
 function openPayment(payment: any) {

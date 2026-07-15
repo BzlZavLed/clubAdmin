@@ -13,6 +13,7 @@ use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
+use App\Models\Workplan;
 use App\Support\BankInfoFormatter;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
@@ -216,6 +217,14 @@ class ParentPaymentController extends Controller
         $memberIds = $members->pluck('id')->filter()->unique()->values();
         $classIds = $members->pluck('class_id')->filter()->unique()->values();
 
+        $workplanMeetingCounts = Workplan::query()
+            ->whereIn('club_id', $clubIds)
+            ->withCount(['events as planned_meetings_count' => fn ($query) => $query
+                ->where('status', 'active')
+                ->whereIn('meeting_type', ['sabbath', 'sunday'])])
+            ->get(['id', 'club_id'])
+            ->mapWithKeys(fn (Workplan $workplan) => [(int) $workplan->club_id => (int) $workplan->planned_meetings_count]);
+
         $concepts = PaymentConcept::query()
             ->whereIn('club_id', $clubIds)
             ->where('status', 'active')
@@ -296,6 +305,16 @@ class ParentPaymentController extends Controller
 
         foreach ($concepts as $concept) {
             $event = $concept->event_id ? $eventsById->get((int) $concept->event_id) : null;
+            $isRecurringMeetingCharge = (bool) $concept->reusable && !$event;
+            $plannedMeetingCount = $isRecurringMeetingCharge
+                ? (int) ($workplanMeetingCounts[(int) $concept->club_id] ?? 0)
+                : null;
+
+            // A recurring cuota becomes an annual expected amount only when
+            // the club has generated regular meetings in its workplan.
+            if ($isRecurringMeetingCharge && $plannedMeetingCount <= 0) {
+                continue;
+            }
             $matchedMembers = collect();
             $scopeLabels = [];
 
@@ -353,11 +372,13 @@ class ParentPaymentController extends Controller
                 $key = sprintf('%d|%d', $concept->id, $member->id);
                 $paidAmount = (float) ($paymentTotals[$key] ?? 0.0);
                 $pendingAmount = (float) ($pendingTotals[$key] ?? 0.0);
-                $expectedAmount = (float) ($concept->amount ?? 0.0);
-                $remainingAmount = $concept->reusable
+                $expectedAmount = $isRecurringMeetingCharge
+                    ? round((float) ($concept->amount ?? 0.0) * $plannedMeetingCount, 2)
+                    : (float) ($concept->amount ?? 0.0);
+                $remainingAmount = !$isRecurringMeetingCharge && $concept->reusable
                     ? 0.0
                     : max($expectedAmount - $paidAmount, 0.0);
-                $availableAmount = $concept->reusable
+                $availableAmount = !$isRecurringMeetingCharge && $concept->reusable
                     ? $expectedAmount
                     : max($remainingAmount - $pendingAmount, 0.0);
                 $receiptLinks = $receiptLinksByCharge->get($key, []);
@@ -400,7 +421,11 @@ class ParentPaymentController extends Controller
                     'receipt_links' => $receiptLinks,
                     'primary_receipt_number' => $receiptLinks[0]['receipt_number'] ?? null,
                     'primary_receipt_url' => $receiptLinks[0]['download_url'] ?? null,
-                    'reusable' => (bool) $concept->reusable,
+                    // The recurring concept remains reusable in Cashbox, but
+                    // this annual expected row has a finite workplan total.
+                    'reusable' => !$isRecurringMeetingCharge && (bool) $concept->reusable,
+                    'is_recurring_meeting_charge' => $isRecurringMeetingCharge,
+                    'planned_meeting_count' => $plannedMeetingCount,
                     'due_date' => optional($concept->payment_expected_by)->toDateString(),
                     'scope_label' => $scopeLabels[$member->id] ?? 'Cargo aplicable',
                     'status' => $status,

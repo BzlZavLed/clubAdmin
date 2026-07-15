@@ -24,7 +24,10 @@ use App\Models\Staff;
 use App\Models\Union;
 use App\Models\UnionClubCatalog;
 use App\Models\User;
+use App\Models\Workplan;
+use App\Models\WorkplanEvent;
 use App\Models\EventPlan;
+use App\Http\Controllers\ParentPaymentController;
 use App\Services\EventFinanceService;
 use App\Services\PaymentReceiptService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,6 +36,41 @@ use Tests\TestCase;
 class HierarchicalEventFinanceFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_recurring_cuota_uses_regular_workplan_meeting_count_and_is_hidden_without_a_workplan(): void
+    {
+        [$union, $association] = $this->seedUnionAndAssociation();
+        $this->seedClubCatalogs($union);
+        $district = District::create(['name' => 'Cuota District', 'association_id' => $association->id, 'status' => 'active']);
+        $church = Church::create(['church_name' => 'Cuota Church', 'email' => 'cuota@example.com', 'district_id' => $district->id]);
+        [$director, $club] = $this->createClubWithDirector($church, $district, 'pathfinders', 'Cuota Club');
+        $parent = User::factory()->create(['profile_type' => 'parent', 'role_key' => 'parent', 'status' => 'active']);
+        $this->createPathfinderMember($club, $parent, 'Cuota Member');
+
+        $cuota = PaymentConcept::create([
+            'club_id' => $club->id, 'concept' => 'Cuota por reunión', 'amount' => 10,
+            'type' => 'mandatory', 'pay_to' => 'club_budget', 'status' => 'active',
+            'created_by' => $director->id, 'reusable' => true,
+        ]);
+        $cuota->scopes()->create(['scope_type' => 'club_wide', 'club_id' => $club->id]);
+
+        $payments = app(ParentPaymentController::class);
+        $this->assertNull($payments->expectedPaymentsForParent($parent)->firstWhere('concept_id', $cuota->id));
+
+        $workplan = Workplan::create(['club_id' => $club->id, 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
+        foreach ([['2026-01-10', 'sabbath'], ['2026-01-18', 'sunday'], ['2026-02-14', 'sabbath'], ['2026-02-20', 'special']] as [$date, $type]) {
+            WorkplanEvent::create([
+                'workplan_id' => $workplan->id, 'date' => $date, 'meeting_type' => $type,
+                'title' => ucfirst($type) . ' meeting', 'status' => 'active',
+            ]);
+        }
+
+        $charge = $payments->expectedPaymentsForParent($parent)->firstWhere('concept_id', $cuota->id);
+        $this->assertSame(3, $charge['planned_meeting_count']);
+        $this->assertSame(30.0, $charge['expected_amount']);
+        $this->assertSame(30.0, $charge['remaining_amount']);
+        $this->assertFalse($charge['reusable']);
+    }
 
     public function test_association_event_flows_down_to_targeted_clubs_and_supports_incremental_redeposit_receipts(): void
     {
@@ -770,7 +808,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             'pay_to' => 'club_budget',
             'status' => 'active',
             'created_by' => $clubDirector->id,
-            'reusable' => false,
+            'reusable' => true,
         ]);
         $basicCost->scopes()->create([
             'scope_type' => 'club_wide',
@@ -781,10 +819,8 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             ->getJson(route('api.mobile.parent.dashboard'))
             ->assertOk()
             ->assertJsonPath('clubs.0.id', $club->id)
-            ->assertJsonPath('clubs.0.basic_cost_total', 35)
-            ->assertJsonPath('clubs.0.basic_costs.0.concept_name', 'Cuota de inscripción')
-            ->assertJsonPath('clubs.0.basic_costs.0.member_name', 'North Camper')
-            ->assertJsonPath('clubs.0.basic_costs.0.expected_amount', 35);
+            ->assertJsonMissingPath('payment_summary')
+            ->assertJsonMissingPath('expected_payments');
 
         BankInfo::query()->where('bankable_type', Club::class)
             ->where('bankable_id', $club->id)
@@ -841,6 +877,7 @@ class HierarchicalEventFinanceFlowTest extends TestCase
             ->get(route('parent.payments.index'))
             ->assertOk();
         $parentProps = $parentResponse->viewData('page')['props'];
+        $this->assertNull(collect($parentProps['expected_payments'])->firstWhere('concept_name', 'Cuota de inscripción'));
         $charge = collect($parentProps['expected_payments'])->firstWhere('event_title', 'Association Camporee 2026');
 
         $this->assertNotNull($charge);
