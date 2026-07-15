@@ -929,6 +929,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::patch('/members/{id}/master-guide-year', [MemberAdventurerController::class, 'updateMasterGuideYear'])->name('members.master-guide-year.update');
     Route::get('/clubs/{id}/members/class-summary-pdf', [MemberAdventurerController::class, 'classSummaryPdf'])->name('clubs.members.class-summary-pdf');
     Route::delete('/members/{id}', [MemberAdventurerController::class, 'destroy'])->name('members.destroy');
+    Route::get('/members/{member}/charges', [MemberAdventurerController::class, 'charges'])->name('members.charges.index');
+    Route::put('/members/{member}/charges/{paymentConcept}', [MemberAdventurerController::class, 'updateCharge'])->name('members.charges.update');
+    Route::delete('/members/{member}/charges/{paymentConcept}', [MemberAdventurerController::class, 'destroyCharge'])->name('members.charges.destroy');
     Route::get('/members/{id}/export-word', [MemberAdventurerController::class, 'exportWord'])->name('members.export-word');
     Route::get('/members/{id}/export-pathfinder-pdf', [MemberAdventurerController::class, 'exportPathfinderPdf'])->name('members.export-pathfinder-pdf');
     Route::post('/members/{id}/insurance-card', [MemberAdventurerController::class, 'uploadPathfinderInsuranceCard'])->name('members.pathfinder.insurance-card.upload');

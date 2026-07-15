@@ -21,55 +21,17 @@ use Illuminate\Http\Request;
 
 class MobileParentController extends Controller
 {
-    public function dashboard(Request $request, ParentPaymentController $payments)
+    public function dashboard(Request $request)
     {
         $user = $this->authorizeParent($request);
         $children = $this->childrenPayload($user);
         $membership = $this->parentMembershipPayload($user);
-        $expectedPayments = $payments->expectedPaymentsForParent($user);
-        $receipts = $payments->receiptsForParent($user);
         $workplan = $this->workplanPayload($user);
-        $basicCostsByClub = $expectedPayments
-            ->filter(fn (array $payment) => !$payment['event_id'] && $payment['concept_type'] === 'mandatory')
-            ->groupBy('club_id');
-        $clubs = $membership['clubs']->map(function (array $club) use ($basicCostsByClub) {
-            $basicCosts = collect($basicCostsByClub->get($club['id'], []))
-                ->map(fn (array $payment) => [
-                    'row_key' => $payment['row_key'],
-                    'concept_id' => $payment['concept_id'],
-                    'concept_name' => $payment['concept_name'],
-                    'member_id' => $payment['member_id'],
-                    'member_name' => $payment['member_name'],
-                    'expected_amount' => $payment['expected_amount'],
-                    'paid_amount' => $payment['paid_amount'],
-                    'remaining_amount' => $payment['remaining_amount'],
-                    'due_date' => $payment['due_date'],
-                    'reusable' => $payment['reusable'],
-                    'status' => $payment['status'],
-                ])
-                ->values();
-
-            return [
-                ...$club,
-                'basic_costs' => $basicCosts,
-                'basic_cost_total' => round((float) $basicCosts->sum('expected_amount'), 2),
-            ];
-        })->values();
 
         return response()->json([
             'church' => $membership['church'],
-            'clubs' => $clubs,
+            'clubs' => $membership['clubs']->values(),
             'children' => $children,
-            'payment_summary' => [
-                'due_count' => $expectedPayments->whereIn('status', ['due', 'optional'])->count(),
-                'pending_count' => $expectedPayments->where('status', 'pending_review')->count(),
-                'paid_count' => $expectedPayments->where('status', 'paid')->count(),
-                'total_expected' => round((float) $expectedPayments->sum('expected_amount'), 2),
-                'total_paid' => round((float) $expectedPayments->sum('paid_amount'), 2),
-                'total_remaining' => round((float) $expectedPayments->sum('remaining_amount'), 2),
-            ],
-            'expected_payments' => $expectedPayments->take(8)->values(),
-            'recent_receipts' => $receipts->take(6)->values(),
             'workplan' => [
                 'clubs' => $workplan['clubs'],
                 'upcoming_events' => $workplan['upcoming_events']->take(8)->values(),

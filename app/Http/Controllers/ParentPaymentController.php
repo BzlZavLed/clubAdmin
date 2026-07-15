@@ -199,6 +199,15 @@ class ParentPaymentController extends Controller
             ])
             ->get(['id', 'type', 'id_data', 'club_id', 'class_id', 'parent_id', 'status']);
 
+        return $this->expectedPaymentsForMembers($members, $user);
+    }
+
+    /**
+     * Shared expected-charge projection. The parent portal and internal
+     * finance views must use one definition of "what this member owes".
+     */
+    public function expectedPaymentsForMembers(Collection $members, $parentUser = null): Collection
+    {
         if ($members->isEmpty()) {
             return collect();
         }
@@ -274,7 +283,7 @@ class ParentPaymentController extends Controller
         $receiptLinksByCharge = $this->receiptLinksByConceptAndMember($memberIds, $concepts->pluck('id'));
 
         $pendingTotals = ParentPaymentSubmission::query()
-            ->where('parent_user_id', $user->id)
+            ->when($parentUser, fn ($query) => $query->where('parent_user_id', $parentUser->id))
             ->where('status', 'pending')
             ->whereIn('member_id', $memberIds)
             ->whereIn('payment_concept_id', $concepts->pluck('id'))

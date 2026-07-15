@@ -6,6 +6,7 @@ import MemberRegistrationModal from '@/Components/MemberRegistrationModal.vue'
 import MasterGuideMemberRegistrationModal from '@/Components/MasterGuideMemberRegistrationModal.vue'
 import PathfinderMemberRegistrationModal from '@/Components/PathfinderMemberRegistrationModal.vue'
 import DeleteMemberModal from '@/Components/DeleteMemberModal.vue'
+import MemberChargesModal from '@/Components/MemberChargesModal.vue'
 import { 
     PlusIcon,
     MinusIcon,
@@ -56,6 +57,8 @@ const editingMember = ref(null)
 const registrationFormSection = ref(null)
 const showDeleteModal = ref(false)
 const deletingMember = ref(null)
+const showChargesModal = ref(false)
+const chargesMember = ref(null)
 const insuranceUploadInput = ref(null)
 const insuranceUploadMember = ref(null)
 const selectedMemberIds = ref(new Set())
@@ -145,6 +148,11 @@ const onClubChange = async () => {
 const deleteMember = (member) => {
     deletingMember.value = member
     showDeleteModal.value = true
+}
+
+const openMemberCharges = (member) => {
+    chargesMember.value = member
+    showChargesModal.value = true
 }
 
 const editMember = (member) => {
@@ -755,7 +763,7 @@ watch(filteredMembers, () => {
                                         </dd>
                                     </div>
                                 </dl>
-                                <div class="mt-3 grid grid-cols-5 gap-2">
+                                <div class="mt-3 grid grid-cols-6 gap-2">
                                     <button class="rounded border px-2 py-2 text-green-700" @click="toggleExpanded(member.id)" :title="tr('Ver detalles', 'View details')">
                                         <component :is="expandedRows.has(member.id) ? MinusIcon : PlusIcon" class="mx-auto h-4 w-4" />
                                     </button>
@@ -776,6 +784,7 @@ watch(filteredMembers, () => {
                                     <button class="rounded border px-2 py-2 text-blue-700" @click="downloadWord(member)" :title="tr('Descargar formulario', 'Download form')">
                                         <DocumentArrowDownIcon class="mx-auto h-4 w-4" />
                                     </button>
+                                    <button class="rounded border px-2 py-2 text-emerald-700" @click="openMemberCharges(member)" :title="tr('Cargos y pagos', 'Charges and payments')">$</button>
                                 </div>
                                 <div v-if="expandedRows.has(member.id)" class="mt-3 rounded bg-gray-50 p-3 text-xs text-gray-700">
                                     <div class="grid gap-2">
@@ -898,6 +907,11 @@ watch(filteredMembers, () => {
                                         @click="downloadWord(member)"
                                         :title="tr('Descargar formulario', 'Download form')">  
                                         <DocumentArrowDownIcon class="w-4 h-4 inline" />
+                                    </button>
+                                    <button class="text-emerald-700 hover:underline text-xs font-semibold"
+                                        @click="openMemberCharges(member)"
+                                        :title="tr('Cargos y pagos', 'Charges and payments')">
+                                        {{ tr('Cobros', 'Charges') }}
                                     </button>
                                     </div>
                                 </td>
@@ -1283,6 +1297,12 @@ watch(filteredMembers, () => {
             <DeleteMemberModal :show="showDeleteModal" :memberId="deletingMember?.id"
                 :memberName="deletingMember?.applicant_name" @cancel="showDeleteModal = false"
                 @confirm="handleMemberDelete" />
+            <MemberChargesModal
+                :show="showChargesModal"
+                :member="chargesMember"
+                @close="showChargesModal = false; chargesMember = null"
+                @updated="fetchMembers(selectedClub.id)"
+            />
             <input
                 ref="insuranceUploadInput"
                 type="file"

@@ -34,6 +34,87 @@ use DB;
 use Auth;
 class MemberAdventurerController extends Controller
 {
+    /**
+     * Finance summary used by the member list's Charges modal.  Keeping this
+     * server-side is important: a concept may apply through an individual,
+     * class, club-wide, or event-participant scope.
+     */
+    public function charges(Request $request, Member $member)
+    {
+        $this->authorizeMemberFinance($request, $member);
+
+        $member->load(['club:id,club_name,club_email', 'class:id,class_name']);
+        $charges = app(ParentPaymentController::class)
+            ->expectedPaymentsForMembers(collect([$member]))
+            ->map(fn (array $charge) => [
+                ...$charge,
+                'id' => (int) $charge['concept_id'],
+                'concept' => $charge['concept_name'],
+                'amount' => (float) $charge['expected_amount'],
+                'event_required' => (bool) $charge['is_required'],
+                // Event fee components are maintained by Event Planner, not here.
+                'can_manage' => empty($charge['event_id']),
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'member' => ['id' => $member->id, 'name' => ClubHelper::memberDetail($member)['name'] ?? 'Member'],
+                'club' => ['id' => $member->club_id, 'name' => $member->club?->club_name],
+                'charges' => $charges,
+                'summary' => [
+                    'expected' => round((float) $charges->sum('amount'), 2),
+                    'paid' => round((float) $charges->sum('paid_amount'), 2),
+                    'remaining' => round((float) $charges->sum('remaining_amount'), 2),
+                ],
+            ],
+        ]);
+    }
+
+    public function updateCharge(Request $request, Member $member, PaymentConcept $paymentConcept)
+    {
+        $this->authorizeMemberFinance($request, $member);
+        abort_unless((int) $paymentConcept->club_id === (int) $member->club_id && !$paymentConcept->event_id, 422, 'Event charges must be edited in Event Planner.');
+
+        $payload = $request->validate([
+            'concept' => ['required', 'string', 'max:255'],
+            'amount' => ['required', 'numeric', 'min:0', 'max:999999.99'],
+            'payment_expected_by' => ['nullable', 'date'],
+            'type' => ['required', 'in:mandatory,optional'],
+        ]);
+        $paymentConcept->update($payload);
+
+        return response()->json(['data' => $paymentConcept->fresh()]);
+    }
+
+    public function destroyCharge(Request $request, Member $member, PaymentConcept $paymentConcept)
+    {
+        $this->authorizeMemberFinance($request, $member);
+        abort_unless((int) $paymentConcept->club_id === (int) $member->club_id && !$paymentConcept->event_id, 422, 'Event charges must be managed in Event Planner.');
+
+        // An individual charge is removed only for this member.  Other scopes
+        // intentionally remain global; the UI makes that impact explicit.
+        $individualScopes = $paymentConcept->scopes()
+            ->where('scope_type', 'member')
+            ->where('member_id', $member->id);
+        if ($individualScopes->exists()) {
+            $individualScopes->delete();
+            if (!$paymentConcept->scopes()->whereNull('deleted_at')->exists()) {
+                $paymentConcept->update(['status' => 'inactive']);
+            }
+        } else {
+            $paymentConcept->update(['status' => 'inactive']);
+        }
+
+        return response()->json(['message' => 'Charge removed.']);
+    }
+
+    private function authorizeMemberFinance(Request $request, Member $member): void
+    {
+        abort_unless(in_array($request->user()?->profile_type, ['club_director', 'treasurer', 'superadmin'], true), 403);
+        abort_unless(ClubHelper::clubIdsForUser($request->user())->contains((int) $member->club_id), 403);
+    }
+
     protected function resolveClubDirectorName(Club $club): ?string
     {
         if (!empty($club->director_name)) {
