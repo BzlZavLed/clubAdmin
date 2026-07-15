@@ -17,6 +17,9 @@
             <h2>{{ payment.concept_name }}</h2>
             <p>{{ payment.member_name }} · {{ statusLabel(payment.status) }} · ${{ money(payment.remaining_amount) }} remaining</p>
             <p>{{ payment.club_name }} · {{ payment.due_date || 'No due date' }}</p>
+            <p v-if="payment.is_recurring_meeting_charge" class="workplan-marker">
+              Calculated from workplan<span v-if="payment.planned_meeting_count"> · {{ payment.planned_meeting_count }} meetings</span>
+            </p>
           </ion-label>
           <ion-badge slot="end" :color="statusColor(payment.status)">
             ${{ money(payment.reusable ? payment.expected_amount : payment.available_amount ?? payment.remaining_amount) }}
@@ -317,6 +320,12 @@ onMounted(loadPayments);
   display: flex;
   gap: 12px;
   justify-content: space-between;
+}
+
+.workplan-marker {
+  color: var(--ion-color-medium-shade);
+  font-size: 12px;
+  font-style: italic;
 }
 
 .payment-detail h2,

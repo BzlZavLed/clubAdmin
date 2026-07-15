@@ -168,6 +168,7 @@ const receivePayment = async () => {
                                     <div>
                                         <div class="font-semibold text-gray-900">{{ charge.concept }}</div>
                                         <div class="mt-1 text-xs text-gray-500">{{ charge.event_title ? `${charge.event_title}${charge.event_component_label ? ` · ${charge.event_component_label}` : ''}` : charge.scope_label }}<span v-if="charge.due_date"> · {{ tr('Vence', 'Due') }}: {{ charge.due_date }}</span></div>
+                                        <div v-if="charge.is_recurring_meeting_charge" class="mt-1 text-xs italic text-gray-500">{{ tr('Calculado del plan de trabajo', 'Calculated from workplan') }}<span v-if="charge.planned_meeting_count"> · {{ charge.planned_meeting_count }} {{ tr('reuniones', 'meetings') }}</span></div>
                                     </div>
                                     <div class="text-left sm:text-right"><div class="font-semibold">{{ money(charge.remaining_amount) }} <span class="font-normal text-gray-500">{{ tr('pendiente', 'due') }}</span></div><div class="text-xs text-gray-500">{{ tr('Pagado', 'Paid') }} {{ money(charge.paid_amount) }} / {{ money(charge.amount) }}</div></div>
                                 </div>
