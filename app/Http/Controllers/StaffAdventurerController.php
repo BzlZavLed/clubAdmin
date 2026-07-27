@@ -29,6 +29,12 @@ use App\Support\ClubHelper;
 
 class StaffAdventurerController extends Controller
 {
+    private function canManageStaffClub(?User $actor, int $clubId): bool
+    {
+        return $actor !== null
+            && ClubHelper::clubIdsForUser($actor)->contains($clubId);
+    }
+
     protected function applyAssignedClassToStaffRecord(Staff $staffRecord, int $clubId, $assignedClassId): void
     {
         if (empty($assignedClassId)) {
@@ -433,7 +439,7 @@ class StaffAdventurerController extends Controller
     private function updateStaffRecord(Request $request, Staff $staffRecord)
     {
         $actor = $request->user();
-        if (!$actor || ($actor->profile_type !== 'superadmin' && (int) $actor->club_id !== (int) $staffRecord->club_id)) {
+        if (!$this->canManageStaffClub($actor, (int) $staffRecord->club_id)) {
             return response()->json([
                 'message' => 'Unauthorized.',
                 'success' => false,
@@ -1017,6 +1023,7 @@ class StaffAdventurerController extends Controller
         }
 
         $newStatus = $statusMap[$validated['status_code']];
+        $actor = $request->user();
 
         $staffAdv = StaffAdventurer::find($validated['staff_id']);
         $staffModel = null;
@@ -1024,7 +1031,7 @@ class StaffAdventurerController extends Controller
 
         if ($staffAdv) {
             // legacy/adventurer staff
-            if (auth()->user()->club_id !== $staffAdv->club_id) {
+            if (!$this->canManageStaffClub($actor, (int) $staffAdv->club_id)) {
                 return response()->json(['message' => 'Unauthorized.', 'success' => false], 403);
             }
             $staffAdv->status = $newStatus;
@@ -1039,7 +1046,7 @@ class StaffAdventurerController extends Controller
             if (!$staffModel) {
                 return response()->json(['message' => 'Staff not found.', 'success' => false], 404);
             }
-            if (auth()->user()->club_id !== $staffModel->club_id) {
+            if (!$this->canManageStaffClub($actor, (int) $staffModel->club_id)) {
                 return response()->json(['message' => 'Unauthorized.', 'success' => false], 403);
             }
             $staffModel->status = $newStatus;
