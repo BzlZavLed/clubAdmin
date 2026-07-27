@@ -760,7 +760,17 @@ class EventController extends Controller
     {
         $this->authorize('delete', $event);
 
-        $event->delete();
+        DB::transaction(function () use ($event) {
+            PaymentConcept::query()
+                ->where('event_id', $event->id)
+                ->get()
+                ->each(function (PaymentConcept $concept) {
+                    $concept->scopes()->delete();
+                    $concept->delete();
+                });
+
+            $event->delete();
+        });
 
         return redirect()->route('events.index');
     }

@@ -306,6 +306,11 @@ class ParentPaymentController extends Controller
 
         foreach ($concepts as $concept) {
             $event = $concept->event_id ? $eventsById->get((int) $concept->event_id) : null;
+            // Event deletion is soft, so an older active concept can outlive
+            // its event. It must never become a normal club-wide charge.
+            if ($concept->event_id && !$event) {
+                continue;
+            }
             $isEnrollmentCharge = $this->isEnrollmentCharge($concept->concept);
             $isRecurringMeetingCharge = (bool) $concept->reusable && !$event && !$isEnrollmentCharge;
             $isEffectivelyReusable = (bool) $concept->reusable && !$isEnrollmentCharge;
