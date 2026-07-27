@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Validation\Rules;
 use Auth;
@@ -96,10 +97,19 @@ class ParentAuthController extends Controller
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
             'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'scope_type' => 'club',
+            'scope_id' => $validated['club_id'],
             'church_id' => $validated['church_id'],
             'church_name' => $validated['church_name'],
             'club_id' => $validated['club_id'],
+            'status' => 'pending',
         ]);
+
+        DB::table('club_user')->updateOrInsert(
+            ['user_id' => $user->id, 'club_id' => $club->id],
+            ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+        );
 
         if ($invite->uses_left !== null) {
             $invite->decrement('uses_left');
@@ -133,7 +143,7 @@ class ParentAuthController extends Controller
             ]);
         }
 
-        return redirect()->route('parent.apply');
+        return redirect()->route('login')->with('status', 'Registration submitted. Await director approval before logging in.');
     }
 
     protected function validInviteQuery(string $code)

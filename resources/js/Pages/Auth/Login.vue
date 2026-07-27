@@ -102,10 +102,7 @@ const submit = () => {
         <div class="mt-6 text-sm text-gray-700 space-y-1">
             <div>
                 <Link href="/register" class="text-blue-600 hover:underline">{{ tr('Crear una cuenta', 'Create an account') }}</Link>
-                <span class="text-gray-500"> {{ tr('(personal/director)', '(staff/director)') }}</span>
-            </div>
-            <div>
-                <Link href="/register-parent" class="text-blue-600 hover:underline">{{ tr('Registrarse como padre', 'Register as a parent') }}</Link>
+                <span class="text-gray-500"> {{ tr('(director, personal o padre/madre)', '(director, staff, or parent)') }}</span>
             </div>
         </div>
     </PathfinderLayout>

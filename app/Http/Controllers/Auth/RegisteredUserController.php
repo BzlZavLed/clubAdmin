@@ -458,7 +458,7 @@ class RegisteredUserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            'profile_type' => ['required', 'string'],
+            'profile_type' => ['required', Rule::in(['club_director', 'club_personal', 'parent'])],
             'sub_role' => ['nullable', 'string'],
             'church_id' => 'required|exists:churches,id',
             'church_name' => 'required|string|max:255',

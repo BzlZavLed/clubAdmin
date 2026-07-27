@@ -42,10 +42,14 @@ const filteredClubs = computed(() => {
 const profileTypeOptions = computed(() => {
     const hasDirector = props.clubs.some(c => Number(c.id) === Number(form.club_id) && c.director_exists)
     return hasDirector
-        ? [{ value: 'club_personal', label: tr('Personal del club', 'Club staff') }]
+        ? [
+            { value: 'club_personal', label: tr('Personal del club', 'Club staff') },
+            { value: 'parent', label: tr('Padre/Madre', 'Parent') },
+        ]
         : [
             { value: 'club_director', label: tr('Director de club', 'Club director') },
             { value: 'club_personal', label: tr('Personal del club', 'Club staff') },
+            { value: 'parent', label: tr('Padre/Madre', 'Parent') },
         ]
 })
 
@@ -110,9 +114,9 @@ watch(
                     </option>
                 </select>
                 <InputError class="mt-2" :message="form.errors.profile_type" />
-                <p v-if="profileTypeOptions.length === 1 && profileTypeOptions[0].value === 'club_personal'"
+                <p v-if="!profileTypeOptions.some(option => option.value === 'club_director')"
                     class="text-xs text-gray-600 mt-1">
-                    {{ tr('Ya existe un director para este club. Solo el personal puede registrarse.', 'This club already has a director. Only staff can register.') }}
+                    {{ tr('Ya existe un director para este club. El personal y los padres pueden solicitar acceso.', 'This club already has a director. Staff and parents can request access.') }}
                 </p>
             </div>
 
