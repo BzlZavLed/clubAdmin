@@ -118,4 +118,55 @@ class RegistrationTest extends TestCase
             'password' => 'password',
         ])->assertRedirect('/parent-enrollment');
     }
+
+    public function test_deleted_parent_email_can_be_reused_from_the_parent_registration_form(): void
+    {
+        $church = Church::create(['church_name' => 'Reuse Church', 'email' => 'reuse@example.com']);
+        $director = User::factory()->create([
+            'profile_type' => 'club_director',
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'status' => 'active',
+        ]);
+        $club = Club::create([
+            'user_id' => $director->id,
+            'club_name' => 'Reuse Club',
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'director_name' => $director->name,
+            'creation_date' => now()->toDateString(),
+            'club_type' => 'adventurers',
+            'status' => 'active',
+        ]);
+        $deletedParent = User::factory()->create([
+            'email' => 'reused-parent@example.com',
+            'profile_type' => 'parent',
+            'status' => 'deleted',
+        ]);
+        $invite = ChurchInviteCode::create([
+            'church_id' => $church->id,
+            'code' => 'REUSECODE',
+            'uses_left' => null,
+            'status' => 'active',
+        ]);
+
+        $this->post('/register-parent', [
+            'name' => 'Reactivated Parent',
+            'email' => 'reused-parent@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'club_id' => $club->id,
+            'invite_code' => $invite->code,
+        ])->assertRedirect('/login');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $deletedParent->id,
+            'email' => 'reused-parent@example.com',
+            'name' => 'Reactivated Parent',
+            'club_id' => $club->id,
+            'status' => 'pending',
+        ]);
+    }
 }

@@ -60,7 +60,24 @@ class ParentAuthController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:255',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $emailInUse = User::query()
+                        ->where('email', $value)
+                        ->where(function ($query) {
+                            $query->whereNull('status')->orWhere('status', '!=', 'deleted');
+                        })
+                        ->exists();
+
+                    if ($emailInUse) {
+                        $fail('The email has already been taken.');
+                    }
+                },
+            ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'church_id' => 'required|exists:churches,id',
             'church_name' => 'required|string|max:255',
@@ -92,7 +109,7 @@ class ParentAuthController extends Controller
             return back()->withErrors(['club_id' => 'Selected club is not valid for this church.'])->withInput();
         }
 
-        $user = User::create([
+        $userData = [
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
@@ -104,7 +121,18 @@ class ParentAuthController extends Controller
             'church_name' => $validated['church_name'],
             'club_id' => $validated['club_id'],
             'status' => 'pending',
-        ]);
+        ];
+        $deletedUser = User::query()
+            ->where('email', $validated['email'])
+            ->where('status', 'deleted')
+            ->first();
+
+        if ($deletedUser) {
+            $deletedUser->forceFill($userData)->save();
+            $user = $deletedUser;
+        } else {
+            $user = User::create($userData);
+        }
 
         DB::table('club_user')->updateOrInsert(
             ['user_id' => $user->id, 'club_id' => $club->id],
