@@ -385,6 +385,9 @@ const updateStaffUserAccount = async (user, status_code) => {
 
     try {
         await updateUserStatus(user.id, status_code)
+        if (isDeactivate) {
+            parentAccounts.value = parentAccounts.value.filter(parent => parent.id !== user.id)
+        }
         showToast(isDeactivate ? tr('Usuario desactivado', 'User deactivated') : tr('Usuario reactivado', 'User reactivated'))
         fetchStaff(user.club_id)
     } catch (error) {

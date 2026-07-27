@@ -781,6 +781,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         $parentAccounts = \App\Models\User::with('clubs')
             ->where('profile_type', 'parent')
             ->whereIn('id', $parentIdsWithKids)
+            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'deleted'))
             ->get()
             ->map(function ($parent) use ($clubId) {
                 $children = \App\Models\Member::with('club')
