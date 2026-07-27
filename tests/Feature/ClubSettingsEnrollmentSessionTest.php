@@ -48,7 +48,7 @@ class ClubSettingsEnrollmentSessionTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.club.id', $club->id)
             ->assertJsonPath('data.pending_parents.0.id', $parent->id)
-            ->assertJsonPath('data.registration_url', route('register', ['profile_type' => 'parent', 'club_id' => $club->id]));
+            ->assertJsonPath('data.registration_url', route('parent.register'));
 
         $this->assertDatabaseHas('church_invite_codes', ['church_id' => $church->id, 'status' => 'active']);
 

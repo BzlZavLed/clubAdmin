@@ -309,7 +309,7 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
 // ---------------------------------
 Route::middleware(['guest'])->group(function () {
 Route::post('/setup/superadmin', [RegisteredUserController::class, 'storeSuperadmin'])->name('superadmin.setup.store');
-Route::redirect('/register-parent', '/register')->name('parent.register');
+Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
 Route::post('/register-parent/resolve-invite', [ParentAuthController::class, 'resolveInvite'])->name('parent.register.resolve-invite');
 Route::post('/register-parent', [ParentAuthController::class, 'register']);
 Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);

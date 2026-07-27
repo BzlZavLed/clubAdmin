@@ -281,7 +281,7 @@ class ClubSettingsController extends Controller
 
         return [
             'club' => $club->only(['id', 'club_name', 'church_id']),
-            'registration_url' => route('register', ['profile_type' => 'parent', 'club_id' => $club->id]),
+            'registration_url' => route('parent.register'),
             'qr_url' => route('club.settings.enrollment.qr', ['club' => $club->id]),
             'church_invite_code' => $invite->code,
             'pending_parents' => $parents->where('status', 'pending')->map($formatParent)->values(),

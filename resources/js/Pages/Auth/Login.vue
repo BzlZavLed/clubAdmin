@@ -104,6 +104,9 @@ const submit = () => {
                 <Link href="/register" class="text-blue-600 hover:underline">{{ tr('Crear una cuenta', 'Create an account') }}</Link>
                 <span class="text-gray-500"> {{ tr('(director, personal o padre/madre)', '(director, staff, or parent)') }}</span>
             </div>
+            <div>
+                <Link href="/register-parent" class="text-blue-600 hover:underline">{{ tr('Inscripción de padres', 'Parent enrollment') }}</Link>
+            </div>
         </div>
     </PathfinderLayout>
 </template>
