@@ -21,6 +21,9 @@ const props = defineProps({
 const editingUserId = ref(null)
 const { tr, locale } = useLocale()
 const onlineThresholdMs = 5 * 60 * 1000
+const userSearch = ref('')
+const profileFilter = ref('')
+const scopeFilter = ref('')
 
 const form = useForm({
     name: '',
@@ -184,6 +187,57 @@ const scopeLabel = (user) => {
 
     return '-'
 }
+
+const profileLabel = (profileType) => {
+    const labels = {
+        club_director: tr('Director de club', 'Club director'),
+        treasurer: tr('Tesorero', 'Treasurer'),
+        club_personal: tr('Personal de club', 'Club staff'),
+        parent: tr('Padre/Madre', 'Parent'),
+        district_pastor: tr('Pastor distrital', 'District pastor'),
+        district_secretary: tr('Secretario distrital', 'District secretary'),
+        association_youth_director: tr('Dir. de jóvenes asociación', 'Association youth director'),
+        union_youth_director: tr('Dir. de jóvenes unión', 'Union youth director'),
+        superadmin: 'Superadmin',
+    }
+
+    return labels[profileType] || profileType || '-'
+}
+
+const scopeTypeLabel = (scopeType) => {
+    const labels = {
+        global: tr('Global', 'Global'),
+        club: tr('Club', 'Club'),
+        church: tr('Iglesia', 'Church'),
+        district: tr('Distrito', 'District'),
+        association: tr('Asociación', 'Association'),
+        union: tr('Unión', 'Union'),
+    }
+
+    return labels[scopeType] || scopeType || '-'
+}
+
+const profileFilterOptions = computed(() => [...new Set(props.users.map((user) => user.profile_type).filter(Boolean))]
+    .sort()
+    .map((value) => ({ value, label: profileLabel(value) })))
+
+const scopeFilterOptions = computed(() => [...new Set(props.users.map((user) => user.scope_type).filter(Boolean))]
+    .sort()
+    .map((value) => ({ value, label: scopeTypeLabel(value) })))
+
+const filteredUsers = computed(() => {
+    const search = userSearch.value.trim().toLocaleLowerCase()
+
+    return props.users.filter((user) => {
+        const matchesSearch = !search || [user.name, user.email]
+            .filter(Boolean)
+            .some((value) => String(value).toLocaleLowerCase().includes(search))
+
+        return matchesSearch
+            && (!profileFilter.value || user.profile_type === profileFilter.value)
+            && (!scopeFilter.value || user.scope_type === scopeFilter.value)
+    })
+})
 
 const formatDateTime = (value) => {
     if (!value) return '—'
@@ -376,8 +430,38 @@ const deleteUser = (user) => {
                     {{ tr('No hay usuarios.', 'There are no users.') }}
                 </div>
 
-                <div v-else class="space-y-3 md:hidden">
-                    <article v-for="user in props.users" :key="`mobile-${user.id}`" class="rounded-lg border border-gray-200 p-4">
+                <div v-else>
+                    <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div>
+                            <InputLabel for="user-search" :value="tr('Buscar por nombre o correo', 'Search by name or email')" />
+                            <TextInput id="user-search" v-model="userSearch" type="search" class="mt-1 block w-full" :placeholder="tr('Nombre o correo', 'Name or email')" />
+                        </div>
+                        <div>
+                            <InputLabel for="user-profile-filter" :value="tr('Perfil', 'Profile')" />
+                            <select id="user-profile-filter" v-model="profileFilter" class="mt-1 block w-full rounded-md border-gray-300">
+                                <option value="">{{ tr('Todos los perfiles', 'All profiles') }}</option>
+                                <option v-for="profile in profileFilterOptions" :key="profile.value" :value="profile.value">{{ profile.label }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <InputLabel for="user-scope-filter" :value="tr('Alcance', 'Scope')" />
+                            <select id="user-scope-filter" v-model="scopeFilter" class="mt-1 block w-full rounded-md border-gray-300">
+                                <option value="">{{ tr('Todos los alcances', 'All scopes') }}</option>
+                                <option v-for="scope in scopeFilterOptions" :key="scope.value" :value="scope.value">{{ scope.label }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <p class="mb-3 text-sm text-gray-500">
+                        {{ filteredUsers.length }} {{ tr('usuario(s) encontrado(s)', 'user(s) found') }}
+                    </p>
+
+                    <div v-if="filteredUsers.length === 0" class="rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                        {{ tr('No hay usuarios que coincidan con los filtros.', 'No users match the filters.') }}
+                    </div>
+
+                    <div v-else class="space-y-3 md:hidden">
+                    <article v-for="user in filteredUsers" :key="`mobile-${user.id}`" class="rounded-lg border border-gray-200 p-4">
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
                                 <h3 class="break-words font-semibold text-gray-900">{{ user.name }}</h3>
@@ -406,7 +490,7 @@ const deleteUser = (user) => {
                     </article>
                 </div>
 
-                <div v-if="props.users.length" class="hidden overflow-x-auto md:block">
+                    <div class="hidden overflow-x-auto md:block">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-700">
                             <tr>
@@ -419,7 +503,7 @@ const deleteUser = (user) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="user in props.users" :key="user.id" class="border-t">
+                            <tr v-for="user in filteredUsers" :key="user.id" class="border-t">
                                 <td class="px-3 py-2">{{ user.name }}</td>
                                 <td class="px-3 py-2">
                                     <div>{{ user.email }}</div>
@@ -446,6 +530,7 @@ const deleteUser = (user) => {
                             </tr>
                         </tbody>
                     </table>
+                </div>
                 </div>
             </div>
         </div>
