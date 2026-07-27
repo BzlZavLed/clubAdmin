@@ -118,7 +118,7 @@ class ClubSettingsController extends Controller
         $this->resolveAllowedClub($request, (int) $club->id);
 
         $qrCode = new QrCode(
-            route('register', ['profile_type' => 'parent', 'club_id' => $club->id]),
+            route('parent.register'),
             size: 520,
             margin: 16,
         );
