@@ -337,6 +337,10 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
 // 🟣 Parent-Only Routes (Authenticated)
 // ---------------------------------
 Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
+    Route::get('/parent-enrollment', fn() => Inertia::render('Parent/Apply', [
+        'auth_user' => auth()->user(),
+        'clubs' => Club::all(),
+    ]))->name('parent.enrollment');
     Route::get('/parent/dashboard', fn(\Illuminate\Http\Request $request) => Inertia::render('Parent/Dashboard', [
         'auth_user' => auth()->user(),
         'parent_setup' => SuperAdminParentPortalController::dashboardSetupPayload($request),
@@ -835,6 +839,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::get('/club-director/church/invite-code', [\App\Http\Controllers\ChurchInviteCodeController::class, 'show'])->name('club.director.church.invite-code');
     Route::post('/club-director/church/invite-code/regenerate', [\App\Http\Controllers\ChurchInviteCodeController::class, 'regenerate'])->name('club.director.church.invite-code.regenerate');
     Route::get('/club-director/settings', [ClubSettingsController::class, 'index'])->name('club.settings');
+    Route::get('/club-director/settings/enrollment-session/display', [ClubSettingsController::class, 'enrollmentSessionPage'])->name('club.settings.enrollment.display');
     Route::post('/club-director/settings/logo', [ClubSettingsController::class, 'uploadLogo'])->name('club.settings.logo');
     Route::delete('/club-director/settings/logo', [ClubSettingsController::class, 'removeLogo'])->name('club.settings.logo.destroy');
     Route::patch('/club-director/settings/contact', [ClubSettingsController::class, 'updateContact'])->name('club.settings.contact');

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import { XMarkIcon } from '@heroicons/vue/24/outline'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
@@ -332,7 +332,6 @@ async function saveConfig() {
 
 onMounted(() => {
     loadBankInfo()
-    enrollmentPollingTimer = window.setInterval(refreshEnrollmentSession, 5000)
 })
 
 onBeforeUnmount(() => {
@@ -345,6 +344,16 @@ onBeforeUnmount(() => {
         <template #title>{{ tr('Configuracion', 'Settings') }}</template>
 
         <div class="space-y-6">
+            <div class="flex flex-col gap-3 rounded-lg border bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">{{ tr('Sesión de inscripciones', 'Enrollment session') }}</h2>
+                    <p class="text-sm text-gray-600">{{ tr('Abre la pantalla de proyección con el QR, código de iglesia y solicitudes en vivo.', 'Open the projection screen with the QR code, church code, and live requests.') }}</p>
+                </div>
+                <Link :href="route('club.settings.enrollment.display', { club_id: selectedClubId })" class="rounded bg-slate-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-slate-800">
+                    {{ tr('Abrir sesión', 'Open session') }}
+                </Link>
+            </div>
+            <template v-if="false">
             <section ref="enrollmentPanel" class="bg-slate-950 p-5 text-white shadow-sm sm:p-8">
                 <div class="mx-auto max-w-5xl space-y-6">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -429,6 +438,7 @@ onBeforeUnmount(() => {
                     </template>
                 </div>
             </section>
+            </template>
 
             <div class="bg-white shadow-sm rounded-lg p-5 border space-y-4">
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">

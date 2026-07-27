@@ -61,6 +61,24 @@ class ClubSettingsController extends Controller
         ]);
     }
 
+    public function enrollmentSessionPage(Request $request)
+    {
+        $user = $request->user();
+        $clubs = Club::whereIn('id', ClubHelper::clubIdsForUser($user))
+            ->orderBy('club_name')
+            ->get(['id', 'club_name', 'church_id']);
+        $selectedClubId = $this->resolveSelectedClubId($request, $clubs);
+
+        return Inertia::render('ClubDirector/EnrollmentSession', [
+            'auth_user' => $user,
+            'clubs' => $clubs,
+            'selected_club_id' => $selectedClubId,
+            'enrollment_session' => $selectedClubId
+                ? $this->enrollmentSessionPayload($clubs->firstWhere('id', (int) $selectedClubId), $user)
+                : null,
+        ]);
+    }
+
     public function approveEnrollmentParent(Request $request, User $user)
     {
         $payload = $request->validate(['club_id' => ['required', 'integer']]);

@@ -18,7 +18,7 @@ const { t } = useLocale()
 
 const menuItems = computed(() => [
     { name: t('dashboard'), href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
-    { name: t('application'), href: '/parent/apply', route: 'parent.apply', icon: ClipboardDocumentListIcon },
+    { name: t('application'), href: '/parent-enrollment', route: 'parent.enrollment', icon: ClipboardDocumentListIcon },
     { name: t('children'), href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
     { name: t('investiture_folder'), href: '/parent/carpeta-investidura', route: 'parent.carpeta-investidura', icon: FolderOpenIcon },
     { name: t('payments'), href: '/parent/payments', route: 'parent.payments.index', icon: CreditCardIcon },

@@ -111,5 +111,11 @@ class RegistrationTest extends TestCase
             'id' => $parent->id,
             'status' => 'active',
         ]);
+
+        auth()->logout();
+        $this->post('/login', [
+            'email' => 'parent@example.com',
+            'password' => 'password',
+        ])->assertRedirect('/parent-enrollment');
     }
 }

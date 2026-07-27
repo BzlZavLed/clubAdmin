@@ -550,6 +550,7 @@ class RegisteredUserController extends Controller
         return match ($role) {
             'club_director' => '/club-director/dashboard',
             'club_personal' => '/club-personal/dashboard',
+            'parent' => '/parent-enrollment',
             'district_pastor', 'district_secretary' => '/district/dashboard',
             'association_youth_director' => '/association/dashboard',
             'union_youth_director' => '/union/dashboard',
