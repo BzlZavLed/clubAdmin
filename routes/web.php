@@ -840,6 +840,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::patch('/club-director/settings/contact', [ClubSettingsController::class, 'updateContact'])->name('club.settings.contact');
     Route::post('/club-director/settings/catalog', [ClubSettingsController::class, 'fetchCatalog'])->name('club.settings.catalog');
     Route::post('/club-director/settings/save', [ClubSettingsController::class, 'saveConfig'])->name('club.settings.save');
+    Route::get('/club-director/settings/enrollment-session', [ClubSettingsController::class, 'enrollmentSession'])->name('club.settings.enrollment-session');
+    Route::get('/club-director/settings/enrollment-session/qr/{club}', [ClubSettingsController::class, 'enrollmentQr'])->name('club.settings.enrollment.qr');
+    Route::post('/club-director/settings/enrollment-session/parents/{user}/approve', [ClubSettingsController::class, 'approveEnrollmentParent'])->name('club.settings.enrollment.parents.approve');
+    Route::post('/club-director/settings/enrollment-session/parents/{user}/reject', [ClubSettingsController::class, 'rejectEnrollmentParent'])->name('club.settings.enrollment.parents.reject');
 
     Route::get('/club-director/assistance-report', [AssistanceReportController::class, 'directorIndex'])
         ->name('club.director.assistance_report');

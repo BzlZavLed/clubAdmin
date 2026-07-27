@@ -5,7 +5,7 @@ import PrimaryButton from "@/Components/PrimaryButton.vue";
 import TextInput from "@/Components/TextInput.vue";
 import PathfinderLayout from "@/Layouts/AuthLayout.vue";
 import { useLocale } from "@/Composables/useLocale";
-import { Head, Link, useForm } from "@inertiajs/vue3";
+import { Head, Link, useForm, usePage } from "@inertiajs/vue3";
 import { defineProps, computed, watch } from "vue";
 
 const props = defineProps({
@@ -13,13 +13,17 @@ const props = defineProps({
     clubs: Array,
     subRoles: Array,
 });
+const page = usePage()
+const registrationParams = new URLSearchParams(page.url.split('?')[1] || '')
+const requestedProfileType = registrationParams.get('profile_type') === 'parent' ? 'parent' : ''
+const requestedClubId = registrationParams.get('club_id') || ''
 
 const form = useForm({
     name: "",
     email: "",
     password: "",
     password_confirmation: "",
-    profile_type: "",
+    profile_type: requestedProfileType,
     sub_role: "",
     church_id: '',
     church_name: '',
@@ -58,13 +62,15 @@ watch(
     (newId) => {
         const selected = props.churches.find(church => church.id === Number(newId))
         form.church_name = selected ? selected.church_name : ''
+        form.club_id = filteredClubs.value.some(club => Number(club.id) === Number(requestedClubId))
+            ? requestedClubId
+            : ''
         const opts = profileTypeOptions.value
         if (opts.length === 1) {
             form.profile_type = opts[0].value
         } else if (!opts.find(o => o.value === form.profile_type)) {
             form.profile_type = ''
         }
-        form.club_id = ''
     },
     { immediate: true }
 )

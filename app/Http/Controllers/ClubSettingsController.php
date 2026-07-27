@@ -4,9 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\ClubIntegrationConfig;
+use App\Models\ChurchInviteCode;
+use App\Models\Member;
+use App\Models\User;
 use App\Services\ClubLogoService;
 use App\Support\ClubHelper;
+use Endroid\QrCode\QrCode;
+use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -18,7 +24,7 @@ class ClubSettingsController extends Controller
     {
         $user = $request->user();
         $clubIds = ClubHelper::clubIdsForUser($user);
-        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'logo_path', 'club_email']);
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'church_id', 'logo_path', 'club_email']);
         $selectedClubId = $this->resolveSelectedClubId($request, $clubs);
 
         if ($selectedClubId) {
@@ -37,9 +43,70 @@ class ClubSettingsController extends Controller
             'integration_config' => $config,
             'club_logo_url' => $clubLogoService->url($clubs->firstWhere('id', (int) $selectedClubId)),
             'selected_club' => $selectedClubId
-                ? $clubs->firstWhere('id', (int) $selectedClubId)?->only(['id', 'club_name', 'club_email'])
+                ? $clubs->firstWhere('id', (int) $selectedClubId)?->only(['id', 'club_name', 'church_id', 'club_email'])
+                : null,
+            'enrollment_session' => $selectedClubId
+                ? $this->enrollmentSessionPayload($clubs->firstWhere('id', (int) $selectedClubId), $user)
                 : null,
         ]);
+    }
+
+    public function enrollmentSession(Request $request)
+    {
+        $payload = $request->validate(['club_id' => ['required', 'integer']]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+
+        return response()->json([
+            'data' => $this->enrollmentSessionPayload($club, $request->user()),
+        ]);
+    }
+
+    public function approveEnrollmentParent(Request $request, User $user)
+    {
+        $payload = $request->validate(['club_id' => ['required', 'integer']]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $this->assertPendingParentForClub($user, $club);
+
+        DB::transaction(function () use ($user, $club) {
+            $user->update(['status' => 'active']);
+            DB::table('club_user')->updateOrInsert(
+                ['user_id' => $user->id, 'club_id' => $club->id],
+                ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+            );
+        });
+
+        return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
+    }
+
+    public function rejectEnrollmentParent(Request $request, User $user)
+    {
+        $payload = $request->validate(['club_id' => ['required', 'integer']]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $this->assertPendingParentForClub($user, $club);
+
+        DB::transaction(function () use ($user, $club) {
+            $user->update(['status' => 'rejected']);
+            DB::table('club_user')
+                ->where('user_id', $user->id)
+                ->where('club_id', $club->id)
+                ->update(['status' => 'rejected', 'updated_at' => now()]);
+        });
+
+        return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
+    }
+
+    public function enrollmentQr(Request $request, Club $club)
+    {
+        $this->resolveAllowedClub($request, (int) $club->id);
+
+        $qrCode = new QrCode(
+            route('register', ['profile_type' => 'parent', 'club_id' => $club->id]),
+            size: 520,
+            margin: 16,
+        );
+        $result = (new PngWriter())->write($qrCode);
+
+        return response($result->getString(), 200, ['Content-Type' => $result->getMimeType()]);
     }
 
     public function updateContact(Request $request)
@@ -150,6 +217,74 @@ class ClubSettingsController extends Controller
         }
 
         return response()->json($response->json());
+    }
+
+    private function enrollmentSessionPayload(Club $club, User $actor): array
+    {
+        $invite = ChurchInviteCode::firstOrCreate(
+            ['church_id' => $club->church_id],
+            [
+                'code' => ChurchInviteCode::generateCode(),
+                'status' => 'active',
+                'created_by' => $actor->id,
+            ]
+        );
+
+        $parents = User::query()
+            ->where('profile_type', 'parent')
+            ->where('club_id', $club->id)
+            ->whereIn('status', ['pending', 'active'])
+            ->orderBy('created_at')
+            ->get(['id', 'name', 'email', 'status', 'created_at']);
+        $childrenByParent = Member::query()
+            ->where('club_id', $club->id)
+            ->whereIn('parent_id', $parents->pluck('id'))
+            ->with(['club:id,club_name', 'class:id,class_name'])
+            ->get()
+            ->groupBy('parent_id');
+
+        $formatParent = function (User $parent) use ($childrenByParent): array {
+            return [
+                'id' => $parent->id,
+                'name' => $parent->name,
+                'email' => $parent->email,
+                'status' => $parent->status,
+                'requested_at' => $parent->created_at?->toIso8601String(),
+                'children' => ($childrenByParent->get($parent->id, collect()))
+                    ->map(fn (Member $member) => [
+                        'id' => $member->id,
+                        'name' => ClubHelper::memberDetail($member)['name'] ?? '—',
+                        'club_name' => $member->club?->club_name,
+                        'class_name' => $member->class?->class_name,
+                    ])
+                    ->values(),
+            ];
+        };
+
+        return [
+            'club' => $club->only(['id', 'club_name', 'church_id']),
+            'registration_url' => route('register', ['profile_type' => 'parent', 'club_id' => $club->id]),
+            'qr_url' => route('club.settings.enrollment.qr', ['club' => $club->id]),
+            'church_invite_code' => $invite->code,
+            'pending_parents' => $parents->where('status', 'pending')->map($formatParent)->values(),
+            'enrolled_parents' => $parents
+                ->where('status', 'active')
+                ->map($formatParent)
+                ->filter(fn (array $parent) => !empty($parent['children']))
+                ->values(),
+            'refreshed_at' => now()->toIso8601String(),
+        ];
+    }
+
+    private function assertPendingParentForClub(User $user, Club $club): void
+    {
+        abort_unless(
+            $user->profile_type === 'parent'
+                && (int) $user->club_id === (int) $club->id
+                && $user->status === 'pending',
+            422,
+            'This parent request is no longer pending for the selected club.'
+        );
     }
 
     private function resolveAllowedClub(Request $request, int $clubId): Club
