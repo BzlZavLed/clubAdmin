@@ -23,6 +23,7 @@ import {
     createFinanceEngineConcept,
     createFinanceEngineExpense,
     createFinanceEngineIncome,
+    deletePaymentConcept,
     fetchFinanceEngineCashbox,
     approveParentPaymentTransfer,
     reimburseFinanceEngineExpense,
@@ -94,6 +95,7 @@ const showConceptModal = ref(false)
 const showConceptManagerModal = ref(false)
 const conceptModalSource = ref('income')
 const savingConcept = ref(false)
+const deletingConceptId = ref(null)
 const showReimbursementOverflowModal = ref(false)
 const tutorialActive = ref(false)
 const tutorialStepIndex = ref(0)
@@ -2036,6 +2038,26 @@ const openConceptManager = () => {
 
 const closeConceptManager = () => {
     showConceptManagerModal.value = false
+}
+
+const deleteConcept = async (concept) => {
+    if (!selectedClubId.value || !concept?.id || deletingConceptId.value) return
+    if (!confirm(tr(
+        `¿Eliminar el concepto "${concept.concept}" para todos dentro de su alcance? Los pagos ya guardados se conservarán.`,
+        `Delete the "${concept.concept}" concept for everyone in its scope? Existing saved payments will be preserved.`
+    ))) return
+
+    deletingConceptId.value = concept.id
+    try {
+        await deletePaymentConcept(selectedClubId.value, concept.id)
+        await loadCaja(selectedClubId.value, true)
+        showToast(tr('Concepto eliminado. Los registros contables existentes se conservaron.', 'Concept deleted. Existing accounting records were preserved.'), 'success')
+    } catch (error) {
+        console.error(error)
+        showToast(error?.response?.data?.message || tr('No se pudo eliminar el concepto.', 'Could not delete the concept.'), 'error')
+    } finally {
+        deletingConceptId.value = null
+    }
 }
 
 const openConceptModal = (source = 'income') => {
@@ -4642,7 +4664,18 @@ onBeforeUnmount(() => {
                                     </template>
                                 </p>
                             </div>
-                            <strong class="shrink-0 text-base text-gray-950">{{ formatMoney(concept.amount) }}</strong>
+                            <div class="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end">
+                                <strong class="text-base text-gray-950">{{ formatMoney(concept.amount) }}</strong>
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:text-red-900 disabled:opacity-50"
+                                    :disabled="deletingConceptId === concept.id"
+                                    @click="deleteConcept(concept)"
+                                >
+                                    <TrashIcon class="h-4 w-4" />
+                                    {{ deletingConceptId === concept.id ? tr('Eliminando...', 'Deleting...') : tr('Eliminar', 'Delete') }}
+                                </button>
+                            </div>
                         </div>
                     </article>
                 </div>

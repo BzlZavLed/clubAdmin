@@ -1223,11 +1223,13 @@ class ClubController extends Controller
 
         DB::transaction(function () use ($paymentConcept) {
             $paymentConcept->update(['status' => 'inactive']);
-            $paymentConcept->scopes()->update(['deleted_on' => now()]);
-
+            $paymentConcept->scopes()->delete();
+            // Keep the concept row (and all payments linked to it) for the
+            // accounting trail, but remove it from every future scope.
+            $paymentConcept->delete();
         });
 
-        return response()->json(['message' => 'Deleted (soft)']);
+        return response()->json(['message' => 'Concept retired. Existing accounting records were preserved.']);
     }
 
     /* ---------- Helpers ---------- */
