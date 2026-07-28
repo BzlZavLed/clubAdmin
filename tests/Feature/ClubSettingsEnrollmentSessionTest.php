@@ -156,5 +156,23 @@ class ClubSettingsEnrollmentSessionTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('data.assisted_members.0.name', 'Independent Child');
+
+        $this->actingAs($director)
+            ->postJson(route('club.settings.enrollment.assisted.store'), [
+                'club_id' => $club->id,
+                'enrollment_type' => 'staff_account',
+                'staff' => [
+                    'name' => 'Assisted Staff',
+                    'email' => 'assisted-staff@example.com',
+                    'password' => 'password123',
+                    'password_confirmation' => 'password123',
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.pending_staff.0.name', 'Assisted Staff');
+
+        $staffUser = User::query()->where('email', 'assisted-staff@example.com')->firstOrFail();
+        $this->assertDatabaseHas('users', ['id' => $staffUser->id, 'status' => 'pending', 'profile_type' => 'club_personal']);
+        $this->assertDatabaseHas('club_user', ['user_id' => $staffUser->id, 'club_id' => $club->id, 'status' => 'pending']);
     }
 }

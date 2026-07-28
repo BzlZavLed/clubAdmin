@@ -219,14 +219,12 @@ class ClubSettingsController extends Controller
                     'church_id' => $club->church_id,
                     'church_name' => $club->church_name,
                     'club_id' => $club->id,
-                    'status' => 'active',
+                    'status' => 'pending',
                 ])->save();
                 DB::table('club_user')->updateOrInsert(
                     ['user_id' => $staffUser->id, 'club_id' => $club->id],
-                    ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+                    ['status' => 'pending', 'created_at' => now(), 'updated_at' => now()]
                 );
-                $staff = $this->createEnrollmentStaffRecord($staffUser, $club);
-                $staff->update(['status' => 'active']);
             });
 
             return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
