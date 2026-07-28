@@ -7,6 +7,7 @@ use App\Models\ClubIntegrationConfig;
 use App\Models\ChurchInviteCode;
 use App\Models\ClubClass;
 use App\Models\Member;
+use App\Models\ParentMember;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
 use App\Models\StaffMasterGuide;
@@ -20,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 use Log;
 
@@ -173,6 +175,78 @@ class ClubSettingsController extends Controller
                 ['user_id' => $user->id, 'club_id' => $club->id],
                 ['status' => 'rejected', 'created_at' => now(), 'updated_at' => now()]
             );
+        });
+
+        return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
+    }
+
+    public function assistedEnrollment(Request $request)
+    {
+        $payload = $request->validate([
+            'club_id' => ['required', 'integer'],
+            'enrollment_type' => ['required', 'in:member_only,parent_and_member'],
+            'parent' => ['nullable', 'array'],
+            'parent.name' => ['required_if:enrollment_type,parent_and_member', 'string', 'max:255'],
+            'parent.email' => ['required_if:enrollment_type,parent_and_member', 'email', 'max:255'],
+            'parent.phone' => ['nullable', 'string', 'max:50'],
+            'parent.password' => ['required_if:enrollment_type,parent_and_member', 'string', 'min:8', 'confirmed'],
+            'member' => ['required', 'array'],
+        ]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $parent = null;
+
+        DB::transaction(function () use ($request, $payload, $club, &$parent) {
+            $memberData = $payload['member'];
+            $memberData['club_id'] = $club->id;
+
+            if ($payload['enrollment_type'] === 'parent_and_member') {
+                $parentData = $payload['parent'];
+                $existing = User::query()->where('email', $parentData['email'])->first();
+                if ($existing && !($existing->profile_type === 'parent' && (int) $existing->club_id === (int) $club->id)) {
+                    abort(422, 'An account with this email already belongs to another profile or club.');
+                }
+
+                $parent = $existing ?: new User();
+                $parent->forceFill([
+                    'name' => $parentData['name'],
+                    'email' => $parentData['email'],
+                    'password' => Hash::make($parentData['password']),
+                    'profile_type' => 'parent',
+                    'role_key' => 'parent',
+                    'scope_type' => 'club',
+                    'scope_id' => $club->id,
+                    'church_id' => $club->church_id,
+                    'church_name' => $club->church_name,
+                    'club_id' => $club->id,
+                    'status' => 'active',
+                ])->save();
+                DB::table('club_user')->updateOrInsert(
+                    ['user_id' => $parent->id, 'club_id' => $club->id],
+                    ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+                );
+                $memberData['parent_id'] = $parent->id;
+                $memberData['parent_name'] = $parentData['name'];
+                $memberData['parent_cell'] = $parentData['phone'] ?? ($memberData['parent_cell'] ?? '');
+                $memberData['email_address'] = $parentData['email'];
+            }
+
+            $memberRequest = Request::create('/members', 'POST', $memberData);
+            $memberRequest->setUserResolver(fn () => $request->user());
+            app(MemberAdventurerController::class)->store($memberRequest);
+
+            if ($parent) {
+                $member = Member::query()
+                    ->where('club_id', $club->id)
+                    ->where('parent_id', $parent->id)
+                    ->latest('id')
+                    ->firstOrFail();
+                ParentMember::firstOrCreate([
+                    'user_id' => $parent->id,
+                    'member_id' => $member->id,
+                    'club_id' => $club->id,
+                    'church_id' => $club->church_id,
+                ]);
+            }
         });
 
         return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);

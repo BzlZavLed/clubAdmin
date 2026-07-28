@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Church;
 use App\Models\Club;
 use App\Models\ClubClass;
+use App\Models\Member;
+use App\Models\ParentMember;
 use App\Models\Staff;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -114,5 +116,27 @@ class ClubSettingsEnrollmentSessionTest extends TestCase
         $staff = Staff::query()->where('user_id', $staffUser->id)->where('club_id', $club->id)->firstOrFail();
         $this->assertSame($class->id, $staff->assigned_class);
         $this->assertDatabaseHas('class_staff', ['staff_id' => $staff->id, 'club_class_id' => $class->id]);
+    }
+
+    public function test_director_can_create_an_active_parent_and_member_from_the_enrollment_session(): void
+    {
+        $church = Church::create(['church_name' => 'Assisted Enrollment Church', 'email' => 'assisted@example.com']);
+        $director = User::factory()->create(['profile_type' => 'club_director', 'church_id' => $church->id, 'church_name' => $church->church_name, 'status' => 'active']);
+        $club = Club::create(['user_id' => $director->id, 'club_name' => 'Assisted Enrollment Club', 'church_id' => $church->id, 'church_name' => $church->church_name, 'director_name' => $director->name, 'creation_date' => now()->toDateString(), 'club_type' => 'adventurers', 'status' => 'active']);
+        $director->clubs()->attach($club->id, ['status' => 'active']);
+
+        $this->actingAs($director)
+            ->postJson(route('club.settings.enrollment.assisted.store'), [
+                'club_id' => $club->id,
+                'enrollment_type' => 'parent_and_member',
+                'parent' => ['name' => 'Assisted Parent', 'email' => 'assisted-parent@example.com', 'phone' => '555-111-2222', 'password' => 'password123', 'password_confirmation' => 'password123'],
+                'member' => ['applicant_name' => 'Assisted Child', 'birthdate' => '2018-01-01', 'age' => 8, 'grade' => '2', 'mailing_address' => '1 Main Street', 'home_address' => '1 Main Street', 'cell_number' => '555-222-3333', 'emergency_contact' => 'Emergency Contact', 'signature' => 'Assisted Parent'],
+            ])
+            ->assertOk();
+
+        $parent = User::query()->where('email', 'assisted-parent@example.com')->firstOrFail();
+        $member = Member::query()->where('club_id', $club->id)->where('parent_id', $parent->id)->firstOrFail();
+        $this->assertSame('active', $parent->status);
+        $this->assertDatabaseHas('parent_members', ['user_id' => $parent->id, 'member_id' => $member->id]);
     }
 }

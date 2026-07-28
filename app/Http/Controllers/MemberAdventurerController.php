@@ -138,6 +138,20 @@ class MemberAdventurerController extends Controller
         $club = Club::findOrFail($request->input('club_id'));
         $clubType = strtolower($club->club_type ?? '');
         $parentId = auth()->user()?->profile_type === 'parent' && $clubType !== 'master_guide' ? auth()->id() : null;
+        if (!$parentId && $clubType !== 'master_guide' && $request->filled('parent_id')) {
+            abort_unless(
+                in_array(auth()->user()?->profile_type, ['club_director', 'superadmin'], true)
+                    && ClubHelper::clubIdsForUser(auth()->user())->contains((int) $club->id),
+                403
+            );
+            $parentId = User::query()
+                ->whereKey((int) $request->input('parent_id'))
+                ->where('profile_type', 'parent')
+                ->where('club_id', $club->id)
+                ->where('status', 'active')
+                ->value('id');
+            abort_unless($parentId, 422, 'Selected parent account is not active for this club.');
+        }
         $directorName = $this->resolveClubDirectorName($club);
 
         if ($clubType === 'master_guide') {

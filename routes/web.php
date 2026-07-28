@@ -851,6 +851,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/club-director/settings/enrollment-session/parents/{user}/reject', [ClubSettingsController::class, 'rejectEnrollmentParent'])->name('club.settings.enrollment.parents.reject');
     Route::post('/club-director/settings/enrollment-session/staff/{user}/approve', [ClubSettingsController::class, 'approveEnrollmentStaff'])->name('club.settings.enrollment.staff.approve');
     Route::post('/club-director/settings/enrollment-session/staff/{user}/reject', [ClubSettingsController::class, 'rejectEnrollmentStaff'])->name('club.settings.enrollment.staff.reject');
+    Route::post('/club-director/settings/enrollment-session/assisted-enrollment', [ClubSettingsController::class, 'assistedEnrollment'])->name('club.settings.enrollment.assisted.store');
 
     Route::get('/club-director/assistance-report', [AssistanceReportController::class, 'directorIndex'])
         ->name('club.director.assistance_report');
