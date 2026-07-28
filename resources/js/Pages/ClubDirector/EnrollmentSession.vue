@@ -22,6 +22,7 @@ const enrollmentRefreshing = ref(false)
 const enrollmentActionId = ref(null)
 const staffAssignments = ref({})
 const staffTreasurers = ref({})
+const childClassAssignmentId = ref(null)
 let pollingTimer = null
 
 watch(selectedClubId, (clubId) => {
@@ -82,6 +83,28 @@ async function updateEnrollmentStaff(staff, action) {
         showToast(error?.response?.data?.message || tr('No se pudo actualizar la solicitud', 'Could not update the request'), 'error')
     } finally {
         enrollmentActionId.value = null
+    }
+}
+
+async function assignChildClass(child, event) {
+    const classId = event.target.value
+    if (!classId) return
+
+    childClassAssignmentId.value = child.id
+    try {
+        await axios.post(route('members.assign'), {
+            member_id: child.id,
+            club_class_id: classId,
+            role: 'student',
+            assigned_at: new Date().toISOString().slice(0, 10),
+        })
+        child.class_name = enrollmentSession.value.classes.find((clubClass) => String(clubClass.id) === String(classId))?.name || null
+        showToast(tr('Clase asignada', 'Class assigned'))
+    } catch (error) {
+        event.target.value = ''
+        showToast(error?.response?.data?.message || tr('No se pudo asignar la clase', 'Could not assign the class'), 'error')
+    } finally {
+        childClassAssignmentId.value = null
     }
 }
 
@@ -172,7 +195,7 @@ onBeforeUnmount(() => {
                     <h2 class="text-lg font-bold">{{ tr('Inscripciones completadas', 'Completed enrollments') }}</h2>
                     <p class="text-sm text-slate-500">{{ tr('Cada padre aprobado aparece con los hijos registrados en este club.', 'Each approved parent appears with children registered in this club.') }}</p>
                     <div v-if="!enrollmentSession.enrolled_parents?.length" class="mt-4 rounded border border-dashed p-4 text-sm text-slate-500">{{ tr('Aún no hay hijos registrados.', 'There are no registered children yet.') }}</div>
-                    <div v-else class="mt-4 space-y-3"><div v-for="parent in enrollmentSession.enrolled_parents" :key="parent.id" class="rounded border border-slate-200 p-4"><div class="font-semibold">{{ parent.name }} <span class="ml-2 font-normal text-slate-500">{{ parent.email }}</span></div><div class="mt-3 space-y-2 border-l-2 border-blue-200 pl-4"><div v-for="child in parent.children" :key="child.id" class="text-sm"><span class="font-medium">{{ child.name }}</span><span class="text-slate-500"> · {{ child.age ? `${child.age} ${tr('años', 'years')}` : tr('Edad no registrada', 'Age not recorded') }} · {{ child.club_name || enrollmentSession.club?.club_name }} · {{ child.class_name || tr('Sin clase asignada', 'No class assigned') }}</span></div></div></div></div>
+                    <div v-else class="mt-4 space-y-3"><div v-for="parent in enrollmentSession.enrolled_parents" :key="parent.id" class="rounded border border-slate-200 p-4"><div class="font-semibold">{{ parent.name }} <span class="ml-2 font-normal text-slate-500">{{ parent.email }}</span></div><div class="mt-3 space-y-2 border-l-2 border-blue-200 pl-4"><div v-for="child in parent.children" :key="child.id" class="flex flex-wrap items-center gap-2 text-sm"><span class="font-medium">{{ child.name }}</span><span class="text-slate-500"> · {{ child.age ? `${child.age} ${tr('años', 'years')}` : tr('Edad no registrada', 'Age not recorded') }} · {{ child.club_name || enrollmentSession.club?.club_name }} · {{ child.class_name || tr('Sin clase asignada', 'No class assigned') }}</span><select v-if="!child.class_name && child.can_assign_class" :disabled="childClassAssignmentId === child.id" class="rounded border border-blue-300 bg-white px-2 py-1 text-sm text-blue-800 disabled:opacity-60" @change="assignChildClass(child, $event)"><option value="">{{ tr('Asignar clase…', 'Assign class…') }}</option><option v-for="clubClass in enrollmentSession.classes" :key="clubClass.id" :value="clubClass.id">{{ clubClass.name }}</option></select></div></div></div></div>
                 </section>
             </template>
         </div>

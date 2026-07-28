@@ -352,6 +352,7 @@ class ClubSettingsController extends Controller
                             'age' => $detail['age'] ?? null,
                             'club_name' => $member->club?->club_name,
                             'class_name' => $member->class?->class_name,
+                            'can_assign_class' => in_array($member->type, ['adventurers', 'pathfinders', 'temp_pathfinder'], true),
                         ];
                     })
                     ->values(),
