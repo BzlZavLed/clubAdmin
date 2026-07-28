@@ -390,9 +390,18 @@ class ClubSettingsController extends Controller
             ]
         );
 
+        $linkedParentIds = ParentMember::query()
+            ->where('club_id', $club->id)
+            ->pluck('user_id');
         $parents = User::query()
             ->where('profile_type', 'parent')
-            ->where('club_id', $club->id)
+            ->where(function ($query) use ($club, $linkedParentIds) {
+                $query->where('club_id', $club->id);
+
+                if ($linkedParentIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $linkedParentIds);
+                }
+            })
             ->whereIn('status', ['pending', 'active'])
             ->orderBy('created_at')
             ->get(['id', 'name', 'email', 'status', 'created_at']);
@@ -408,6 +417,12 @@ class ClubSettingsController extends Controller
             ->with(['club:id,club_name', 'class:id,class_name'])
             ->get()
             ->groupBy('parent_id');
+        $assistedMembers = Member::query()
+            ->where('club_id', $club->id)
+            ->whereNull('parent_id')
+            ->with(['club:id,club_name', 'class:id,class_name'])
+            ->latest('id')
+            ->get();
 
         $formatParent = function (User $parent) use ($childrenByParent): array {
             return [
@@ -458,6 +473,20 @@ class ClubSettingsController extends Controller
                 ->where('status', 'active')
                 ->map($formatParent)
                 ->filter(fn (array $parent) => !empty($parent['children']))
+                ->values(),
+            'assisted_members' => $assistedMembers
+                ->map(function (Member $member) {
+                    $detail = ClubHelper::memberDetail($member);
+
+                    return [
+                        'id' => $member->id,
+                        'name' => $detail['name'] ?? '—',
+                        'age' => $detail['age'] ?? null,
+                        'club_name' => $member->club?->club_name,
+                        'class_name' => $member->class?->class_name,
+                        'can_assign_class' => in_array($member->type, ['adventurers', 'pathfinders', 'temp_pathfinder'], true),
+                    ];
+                })
                 ->values(),
             'refreshed_at' => now()->toIso8601String(),
         ];

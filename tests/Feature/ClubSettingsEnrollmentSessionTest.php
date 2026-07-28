@@ -132,11 +132,29 @@ class ClubSettingsEnrollmentSessionTest extends TestCase
                 'parent' => ['name' => 'Assisted Parent', 'email' => 'assisted-parent@example.com', 'phone' => '555-111-2222', 'password' => 'password123', 'password_confirmation' => 'password123'],
                 'member' => ['applicant_name' => 'Assisted Child', 'birthdate' => '2018-01-01', 'age' => 8, 'grade' => '2', 'mailing_address' => '1 Main Street', 'home_address' => '1 Main Street', 'cell_number' => '555-222-3333', 'emergency_contact' => 'Emergency Contact', 'signature' => 'Assisted Parent'],
             ])
-            ->assertOk();
+            ->assertOk()
+            ->assertJsonPath('data.enrolled_parents.0.name', 'Assisted Parent')
+            ->assertJsonPath('data.enrolled_parents.0.children.0.name', 'Assisted Child');
 
         $parent = User::query()->where('email', 'assisted-parent@example.com')->firstOrFail();
         $member = Member::query()->where('club_id', $club->id)->where('parent_id', $parent->id)->firstOrFail();
         $this->assertSame('active', $parent->status);
         $this->assertDatabaseHas('parent_members', ['user_id' => $parent->id, 'member_id' => $member->id]);
+
+        $this->actingAs($director)
+            ->getJson(route('club.settings.enrollment-session', ['club_id' => $club->id]))
+            ->assertOk()
+            ->assertJsonPath('data.enrolled_parents.0.email', 'assisted-parent@example.com')
+            ->assertJsonPath('data.enrolled_parents.0.children.0.name', 'Assisted Child');
+
+        $this->actingAs($director)
+            ->postJson(route('club.settings.enrollment.assisted.store'), [
+                'club_id' => $club->id,
+                'enrollment_type' => 'member_only',
+                'parent' => ['name' => '', 'email' => '', 'phone' => '', 'password' => '', 'password_confirmation' => ''],
+                'member' => ['applicant_name' => 'Independent Child', 'birthdate' => '2017-01-01', 'age' => 9, 'grade' => '3', 'mailing_address' => '2 Main Street', 'home_address' => '2 Main Street', 'cell_number' => '555-333-4444', 'emergency_contact' => 'Emergency Contact', 'parent_name' => 'Contact Parent', 'parent_cell' => '555-444-5555', 'email_address' => 'contact-parent@example.com', 'signature' => 'Contact Parent'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.assisted_members.0.name', 'Independent Child');
     }
 }
