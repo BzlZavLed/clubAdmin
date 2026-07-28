@@ -186,10 +186,10 @@ class ClubSettingsController extends Controller
             'club_id' => ['required', 'integer'],
             'enrollment_type' => ['required', 'in:member_only,parent_and_member'],
             'parent' => ['nullable', 'array'],
-            'parent.name' => ['required_if:enrollment_type,parent_and_member', 'string', 'max:255'],
-            'parent.email' => ['required_if:enrollment_type,parent_and_member', 'email', 'max:255'],
+            'parent.name' => ['nullable', 'required_if:enrollment_type,parent_and_member', 'string', 'max:255'],
+            'parent.email' => ['nullable', 'required_if:enrollment_type,parent_and_member', 'email', 'max:255'],
             'parent.phone' => ['nullable', 'string', 'max:50'],
-            'parent.password' => ['required_if:enrollment_type,parent_and_member', 'string', 'min:8', 'confirmed'],
+            'parent.password' => ['nullable', 'required_if:enrollment_type,parent_and_member', 'string', 'min:8', 'confirmed'],
             'member' => ['required', 'array'],
         ]);
         $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
