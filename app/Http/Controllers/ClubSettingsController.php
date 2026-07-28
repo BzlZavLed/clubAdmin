@@ -343,12 +343,17 @@ class ClubSettingsController extends Controller
                 'status' => $parent->status,
                 'requested_at' => $parent->created_at?->toIso8601String(),
                 'children' => ($childrenByParent->get($parent->id, collect()))
-                    ->map(fn (Member $member) => [
-                        'id' => $member->id,
-                        'name' => ClubHelper::memberDetail($member)['name'] ?? '—',
-                        'club_name' => $member->club?->club_name,
-                        'class_name' => $member->class?->class_name,
-                    ])
+                    ->map(function (Member $member) {
+                        $detail = ClubHelper::memberDetail($member);
+
+                        return [
+                            'id' => $member->id,
+                            'name' => $detail['name'] ?? '—',
+                            'age' => $detail['age'] ?? null,
+                            'club_name' => $member->club?->club_name,
+                            'class_name' => $member->class?->class_name,
+                        ];
+                    })
                     ->values(),
             ];
         };

@@ -658,6 +658,7 @@ class ClubHelper
                 'type' => $type,
                 'id_data' => $idData,
                 'name' => $row?->applicant_name,
+                'age' => $row?->birthdate?->age ?? $row?->age,
             ];
         }
 
@@ -675,6 +676,7 @@ class ClubHelper
                 'type' => $type,
                 'id_data' => $row?->id ?? $idData,
                 'name' => $row?->applicant_name,
+                'age' => $row?->birthdate?->age,
             ];
         }
 
@@ -686,6 +688,7 @@ class ClubHelper
                 'type' => $type,
                 'id_data' => $idData,
                 'name' => $row?->applicant_name,
+                'age' => null,
             ];
         }
 
@@ -694,6 +697,7 @@ class ClubHelper
             'type' => $type,
             'id_data' => $idData,
             'name' => null,
+            'age' => null,
         ];
     }
 
