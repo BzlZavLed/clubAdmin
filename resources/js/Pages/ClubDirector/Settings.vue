@@ -48,6 +48,16 @@ const { showToast } = useGeneral()
 const { tr } = useLocale()
 const canSelectClub = computed(() => props.auth_user?.profile_type === 'superadmin')
 const selectedClubId = ref(props.selected_club_id || props.auth_user?.club_id || (props.clubs?.[0]?.id ?? ''))
+const selectedChurchId = ref(props.clubs?.find((club) => String(club.id) === String(selectedClubId.value))?.church_id || '')
+const availableChurches = computed(() => {
+    const seen = new Set()
+    return props.clubs.filter((club) => {
+        if (!club.church_id || seen.has(String(club.church_id))) return false
+        seen.add(String(club.church_id))
+        return true
+    })
+})
+const clubsForSelectedChurch = computed(() => props.clubs.filter((club) => String(club.church_id) === String(selectedChurchId.value)))
 const inviteCode = ref(props.integration_config?.invite_code || '')
 const catalog = ref(
     props.integration_config
@@ -102,6 +112,14 @@ const bankInfoDefaults = {
 watch(selectedClubId, (val) => {
     if (!val) return
     router.get(route('club.settings'), { club_id: val }, { replace: true })
+})
+
+watch(selectedChurchId, (churchId) => {
+    if (!canSelectClub.value || !churchId) return
+    const firstClub = clubsForSelectedChurch.value[0]
+    if (firstClub && String(firstClub.id) !== String(selectedClubId.value)) {
+        selectedClubId.value = firstClub.id
+    }
 })
 
 watch(() => props.club_logo_url, (value) => {
@@ -344,6 +362,20 @@ onBeforeUnmount(() => {
         <template #title>{{ tr('Configuracion', 'Settings') }}</template>
 
         <div class="space-y-6">
+            <div v-if="canSelectClub" class="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-end">
+                <div class="flex-1">
+                    <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Iglesia', 'Church') }}</label>
+                    <select v-model="selectedChurchId" class="w-full rounded border px-3 py-2 text-sm">
+                        <option v-for="church in availableChurches" :key="church.church_id" :value="church.church_id">{{ church.church_name || `${tr('Iglesia', 'Church')} #${church.church_id}` }}</option>
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <label class="mb-1 block text-sm font-medium text-gray-700">{{ tr('Club', 'Club') }}</label>
+                    <select v-model="selectedClubId" class="w-full rounded border px-3 py-2 text-sm">
+                        <option v-for="club in clubsForSelectedChurch" :key="club.id" :value="club.id">{{ club.club_name }}</option>
+                    </select>
+                </div>
+            </div>
             <div class="flex flex-col gap-3 rounded-lg border bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h2 class="text-lg font-semibold text-gray-800">{{ tr('Sesión de inscripciones', 'Enrollment session') }}</h2>
@@ -605,14 +637,7 @@ onBeforeUnmount(() => {
                         <h2 class="text-lg font-semibold text-gray-800">{{ tr('Integracion con mychurchadmin.net', 'mychurchadmin.net Integration') }}</h2>
                         <p class="text-sm text-gray-600">{{ tr('Usa un codigo de invitacion para obtener el catalogo y guardarlo para tu club.', 'Use an invitation code to retrieve the catalog and save it for your club.') }}</p>
                     </div>
-                    <div v-if="canSelectClub" class="flex items-center gap-2">
-                        <label class="text-sm text-gray-700">{{ tr('Club', 'Club') }}</label>
-                        <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm">
-                            <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
-                            <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
-                        </select>
-                    </div>
-                    <div v-else class="text-sm text-gray-700">
+                    <div class="text-sm text-gray-700">
                         {{ tr('Club activo:', 'Active club:') }} <strong>{{ clubs.find(club => String(club.id) === String(selectedClubId))?.club_name || props.auth_user?.club_name || '—' }}</strong>
                     </div>
                 </div>

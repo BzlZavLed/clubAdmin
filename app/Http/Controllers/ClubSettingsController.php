@@ -29,7 +29,7 @@ class ClubSettingsController extends Controller
     {
         $user = $request->user();
         $clubIds = ClubHelper::clubIdsForUser($user);
-        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'church_id', 'logo_path', 'club_email']);
+        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name', 'church_id', 'church_name', 'logo_path', 'club_email']);
         $selectedClubId = $this->resolveSelectedClubId($request, $clubs);
 
         if ($selectedClubId) {
