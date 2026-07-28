@@ -10,9 +10,10 @@ const page = usePage()
 const auth_user = ref(page.props.auth_user || {})
 const clubs = ref(page.props.clubs || [])
 const sameAsHomeAddress = ref(false)
-const { locale } = useLocale()
+const { locale, tr } = useLocale()
 
 const showSuccess = ref(false)
+const currentStep = ref(1)
 const selectedClubId = ref(null)
 const { showToast } = useGeneral()
 
@@ -24,6 +25,23 @@ const selectedClub = computed(() =>
 )
 const isPathfinderClub = computed(() => selectedClub.value?.club_type === 'pathfinders')
 const isMasterGuideClub = computed(() => selectedClub.value?.club_type === 'master_guide')
+const totalSteps = computed(() => isMasterGuideClub.value || isPathfinderClub.value ? 3 : 4)
+
+const nextStep = () => {
+    if (currentStep.value === 1 && !form.club_id) {
+        showToast(tr('Selecciona un club para continuar.', 'Select a club to continue.'), 'error')
+        return
+    }
+    if (currentStep.value === 2 && (!form.applicant_name || (!isMasterGuideClub.value && !form.birthdate))) {
+        showToast(tr('Completa los datos básicos del menor.', 'Complete the child’s basic information.'), 'error')
+        return
+    }
+    currentStep.value = Math.min(currentStep.value + 1, totalSteps.value)
+}
+
+const previousStep = () => {
+    currentStep.value = Math.max(1, currentStep.value - 1)
+}
 
 const form = useForm({
     club_id: '',
@@ -128,6 +146,7 @@ const submit = () => {
         onSuccess: () => {
             form.transform(data => data)
             form.reset()
+            currentStep.value = 1
             showSuccess.value = true
             showToast('Member registered successfully!', 'success')
         },
@@ -222,9 +241,18 @@ const t = (key) => labels[locale.value]?.[key] || key
                 Please fix the highlighted fields.
             </div>
 
-            <form @submit.prevent="submit" class="space-y-4 bg-white border rounded shadow-sm p-4 sm:p-6">
+            <form novalidate @submit.prevent="submit" class="space-y-5 bg-white border rounded shadow-sm p-4 sm:p-6">
+                <div class="flex items-center justify-between gap-3 border-b pb-4">
+                    <div>
+                        <p class="text-sm font-semibold text-blue-700">{{ tr('Paso', 'Step') }} {{ currentStep }} {{ tr('de', 'of') }} {{ totalSteps }}</p>
+                        <p class="text-sm text-gray-600">{{ currentStep === 1 ? tr('Selecciona el club', 'Select the club') : (currentStep === 2 ? tr('Datos del menor', 'Child details') : (currentStep === totalSteps ? tr('Revisión y envío', 'Review and submit') : tr('Información de contacto', 'Contact information'))) }}</p>
+                    </div>
+                    <div class="flex gap-1">
+                        <span v-for="step in totalSteps" :key="step" class="h-2 w-7 rounded-full" :class="step <= currentStep ? 'bg-blue-600' : 'bg-gray-200'"></span>
+                    </div>
+                </div>
                 <!-- Club Selection -->
-                <div>
+                <div v-if="currentStep === 1">
                     <label>{{ t('clubName') }}</label>
                     <select v-model="form.club_id" class="w-full p-2 border rounded">
                         <option disabled value="">-- Choose a club --</option>
@@ -234,21 +262,21 @@ const t = (key) => labels[locale.value]?.[key] || key
                     </select>
                     <p v-if="form.errors.club_id" class="text-red-600 text-sm mt-1">{{ form.errors.club_id }}</p>
                 </div>
-                <div>
+                <div v-if="currentStep === 1">
                     <label>{{ t('churchName') }}</label>
                     <input v-model="form.church_name" type="text" class="w-full p-2 border rounded" readonly />
                 </div>
-                <div>
+                <div v-if="currentStep === 1">
                     <label>{{ t('directorName') }}</label>
                     <input v-model="form.director_name" type="text" class="w-full p-2 border rounded" readonly />
                 </div>
                 <div v-if="isMasterGuideClub" class="space-y-4">
-                    <div>
+                    <div v-if="currentStep === 2">
                         <label>{{ t('pathfinderName') }}</label>
                         <input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" required />
                         <p v-if="form.errors.applicant_name" class="text-red-600 text-sm mt-1">{{ form.errors.applicant_name }}</p>
                     </div>
-                    <div class="grid gap-4 sm:grid-cols-2">
+                    <div v-if="currentStep === 2" class="grid gap-4 sm:grid-cols-2">
                         <div>
                             <label>{{ t('programYear') }}</label>
                             <select v-model.number="form.program_year" class="w-full p-2 border rounded" required>
@@ -263,17 +291,17 @@ const t = (key) => labels[locale.value]?.[key] || key
                             <p v-if="form.errors.phone" class="text-red-600 text-sm mt-1">{{ form.errors.phone }}</p>
                         </div>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>Email</label>
                         <input v-model="form.email_address" type="email" class="w-full p-2 border rounded" />
                         <p v-if="form.errors.email" class="text-red-600 text-sm mt-1">{{ form.errors.email }}</p>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>{{ t('homeAddress') }}</label>
                         <input v-model="form.home_address" type="text" class="w-full p-2 border rounded" />
                         <p v-if="form.errors.address" class="text-red-600 text-sm mt-1">{{ form.errors.address }}</p>
                     </div>
-                    <div class="grid gap-4 sm:grid-cols-2">
+                    <div v-if="currentStep === 3" class="grid gap-4 sm:grid-cols-2">
                         <div>
                             <label>{{ locale === 'es' ? 'Nombre del contacto de emergencia' : 'Emergency contact name' }}</label>
                             <input v-model="form.emergency_contact_name" type="text" class="w-full p-2 border rounded" />
@@ -293,12 +321,12 @@ const t = (key) => labels[locale.value]?.[key] || key
                 </div>
 
                 <div v-else-if="isPathfinderClub" class="space-y-4">
-                    <div>
+                    <div v-if="currentStep === 2">
                         <label>{{ t('pathfinderName') }}</label>
                         <input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" required />
                         <p v-if="form.errors.applicant_name" class="text-red-600 text-sm mt-1">{{ form.errors.applicant_name }}</p>
                     </div>
-                    <div class="flex flex-col sm:flex-row gap-4">
+                    <div v-if="currentStep === 2" class="flex flex-col sm:flex-row gap-4">
                         <div class="flex-1">
                             <label>{{ t('dob') }}</label>
                             <input v-model="form.birthdate" type="date" class="w-full p-2 border rounded" required />
@@ -311,17 +339,17 @@ const t = (key) => labels[locale.value]?.[key] || key
                             <p v-if="form.errors.cell_number" class="text-red-600 text-sm mt-1">{{ form.errors.cell_number }}</p>
                         </div>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>{{ t('email') }}</label>
                         <input v-model="form.email_address" type="email" class="w-full p-2 border rounded" required />
                         <p v-if="form.errors.email_address" class="text-red-600 text-sm mt-1">{{ form.errors.email_address }}</p>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>{{ t('parentName') }}</label>
                         <input v-model="form.parent_name" type="text" class="w-full p-2 border rounded" required />
                         <p v-if="form.errors.parent_name" class="text-red-600 text-sm mt-1">{{ form.errors.parent_name }}</p>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>{{ t('parentPhone') }}</label>
                         <input :value="form.parent_cell" @input="onParentCellNumberInput" type="text"
                             class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
@@ -330,13 +358,13 @@ const t = (key) => labels[locale.value]?.[key] || key
                 </div>
 
                 <div v-else class="space-y-4">
-                    <div>
+                    <div v-if="currentStep === 2">
                         <label>Applicant Name</label>
                         <input v-model="form.applicant_name" type="text" class="w-full p-2 border rounded" required />
                         <p v-if="form.errors.applicant_name" class="text-red-600 text-sm mt-1">{{ form.errors.applicant_name }}</p>
                     </div>
 
-                    <div class="flex flex-col sm:flex-row gap-4">
+                    <div v-if="currentStep === 2" class="flex flex-col sm:flex-row gap-4">
                         <div class="flex-1">
                             <label>Birthdate</label>
                             <input v-model="form.birthdate" type="date" class="w-full p-2 border rounded" required />
@@ -352,19 +380,19 @@ const t = (key) => labels[locale.value]?.[key] || key
                             <p v-if="form.errors.grade" class="text-red-600 text-sm mt-1">{{ form.errors.grade }}</p>
                         </div>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 2">
                         <label>Cell Number</label>
                         <input :value="form.cell_number" @input="onCellNumberInput" type="text"
                             class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
                         <p v-if="form.errors.cell_number" class="text-red-600 text-sm mt-1">{{ form.errors.cell_number }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>Emergency Contact</label>
                         <input v-model="form.emergency_contact" type="text" class="w-full p-2 border rounded" />
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 4">
                         <label class="block mb-1">Investiture Class</label>
                         <div class="flex flex-wrap gap-2">
                             <label
@@ -376,70 +404,92 @@ const t = (key) => labels[locale.value]?.[key] || key
                         </div>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 4">
                         <label>Allergies</label>
                         <textarea v-model="form.allergies" class="w-full p-2 border rounded"></textarea>
                         <p v-if="form.errors.allergies" class="text-red-600 text-sm mt-1">{{ form.errors.allergies }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 4">
                         <label>Physical Restrictions</label>
                         <textarea v-model="form.physical_restrictions" class="w-full p-2 border rounded"></textarea>
                         <p v-if="form.errors.physical_restrictions" class="text-red-600 text-sm mt-1">{{ form.errors.physical_restrictions }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 4">
                         <label>Health History</label>
                         <textarea v-model="form.health_history" class="w-full p-2 border rounded"></textarea>
                         <p v-if="form.errors.health_history" class="text-red-600 text-sm mt-1">{{ form.errors.health_history }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>Parent Name</label>
                         <input v-model="form.parent_name" type="text" class="w-full p-2 border rounded" required />
                         <p v-if="form.errors.parent_name" class="text-red-600 text-sm mt-1">{{ form.errors.parent_name }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>Parent Cell</label>
                         <input :value="form.parent_cell" @input="onParentCellNumberInput" type="text"
                             class="w-full p-2 border rounded" placeholder="(123) 456 7890" />
                         <p v-if="form.errors.parent_cell" class="text-red-600 text-sm mt-1">{{ form.errors.parent_cell }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>Home Address</label>
                         <input v-model="form.home_address" type="text" class="w-full p-2 border rounded" />
                         <p v-if="form.errors.home_address" class="text-red-600 text-sm mt-1">{{ form.errors.home_address }}</p>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>Mailing Address</label>
                         <input v-model="form.mailing_address" type="text" class="w-full p-2 border rounded" />
                         <p v-if="form.errors.mailing_address" class="text-red-600 text-sm mt-1">{{ form.errors.mailing_address }}</p>
                     </div>
-                    <div class="flex items-center mb-2">
+                    <div v-if="currentStep === 3" class="flex items-center mb-2">
                         <input id="same-address" type="checkbox" v-model="sameAsHomeAddress" class="mr-2" />
                         <label for="same-address">Same as home address</label>
                     </div>
-                    <div>
+                    <div v-if="currentStep === 3">
                         <label>Email Address</label>
                         <input v-model="form.email_address" type="email" class="w-full p-2 border rounded" />
                         <p v-if="form.errors.email_address" class="text-red-600 text-sm mt-1">{{ form.errors.email_address }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="currentStep === 4">
                         <label>Signature (Typed)</label>
                         <input v-model="form.signature" type="text" class="w-full p-2 border rounded" />
                         <p v-if="form.errors.signature" class="text-red-600 text-sm mt-1">{{ form.errors.signature }}</p>
                     </div>
                 </div>
 
-                <div class="flex flex-wrap gap-2">
-                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                        Submit Registration
+                <div class="flex items-center justify-between gap-3 border-t pt-5">
+                    <button v-if="currentStep > 1" type="button" @click="previousStep" class="min-h-12 rounded border border-gray-300 px-5 py-3 text-base font-medium text-gray-700">
+                        {{ tr('Anterior', 'Back') }}
+                    </button>
+                    <span v-else></span>
+
+                    <button v-if="currentStep < totalSteps" type="button" @click="nextStep" class="min-h-12 rounded bg-blue-600 px-5 py-3 text-base font-semibold text-white hover:bg-blue-700">
+                        {{ tr('Continuar', 'Continue') }}
+                    </button>
+                    <button v-else type="submit" :disabled="form.processing" class="min-h-12 rounded bg-blue-600 px-5 py-3 text-base font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+                        {{ form.processing ? tr('Enviando...', 'Submitting...') : t('submit') }}
                     </button>
                 </div>
             </form>
         </div>
     </PathfinderLayout>
 </template>
+
+<style scoped>
+@media (max-width: 640px) {
+    input:not([type='checkbox']), select, textarea {
+        min-height: 3rem;
+        padding: 0.75rem;
+        font-size: 1rem;
+    }
+
+    textarea {
+        min-height: 6rem;
+    }
+}
+</style>
