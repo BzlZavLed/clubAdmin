@@ -434,7 +434,7 @@ class ClubSettingsController extends Controller
         };
 
         return [
-            'club' => $club->only(['id', 'club_name', 'church_id']),
+            'club' => $club->only(['id', 'club_name', 'church_id', 'club_type']),
             'registration_url' => route('parent.register'),
             'qr_url' => route('club.settings.enrollment.qr', ['club' => $club->id]),
             'staff_registration_url' => route('register', ['profile_type' => 'club_personal', 'club_id' => $club->id]),
