@@ -15,7 +15,9 @@ const props = defineProps({
 });
 const page = usePage()
 const registrationParams = new URLSearchParams(page.url.split('?')[1] || '')
-const requestedProfileType = registrationParams.get('profile_type') === 'parent' ? 'parent' : ''
+const requestedProfileType = ['parent', 'club_personal'].includes(registrationParams.get('profile_type'))
+    ? registrationParams.get('profile_type')
+    : ''
 const requestedClubId = registrationParams.get('club_id') || ''
 
 const form = useForm({

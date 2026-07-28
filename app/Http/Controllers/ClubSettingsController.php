@@ -5,7 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Club;
 use App\Models\ClubIntegrationConfig;
 use App\Models\ChurchInviteCode;
+use App\Models\ClubClass;
 use App\Models\Member;
+use App\Models\Staff;
+use App\Models\StaffAdventurer;
+use App\Models\StaffMasterGuide;
+use App\Models\StaffPathfinder;
 use App\Models\User;
 use App\Services\ClubLogoService;
 use App\Support\ClubHelper;
@@ -113,12 +118,75 @@ class ClubSettingsController extends Controller
         return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
     }
 
+    public function approveEnrollmentStaff(Request $request, User $user)
+    {
+        $payload = $request->validate([
+            'club_id' => ['required', 'integer'],
+            'assigned_class' => ['nullable', 'integer'],
+            'make_treasurer' => ['nullable', 'boolean'],
+        ]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $this->assertPendingStaffForClub($user, $club);
+
+        if (!empty($payload['assigned_class'])) {
+            ClubClass::query()
+                ->where('id', $payload['assigned_class'])
+                ->where('club_id', $club->id)
+                ->firstOrFail();
+        }
+
+        DB::transaction(function () use ($user, $club, $payload) {
+            $staff = $this->createEnrollmentStaffRecord($user, $club);
+
+            if (!empty($payload['assigned_class'])) {
+                $staff->update(['assigned_class' => $payload['assigned_class']]);
+                $staff->classes()->sync([$payload['assigned_class'] => ['club_id' => $club->id]]);
+            }
+
+            $user->forceFill([
+                'status' => 'active',
+                'profile_type' => !empty($payload['make_treasurer']) ? 'treasurer' : 'club_personal',
+                'role_key' => !empty($payload['make_treasurer']) ? 'treasurer' : 'club_personal',
+                'scope_type' => 'club',
+                'scope_id' => $club->id,
+                'club_id' => $club->id,
+            ])->save();
+            $staff->update(['status' => 'active']);
+            DB::table('club_user')->updateOrInsert(
+                ['user_id' => $user->id, 'club_id' => $club->id],
+                ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+            );
+        });
+
+        return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
+    }
+
+    public function rejectEnrollmentStaff(Request $request, User $user)
+    {
+        $payload = $request->validate(['club_id' => ['required', 'integer']]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+        $this->assertPendingStaffForClub($user, $club);
+
+        DB::transaction(function () use ($user, $club) {
+            $user->update(['status' => 'rejected']);
+            DB::table('club_user')->updateOrInsert(
+                ['user_id' => $user->id, 'club_id' => $club->id],
+                ['status' => 'rejected', 'created_at' => now(), 'updated_at' => now()]
+            );
+        });
+
+        return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
+    }
+
     public function enrollmentQr(Request $request, Club $club)
     {
         $this->resolveAllowedClub($request, (int) $club->id);
 
+        $registrationUrl = $request->query('kind') === 'staff'
+            ? route('register', ['profile_type' => 'club_personal', 'club_id' => $club->id])
+            : route('parent.register');
         $qrCode = new QrCode(
-            route('parent.register'),
+            $registrationUrl,
             size: 520,
             margin: 16,
         );
@@ -254,6 +322,12 @@ class ClubSettingsController extends Controller
             ->whereIn('status', ['pending', 'active'])
             ->orderBy('created_at')
             ->get(['id', 'name', 'email', 'status', 'created_at']);
+        $staffRequests = User::query()
+            ->where('profile_type', 'club_personal')
+            ->where('club_id', $club->id)
+            ->where('status', 'pending')
+            ->orderBy('created_at')
+            ->get(['id', 'name', 'email', 'sub_role', 'created_at']);
         $childrenByParent = Member::query()
             ->where('club_id', $club->id)
             ->whereIn('parent_id', $parents->pluck('id'))
@@ -283,8 +357,23 @@ class ClubSettingsController extends Controller
             'club' => $club->only(['id', 'club_name', 'church_id']),
             'registration_url' => route('parent.register'),
             'qr_url' => route('club.settings.enrollment.qr', ['club' => $club->id]),
+            'staff_registration_url' => route('register', ['profile_type' => 'club_personal', 'club_id' => $club->id]),
+            'staff_qr_url' => route('club.settings.enrollment.qr', ['club' => $club->id, 'kind' => 'staff']),
             'church_invite_code' => $invite->code,
             'pending_parents' => $parents->where('status', 'pending')->map($formatParent)->values(),
+            'pending_staff' => $staffRequests->map(fn (User $staff) => [
+                'id' => $staff->id,
+                'name' => $staff->name,
+                'email' => $staff->email,
+                'sub_role' => $staff->sub_role,
+                'requested_at' => $staff->created_at?->toIso8601String(),
+            ])->values(),
+            'classes' => ClubClass::query()
+                ->where('club_id', $club->id)
+                ->orderBy('class_name')
+                ->get(['id', 'class_name'])
+                ->map(fn (ClubClass $class) => ['id' => $class->id, 'name' => $class->class_name])
+                ->values(),
             'enrolled_parents' => $parents
                 ->where('status', 'active')
                 ->map($formatParent)
@@ -303,6 +392,84 @@ class ClubSettingsController extends Controller
             422,
             'This parent request is no longer pending for the selected club.'
         );
+    }
+
+    private function assertPendingStaffForClub(User $user, Club $club): void
+    {
+        abort_unless(
+            $user->profile_type === 'club_personal'
+                && (int) $user->club_id === (int) $club->id
+                && $user->status === 'pending',
+            422,
+            'This staff request is no longer pending for the selected club.'
+        );
+    }
+
+    private function createEnrollmentStaffRecord(User $user, Club $club): Staff
+    {
+        $existing = Staff::query()
+            ->where('club_id', $club->id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        if ($club->club_type === 'master_guide') {
+            $detail = StaffMasterGuide::create([
+                'club_id' => $club->id,
+                'user_id' => $user->id,
+                'staff_name' => $user->name,
+                'email' => $user->email,
+                'status' => 'pending',
+            ]);
+            $staff = Staff::create([
+                'type' => 'master_guide',
+                'id_data' => $detail->id,
+                'club_id' => $club->id,
+                'user_id' => $user->id,
+                'status' => 'pending',
+            ]);
+            $detail->update(['staff_id' => $staff->id]);
+            return $staff;
+        }
+
+        if (in_array($club->club_type, ['pathfinders', 'temp_pathfinder'], true)) {
+            $detail = StaffPathfinder::create([
+                'club_id' => $club->id,
+                'user_id' => $user->id,
+                'staff_name' => $user->name,
+                'staff_email' => $user->email,
+            ]);
+            $staff = Staff::create([
+                'type' => 'pathfinders',
+                'id_data' => $detail->id,
+                'club_id' => $club->id,
+                'user_id' => $user->id,
+                'status' => 'pending',
+            ]);
+            $detail->update(['staff_id' => $staff->id]);
+            return $staff;
+        }
+
+        $detail = StaffAdventurer::create([
+            'name' => $user->name,
+            'email' => $user->email,
+            'club_id' => $club->id,
+            'church_name' => $club->church_name,
+            'club_name' => $club->club_name,
+            'applicant_signature' => $user->name,
+            'status' => 'pending',
+        ]);
+
+        return Staff::create([
+            'type' => 'adventurers',
+            'id_data' => $detail->id,
+            'club_id' => $club->id,
+            'user_id' => $user->id,
+            'status' => 'pending',
+        ]);
     }
 
     private function resolveAllowedClub(Request $request, int $clubId): Club
