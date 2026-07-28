@@ -184,16 +184,53 @@ class ClubSettingsController extends Controller
     {
         $payload = $request->validate([
             'club_id' => ['required', 'integer'],
-            'enrollment_type' => ['required', 'in:member_only,parent_and_member'],
+            'enrollment_type' => ['required', 'in:member_only,parent_and_member,staff_account'],
             'parent' => ['nullable', 'array'],
             'parent.name' => ['nullable', 'required_if:enrollment_type,parent_and_member', 'string', 'max:255'],
             'parent.email' => ['nullable', 'required_if:enrollment_type,parent_and_member', 'email', 'max:255'],
             'parent.phone' => ['nullable', 'string', 'max:50'],
             'parent.password' => ['nullable', 'required_if:enrollment_type,parent_and_member', 'string', 'min:8', 'confirmed'],
-            'member' => ['required', 'array'],
+            'staff' => ['nullable', 'array'],
+            'staff.name' => ['required_if:enrollment_type,staff_account', 'string', 'max:255'],
+            'staff.email' => ['required_if:enrollment_type,staff_account', 'email', 'max:255'],
+            'staff.password' => ['required_if:enrollment_type,staff_account', 'string', 'min:8', 'confirmed'],
+            'member' => ['required_unless:enrollment_type,staff_account', 'array'],
         ]);
         $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
         $parent = null;
+
+        if ($payload['enrollment_type'] === 'staff_account') {
+            DB::transaction(function () use ($payload, $club) {
+                $staffData = $payload['staff'];
+                $existing = User::query()->where('email', $staffData['email'])->first();
+                if ($existing && !($existing->profile_type === 'club_personal' && (int) $existing->club_id === (int) $club->id)) {
+                    abort(422, 'An account with this email already belongs to another profile or club.');
+                }
+
+                $staffUser = $existing ?: new User();
+                $staffUser->forceFill([
+                    'name' => $staffData['name'],
+                    'email' => $staffData['email'],
+                    'password' => Hash::make($staffData['password']),
+                    'profile_type' => 'club_personal',
+                    'role_key' => 'club_personal',
+                    'scope_type' => 'club',
+                    'scope_id' => $club->id,
+                    'church_id' => $club->church_id,
+                    'church_name' => $club->church_name,
+                    'club_id' => $club->id,
+                    'status' => 'active',
+                ])->save();
+                DB::table('club_user')->updateOrInsert(
+                    ['user_id' => $staffUser->id, 'club_id' => $club->id],
+                    ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+                );
+                $staff = $this->createEnrollmentStaffRecord($staffUser, $club);
+                $staff->update(['status' => 'active']);
+            });
+
+            return response()->json(['data' => $this->enrollmentSessionPayload($club, $request->user())]);
+        }
 
         DB::transaction(function () use ($request, $payload, $club, &$parent) {
             $memberData = $payload['member'];
