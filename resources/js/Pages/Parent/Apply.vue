@@ -233,7 +233,7 @@ const t = (key) => labels[locale.value]?.[key] || key
     <PathfinderLayout>
         <template #title>{{ t('title') }}</template>
 
-        <div class="p-4 sm:p-6 max-w-4xl">
+        <div class="enrollment-page p-4 sm:p-6">
             <div v-if="showSuccess" class="mb-4 text-green-700 bg-green-100 p-3 rounded">
                 Member registered successfully!
             </div>
@@ -241,14 +241,11 @@ const t = (key) => labels[locale.value]?.[key] || key
                 Please fix the highlighted fields.
             </div>
 
-            <form novalidate @submit.prevent="submit" class="space-y-5 bg-white border rounded shadow-sm p-4 sm:p-6">
-                <div class="flex items-center justify-between gap-3 border-b pb-4">
+            <form novalidate @submit.prevent="submit" class="enrollment-wizard space-y-8 bg-white">
+                <div class="wizard-heading">
                     <div>
-                        <p class="text-sm font-semibold text-blue-700">{{ tr('Paso', 'Step') }} {{ currentStep }} {{ tr('de', 'of') }} {{ totalSteps }}</p>
-                        <p class="text-sm text-gray-600">{{ currentStep === 1 ? tr('Selecciona el club', 'Select the club') : (currentStep === 2 ? tr('Datos del menor', 'Child details') : (currentStep === totalSteps ? tr('Revisión y envío', 'Review and submit') : tr('Información de contacto', 'Contact information'))) }}</p>
-                    </div>
-                    <div class="flex gap-1">
-                        <span v-for="step in totalSteps" :key="step" class="h-2 w-7 rounded-full" :class="step <= currentStep ? 'bg-blue-600' : 'bg-gray-200'"></span>
+                        <p class="wizard-step-number">{{ currentStep }} <span>→</span></p>
+                        <p class="wizard-step-title">{{ currentStep === 1 ? tr('Selecciona el club', 'Select the club') : (currentStep === 2 ? tr('Datos del menor', 'Child details') : (currentStep === totalSteps ? tr('Revisa y envía la solicitud', 'Review and send your request') : tr('Información de contacto', 'Contact information'))) }}</p>
                     </div>
                 </div>
                 <!-- Club Selection -->
@@ -462,16 +459,22 @@ const t = (key) => labels[locale.value]?.[key] || key
                     </div>
                 </div>
 
-                <div class="flex items-center justify-between gap-3 border-t pt-5">
-                    <button v-if="currentStep > 1" type="button" @click="previousStep" class="min-h-12 rounded border border-gray-300 px-5 py-3 text-base font-medium text-gray-700">
-                        {{ tr('Anterior', 'Back') }}
+                <div class="wizard-footer">
+                    <div class="wizard-completion">
+                        <span>{{ Math.round((currentStep / totalSteps) * 100) }}% {{ tr('completado', 'complete') }}</span>
+                        <div class="wizard-progress-track">
+                            <span class="wizard-progress-value" :style="{ width: `${(currentStep / totalSteps) * 100}%` }"></span>
+                        </div>
+                    </div>
+                    <button v-if="currentStep > 1" type="button" @click="previousStep" class="wizard-back-button" :aria-label="tr('Paso anterior', 'Previous step')">
+                        ↑
                     </button>
-                    <span v-else></span>
+                    <span v-else class="wizard-button-spacer"></span>
 
-                    <button v-if="currentStep < totalSteps" type="button" @click="nextStep" class="min-h-12 rounded bg-blue-600 px-5 py-3 text-base font-semibold text-white hover:bg-blue-700">
-                        {{ tr('Continuar', 'Continue') }}
+                    <button v-if="currentStep < totalSteps" type="button" @click="nextStep" class="wizard-next-button">
+                        {{ tr('Continuar', 'Continue') }} <span>↵</span>
                     </button>
-                    <button v-else type="submit" :disabled="form.processing" class="min-h-12 rounded bg-blue-600 px-5 py-3 text-base font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+                    <button v-else type="submit" :disabled="form.processing" class="wizard-next-button disabled:opacity-60">
                         {{ form.processing ? tr('Enviando...', 'Submitting...') : t('submit') }}
                     </button>
                 </div>
@@ -481,15 +484,115 @@ const t = (key) => labels[locale.value]?.[key] || key
 </template>
 
 <style scoped>
-@media (max-width: 640px) {
-    input:not([type='checkbox']), select, textarea {
-        min-height: 3rem;
-        padding: 0.75rem;
-        font-size: 1rem;
-    }
+.enrollment-page {
+    max-width: 72rem;
+    margin: 0 auto;
+}
 
-    textarea {
-        min-height: 6rem;
-    }
+.enrollment-wizard {
+    min-height: min(42rem, calc(100vh - 10rem));
+    padding: clamp(1.5rem, 6vw, 5rem) clamp(1.25rem, 9vw, 9rem) 7rem;
+    position: relative;
+}
+
+.wizard-heading {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: clamp(1.5rem, 4vw, 3.25rem);
+}
+
+.wizard-step-number {
+    color: #2563eb;
+    font-size: clamp(1.1rem, 2vw, 1.5rem);
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.wizard-step-number span { margin-left: 0.2rem; }
+
+.wizard-step-title {
+    color: #111827;
+    font-size: clamp(1.6rem, 3vw, 2.6rem);
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.enrollment-wizard :deep(label) {
+    display: block;
+    color: #1f2937;
+    font-size: clamp(1.15rem, 2.3vw, 1.65rem);
+    font-weight: 500;
+    line-height: 1.35;
+    margin-bottom: 0.75rem;
+}
+
+.enrollment-wizard :deep(input:not([type='checkbox'])),
+.enrollment-wizard :deep(select),
+.enrollment-wizard :deep(textarea) {
+    width: 100%;
+    min-height: 3.5rem;
+    padding: 0.65rem 0.1rem;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid #cbd5e1;
+    border-radius: 0;
+    box-shadow: none;
+    color: #111827;
+    font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+    line-height: 1.3;
+    transition: border-color 150ms ease;
+}
+
+.enrollment-wizard :deep(input:not([type='checkbox']):focus),
+.enrollment-wizard :deep(select:focus),
+.enrollment-wizard :deep(textarea:focus) {
+    border-bottom-color: #2563eb;
+    outline: none;
+}
+
+.enrollment-wizard :deep(input[readonly]) {
+    color: #64748b;
+    border-bottom-color: #e2e8f0;
+}
+
+.enrollment-wizard :deep(textarea) { min-height: 7.5rem; resize: vertical; }
+.enrollment-wizard :deep(input[type='checkbox']) { width: 1.25rem; height: 1.25rem; accent-color: #2563eb; }
+.enrollment-wizard :deep(.text-red-600) { margin-top: 0.5rem; font-size: 0.95rem; }
+
+.wizard-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    position: absolute;
+    right: clamp(1.25rem, 9vw, 9rem);
+    bottom: 1.5rem;
+    left: clamp(1.25rem, 9vw, 9rem);
+}
+
+.wizard-completion { width: min(13rem, 35%); margin-right: auto; }
+.wizard-completion > span { display: block; color: #64748b; font-size: 0.8rem; margin-bottom: 0.35rem; }
+.wizard-progress-track { height: 0.35rem; overflow: hidden; background: #e2e8f0; border-radius: 999px; }
+.wizard-progress-value { display: block; height: 100%; background: #2563eb; border-radius: inherit; transition: width 220ms ease; }
+
+.wizard-back-button, .wizard-next-button, .wizard-button-spacer {
+    min-height: 3rem;
+    border-radius: 0.35rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.wizard-back-button { width: 3rem; background: #f1f5f9; color: #334155; }
+.wizard-next-button { padding: 0.75rem 1.1rem; background: #2563eb; color: white; }
+.wizard-next-button:hover { background: #1d4ed8; }
+.wizard-next-button span { margin-left: 0.5rem; }
+.wizard-button-spacer { width: 3rem; }
+
+@media (max-width: 640px) {
+    .enrollment-page { padding: 0; }
+    .enrollment-wizard { min-height: calc(100vh - 4rem); padding-bottom: 8rem; }
+    .wizard-footer { bottom: 1rem; }
+    .wizard-completion { width: 6rem; }
+    .wizard-completion > span { font-size: 0.7rem; }
 }
 </style>
