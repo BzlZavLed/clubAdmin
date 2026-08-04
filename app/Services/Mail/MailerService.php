@@ -2,20 +2,24 @@
 
 namespace App\Services\Mail;
 
-use App\Mail\PaymentReceiptMail;
-use App\Mail\ParentPaymentSubmissionMail;
+use App\Mail\AdventurerYearlyApplicationMail;
+use App\Mail\AdventurerYearlyApplicationSignatureRequestMail;
 use App\Mail\ConferenceMemberExportMail;
 use App\Mail\FinanceLedgerReportMail;
+use App\Mail\ParentPaymentSubmissionMail;
 use App\Mail\PathfinderAnnualApplicationMail;
 use App\Mail\PathfinderAnnualApplicationSignatureRequestMail;
 use App\Mail\PathfinderMonthlyReportMail;
+use App\Mail\PaymentReceiptMail;
+use App\Models\AdventurerYearlyApplication;
+use App\Models\AdventurerYearlyApplicationSignature;
 use App\Models\Club;
 use App\Models\MailDeliveryLog;
 use App\Models\ParentPaymentSubmission;
-use App\Models\PaymentReceipt;
 use App\Models\PathfinderAnnualApplication;
 use App\Models\PathfinderAnnualApplicationSignature;
 use App\Models\PathfinderMonthlyReport;
+use App\Models\PaymentReceipt;
 use App\Services\PaymentReceiptPdfService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Mail;
@@ -26,9 +30,7 @@ use Throwable;
 
 class MailerService
 {
-    public function __construct(private readonly PaymentReceiptPdfService $receiptPdfService)
-    {
-    }
+    public function __construct(private readonly PaymentReceiptPdfService $receiptPdfService) {}
 
     public function queuePaymentReceipt(PaymentReceipt $receipt): MailDeliveryLog
     {
@@ -94,7 +96,7 @@ class MailerService
             return;
         }
 
-        if (!$mailLog) {
+        if (! $mailLog) {
             $mailLog = $this->startLog(
                 mailKey: 'payment_receipt',
                 mailable: PaymentReceiptMail::class,
@@ -152,7 +154,7 @@ class MailerService
         $recipient = $submission->club_receipt_email ?: $submission->club?->club_email;
         $subject = 'Comprobante de pago enviado por padre';
         $sourceLabel = 'Portal de padres - Comprobante de pago';
-        $destinationLabel = 'Club: ' . ($submission->club?->club_name ?: 'Club');
+        $destinationLabel = 'Club: '.($submission->club?->club_name ?: 'Club');
 
         if (empty($recipient)) {
             $this->logManualRequired(
@@ -202,7 +204,7 @@ class MailerService
             $disk = Storage::disk('public');
             $path = $submission->receipt_image_path;
 
-            if (!$path || !$disk->exists($path)) {
+            if (! $path || ! $disk->exists($path)) {
                 throw new \RuntimeException('Parent payment receipt image not found.');
             }
 
@@ -431,7 +433,7 @@ class MailerService
 
         try {
             $disk = Storage::disk('public');
-            if (!$application->pdf_path || !$disk->exists($application->pdf_path)) {
+            if (! $application->pdf_path || ! $disk->exists($application->pdf_path)) {
                 throw new \RuntimeException('Pathfinder annual application PDF could not be read.');
             }
 
@@ -460,6 +462,145 @@ class MailerService
                 'sent_at' => null,
             ])->save();
 
+            throw $exception;
+        }
+
+        return $mailLog->refresh();
+    }
+
+    public function sendAdventurerYearlyApplication(
+        AdventurerYearlyApplication $application,
+        string $recipientEmail,
+        ?int $userId = null,
+    ): MailDeliveryLog {
+        $application->loadMissing('club');
+        $subject = "Adventurer Club Yearly Application - {$application->club_name} {$application->application_year}";
+
+        $mailLog = $this->startLog(
+            mailKey: 'adventurer_yearly_application',
+            mailable: AdventurerYearlyApplicationMail::class,
+            recipientEmail: $recipientEmail,
+            subject: $subject,
+            loggable: $application,
+            clubId: $application->club_id,
+            userId: $userId,
+            sourceLabel: 'Club Portal - Solicitud anual de Aventureros',
+            destinationLabel: 'Destinatario de solicitud anual',
+            bodyHtml: null,
+            metadata: [
+                'application_year' => $application->application_year,
+                'docx_file_name' => $application->docx_file_name,
+            ],
+        );
+
+        $trackingPixelUrl = $this->trackingPixelUrl($mailLog);
+        $bodyHtml = view('emails.adventurer_yearly_application', [
+            'application' => $application,
+            'trackingPixelUrl' => $trackingPixelUrl,
+            'emailUid' => $mailLog->email_uid,
+        ])->render();
+        $metadata = $mailLog->metadata ?: [];
+        $metadata['tracking_pixel_url'] = $trackingPixelUrl;
+        $mailLog->forceFill([
+            'body_html' => $bodyHtml,
+            'body_text' => $this->bodyText($bodyHtml),
+            'metadata' => $metadata,
+        ])->save();
+
+        try {
+            $disk = Storage::disk('public');
+            if (! $application->docx_path || ! $disk->exists($application->docx_path)) {
+                throw new \RuntimeException('Adventurer yearly application Word document could not be read.');
+            }
+
+            Mail::to($recipientEmail)->send(new AdventurerYearlyApplicationMail(
+                application: $application,
+                docxPath: $application->docx_path,
+                docxFilename: $application->docx_file_name ?: 'adventurer-yearly-application.docx',
+                trackingPixelUrl: $trackingPixelUrl,
+                emailUid: $mailLog->email_uid,
+            ));
+
+            $this->markSent($mailLog);
+            $application->forceFill([
+                'last_sent_to_email' => $recipientEmail,
+                'delivery_status' => 'sent',
+                'sent_at' => now(),
+            ])->save();
+        } catch (Throwable $exception) {
+            $this->markFailed($mailLog, $exception);
+            $application->forceFill([
+                'last_sent_to_email' => $recipientEmail,
+                'delivery_status' => 'failed',
+                'sent_at' => null,
+            ])->save();
+            throw $exception;
+        }
+
+        return $mailLog->refresh();
+    }
+
+    public function sendAdventurerYearlyApplicationSignatureRequest(
+        AdventurerYearlyApplicationSignature $signature,
+        ?int $userId = null,
+    ): MailDeliveryLog {
+        $signature->loadMissing('application.club');
+        $application = $signature->application;
+        $signatureUrl = route('adventurer-yearly-applications.signatures.show', [
+            'token' => $signature->request_token,
+        ]);
+        $roleLabel = match ($signature->role) {
+            'pastor' => 'Church Pastor',
+            'head_elder' => 'Head Elder',
+            'church_clerk' => 'Church Clerk',
+            'director' => 'Club Director',
+            default => $signature->role,
+        };
+        $subject = "Signature requested: Adventurer Club Yearly Application - {$application?->club_name}";
+
+        $mailLog = $this->startLog(
+            mailKey: 'adventurer_yearly_application_signature_request',
+            mailable: AdventurerYearlyApplicationSignatureRequestMail::class,
+            recipientEmail: $signature->signer_email,
+            subject: $subject,
+            loggable: $signature,
+            clubId: $application->club_id,
+            userId: $userId,
+            sourceLabel: 'Club Portal - Solicitud de firma de Aventureros',
+            destinationLabel: $roleLabel,
+            bodyHtml: null,
+            metadata: [
+                'application_year' => $application->application_year,
+                'signature_role' => $signature->role,
+                'signature_url' => $signatureUrl,
+            ],
+        );
+
+        $trackingPixelUrl = $this->trackingPixelUrl($mailLog);
+        $bodyHtml = view('emails.adventurer_yearly_application_signature_request', [
+            'signature' => $signature,
+            'signatureUrl' => $signatureUrl,
+            'trackingPixelUrl' => $trackingPixelUrl,
+            'emailUid' => $mailLog->email_uid,
+        ])->render();
+        $metadata = $mailLog->metadata ?: [];
+        $metadata['tracking_pixel_url'] = $trackingPixelUrl;
+        $mailLog->forceFill([
+            'body_html' => $bodyHtml,
+            'body_text' => $this->bodyText($bodyHtml),
+            'metadata' => $metadata,
+        ])->save();
+
+        try {
+            Mail::to($signature->signer_email)->send(new AdventurerYearlyApplicationSignatureRequestMail(
+                signature: $signature,
+                signatureUrl: $signatureUrl,
+                trackingPixelUrl: $trackingPixelUrl,
+                emailUid: $mailLog->email_uid,
+            ));
+            $this->markSent($mailLog);
+        } catch (Throwable $exception) {
+            $this->markFailed($mailLog, $exception);
             throw $exception;
         }
 
@@ -629,7 +770,7 @@ class MailerService
                 $path = parse_url((string) ($file['url'] ?? ''), PHP_URL_PATH);
                 $absolutePath = $path ? public_path(ltrim($path, '/')) : null;
 
-                if (!$absolutePath || !is_file($absolutePath)) {
+                if (! $absolutePath || ! is_file($absolutePath)) {
                     throw new \RuntimeException('Finance ledger report file could not be read.');
                 }
 
@@ -654,7 +795,7 @@ class MailerService
     {
         $disk = Storage::disk('public');
 
-        if (!$report->pdf_path || !$disk->exists($report->pdf_path)) {
+        if (! $report->pdf_path || ! $disk->exists($report->pdf_path)) {
             throw new \RuntimeException('Pathfinder monthly report PDF could not be read.');
         }
 
@@ -668,7 +809,7 @@ class MailerService
         foreach ($report->attachments as $attachment) {
             $attachmentDisk = Storage::disk($attachment->disk ?: 'public');
 
-            if (!$attachment->path || !$attachmentDisk->exists($attachment->path)) {
+            if (! $attachment->path || ! $attachmentDisk->exists($attachment->path)) {
                 continue;
             }
 
@@ -816,7 +957,7 @@ class MailerService
     private function newEmailUid(): string
     {
         do {
-            $uid = 'mail_' . strtolower((string) Str::ulid());
+            $uid = 'mail_'.strtolower((string) Str::ulid());
         } while (MailDeliveryLog::query()->where('email_uid', $uid)->exists());
 
         return $uid;
@@ -824,7 +965,7 @@ class MailerService
 
     private function bodyText(?string $bodyHtml): ?string
     {
-        if (!$bodyHtml) {
+        if (! $bodyHtml) {
             return null;
         }
 

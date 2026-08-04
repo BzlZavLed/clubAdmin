@@ -621,6 +621,35 @@ export const deleteClubObjective = async (clubId, objectiveId) => {
     return data;
 };
 
+export const saveAdventurerYearlyApplication = async (clubId, payload) => {
+    const { data } = await axios.post(route('clubs.adventurer-yearly-applications.store', { club: clubId }), payload);
+    return data;
+};
+
+export const sendAdventurerYearlyApplication = async (clubId, applicationId, email) => {
+    const { data } = await axios.post(route('clubs.adventurer-yearly-applications.send', {
+        club: clubId,
+        application: applicationId,
+    }), { email });
+    return data;
+};
+
+export const saveAdventurerYearlyApplicationDirectorSignature = async (clubId, applicationId, payload) => {
+    const { data } = await axios.post(route('clubs.adventurer-yearly-applications.director-signature', {
+        club: clubId,
+        application: applicationId,
+    }), payload);
+    return data;
+};
+
+export const requestAdventurerYearlyApplicationSignature = async (clubId, applicationId, payload) => {
+    const { data } = await axios.post(route('clubs.adventurer-yearly-applications.signature-requests', {
+        club: clubId,
+        application: applicationId,
+    }), payload);
+    return data;
+};
+
 export const savePathfinderAnnualApplication = async (clubId, payload) => {
     const { data } = await axios.post(route('clubs.pathfinder-annual-applications.store', { club: clubId }), payload);
     return data;

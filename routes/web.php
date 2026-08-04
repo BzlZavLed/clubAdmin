@@ -56,6 +56,8 @@ use App\Http\Controllers\SuperAdminPresenceController;
 use App\Http\Controllers\MailTrackingController;
 use App\Http\Controllers\ResendWebhookController;
 use App\Http\Controllers\PaymentReceiptController;
+use App\Http\Controllers\AdventurerYearlyApplicationController;
+use App\Http\Controllers\PublicAdventurerYearlyApplicationSignatureController;
 use App\Http\Controllers\PathfinderAnnualApplicationController;
 use App\Http\Controllers\PathfinderMonthlyReportController;
 use App\Http\Controllers\PublicPathfinderAnnualApplicationSignatureController;
@@ -134,6 +136,12 @@ Route::get('/pathfinder-annual-applications/sign/{token}', [PublicPathfinderAnnu
 Route::post('/pathfinder-annual-applications/sign/{token}', [PublicPathfinderAnnualApplicationSignatureController::class, 'submit'])
     ->middleware('throttle:30,1')
     ->name('pathfinder-annual-applications.signatures.submit');
+Route::get('/adventurer-yearly-applications/sign/{token}', [PublicAdventurerYearlyApplicationSignatureController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('adventurer-yearly-applications.signatures.show');
+Route::post('/adventurer-yearly-applications/sign/{token}', [PublicAdventurerYearlyApplicationSignatureController::class, 'submit'])
+    ->middleware('throttle:30,1')
+    ->name('adventurer-yearly-applications.signatures.submit');
 Route::get('/fundraisers/{fundraiserEvent}/kitchen', [FinanceEngineController::class, 'fundraiserKitchen'])
     ->middleware('signed')
     ->name('fundraisers.kitchen.show');
@@ -925,6 +933,11 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/clubs/{club}/objectives', [\App\Http\Controllers\ClubObjectiveController::class, 'store'])->name('clubs.objectives.store');
     Route::put('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'update'])->name('clubs.objectives.update');
     Route::delete('/clubs/{club}/objectives/{objective}', [\App\Http\Controllers\ClubObjectiveController::class, 'destroy'])->name('clubs.objectives.destroy');
+    Route::post('/clubs/{club}/adventurer-yearly-applications', [AdventurerYearlyApplicationController::class, 'store'])->name('clubs.adventurer-yearly-applications.store');
+    Route::get('/clubs/{club}/adventurer-yearly-applications/{application}/download', [AdventurerYearlyApplicationController::class, 'download'])->name('clubs.adventurer-yearly-applications.download');
+    Route::post('/clubs/{club}/adventurer-yearly-applications/{application}/send', [AdventurerYearlyApplicationController::class, 'send'])->name('clubs.adventurer-yearly-applications.send');
+    Route::post('/clubs/{club}/adventurer-yearly-applications/{application}/director-signature', [AdventurerYearlyApplicationController::class, 'saveDirectorSignature'])->name('clubs.adventurer-yearly-applications.director-signature');
+    Route::post('/clubs/{club}/adventurer-yearly-applications/{application}/signature-requests', [AdventurerYearlyApplicationController::class, 'requestSignature'])->name('clubs.adventurer-yearly-applications.signature-requests');
     Route::post('/clubs/{club}/pathfinder-annual-applications', [PathfinderAnnualApplicationController::class, 'store'])->name('clubs.pathfinder-annual-applications.store');
     Route::get('/clubs/{club}/pathfinder-annual-applications/{application}/download', [PathfinderAnnualApplicationController::class, 'download'])->name('clubs.pathfinder-annual-applications.download');
     Route::post('/clubs/{club}/pathfinder-annual-applications/{application}/send', [PathfinderAnnualApplicationController::class, 'send'])->name('clubs.pathfinder-annual-applications.send');

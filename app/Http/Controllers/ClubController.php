@@ -1,23 +1,26 @@
 <?php
 
 namespace App\Http\Controllers;
-use Illuminate\Validation\Rule;
+
+use App\Models\Account;
+use App\Models\Church;
 use App\Models\Club;
 use App\Models\District;
-use Illuminate\Http\Request;
-use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use App\Models\PaymentConcept;
-use App\Models\PaymentConceptScope;use App\Models\Church;
-use Illuminate\Support\Facades\DB;
-use App\Models\User;
+use App\Models\PaymentConceptScope;
 use App\Models\Staff;
 use App\Models\StaffAdventurer;
 use App\Models\StaffPathfinder;
-use App\Models\Account;
 use App\Models\Union;
 use App\Models\UnionCarpetaYear;
+use App\Models\User;
 use App\Support\ClubHelper;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+
 class ClubController extends Controller
 {
     use AuthorizesRequests;
@@ -106,7 +109,7 @@ class ClubController extends Controller
 
     protected function enforceChurchClubTypeRule(int $churchId, string $clubType, ?int $ignoreClubId = null): void
     {
-        if (!in_array($clubType, ['adventurers', 'pathfinders'], true)) {
+        if (! in_array($clubType, ['adventurers', 'pathfinders'], true)) {
             return;
         }
 
@@ -200,7 +203,7 @@ class ClubController extends Controller
             ->all();
 
         $carpetaStaffNamesById = [];
-        if (!empty($allActivationStaffIds)) {
+        if (! empty($allActivationStaffIds)) {
             $carpetaStaff = Staff::query()
                 ->whereIn('id', $allActivationStaffIds)
                 ->with('user:id,name')
@@ -208,7 +211,7 @@ class ClubController extends Controller
 
             foreach ($carpetaStaff as $staff) {
                 $name = $staff->user?->name;
-                if (!$name) {
+                if (! $name) {
                     $detail = ClubHelper::staffDetail($staff);
                     $name = $detail['name'] ?? null;
                 }
@@ -303,10 +306,10 @@ class ClubController extends Controller
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
-        $district = !empty($validated['district_id'])
+        $district = ! empty($validated['district_id'])
             ? District::findOrFail($validated['district_id'])
             : $church->district;
-        $director = !empty($validated['director_user_id'])
+        $director = ! empty($validated['director_user_id'])
             ? User::findOrFail($validated['director_user_id'])
             : null;
         $hierarchyFields = $this->buildClubHierarchyFields($church, $district, $validated['evaluation_system'] ?? 'honors');
@@ -319,13 +322,13 @@ class ClubController extends Controller
             ]);
         }
 
-        if (($hierarchyFields['evaluation_system'] ?? 'honors') === 'carpetas' && !$district) {
+        if (($hierarchyFields['evaluation_system'] ?? 'honors') === 'carpetas' && ! $district) {
             return back()->withErrors([
                 'district_id' => 'A carpetas club must belong to a district.',
             ])->withInput();
         }
 
-        if ($validated['status'] === 'active' && !$director) {
+        if ($validated['status'] === 'active' && ! $director) {
             return back()->withErrors([
                 'director_user_id' => 'An active club must have a director assigned.',
             ])->withInput();
@@ -403,10 +406,10 @@ class ClubController extends Controller
         ]);
 
         $church = Church::findOrFail($validated['church_id']);
-        $district = !empty($validated['district_id'])
+        $district = ! empty($validated['district_id'])
             ? District::findOrFail($validated['district_id'])
             : $church->district;
-        $director = !empty($validated['director_user_id'])
+        $director = ! empty($validated['director_user_id'])
             ? User::findOrFail($validated['director_user_id'])
             : null;
         $hierarchyFields = $this->buildClubHierarchyFields($church, $district, $validated['evaluation_system'] ?? 'honors');
@@ -419,13 +422,13 @@ class ClubController extends Controller
             ]);
         }
 
-        if (($hierarchyFields['evaluation_system'] ?? 'honors') === 'carpetas' && !$district) {
+        if (($hierarchyFields['evaluation_system'] ?? 'honors') === 'carpetas' && ! $district) {
             return back()->withErrors([
                 'district_id' => 'A carpetas club must belong to a district.',
             ])->withInput();
         }
 
-        if ($validated['status'] === 'active' && !$director) {
+        if ($validated['status'] === 'active' && ! $director) {
             return back()->withErrors([
                 'director_user_id' => 'An active club must have a director assigned.',
             ])->withInput();
@@ -532,7 +535,7 @@ class ClubController extends Controller
 
     public function store(Request $request)
     {
-        if (!in_array(auth()->user()->profile_type, ['club_director', 'superadmin'], true)) {
+        if (! in_array(auth()->user()->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403, 'Only club directors or superadmin can create a club.');
         }
 
@@ -651,14 +654,13 @@ class ClubController extends Controller
         return redirect()->back()->with('success', 'Club updated successfully.');
     }
 
-
     public function destroy(Request $request)
     {
         $clubId = $request->input('id');
 
         $club = Club::findOrFail($clubId);
 
-        if (auth()->user()?->profile_type !== 'superadmin' && !$club->users()->where('user_id', auth()->id())->exists()) {
+        if (auth()->user()?->profile_type !== 'superadmin' && ! $club->users()->where('user_id', auth()->id())->exists()) {
             abort(403);
         }
 
@@ -666,6 +668,7 @@ class ClubController extends Controller
 
         return response()->json(['message' => 'Club deleted successfully.']);
     }
+
     public function getByIds(Request $request)
     {
         $ids = (array) $request->input('ids', []);
@@ -678,7 +681,7 @@ class ClubController extends Controller
     public function getByUser(User $user)
     {
         $authUser = auth()->user();
-        if (!$authUser) {
+        if (! $authUser) {
             abort(401);
         }
 
@@ -688,7 +691,7 @@ class ClubController extends Controller
 
         if ($authUser->profile_type === 'superadmin' && (int) $authUser->id === (int) $user->id) {
             $query = Club::query()
-                ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
+                ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'adventurerYearlyApplications.signatures', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
                 ->orderBy('club_name');
 
             $contextClubId = session('superadmin_context.club_id');
@@ -707,7 +710,7 @@ class ClubController extends Controller
         $clubIds = ClubHelper::clubIdsForUser($user);
 
         $clubs = Club::whereIn('id', $clubIds)
-            ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
+            ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'adventurerYearlyApplications.signatures', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
             ->orderBy('club_name')
             ->get();
 
@@ -718,6 +721,7 @@ class ClubController extends Controller
     {
         return $clubs->map(function ($club) {
             $club->setAttribute('insurance_payment_amount', $club->district?->association?->insurance_payment_amount);
+
             return $club;
         });
     }
@@ -752,7 +756,7 @@ class ClubController extends Controller
             $ownerId = $club->user_id ?? null;
             if ($ownerId) {
                 $owner = User::select('id', 'name', 'email')->find($ownerId);
-                if ($owner && !$club->users->contains('id', $owner->id)) {
+                if ($owner && ! $club->users->contains('id', $owner->id)) {
                     $club->users->push($owner);
                 }
             }
@@ -771,7 +775,7 @@ class ClubController extends Controller
         $authUser = $request->user();
         $user = User::findOrFail($validated['user_id']);
 
-        if (!$authUser) {
+        if (! $authUser) {
             abort(401);
         }
 
@@ -829,7 +833,7 @@ class ClubController extends Controller
     public function attachDirector(Request $request, Club $club)
     {
         $user = $request->user();
-        if (!$user || !in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
+        if (! $user || ! in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403, 'Only club directors or superadmin can attach to a club.');
         }
 
@@ -859,7 +863,7 @@ class ClubController extends Controller
             ->where('status', 'active')
             ->count();
 
-        if ($currentClubCount >= 2 && !DB::table('club_user')->where('user_id', $targetUser->id)->where('club_id', $club->id)->exists()) {
+        if ($currentClubCount >= 2 && ! DB::table('club_user')->where('user_id', $targetUser->id)->where('club_id', $club->id)->exists()) {
             return response()->json([
                 'message' => 'Un director no puede tener mas de 2 clubes asignados.',
             ], 422);
@@ -900,7 +904,7 @@ class ClubController extends Controller
     public function detachDirector(Request $request, Club $club)
     {
         $user = $request->user();
-        if (!$user || !in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
+        if (! $user || ! in_array($user->profile_type, ['club_director', 'superadmin'], true)) {
             abort(403, 'Only club directors or superadmin can detach from a club.');
         }
 
@@ -919,7 +923,7 @@ class ClubController extends Controller
             ->where('status', 'active')
             ->exists();
 
-        if (!$isLinked) {
+        if (! $isLinked) {
             return response()->json([
                 'message' => 'Este director no esta vinculado activamente a este club.',
             ], 422);
@@ -1028,7 +1032,7 @@ class ClubController extends Controller
         $byClass = [];
         foreach ($staffRecords as $record) {
             $name = $record->user?->name;
-            if (!$name && $record->id_data) {
+            if (! $name && $record->id_data) {
                 if ($record->type === 'adventurers') {
                     $name = $adventurerDetailNames->get($record->id_data)?->name;
                 } elseif (in_array($record->type, ['pathfinders', 'temp_pathfinder'], true)) {
@@ -1053,11 +1057,6 @@ class ClubController extends Controller
         return $this->attachUnionCarpetaDefinitions($clubs);
     }
 
-
-
-
-
-
     /* =========================
      * PAYMENT CONCEPTS (CRUD)
      * ========================= */
@@ -1071,7 +1070,7 @@ class ClubController extends Controller
 
         $query = PaymentConcept::query()
             ->where('club_id', $club->id)
-            ->when($request->filled('status'), fn($q) => $q->where('status', $request->status))
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->with([
                 'createdBy:id,name',
                 'club:id,club_name',
@@ -1122,26 +1121,26 @@ class ClubController extends Controller
 
         return DB::transaction(function () use ($payload, $request, $club) {
             $concept = PaymentConcept::create([
-                'concept'             => $payload['concept'],
+                'concept' => $payload['concept'],
                 'payment_expected_by' => $payload['payment_expected_by'] ?? null,
-                'amount'              => $payload['amount'],       // <--
-                'reusable'            => (bool) ($payload['reusable'] ?? false),
-                'type'                => $payload['type'],
-                'pay_to'              => $payload['pay_to'],
-                'payee_type'          => $payload['payee_type'] ?? null,
-                'payee_id'            => $payload['payee_id'] ?? null,
-                'created_by'          => $request->user()->id,
-                'status'              => $payload['status'],
-                'club_id'             => $club->id,
+                'amount' => $payload['amount'],       // <--
+                'reusable' => (bool) ($payload['reusable'] ?? false),
+                'type' => $payload['type'],
+                'pay_to' => $payload['pay_to'],
+                'payee_type' => $payload['payee_type'] ?? null,
+                'payee_id' => $payload['payee_id'] ?? null,
+                'created_by' => $request->user()->id,
+                'status' => $payload['status'],
+                'club_id' => $club->id,
             ]);
 
             foreach ($payload['scopes'] as $s) {
                 $concept->scopes()->create([
                     'scope_type' => $s['scope_type'],
-                    'club_id'    => $s['club_id']   ?? null,
-                    'class_id'   => $s['class_id']  ?? null,
-                    'member_id'  => $s['member_id'] ?? null,
-                    'staff_id'   => $s['staff_id']  ?? null,
+                    'club_id' => $s['club_id'] ?? null,
+                    'class_id' => $s['class_id'] ?? null,
+                    'member_id' => $s['member_id'] ?? null,
+                    'staff_id' => $s['staff_id'] ?? null,
                 ]);
             }
 
@@ -1154,7 +1153,7 @@ class ClubController extends Controller
                     'scopes.class:id,class_name',
                     'scopes.member:id,applicant_name',
                     'scopes.staff:id,name',
-                ])
+                ]),
             ], 201);
         });
     }
@@ -1194,10 +1193,10 @@ class ClubController extends Controller
                 foreach ($payload['scopes'] as $s) {
                     $paymentConcept->scopes()->create([
                         'scope_type' => $s['scope_type'],
-                        'club_id'    => $s['club_id']   ?? null,
-                        'class_id'   => $s['class_id']  ?? null,
-                        'member_id'  => $s['member_id'] ?? null,
-                        'staff_id'   => $s['staff_id']  ?? null,
+                        'club_id' => $s['club_id'] ?? null,
+                        'class_id' => $s['class_id'] ?? null,
+                        'member_id' => $s['member_id'] ?? null,
+                        'staff_id' => $s['staff_id'] ?? null,
                     ]);
                 }
             }
@@ -1211,7 +1210,7 @@ class ClubController extends Controller
                     'scopes.class:id,class_name',
                     'scopes.member:id,applicant_name',
                     'scopes.staff:id,name',
-                ])
+                ]),
             ]);
         });
     }
@@ -1242,21 +1241,21 @@ class ClubController extends Controller
     protected function validateConcept(Request $request, bool $create): array
     {
         $base = [
-            'concept'              => [$create ? 'required' : 'sometimes', 'string', 'max:255'],
-            'payment_expected_by'  => [$create ? 'nullable' : 'sometimes', 'date'],
-            'amount'               => [$create ? 'required' : 'sometimes', 'numeric', 'min:0', 'max:999999.99'], // <--
-            'reusable'             => ['sometimes', 'boolean'],
-            'type'                 => [$create ? 'required' : 'sometimes', Rule::in(['mandatory','optional'])],
-            'pay_to'               => [$create ? 'required' : 'sometimes', 'string', 'max:255'],
-            'payee_type'           => ['nullable','string','max:255'],
-            'payee_id'             => ['nullable','integer'],
-            'status'               => [$create ? 'required' : 'sometimes', Rule::in(['active','inactive'])],
-            'scopes'               => [$create ? 'required' : 'sometimes','array','min:1'],
-            'scopes.*.scope_type'  => ['required_with:scopes', Rule::in(['club_wide','class','member','member_excluded','staff_wide','staff'])],
-            'scopes.*.club_id'     => ['nullable','integer','exists:clubs,id'],
-            'scopes.*.class_id'    => ['nullable','integer','exists:club_classes,id'],
-            'scopes.*.member_id'   => ['nullable','integer','exists:members,id'],
-            'scopes.*.staff_id'    => ['nullable','integer','exists:staff,id'],
+            'concept' => [$create ? 'required' : 'sometimes', 'string', 'max:255'],
+            'payment_expected_by' => [$create ? 'nullable' : 'sometimes', 'date'],
+            'amount' => [$create ? 'required' : 'sometimes', 'numeric', 'min:0', 'max:999999.99'], // <--
+            'reusable' => ['sometimes', 'boolean'],
+            'type' => [$create ? 'required' : 'sometimes', Rule::in(['mandatory', 'optional'])],
+            'pay_to' => [$create ? 'required' : 'sometimes', 'string', 'max:255'],
+            'payee_type' => ['nullable', 'string', 'max:255'],
+            'payee_id' => ['nullable', 'integer'],
+            'status' => [$create ? 'required' : 'sometimes', Rule::in(['active', 'inactive'])],
+            'scopes' => [$create ? 'required' : 'sometimes', 'array', 'min:1'],
+            'scopes.*.scope_type' => ['required_with:scopes', Rule::in(['club_wide', 'class', 'member', 'member_excluded', 'staff_wide', 'staff'])],
+            'scopes.*.club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'scopes.*.class_id' => ['nullable', 'integer', 'exists:club_classes,id'],
+            'scopes.*.member_id' => ['nullable', 'integer', 'exists:members,id'],
+            'scopes.*.staff_id' => ['nullable', 'integer', 'exists:staff,id'],
         ];
 
         return $request->validate($base);
@@ -1264,20 +1263,23 @@ class ClubController extends Controller
 
     protected function normalizePayTo(?string $payTo): ?string
     {
-        if ($payTo === 'reinbursement_to') return 'reimbursement_to';
+        if ($payTo === 'reinbursement_to') {
+            return 'reimbursement_to';
+        }
+
         return $payTo;
     }
 
     protected function assertAccountPayTo(int $clubId, ?string $payTo): void
     {
-        if (!$payTo) {
+        if (! $payTo) {
             abort(422, 'Invalid pay_to.');
         }
         $exists = Account::query()
             ->where('club_id', $clubId)
             ->where('pay_to', $payTo)
             ->exists();
-        if (!$exists) {
+        if (! $exists) {
             abort(422, "Account '{$payTo}' does not exist for this club.");
         }
     }
@@ -1292,17 +1294,17 @@ class ClubController extends Controller
             return [null, null];
         }
 
-        if (!$type || !$id) {
+        if (! $type || ! $id) {
             return [null, null];
         }
 
         // Map short names to FQCN
         $map = [
-            'StaffAdventurer'  => \App\Models\Staff::class,
+            'StaffAdventurer' => \App\Models\Staff::class,
             'MemberAdventurer' => \App\Models\Member::class,
-            'Staff'            => \App\Models\Staff::class,
-            'Member'           => \App\Models\Member::class,
-            'User'             => \App\Models\User::class,
+            'Staff' => \App\Models\Staff::class,
+            'Member' => \App\Models\Member::class,
+            'User' => \App\Models\User::class,
         ];
 
         if (isset($map[$type])) {
@@ -1325,38 +1327,16 @@ class ClubController extends Controller
         foreach ($scopes as $s) {
             $t = $s['scope_type'] ?? null;
             $ok = match ($t) {
-                'club_wide'  => !empty($s['club_id']),
-                'class'      => !empty($s['class_id']),
-                'member', 'member_excluded' => !empty($s['member_id']),
-                'staff_wide' => !empty($s['club_id']),
-                'staff'      => !empty($s['staff_id']),
-                default      => false,
+                'club_wide' => ! empty($s['club_id']),
+                'class' => ! empty($s['class_id']),
+                'member', 'member_excluded' => ! empty($s['member_id']),
+                'staff_wide' => ! empty($s['club_id']),
+                'staff' => ! empty($s['staff_id']),
+                default => false,
             };
-            if (!$ok) {
+            if (! $ok) {
                 abort(422, "Invalid scope payload for scope_type '{$t}'");
             }
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }

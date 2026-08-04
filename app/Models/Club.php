@@ -106,6 +106,11 @@ class Club extends Model
         return $this->hasMany(PathfinderAnnualApplication::class)->latest('application_year');
     }
 
+    public function adventurerYearlyApplications()
+    {
+        return $this->hasMany(AdventurerYearlyApplication::class)->latest('application_year');
+    }
+
     public function pathfinderMonthlyReports()
     {
         return $this->hasMany(PathfinderMonthlyReport::class)

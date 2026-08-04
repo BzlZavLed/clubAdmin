@@ -20,6 +20,10 @@ import {
     createClubObjective,
     updateClubObjective,
     deleteClubObjective,
+    saveAdventurerYearlyApplication,
+    sendAdventurerYearlyApplication,
+    saveAdventurerYearlyApplicationDirectorSignature,
+    requestAdventurerYearlyApplicationSignature,
     savePathfinderAnnualApplication,
     sendPathfinderAnnualApplication,
     savePathfinderAnnualApplicationDirectorSignature,
@@ -77,6 +81,18 @@ const showRequirementFormByClass = ref({})
 const objectiveDraftByClub = ref({})
 const editingObjectiveByClub = ref({})
 const showObjectiveFormByClub = ref({})
+const adventurerYearlyDraftByClub = ref({})
+const adventurerYearlyEmailByApplication = ref({})
+const adventurerYearlyDefaultRecipient = 'areynolds@ccosda.org'
+const savingAdventurerYearlyByClub = ref({})
+const sendingAdventurerYearlyByApplication = ref({})
+const adventurerSignerDraftByRole = ref({})
+const adventurerDirectorSignatureMode = ref({})
+const adventurerDirectorCanvas = ref({})
+const adventurerDirectorDrawing = ref({})
+const adventurerDirectorHasDrawing = ref({})
+const savingAdventurerDirectorSignature = ref({})
+const requestingAdventurerSignature = ref({})
 const annualApplicationDraftByClub = ref({})
 const annualApplicationEmailByClub = ref({})
 const savingAnnualApplicationByClub = ref({})
@@ -245,7 +261,11 @@ const fetchClubs = async () => {
     try {
         const data = await fetchClubsByUserId(user.value.id)
         clubs.value = Array.isArray(data) ? data : []
+        clubs.value.forEach(club => {
+            getAdventurerYearlyApplications(club).forEach(preloadAdventurerYearlyRecipient)
+        })
         annualApplicationDraftByClub.value = {}
+        adventurerYearlyDraftByClub.value = {}
         monthlyReportDraftByClub.value = {}
         hasClub.value = clubs.value.length > 0
         if (!clubId.value && clubs.value.length && !isSuperadmin.value) {
@@ -579,6 +599,280 @@ const getClubObjectives = (club) => {
         .filter(objective => objective.status !== 'inactive')
         .slice()
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+}
+
+const isAdventurerHonorsClub = (club) => club?.club_type === 'adventurers' && (club?.evaluation_system || 'honors') === 'honors'
+const adventurerHonorsClubs = computed(() => filteredClubs.value.filter(isAdventurerHonorsClub))
+
+const getAdventurerYearlyApplications = (club) => (
+    Array.isArray(club?.adventurer_yearly_applications)
+        ? club.adventurer_yearly_applications.slice().sort((a, b) => Number(b.application_year) - Number(a.application_year))
+        : []
+)
+
+const adventurerYearlyDefaults = (club) => ({
+    application_year: String(new Date().getFullYear()),
+    application_date: today,
+    club_name: club?.club_name || '',
+    sponsoring_church: club?.church_name || '',
+    pastor: club?.pastor_name || '',
+    elected_club_director: club?.director_name || user.value?.name || '',
+    email_address: user.value?.email || '',
+    cell_number: '',
+    home_address: '',
+    church_pastor_signature: '',
+    head_elder_signature: '',
+    church_clerk_signature: '',
+    club_director_signature: '',
+    signature_date: today,
+    other_board_members: ['', '', '', '', ''],
+    signatures_complete: false,
+    signatures: [],
+})
+
+const getAdventurerYearlyDraft = (club) => {
+    if (!club?.id) return adventurerYearlyDefaults(club)
+    if (!adventurerYearlyDraftByClub.value[club.id]) {
+        adventurerYearlyDraftByClub.value[club.id] = adventurerYearlyDefaults(club)
+    }
+    return adventurerYearlyDraftByClub.value[club.id]
+}
+
+const clearAdventurerYearlyForm = (club) => {
+    adventurerYearlyDraftByClub.value[club.id] = adventurerYearlyDefaults(club)
+}
+
+const syncAdventurerYearlyApplication = (clubId, application) => {
+    const club = clubs.value.find(item => Number(item.id) === Number(clubId))
+    if (!club) return
+    const existing = getAdventurerYearlyApplications(club)
+        .filter(item => Number(item.id) !== Number(application.id))
+    club.adventurer_yearly_applications = [application, ...existing]
+    preloadAdventurerYearlyRecipient(application)
+}
+
+const saveAdventurerYearly = async (club) => {
+    const draft = getAdventurerYearlyDraft(club)
+    if (!draft.application_year || !draft.application_date || !draft.club_name?.trim() || !draft.sponsoring_church?.trim()) {
+        showToast(tr('Completa el año, la fecha, el club y la iglesia patrocinadora', 'Complete the year, date, club, and sponsoring church'), 'error')
+        return
+    }
+
+    savingAdventurerYearlyByClub.value[club.id] = true
+    try {
+        const response = await saveAdventurerYearlyApplication(club.id, draft)
+        syncAdventurerYearlyApplication(club.id, response.data)
+        showToast(tr('Solicitud anual guardada', 'Yearly application saved'), 'success')
+    } catch (error) {
+        console.error('Failed to save Adventurer yearly application:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo guardar la solicitud anual', 'Could not save the yearly application'), 'error')
+    } finally {
+        savingAdventurerYearlyByClub.value[club.id] = false
+    }
+}
+
+const downloadAdventurerYearly = (club, application) => {
+    window.open(route('clubs.adventurer-yearly-applications.download', {
+        club: club.id,
+        application: application.id,
+    }), '_blank')
+}
+
+const sendAdventurerYearly = async (club, application) => {
+    const email = String(adventurerYearlyEmailByApplication.value[application.id] || '').trim()
+    if (!adventurerSignaturesComplete(application)) {
+        showToast(tr('Completa las cuatro firmas antes de enviar', 'Complete all four signatures before sending'), 'error')
+        return
+    }
+    if (!email) {
+        showToast(tr('Indica el correo destino', 'Enter the recipient email'), 'error')
+        return
+    }
+
+    sendingAdventurerYearlyByApplication.value[application.id] = true
+    try {
+        const response = await sendAdventurerYearlyApplication(club.id, application.id, email)
+        syncAdventurerYearlyApplication(club.id, response.data)
+        adventurerYearlyEmailByApplication.value[application.id] = response.data.last_sent_to_email || email
+        showToast(tr('Solicitud anual enviada', 'Yearly application sent'), 'success')
+    } catch (error) {
+        console.error('Failed to send Adventurer yearly application:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar la solicitud anual', 'Could not send the yearly application'), 'error')
+    } finally {
+        sendingAdventurerYearlyByApplication.value[application.id] = false
+    }
+}
+
+const adventurerDeliveryLabel = (application) => {
+    if (application.delivery_status === 'sent') return tr('Enviada', 'Sent')
+    if (application.delivery_status === 'failed') return tr('Falló', 'Failed')
+    return tr('Guardada', 'Saved')
+}
+
+const adventurerSignature = (application, role) => (
+    (application?.signatures || []).find(signature => signature.role === role) || {
+        role,
+        signer_name: '',
+        signer_email: '',
+        status: 'pending',
+        requested_at: null,
+        signed_at: null,
+        signature_url: null,
+    }
+)
+
+const adventurerSignaturesComplete = (application) => {
+    const signedRoles = new Set((application?.signatures || [])
+        .filter(signature => signature?.signed_at)
+        .map(signature => signature.role))
+    return ['director', 'pastor', 'head_elder', 'church_clerk'].every(role => signedRoles.has(role))
+}
+
+const preloadAdventurerYearlyRecipient = (application) => {
+    if (!application?.id || !adventurerSignaturesComplete(application)) return
+    if (String(adventurerYearlyEmailByApplication.value[application.id] || '').trim()) return
+    adventurerYearlyEmailByApplication.value[application.id] = application.last_sent_to_email || adventurerYearlyDefaultRecipient
+}
+
+const adventurerSignerDraft = (club, application, role) => {
+    const key = `${application.id}-${role}`
+    if (!adventurerSignerDraftByRole.value[key]) {
+        const signature = adventurerSignature(application, role)
+        const defaultName = role === 'director'
+            ? (application.elected_club_director || club.director_name || user.value?.name || '')
+            : role === 'pastor'
+                ? (application.pastor || club.pastor_name || '')
+                : ''
+        adventurerSignerDraftByRole.value[key] = {
+            signer_name: signature.signer_name || defaultName,
+            signer_email: signature.signer_email || (role === 'pastor' ? club?.church?.pastor_email || '' : ''),
+        }
+    }
+    return adventurerSignerDraftByRole.value[key]
+}
+
+const adventurerSignatureStatusLabel = (signature) => {
+    if (signature?.signed_at) return tr('Firmado', 'Signed')
+    if (signature?.requested_at) return tr('Solicitud enviada', 'Request sent')
+    return tr('Pendiente', 'Pending')
+}
+
+const adventurerSignatureStatusClass = (signature) => {
+    if (signature?.signed_at) return 'bg-emerald-100 text-emerald-800'
+    if (signature?.requested_at) return 'bg-amber-100 text-amber-800'
+    return 'bg-gray-100 text-gray-700'
+}
+
+const adventurerRoleLabel = (role) => ({
+    pastor: tr('Pastor de la iglesia', 'Church Pastor'),
+    head_elder: tr('Anciano principal', 'Head Elder'),
+    church_clerk: tr('Secretario de iglesia', 'Church Clerk'),
+    director: tr('Director del club', 'Club Director'),
+}[role] || role)
+
+const setAdventurerDirectorCanvas = (applicationId, element) => {
+    if (!element || adventurerDirectorCanvas.value[applicationId] === element) return
+    adventurerDirectorCanvas.value[applicationId] = element
+    nextTick(() => configureAdventurerDirectorCanvas(applicationId))
+}
+
+const configureAdventurerDirectorCanvas = (applicationId) => {
+    const canvas = adventurerDirectorCanvas.value[applicationId]
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const ratio = window.devicePixelRatio || 1
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio))
+    canvas.height = Math.max(1, Math.floor(rect.height * ratio))
+    const context = canvas.getContext('2d')
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.strokeStyle = '#111827'
+    context.lineWidth = 2.5 * ratio
+    context.lineCap = 'round'
+    context.lineJoin = 'round'
+    adventurerDirectorHasDrawing.value[applicationId] = false
+}
+
+const adventurerDirectorPoint = (applicationId, event) => {
+    const canvas = adventurerDirectorCanvas.value[applicationId]
+    const rect = canvas.getBoundingClientRect()
+    return {
+        x: (event.clientX - rect.left) * (canvas.width / rect.width),
+        y: (event.clientY - rect.top) * (canvas.height / rect.height),
+    }
+}
+
+const startAdventurerDirectorSignature = (applicationId, event) => {
+    const canvas = adventurerDirectorCanvas.value[applicationId]
+    if (!canvas) return
+    adventurerDirectorDrawing.value[applicationId] = true
+    adventurerDirectorHasDrawing.value[applicationId] = true
+    const point = adventurerDirectorPoint(applicationId, event)
+    const context = canvas.getContext('2d')
+    context.beginPath()
+    context.moveTo(point.x, point.y)
+}
+
+const drawAdventurerDirectorSignature = (applicationId, event) => {
+    if (!adventurerDirectorDrawing.value[applicationId]) return
+    const canvas = adventurerDirectorCanvas.value[applicationId]
+    const point = adventurerDirectorPoint(applicationId, event)
+    const context = canvas.getContext('2d')
+    context.lineTo(point.x, point.y)
+    context.stroke()
+}
+
+const saveAdventurerDirector = async (club, application) => {
+    const draft = adventurerSignerDraft(club, application, 'director')
+    const mode = adventurerDirectorSignatureMode.value[application.id] || 'typed'
+    if (!draft.signer_name?.trim()) {
+        showToast(tr('Indica el nombre del director', 'Enter the director name'), 'error')
+        return
+    }
+    if (mode === 'drawn' && !adventurerDirectorHasDrawing.value[application.id]) {
+        showToast(tr('Dibuja la firma del director', 'Draw the director signature'), 'error')
+        return
+    }
+
+    savingAdventurerDirectorSignature.value[application.id] = true
+    try {
+        const response = await saveAdventurerYearlyApplicationDirectorSignature(club.id, application.id, {
+            signature_type: mode,
+            signer_name: draft.signer_name.trim(),
+            signature_text: mode === 'typed' ? draft.signer_name.trim() : null,
+            signature_data: mode === 'drawn' ? adventurerDirectorCanvas.value[application.id]?.toDataURL('image/png') : null,
+        })
+        syncAdventurerYearlyApplication(club.id, response.data)
+        showToast(tr('Firma del director guardada', 'Director signature saved'), 'success')
+    } catch (error) {
+        showToast(error?.response?.data?.message || tr('No se pudo guardar la firma', 'Could not save the signature'), 'error')
+    } finally {
+        savingAdventurerDirectorSignature.value[application.id] = false
+    }
+}
+
+const requestAdventurerSignature = async (club, application, role) => {
+    const draft = adventurerSignerDraft(club, application, role)
+    if (!draft.signer_email?.trim()) {
+        showToast(tr('Indica el correo destino', 'Enter the recipient email'), 'error')
+        return
+    }
+
+    const key = `${application.id}-${role}`
+    requestingAdventurerSignature.value[key] = true
+    try {
+        const response = await requestAdventurerYearlyApplicationSignature(club.id, application.id, {
+            role,
+            name: draft.signer_name?.trim() || null,
+            email: draft.signer_email.trim(),
+        })
+        syncAdventurerYearlyApplication(club.id, response.data)
+        showToast(tr('Solicitud de firma enviada', 'Signature request sent'), 'success')
+    } catch (error) {
+        showToast(error?.response?.data?.message || tr('No se pudo enviar la solicitud de firma', 'Could not send the signature request'), 'error')
+    } finally {
+        requestingAdventurerSignature.value[key] = false
+    }
 }
 
 const isPathfinderHonorsClub = (club) => club?.club_type === 'pathfinders' && (club?.evaluation_system || 'honors') === 'honors'
@@ -1814,6 +2108,230 @@ onMounted(fetchClubs);
                         <p v-else-if="clubLimitReached" class="text-sm text-amber-700">
                             {{ tr('Ya tienes el maximo de 2 clubes asignados.', 'You already have the maximum of 2 assigned clubs.') }}
                         </p>
+                    </div>
+                </div>
+            </details>
+
+            <details v-if="adventurerHonorsClubs.length" class="border rounded">
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">
+                    {{ tr('Solicitud anual de Aventureros', 'Adventurer Yearly Application') }}
+                </summary>
+                <div class="space-y-5 p-4">
+                    <div
+                        v-for="club in adventurerHonorsClubs"
+                        :key="`adventurer-yearly-${club.id}`"
+                        class="rounded border bg-white p-4"
+                    >
+                        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">{{ club.club_name }}</h3>
+                                <p class="text-sm text-gray-600">
+                                    {{ tr('Disponible para clubes de Aventureros con evaluación por honores.', 'Available for Adventurer clubs using the honors evaluation system.') }}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                class="w-fit rounded bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-800"
+                                @click="clearAdventurerYearlyForm(club)"
+                            >
+                                {{ tr('Limpiar formulario', 'Clear form') }}
+                            </button>
+                        </div>
+
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Año de solicitud', 'Application year') }}
+                                <input v-model="getAdventurerYearlyDraft(club).application_year" type="number" min="2000" max="2100" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Fecha', 'Date') }}
+                                <input v-model="getAdventurerYearlyDraft(club).application_date" type="date" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Nombre del club', 'Club Name') }}
+                                <input v-model="getAdventurerYearlyDraft(club).club_name" type="text" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Iglesia patrocinadora', 'Sponsoring Church') }}
+                                <input v-model="getAdventurerYearlyDraft(club).sponsoring_church" type="text" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Pastor', 'Pastor') }}
+                                <input v-model="getAdventurerYearlyDraft(club).pastor" type="text" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Director electo del club', 'Elected Club Director') }}
+                                <input v-model="getAdventurerYearlyDraft(club).elected_club_director" type="text" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Correo electrónico', 'Email Address') }}
+                                <input v-model="getAdventurerYearlyDraft(club).email_address" type="email" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Número celular', 'Cell Number') }}
+                                <input v-model="getAdventurerYearlyDraft(club).cell_number" type="tel" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700 md:col-span-2">
+                                {{ tr('Dirección residencial', 'Home Address') }}
+                                <input v-model="getAdventurerYearlyDraft(club).home_address" type="text" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                        </div>
+
+                        <div class="mt-5">
+                            <h4 class="mb-3 font-semibold text-gray-900">{{ tr('Otros miembros de la junta de iglesia', 'Other Church Board Members') }}</h4>
+                            <div class="grid gap-3 md:grid-cols-2">
+                                <label
+                                    v-for="(_, index) in getAdventurerYearlyDraft(club).other_board_members"
+                                    :key="`board-member-${club.id}-${index}`"
+                                    class="text-sm font-medium text-gray-700"
+                                >
+                                    {{ tr('Miembro', 'Member') }} {{ index + 1 }}
+                                    <input v-model="getAdventurerYearlyDraft(club).other_board_members[index]" type="text" class="mt-1 w-full rounded border p-2" />
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 flex justify-end">
+                            <button
+                                type="button"
+                                class="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="savingAdventurerYearlyByClub[club.id]"
+                                @click="saveAdventurerYearly(club)"
+                            >
+                                {{ savingAdventurerYearlyByClub[club.id] ? tr('Guardando...', 'Saving...') : tr('Enviar formulario', 'Submit form') }}
+                            </button>
+                        </div>
+
+                        <div class="mt-6 border-t pt-5">
+                            <h4 class="font-semibold text-gray-900">{{ tr('Solicitudes enviadas', 'Submitted applications') }}</h4>
+                            <p class="mb-3 text-xs text-gray-500">
+                                {{ tr('Después de enviar el formulario, puedes generar el Word o enviarlo por correo.', 'After submitting the form, you can generate the Word document or email it.') }}
+                            </p>
+
+                            <div v-if="getAdventurerYearlyApplications(club).length" class="overflow-x-auto rounded border border-gray-200">
+                                <table class="min-w-full text-left text-sm">
+                                    <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+                                        <tr>
+                                            <th class="px-3 py-2">{{ tr('Año', 'Year') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Fecha', 'Date') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Estado', 'Status') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Último envío', 'Last sent') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Documento', 'Document') }}</th>
+                                            <th class="min-w-[280px] px-3 py-2">{{ tr('Enviar por correo', 'Send by email') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <tr v-for="application in getAdventurerYearlyApplications(club)" :key="application.id">
+                                            <td class="px-3 py-3 font-medium">{{ application.application_year }}</td>
+                                            <td class="px-3 py-3">{{ application.application_date }}</td>
+                                            <td class="px-3 py-3">
+                                                <span :class="adventurerSignaturesComplete(application) ? 'text-emerald-700' : 'text-amber-700'">
+                                                    {{ adventurerSignaturesComplete(application) ? tr('Firmas completas', 'Signatures complete') : tr('Firmas pendientes', 'Signatures pending') }}
+                                                </span>
+                                                <div class="text-xs text-gray-500">{{ adventurerDeliveryLabel(application) }}</div>
+                                            </td>
+                                            <td class="px-3 py-3 text-xs text-gray-600">{{ application.last_sent_to_email || '—' }}</td>
+                                            <td class="px-3 py-3">
+                                                <button
+                                                    type="button"
+                                                    class="whitespace-nowrap rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                                                    @click="downloadAdventurerYearly(club, application)"
+                                                >
+                                                    {{ tr('Generar Word', 'Generate Word') }}
+                                                </button>
+                                            </td>
+                                            <td class="px-3 py-3">
+                                                <div class="flex min-w-[260px] gap-2">
+                                                    <input
+                                                        v-model="adventurerYearlyEmailByApplication[application.id]"
+                                                        type="email"
+                                                        class="min-w-0 flex-1 rounded border p-2 text-sm"
+                                                        :placeholder="tr('Correo destino', 'Recipient email')"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        class="rounded bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                                        :disabled="sendingAdventurerYearlyByApplication[application.id] || !adventurerSignaturesComplete(application)"
+                                                        @click="sendAdventurerYearly(club, application)"
+                                                    >
+                                                        {{ sendingAdventurerYearlyByApplication[application.id] ? tr('Enviando...', 'Sending...') : tr('Enviar', 'Send') }}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p v-else class="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                {{ tr('Envía el formulario para habilitar la generación del documento Word.', 'Submit the form to enable Word document generation.') }}
+                            </p>
+
+                            <div
+                                v-for="application in getAdventurerYearlyApplications(club)"
+                                :key="`adventurer-signatures-${application.id}`"
+                                class="mt-5 rounded border border-gray-200 p-4"
+                            >
+                                <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <h5 class="font-semibold text-gray-900">{{ tr('Firmas de la solicitud', 'Application signatures') }} {{ application.application_year }}</h5>
+                                        <p class="text-xs text-gray-500">{{ tr('Los enlaces públicos vencen 30 días después de enviarse.', 'Public links expire 30 days after they are sent.') }}</p>
+                                    </div>
+                                    <span class="w-fit rounded px-2 py-1 text-xs font-semibold" :class="adventurerSignaturesComplete(application) ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'">
+                                        {{ adventurerSignaturesComplete(application) ? tr('Completa', 'Complete') : tr('Pendiente', 'Pending') }}
+                                    </span>
+                                </div>
+
+                                <div class="grid gap-4 lg:grid-cols-2">
+                                    <div class="rounded border border-gray-200 bg-gray-50 p-4">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <h6 class="font-semibold text-gray-900">{{ adventurerRoleLabel('director') }}</h6>
+                                            <span class="rounded px-2 py-1 text-xs font-semibold" :class="adventurerSignatureStatusClass(adventurerSignature(application, 'director'))">
+                                                {{ adventurerSignatureStatusLabel(adventurerSignature(application, 'director')) }}
+                                            </span>
+                                        </div>
+                                        <input v-model="adventurerSignerDraft(club, application, 'director').signer_name" type="text" class="mt-3 w-full rounded border p-2 text-sm" :placeholder="tr('Nombre del director', 'Director name')" />
+                                        <div class="mt-3 inline-flex rounded bg-gray-200 p-1 text-xs">
+                                            <button type="button" class="rounded px-3 py-1" :class="(adventurerDirectorSignatureMode[application.id] || 'typed') === 'typed' ? 'bg-white font-semibold shadow-sm' : ''" @click="adventurerDirectorSignatureMode[application.id] = 'typed'">{{ tr('Escrita', 'Typed') }}</button>
+                                            <button type="button" class="rounded px-3 py-1" :class="adventurerDirectorSignatureMode[application.id] === 'drawn' ? 'bg-white font-semibold shadow-sm' : ''" @click="() => { adventurerDirectorSignatureMode[application.id] = 'drawn'; nextTick(() => configureAdventurerDirectorCanvas(application.id)) }">{{ tr('Dibujada', 'Drawn') }}</button>
+                                        </div>
+                                        <div v-if="adventurerDirectorSignatureMode[application.id] === 'drawn'" class="mt-3">
+                                            <canvas
+                                                :ref="element => setAdventurerDirectorCanvas(application.id, element)"
+                                                class="h-32 w-full touch-none rounded border bg-white"
+                                                @pointerdown.prevent="startAdventurerDirectorSignature(application.id, $event)"
+                                                @pointermove.prevent="drawAdventurerDirectorSignature(application.id, $event)"
+                                                @pointerup.prevent="adventurerDirectorDrawing[application.id] = false"
+                                                @pointerleave.prevent="adventurerDirectorDrawing[application.id] = false"
+                                            ></canvas>
+                                            <button type="button" class="mt-2 text-xs font-semibold text-gray-600" @click="configureAdventurerDirectorCanvas(application.id)">{{ tr('Limpiar firma', 'Clear signature') }}</button>
+                                        </div>
+                                        <img v-if="adventurerSignature(application, 'director').signature_url" :src="adventurerSignature(application, 'director').signature_url" alt="" class="mt-3 max-h-20 rounded border bg-white" />
+                                        <button type="button" class="mt-3 rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60" :disabled="savingAdventurerDirectorSignature[application.id]" @click="saveAdventurerDirector(club, application)">
+                                            {{ savingAdventurerDirectorSignature[application.id] ? tr('Guardando...', 'Saving...') : tr('Guardar firma', 'Save signature') }}
+                                        </button>
+                                    </div>
+
+                                    <div
+                                        v-for="role in ['pastor', 'head_elder', 'church_clerk']"
+                                        :key="`${application.id}-${role}`"
+                                        class="rounded border border-gray-200 bg-gray-50 p-4"
+                                    >
+                                        <div class="flex items-center justify-between gap-3">
+                                            <h6 class="font-semibold text-gray-900">{{ adventurerRoleLabel(role) }}</h6>
+                                            <span class="rounded px-2 py-1 text-xs font-semibold" :class="adventurerSignatureStatusClass(adventurerSignature(application, role))">
+                                                {{ adventurerSignatureStatusLabel(adventurerSignature(application, role)) }}
+                                            </span>
+                                        </div>
+                                        <input v-model="adventurerSignerDraft(club, application, role).signer_name" type="text" class="mt-3 w-full rounded border p-2 text-sm" :placeholder="tr('Nombre del firmante', 'Signer name')" />
+                                        <input v-model="adventurerSignerDraft(club, application, role).signer_email" type="email" class="mt-2 w-full rounded border p-2 text-sm" :placeholder="tr('Correo del firmante', 'Signer email')" />
+                                        <img v-if="adventurerSignature(application, role).signature_url" :src="adventurerSignature(application, role).signature_url" alt="" class="mt-3 max-h-20 rounded border bg-white" />
+                                        <button type="button" class="mt-3 rounded bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60" :disabled="requestingAdventurerSignature[`${application.id}-${role}`]" @click="requestAdventurerSignature(club, application, role)">
+                                            {{ requestingAdventurerSignature[`${application.id}-${role}`] ? tr('Enviando...', 'Sending...') : tr('Enviar enlace de firma', 'Send signature link') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </details>

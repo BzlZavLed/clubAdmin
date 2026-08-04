@@ -200,7 +200,7 @@ class PathfinderAnnualApplicationController extends Controller
     {
         $application->loadMissing(['club', 'signatures']);
 
-        if (!$force && $application->pdf_path && Storage::disk('public')->exists($application->pdf_path)) {
+        if (! $force && $application->pdf_path && Storage::disk('public')->exists($application->pdf_path)) {
             return;
         }
 
@@ -211,12 +211,12 @@ class PathfinderAnnualApplicationController extends Controller
         ])->setPaper('letter', 'portrait');
 
         $path = 'generated/pathfinder-annual-applications/'
-            . $application->club_id
-            . '/'
-            . Str::slug($application->application_year)
-            . '-'
-            . now()->format('YmdHis')
-            . '.pdf';
+            .$application->club_id
+            .'/'
+            .Str::slug($application->application_year)
+            .'-'
+            .now()->format('YmdHis')
+            .'.pdf';
 
         Storage::disk('public')->put($path, $pdf->output());
 
@@ -229,10 +229,10 @@ class PathfinderAnnualApplicationController extends Controller
     private function pdfFilename(PathfinderAnnualApplication $application): string
     {
         return 'pathfinder-annual-application-'
-            . Str::slug($application->club?->club_name ?: 'club')
-            . '-'
-            . Str::slug($application->application_year)
-            . '.pdf';
+            .Str::slug($application->club?->club_name ?: 'club')
+            .'-'
+            .Str::slug($application->application_year)
+            .'.pdf';
     }
 
     private function authorizeClub(Request $request, Club $club): void
@@ -241,7 +241,11 @@ class PathfinderAnnualApplicationController extends Controller
             return;
         }
 
-        abort_unless(in_array((int) $club->id, ClubHelper::clubIdsForUser($request->user()), true), 403);
+        abort_unless(
+            collect(ClubHelper::clubIdsForUser($request->user()))
+                ->contains(fn ($clubId) => (int) $clubId === (int) $club->id),
+            403
+        );
     }
 
     private function ensurePathfinderHonorsClub(Club $club): void
@@ -281,7 +285,7 @@ class PathfinderAnnualApplicationController extends Controller
 
     private function storeSignatureImage(string $signatureData, PathfinderAnnualApplication $application, string $role): string
     {
-        if (!preg_match('/^data:image\/png;base64,([A-Za-z0-9+\/=\r\n]+)$/', $signatureData, $matches)) {
+        if (! preg_match('/^data:image\/png;base64,([A-Za-z0-9+\/=\r\n]+)$/', $signatureData, $matches)) {
             abort(response()->json([
                 'message' => 'La firma debe enviarse como imagen PNG.',
                 'errors' => ['signature_data' => ['La firma debe enviarse como imagen PNG.']],
@@ -289,7 +293,7 @@ class PathfinderAnnualApplicationController extends Controller
         }
 
         $image = base64_decode($matches[1], true);
-        if (!$image || strlen($image) > 1024 * 1024) {
+        if (! $image || strlen($image) > 1024 * 1024) {
             abort(response()->json([
                 'message' => 'La firma no es valida o es demasiado grande.',
                 'errors' => ['signature_data' => ['La firma no es valida o es demasiado grande.']],
@@ -297,12 +301,12 @@ class PathfinderAnnualApplicationController extends Controller
         }
 
         $path = 'pathfinder-annual-application-signatures/'
-            . $application->id
-            . '/'
-            . $role
-            . '-'
-            . now()->format('YmdHis')
-            . '.png';
+            .$application->id
+            .'/'
+            .$role
+            .'-'
+            .now()->format('YmdHis')
+            .'.png';
 
         Storage::disk('public')->put($path, $image);
 
@@ -317,7 +321,7 @@ class PathfinderAnnualApplicationController extends Controller
                 $mime = Storage::disk('public')->mimeType($signature->signature_path) ?: 'image/png';
 
                 return [
-                    $signature->role => 'data:' . $mime . ';base64,' . base64_encode(Storage::disk('public')->get($signature->signature_path)),
+                    $signature->role => 'data:'.$mime.';base64,'.base64_encode(Storage::disk('public')->get($signature->signature_path)),
                 ];
             })
             ->all();
