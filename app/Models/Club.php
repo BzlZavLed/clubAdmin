@@ -118,6 +118,13 @@ class Club extends Model
             ->orderByDesc('id');
     }
 
+    public function adventurerInductionRequests()
+    {
+        return $this->hasMany(AdventurerInductionRequest::class)
+            ->orderByDesc('induction_date')
+            ->orderByDesc('induction_time');
+    }
+
     public function pathfinderMonthlyReports()
     {
         return $this->hasMany(PathfinderMonthlyReport::class)

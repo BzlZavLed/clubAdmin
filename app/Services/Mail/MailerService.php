@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Mail\AdventurerInductionRequestMail;
 use App\Mail\AdventurerYearlyApplicationMail;
 use App\Mail\AdventurerYearlyApplicationSignatureRequestMail;
 use App\Mail\ConferenceMemberExportMail;
@@ -11,6 +12,7 @@ use App\Mail\PathfinderAnnualApplicationMail;
 use App\Mail\PathfinderAnnualApplicationSignatureRequestMail;
 use App\Mail\PathfinderMonthlyReportMail;
 use App\Mail\PaymentReceiptMail;
+use App\Models\AdventurerInductionRequest;
 use App\Models\AdventurerYearlyApplication;
 use App\Models\AdventurerYearlyApplicationSignature;
 use App\Models\Club;
@@ -533,6 +535,77 @@ class MailerService
                 'last_sent_to_email' => $recipientEmail,
                 'delivery_status' => 'failed',
                 'sent_at' => null,
+            ])->save();
+            throw $exception;
+        }
+
+        return $mailLog->refresh();
+    }
+
+    public function sendAdventurerInductionRequest(
+        AdventurerInductionRequest $inductionRequest,
+        string $recipientEmail,
+        ?int $userId = null,
+    ): MailDeliveryLog {
+        $inductionRequest->loadMissing('club');
+        $subject = "Adventurer Induction Attendance Request - {$inductionRequest->club_name}";
+
+        $mailLog = $this->startLog(
+            mailKey: 'adventurer_induction_request',
+            mailable: AdventurerInductionRequestMail::class,
+            recipientEmail: $recipientEmail,
+            subject: $subject,
+            loggable: $inductionRequest,
+            clubId: $inductionRequest->club_id,
+            userId: $userId,
+            sourceLabel: 'Club Portal - Solicitud de inducción de Aventureros',
+            destinationLabel: 'Destinatario de solicitud de inducción',
+            bodyHtml: null,
+            metadata: [
+                'induction_date' => optional($inductionRequest->induction_date)->toDateString(),
+                'docx_file_name' => $inductionRequest->docx_file_name,
+            ],
+        );
+
+        $trackingPixelUrl = $this->trackingPixelUrl($mailLog);
+        $bodyHtml = view('emails.adventurer_induction_request', [
+            'inductionRequest' => $inductionRequest,
+            'trackingPixelUrl' => $trackingPixelUrl,
+            'emailUid' => $mailLog->email_uid,
+        ])->render();
+        $metadata = $mailLog->metadata ?: [];
+        $metadata['tracking_pixel_url'] = $trackingPixelUrl;
+        $mailLog->forceFill([
+            'body_html' => $bodyHtml,
+            'body_text' => $this->bodyText($bodyHtml),
+            'metadata' => $metadata,
+        ])->save();
+
+        try {
+            $disk = Storage::disk('public');
+            if (! $inductionRequest->docx_path || ! $disk->exists($inductionRequest->docx_path)) {
+                throw new \RuntimeException('Adventurer induction request Word document could not be read.');
+            }
+
+            Mail::to($recipientEmail)->send(new AdventurerInductionRequestMail(
+                inductionRequest: $inductionRequest,
+                docxPath: $inductionRequest->docx_path,
+                docxFilename: $inductionRequest->docx_file_name ?: 'adventurer-induction-request.docx',
+                trackingPixelUrl: $trackingPixelUrl,
+                emailUid: $mailLog->email_uid,
+            ));
+
+            $this->markSent($mailLog);
+            $inductionRequest->forceFill([
+                'last_sent_to_email' => $recipientEmail,
+                'status' => 'emailed',
+            ])->save();
+        } catch (Throwable $exception) {
+            $this->markFailed($mailLog, $exception);
+            $inductionRequest->forceFill([
+                'last_sent_to_email' => $recipientEmail,
+                'emailed_at' => null,
+                'status' => 'failed',
             ])->save();
             throw $exception;
         }

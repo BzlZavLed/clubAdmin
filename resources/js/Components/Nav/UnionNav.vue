@@ -40,6 +40,15 @@ const sections = computed(() => {
                         route: 'association.programs',
                         icon: evaluationSystem.value === 'carpetas' ? FolderOpenIcon : CalendarDaysIcon,
                     },
+                    ...(evaluationSystem.value === 'honors' ? [
+                        {
+                            id: 'forms',
+                            name: t('forms'),
+                            href: '/association/forms',
+                            route: 'association.forms',
+                            icon: DocumentTextIcon,
+                        },
+                    ] : []),
                     ...(evaluationSystem.value === 'carpetas' ? [
                         {
                             id: 'districts',

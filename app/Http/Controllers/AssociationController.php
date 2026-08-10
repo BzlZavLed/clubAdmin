@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AdventurerInductionRequest;
+use App\Models\AdventurerQuarterlyReport;
+use App\Models\AdventurerYearlyApplication;
 use App\Models\Association;
 use App\Models\AssociationEvaluator;
 use App\Models\AssociationHonorClassSession;
@@ -14,6 +17,8 @@ use App\Models\District;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
+use App\Models\PathfinderAnnualApplication;
+use App\Models\PathfinderMonthlyReport;
 use App\Models\PaymentConcept;
 use App\Models\UnionCarpetaRequirement;
 use App\Models\Union;
@@ -25,6 +30,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -251,6 +257,473 @@ class AssociationController extends Controller
         }
 
         return Inertia::render('Association/Programs', $payload);
+    }
+
+    public function forms(Request $request)
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $association->load('union:id,name,evaluation_system');
+
+        abort_unless(($association->union?->evaluation_system ?: 'honors') === 'honors', 404);
+
+        $clubs = Club::query()
+            ->withoutGlobalScopes()
+            ->where(function ($query) use ($association) {
+                $query
+                    ->whereHas('district', fn ($district) => $district->where('association_id', $association->id))
+                    ->orWhereHas('church.district', fn ($district) => $district->where('association_id', $association->id));
+            })
+            ->where('status', 'active')
+            ->whereIn('club_type', ['adventurers', 'pathfinders'])
+            ->with([
+                'church:id,church_name,district_id',
+                'church.district:id,name,association_id',
+                'district:id,name,association_id',
+                'adventurerYearlyApplications',
+                'adventurerQuarterlyReports',
+                'adventurerInductionRequests',
+                'pathfinderAnnualApplications',
+                'pathfinderMonthlyReports',
+            ])
+            ->orderBy('club_name')
+            ->get();
+
+        $formTypes = [
+            'adventurers' => [
+                ['key' => 'adventurer_yearly_application', 'label_es' => 'Solicitud anual', 'label_en' => 'Yearly application'],
+                ['key' => 'adventurer_quarterly_report', 'label_es' => 'Reporte trimestral', 'label_en' => 'Quarterly report'],
+                ['key' => 'adventurer_induction_request', 'label_es' => 'Solicitud de inducción', 'label_en' => 'Induction request'],
+            ],
+            'pathfinders' => [
+                ['key' => 'pathfinder_annual_application', 'label_es' => 'Solicitud anual', 'label_en' => 'Annual application'],
+                ['key' => 'pathfinder_monthly_report', 'label_es' => 'Reporte mensual', 'label_en' => 'Monthly report'],
+            ],
+        ];
+
+        $submissions = $clubs
+            ->flatMap(fn (Club $club) => $this->associationClubFormSubmissions($club))
+            ->sortByDesc('submitted_at')
+            ->values();
+
+        $latestByClub = $clubs->map(function (Club $club) use ($submissions) {
+            $clubSubmissions = $submissions
+                ->where('club_id', $club->id)
+                ->values();
+
+            return [
+                'club_id' => $club->id,
+                'club_name' => $club->club_name,
+                'club_type' => $club->club_type,
+                'church_name' => $club->church?->church_name ?: $club->church_name,
+                'district_name' => $club->district?->name ?: $club->church?->district?->name,
+                'latest' => $clubSubmissions
+                    ->groupBy('form_type')
+                    ->map(fn (Collection $items) => $items->first())
+                    ->all(),
+            ];
+        })->values();
+
+        return Inertia::render('Association/Forms', [
+            'association' => [
+                'id' => $association->id,
+                'name' => $association->name,
+            ],
+            'clubs' => $clubs->map(fn (Club $club) => [
+                'id' => $club->id,
+                'club_name' => $club->club_name,
+                'club_type' => $club->club_type,
+                'church_name' => $club->church?->church_name ?: $club->church_name,
+                'district_name' => $club->district?->name ?: $club->church?->district?->name,
+            ])->values(),
+            'submissions' => $submissions,
+            'latest_by_club' => $latestByClub,
+            'form_types' => $formTypes,
+        ]);
+    }
+
+    public function downloadForm(Request $request, string $formType, int $formId)
+    {
+        [$submission, $pathColumn, $nameColumn] = $this->resolveAssociationForm($request, $formType, $formId);
+
+        $path = $submission->{$pathColumn};
+        abort_unless($path && Storage::disk('public')->exists($path), 404);
+
+        return Storage::disk('public')->download($path, $submission->{$nameColumn} ?: basename($path));
+    }
+
+    public function showForm(Request $request, string $formType, int $formId)
+    {
+        [$submission, $pathColumn] = $this->resolveAssociationForm($request, $formType, $formId);
+        $submission->load('club.church.district', 'club.district');
+        if (in_array($formType, ['adventurer_yearly_application', 'pathfinder_annual_application'], true)) {
+            $submission->load('signatures');
+        }
+
+        $definitions = $this->associationFormDefinitions();
+        $definition = $definitions[$formType];
+
+        return Inertia::render('Association/FormShow', [
+            'form' => [
+                'id' => $submission->id,
+                'type' => $formType,
+                'title_es' => $definition['title_es'],
+                'title_en' => $definition['title_en'],
+                'club' => [
+                    'id' => $submission->club->id,
+                    'name' => $submission->club->club_name,
+                    'church_name' => $submission->club->church?->church_name ?: $submission->club->church_name,
+                    'district_name' => $submission->club->district?->name ?: $submission->club->church?->district?->name,
+                ],
+                'submitted_at' => optional($this->associationFormSubmittedAt($submission, $formType))->toIso8601String(),
+                'sections' => collect($definition['sections'])->map(fn (array $section) => [
+                    'title_es' => $section['title_es'],
+                    'title_en' => $section['title_en'],
+                    'fields' => collect($section['fields'])->map(fn (array $field) => [
+                        ...$field,
+                        'value' => $submission->getAttribute($field['key']),
+                    ])->values(),
+                ])->values(),
+                'signatures' => $this->associationFormSignatures($submission, $formType),
+                'download_url' => $submission->{$pathColumn}
+                    ? route('association.forms.download', ['formType' => $formType, 'formId' => $submission->id])
+                    : null,
+            ],
+        ]);
+    }
+
+    protected function associationClubFormSubmissions(Club $club): Collection
+    {
+        $base = fn ($form, string $type, string $labelEs, string $labelEn, $submittedAt, string $period, ?string $status = null, ?string $path = null) => [
+            'id' => $form->id,
+            'club_id' => $club->id,
+            'club_name' => $club->club_name,
+            'club_type' => $club->club_type,
+            'church_name' => $club->church?->church_name ?: $club->church_name,
+            'district_name' => $club->district?->name ?: $club->church?->district?->name,
+            'form_type' => $type,
+            'form_label_es' => $labelEs,
+            'form_label_en' => $labelEn,
+            'submitted_at' => optional($submittedAt)->toIso8601String(),
+            'period' => $period,
+            'status' => $status,
+            'view_url' => route('association.forms.show', ['formType' => $type, 'formId' => $form->id]),
+            'download_url' => $path ? route('association.forms.download', ['formType' => $type, 'formId' => $form->id]) : null,
+        ];
+
+        $items = collect();
+
+        if ($club->club_type === 'adventurers') {
+            $items = $items
+                ->concat($club->adventurerYearlyApplications->map(fn ($form) => $base(
+                    $form,
+                    'adventurer_yearly_application',
+                    'Solicitud anual',
+                    'Yearly application',
+                    $form->created_at,
+                    (string) $form->application_year,
+                    $form->delivery_status,
+                    $form->docx_path,
+                )))
+                ->concat($club->adventurerQuarterlyReports->map(fn ($form) => $base(
+                    $form,
+                    'adventurer_quarterly_report',
+                    'Reporte trimestral',
+                    'Quarterly report',
+                    $form->submitted_at ?: $form->created_at,
+                    $this->quarterlyPeriodLabel($form->reporting_period).' '.$form->reporting_year,
+                    $form->submitted_on_time ? 'on_time' : 'late',
+                    $form->docx_path,
+                )))
+                ->concat($club->adventurerInductionRequests->map(fn ($form) => $base(
+                    $form,
+                    'adventurer_induction_request',
+                    'Solicitud de inducción',
+                    'Induction request',
+                    $form->received_at ?: $form->created_at,
+                    optional($form->induction_date)->format('Y-m-d').' · '.$form->induction_place,
+                    $form->status,
+                    $form->docx_path,
+                )));
+        }
+
+        if ($club->club_type === 'pathfinders') {
+            $items = $items
+                ->concat($club->pathfinderAnnualApplications->map(fn ($form) => $base(
+                    $form,
+                    'pathfinder_annual_application',
+                    'Solicitud anual',
+                    'Annual application',
+                    $form->created_at,
+                    (string) $form->application_year,
+                    $form->delivery_status,
+                    $form->pdf_path,
+                )))
+                ->concat($club->pathfinderMonthlyReports->map(fn ($form) => $base(
+                    $form,
+                    'pathfinder_monthly_report',
+                    'Reporte mensual',
+                    'Monthly report',
+                    $form->created_at,
+                    $form->report_month.' '.$form->report_year,
+                    $form->delivery_status,
+                    $form->pdf_path,
+                )));
+        }
+
+        return $items->sortByDesc('submitted_at')->values();
+    }
+
+    protected function quarterlyPeriodLabel(?string $period): string
+    {
+        return [
+            'sep_oct' => 'Sep–Oct',
+            'nov_dec' => 'Nov–Dec',
+            'jan_feb' => 'Jan–Feb',
+            'mar_apr' => 'Mar–Apr',
+        ][$period] ?? (string) $period;
+    }
+
+    protected function resolveAssociationForm(Request $request, string $formType, int $formId): array
+    {
+        $association = $this->resolveScopedAssociation($request);
+        $association->load('union:id,evaluation_system');
+
+        abort_unless(($association->union?->evaluation_system ?: 'honors') === 'honors', 404);
+
+        $models = [
+            'adventurer_yearly_application' => [AdventurerYearlyApplication::class, 'docx_path', 'docx_file_name'],
+            'adventurer_quarterly_report' => [AdventurerQuarterlyReport::class, 'docx_path', 'docx_file_name'],
+            'adventurer_induction_request' => [AdventurerInductionRequest::class, 'docx_path', 'docx_file_name'],
+            'pathfinder_annual_application' => [PathfinderAnnualApplication::class, 'pdf_path', 'pdf_file_name'],
+            'pathfinder_monthly_report' => [PathfinderMonthlyReport::class, 'pdf_path', 'pdf_file_name'],
+        ];
+
+        abort_unless(isset($models[$formType]), 404);
+        [$modelClass, $pathColumn, $nameColumn] = $models[$formType];
+
+        $submission = $modelClass::query()
+            ->whereKey($formId)
+            ->whereHas('club', function ($club) use ($association) {
+                $club->where(function ($query) use ($association) {
+                    $query
+                        ->whereHas('district', fn ($district) => $district->where('association_id', $association->id))
+                        ->orWhereHas('church.district', fn ($district) => $district->where('association_id', $association->id));
+                });
+            })
+            ->firstOrFail();
+
+        return [$submission, $pathColumn, $nameColumn];
+    }
+
+    protected function associationFormSubmittedAt($submission, string $formType)
+    {
+        return match ($formType) {
+            'adventurer_quarterly_report' => $submission->submitted_at ?: $submission->created_at,
+            'adventurer_induction_request' => $submission->received_at ?: $submission->created_at,
+            default => $submission->created_at,
+        };
+    }
+
+    protected function associationFormSignatures($submission, string $formType): array
+    {
+        if (! in_array($formType, ['adventurer_yearly_application', 'pathfinder_annual_application'], true)) {
+            return [];
+        }
+
+        $roleLabels = [
+            'director' => ['es' => 'Director del club', 'en' => 'Club director'],
+            'pastor' => ['es' => 'Pastor de la iglesia', 'en' => 'Church pastor'],
+            'head_elder' => ['es' => 'Primer anciano', 'en' => 'Head elder'],
+            'church_clerk' => ['es' => 'Secretario de iglesia', 'en' => 'Church clerk'],
+        ];
+
+        return $submission->signatures
+            ->sortBy(fn ($signature) => array_search($signature->role, ['director', 'pastor', 'head_elder', 'church_clerk'], true))
+            ->map(fn ($signature) => [
+                'id' => $signature->id,
+                'role' => $signature->role,
+                'role_es' => $roleLabels[$signature->role]['es'] ?? $signature->role,
+                'role_en' => $roleLabels[$signature->role]['en'] ?? $signature->role,
+                'signer_name' => $signature->signer_name,
+                'signer_email' => $signature->signer_email,
+                'status' => $signature->status,
+                'signed_at' => optional($signature->signed_at)->toIso8601String(),
+                'signature_type' => $signature->signature_type,
+                'signature_text' => $signature->signature_text,
+                'signature_url' => $signature->signature_url,
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function associationFormDefinitions(): array
+    {
+        $field = fn (string $key, string $es, string $en, string $format = 'text') => compact('key', 'es', 'en', 'format');
+        $section = fn (string $titleEs, string $titleEn, array $fields) => [
+            'title_es' => $titleEs,
+            'title_en' => $titleEn,
+            'fields' => $fields,
+        ];
+
+        return [
+            'adventurer_yearly_application' => [
+                'title_es' => 'Solicitud anual de Aventureros',
+                'title_en' => 'Adventurer Yearly Application',
+                'sections' => [
+                    $section('Solicitud', 'Application', [
+                        $field('application_year', 'Año de solicitud', 'Application year'),
+                        $field('application_date', 'Fecha de solicitud', 'Application date', 'date'),
+                        $field('club_name', 'Nombre del club', 'Club name'),
+                        $field('sponsoring_church', 'Iglesia patrocinadora', 'Sponsoring church'),
+                    ]),
+                    $section('Dirección del club', 'Club leadership', [
+                        $field('pastor', 'Pastor', 'Pastor'),
+                        $field('elected_club_director', 'Director electo', 'Elected club director'),
+                        $field('email_address', 'Correo electrónico', 'Email address'),
+                        $field('cell_number', 'Teléfono celular', 'Cell number'),
+                        $field('home_address', 'Dirección postal', 'Home address'),
+                    ]),
+                    $section('Participación de la junta', 'Board participation', [
+                        $field('other_board_members', 'Otros miembros de junta', 'Other board members', 'list'),
+                    ]),
+                    $section('Entrega', 'Delivery', [
+                        $field('delivery_status', 'Estado', 'Status'),
+                        $field('last_sent_to_email', 'Enviado a', 'Sent to'),
+                        $field('sent_at', 'Fecha de envío', 'Sent at', 'datetime'),
+                    ]),
+                ],
+            ],
+            'adventurer_quarterly_report' => [
+                'title_es' => 'Reporte trimestral de Aventureros',
+                'title_en' => 'Adventurer Quarterly Report',
+                'sections' => [
+                    $section('Período y contacto', 'Period and contact', [
+                        $field('reporting_year', 'Año', 'Year'),
+                        $field('reporting_period', 'Período', 'Period'),
+                        $field('due_date', 'Fecha límite', 'Due date', 'date'),
+                        $field('submitted_at', 'Fecha de entrega', 'Submitted at', 'datetime'),
+                        $field('submitted_on_time', 'Entregado a tiempo', 'Submitted on time', 'boolean'),
+                        $field('club_name', 'Nombre del club', 'Club name'),
+                        $field('director_name', 'Director', 'Director'),
+                        $field('cell_number', 'Teléfono celular', 'Cell number'),
+                        $field('email_address', 'Correo electrónico', 'Email address'),
+                    ]),
+                    $section('Membresía y personal', 'Membership and staff', [
+                        $field('membership_boys', 'Niños', 'Boys'),
+                        $field('membership_girls', 'Niñas', 'Girls'),
+                        $field('membership_total', 'Total de miembros', 'Total members'),
+                        $field('staff_males', 'Personal masculino', 'Male staff'),
+                        $field('staff_females', 'Personal femenino', 'Female staff'),
+                        $field('staff_total', 'Total de personal', 'Total staff'),
+                    ]),
+                    $section('Actividades', 'Activities', [
+                        $field('meetings_held', 'Reuniones realizadas', 'Meetings held'),
+                        $field('class_a_uniform_worn', 'Uniforme Clase A', 'Class A uniform worn', 'boolean'),
+                        $field('attendance_percentage', 'Porcentaje de asistencia', 'Attendance percentage', 'percentage'),
+                        $field('awards_taught', 'Especialidades enseñadas', 'Awards taught'),
+                        $field('curriculum_taught', 'Currículo enseñado', 'Curriculum taught', 'boolean'),
+                        $field('outreach_activity', 'Actividad misionera', 'Outreach activity', 'longtext'),
+                        $field('staff_meetings_held', 'Reuniones de personal', 'Staff meetings held'),
+                        $field('news_item', 'Noticias del club', 'Club news', 'longtext'),
+                    ]),
+                    $section('Puntuación', 'Points', [
+                        $field('meetings_points', 'Reuniones', 'Meetings'),
+                        $field('uniform_points', 'Uniforme', 'Uniform'),
+                        $field('attendance_points', 'Asistencia', 'Attendance'),
+                        $field('awards_points', 'Especialidades', 'Awards'),
+                        $field('curriculum_points', 'Currículo', 'Curriculum'),
+                        $field('outreach_points', 'Actividad misionera', 'Outreach'),
+                        $field('staff_meetings_points', 'Reuniones de personal', 'Staff meetings'),
+                        $field('promptness_points', 'Puntualidad', 'Promptness'),
+                        $field('news_item_points', 'Noticias', 'News item'),
+                        $field('total_points', 'Puntuación total', 'Total points'),
+                    ]),
+                ],
+            ],
+            'adventurer_induction_request' => [
+                'title_es' => 'Solicitud de inducción de Aventureros',
+                'title_en' => 'Adventurer Induction Request',
+                'sections' => [
+                    $section('Solicitud', 'Request', [
+                        $field('requested_attendee', 'Persona solicitada', 'Requested attendee'),
+                        $field('club_name', 'Nombre del club', 'Club name'),
+                        $field('induction_date', 'Fecha de inducción', 'Induction date', 'date'),
+                        $field('induction_time', 'Hora de inducción', 'Induction time'),
+                        $field('induction_place', 'Lugar', 'Place'),
+                        $field('directions', 'Direcciones', 'Directions', 'longtext'),
+                    ]),
+                    $section('Recepción', 'Receipt', [
+                        $field('received_at', 'Recibido', 'Received at', 'datetime'),
+                        $field('status', 'Estado', 'Status'),
+                        $field('last_sent_to_email', 'Enviado a', 'Sent to'),
+                        $field('emailed_at', 'Fecha de envío', 'Emailed at', 'datetime'),
+                    ]),
+                ],
+            ],
+            'pathfinder_annual_application' => [
+                'title_es' => 'Solicitud anual de Conquistadores',
+                'title_en' => 'Pathfinder Annual Application',
+                'sections' => [
+                    $section('Solicitud', 'Application', [
+                        $field('application_year', 'Año de solicitud', 'Application year'),
+                        $field('due_date', 'Fecha límite', 'Due date', 'date'),
+                        $field('sponsoring_church', 'Iglesia patrocinadora', 'Sponsoring church'),
+                        $field('pastor', 'Pastor', 'Pastor'),
+                        $field('elected_club_director', 'Director electo', 'Elected club director'),
+                    ]),
+                    $section('Contacto', 'Contact', [
+                        $field('mailing_address', 'Dirección postal', 'Mailing address'),
+                        $field('director_phone_number', 'Teléfono del director', 'Director phone number'),
+                        $field('home_phone', 'Teléfono residencial', 'Home phone'),
+                        $field('cell_phone', 'Teléfono celular', 'Cell phone'),
+                        $field('email_address', 'Correo electrónico', 'Email address'),
+                    ]),
+                    $section('Aprobación de la junta', 'Board approval', [
+                        $field('board_approval_date', 'Aprobación de junta', 'Board approval date', 'date'),
+                        $field('other_board_members', 'Otros miembros de junta', 'Other board members', 'list'),
+                    ]),
+                    $section('Entrega', 'Delivery', [
+                        $field('delivery_status', 'Estado', 'Status'),
+                        $field('last_sent_to_email', 'Enviado a', 'Sent to'),
+                        $field('sent_at', 'Fecha de envío', 'Sent at', 'datetime'),
+                    ]),
+                ],
+            ],
+            'pathfinder_monthly_report' => [
+                'title_es' => 'Reporte mensual de Conquistadores',
+                'title_en' => 'Pathfinder Monthly Report',
+                'sections' => [
+                    $section('Reporte', 'Report', [
+                        $field('report_year', 'Año', 'Year'),
+                        $field('report_month', 'Mes', 'Month'),
+                        $field('full_name', 'Nombre completo', 'Full name'),
+                        $field('email', 'Correo electrónico', 'Email'),
+                        $field('area', 'Área', 'Area'),
+                        $field('church_and_club_name', 'Iglesia y club', 'Church and club'),
+                    ]),
+                    $section('Participación y actividades', 'Participation and activities', [
+                        $field('pathfinders_count', 'Conquistadores', 'Pathfinders'),
+                        $field('tlt_count', 'TLT', 'TLT'),
+                        $field('staff_count', 'Personal', 'Staff'),
+                        $field('meetings_count', 'Reuniones', 'Meetings'),
+                        $field('bible_studies_count', 'Estudios bíblicos', 'Bible studies'),
+                        $field('baptisms_count', 'Bautismos', 'Baptisms'),
+                        $field('campouts_count', 'Campamentos', 'Campouts'),
+                        $field('field_trips_count', 'Excursiones', 'Field trips'),
+                        $field('honors_completed_count', 'Especialidades completadas', 'Honors completed'),
+                        $field('honors_completed_list', 'Lista de especialidades', 'Honors list', 'longtext'),
+                        $field('outreach_activities', 'Actividades misioneras', 'Outreach activities', 'longtext'),
+                        $field('notable_activities', 'Actividades destacadas', 'Notable activities', 'longtext'),
+                        $field('may_share_photos', 'Permiso para compartir fotos', 'May share photos', 'boolean'),
+                    ]),
+                    $section('Entrega', 'Delivery', [
+                        $field('delivery_status', 'Estado', 'Status'),
+                        $field('last_sent_to_email', 'Enviado a', 'Sent to'),
+                        $field('sent_at', 'Fecha de envío', 'Sent at', 'datetime'),
+                    ]),
+                ],
+            ],
+        ];
     }
 
     public function storeHonorSession(Request $request)

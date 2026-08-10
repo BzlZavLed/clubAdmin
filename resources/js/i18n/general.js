@@ -311,6 +311,10 @@ export const generalTranslations = {
         es: 'Formularios de tareas',
         en: 'Task forms',
     },
+    forms: {
+        es: 'Formas',
+        en: 'Forms',
+    },
     treasury: {
         es: 'Tesorería',
         en: 'Treasury',

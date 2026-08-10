@@ -631,6 +631,19 @@ export const saveAdventurerQuarterlyReport = async (clubId, payload) => {
     return data;
 };
 
+export const saveAdventurerInductionRequest = async (clubId, payload) => {
+    const { data } = await axios.post(route('clubs.adventurer-induction-requests.store', { club: clubId }), payload);
+    return data;
+};
+
+export const sendAdventurerInductionRequest = async (clubId, inductionRequestId, email) => {
+    const { data } = await axios.post(route('clubs.adventurer-induction-requests.send', {
+        club: clubId,
+        inductionRequest: inductionRequestId,
+    }), { email });
+    return data;
+};
+
 export const sendAdventurerYearlyApplication = async (clubId, applicationId, email) => {
     const { data } = await axios.post(route('clubs.adventurer-yearly-applications.send', {
         club: clubId,

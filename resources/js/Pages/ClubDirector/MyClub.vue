@@ -22,6 +22,8 @@ import {
     deleteClubObjective,
     saveAdventurerYearlyApplication,
     saveAdventurerQuarterlyReport,
+    saveAdventurerInductionRequest,
+    sendAdventurerInductionRequest,
     sendAdventurerYearlyApplication,
     saveAdventurerYearlyApplicationDirectorSignature,
     requestAdventurerYearlyApplicationSignature,
@@ -83,9 +85,16 @@ const objectiveDraftByClub = ref({})
 const editingObjectiveByClub = ref({})
 const showObjectiveFormByClub = ref({})
 const adventurerYearlyDraftByClub = ref({})
+const showAdventurerYearlyFormByClub = ref({})
+const selectedAdventurerYearlyApplicationByClub = ref({})
 const adventurerQuarterlyDraftByClub = ref({})
 const showAdventurerQuarterlyFormByClub = ref({})
 const savingAdventurerQuarterlyByClub = ref({})
+const adventurerInductionDraftByClub = ref({})
+const showAdventurerInductionFormByClub = ref({})
+const savingAdventurerInductionByClub = ref({})
+const adventurerInductionEmailByRequest = ref({})
+const sendingAdventurerInductionByRequest = ref({})
 const adventurerYearlyEmailByApplication = ref({})
 const adventurerYearlyDefaultRecipient = 'areynolds@ccosda.org'
 const savingAdventurerYearlyByClub = ref({})
@@ -265,13 +274,21 @@ const fetchClubs = async () => {
     try {
         const data = await fetchClubsByUserId(user.value.id)
         clubs.value = Array.isArray(data) ? data : []
+        adventurerInductionEmailByRequest.value = {}
         clubs.value.forEach(club => {
             getAdventurerYearlyApplications(club).forEach(preloadAdventurerYearlyRecipient)
+            getAdventurerInductionRequests(club).forEach(inductionRequest => {
+                adventurerInductionEmailByRequest.value[inductionRequest.id] = inductionRequest.last_sent_to_email || ''
+            })
         })
         annualApplicationDraftByClub.value = {}
         adventurerYearlyDraftByClub.value = {}
+        showAdventurerYearlyFormByClub.value = {}
+        selectedAdventurerYearlyApplicationByClub.value = {}
         adventurerQuarterlyDraftByClub.value = {}
         showAdventurerQuarterlyFormByClub.value = {}
+        adventurerInductionDraftByClub.value = {}
+        showAdventurerInductionFormByClub.value = {}
         monthlyReportDraftByClub.value = {}
         hasClub.value = clubs.value.length > 0
         if (!clubId.value && clubs.value.length && !isSuperadmin.value) {
@@ -648,6 +665,30 @@ const clearAdventurerYearlyForm = (club) => {
     adventurerYearlyDraftByClub.value[club.id] = adventurerYearlyDefaults(club)
 }
 
+const startAdventurerYearlyApplication = (club) => {
+    clearAdventurerYearlyForm(club)
+    selectedAdventurerYearlyApplicationByClub.value[club.id] = null
+    showAdventurerYearlyFormByClub.value[club.id] = true
+}
+
+const selectAdventurerYearlyApplication = (club, application) => {
+    adventurerYearlyDraftByClub.value[club.id] = {
+        ...adventurerYearlyDefaults(club),
+        ...application,
+        other_board_members: Array.isArray(application.other_board_members)
+            ? [...application.other_board_members]
+            : ['', '', '', '', ''],
+    }
+    selectedAdventurerYearlyApplicationByClub.value[club.id] = application.id
+    showAdventurerYearlyFormByClub.value[club.id] = true
+    nextTick(() => configureAdventurerDirectorCanvas(application.id))
+}
+
+const cancelAdventurerYearlyApplication = (club) => {
+    showAdventurerYearlyFormByClub.value[club.id] = false
+    selectedAdventurerYearlyApplicationByClub.value[club.id] = null
+}
+
 const syncAdventurerYearlyApplication = (clubId, application) => {
     const club = clubs.value.find(item => Number(item.id) === Number(clubId))
     if (!club) return
@@ -809,6 +850,123 @@ const downloadAdventurerQuarterly = (club, report) => {
     }), '_blank')
 }
 
+const getAdventurerInductionRequests = (club) => (
+    Array.isArray(club?.adventurer_induction_requests)
+        ? club.adventurer_induction_requests.slice().sort((a, b) => {
+            const dateDifference = String(b.induction_date || '').localeCompare(String(a.induction_date || ''))
+            if (dateDifference !== 0) return dateDifference
+            return String(b.induction_time || '').localeCompare(String(a.induction_time || ''))
+        })
+        : []
+)
+
+const adventurerInductionDefaults = (club) => ({
+    id: null,
+    requested_attendee: '',
+    club_name: club?.club_name || '',
+    induction_date: '',
+    induction_time: '',
+    induction_place: '',
+    directions: '',
+})
+
+const getAdventurerInductionDraft = (club) => {
+    if (!club?.id) return adventurerInductionDefaults(club)
+    if (!adventurerInductionDraftByClub.value[club.id]) {
+        adventurerInductionDraftByClub.value[club.id] = adventurerInductionDefaults(club)
+    }
+    return adventurerInductionDraftByClub.value[club.id]
+}
+
+const startAdventurerInductionRequest = (club) => {
+    adventurerInductionDraftByClub.value[club.id] = adventurerInductionDefaults(club)
+    showAdventurerInductionFormByClub.value[club.id] = true
+}
+
+const cancelAdventurerInductionRequest = (club) => {
+    showAdventurerInductionFormByClub.value[club.id] = false
+}
+
+const selectAdventurerInductionRequest = (club, inductionRequest) => {
+    adventurerInductionDraftByClub.value[club.id] = {
+        ...adventurerInductionDefaults(club),
+        ...inductionRequest,
+    }
+    showAdventurerInductionFormByClub.value[club.id] = true
+}
+
+const syncAdventurerInductionRequest = (clubId, inductionRequest) => {
+    const club = clubs.value.find(item => Number(item.id) === Number(clubId))
+    if (!club) return
+    const existing = getAdventurerInductionRequests(club)
+        .filter(item => Number(item.id) !== Number(inductionRequest.id))
+    club.adventurer_induction_requests = [inductionRequest, ...existing]
+    if (!String(adventurerInductionEmailByRequest.value[inductionRequest.id] || '').trim()) {
+        adventurerInductionEmailByRequest.value[inductionRequest.id] = inductionRequest.last_sent_to_email || ''
+    }
+}
+
+const saveAdventurerInduction = async (club) => {
+    const draft = getAdventurerInductionDraft(club)
+    if (!draft.requested_attendee?.trim() || !draft.club_name?.trim() || !draft.induction_date || !draft.induction_time || !draft.induction_place?.trim()) {
+        showToast(tr('Completa el asistente solicitado, club, fecha, hora y lugar', 'Complete the requested attendee, club, date, time, and place'), 'error')
+        return
+    }
+
+    savingAdventurerInductionByClub.value[club.id] = true
+    try {
+        const response = await saveAdventurerInductionRequest(club.id, draft)
+        syncAdventurerInductionRequest(club.id, response.data)
+        showAdventurerInductionFormByClub.value[club.id] = false
+        showToast(tr('Solicitud de inducción guardada y Word generado', 'Induction request saved and Word document generated'), 'success')
+    } catch (error) {
+        console.error('Failed to save Adventurer induction request:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo guardar la solicitud de inducción', 'Could not save the induction request'), 'error')
+    } finally {
+        savingAdventurerInductionByClub.value[club.id] = false
+    }
+}
+
+const downloadAdventurerInduction = (club, inductionRequest) => {
+    window.open(route('clubs.adventurer-induction-requests.download', {
+        club: club.id,
+        inductionRequest: inductionRequest.id,
+    }), '_blank')
+}
+
+const sendAdventurerInduction = async (club, inductionRequest) => {
+    const email = String(adventurerInductionEmailByRequest.value[inductionRequest.id] || '').trim()
+    if (!email) {
+        showToast(tr('Indica el correo destino', 'Enter the recipient email'), 'error')
+        return
+    }
+
+    sendingAdventurerInductionByRequest.value[inductionRequest.id] = true
+    try {
+        const response = await sendAdventurerInductionRequest(club.id, inductionRequest.id, email)
+        syncAdventurerInductionRequest(club.id, response.data)
+        adventurerInductionEmailByRequest.value[inductionRequest.id] = response.data.last_sent_to_email || email
+        showToast(tr('Solicitud de inducción enviada con el Word adjunto', 'Induction request sent with the Word document attached'), 'success')
+    } catch (error) {
+        console.error('Failed to email Adventurer induction request:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo enviar la solicitud de inducción', 'Could not send the induction request'), 'error')
+    } finally {
+        sendingAdventurerInductionByRequest.value[inductionRequest.id] = false
+    }
+}
+
+const adventurerInductionStatusLabel = (inductionRequest) => {
+    if (inductionRequest?.status === 'failed') return tr('Falló el envío', 'Delivery failed')
+    if (inductionRequest?.emailed_at) return tr('Confirmación enviada', 'Confirmation emailed')
+    return tr('Recibida', 'Received')
+}
+
+const adventurerInductionStatusClass = (inductionRequest) => {
+    if (inductionRequest?.status === 'failed') return 'text-red-700'
+    if (inductionRequest?.emailed_at) return 'text-emerald-700'
+    return 'text-blue-700'
+}
+
 const saveAdventurerYearly = async (club) => {
     const draft = getAdventurerYearlyDraft(club)
     if (!draft.application_year || !draft.application_date || !draft.club_name?.trim() || !draft.sponsoring_church?.trim()) {
@@ -820,6 +978,8 @@ const saveAdventurerYearly = async (club) => {
     try {
         const response = await saveAdventurerYearlyApplication(club.id, draft)
         syncAdventurerYearlyApplication(club.id, response.data)
+        selectedAdventurerYearlyApplicationByClub.value[club.id] = response.data.id
+        nextTick(() => configureAdventurerDirectorCanvas(response.data.id))
         showToast(tr('Solicitud anual guardada', 'Yearly application saved'), 'success')
     } catch (error) {
         console.error('Failed to save Adventurer yearly application:', error)
@@ -2289,13 +2449,25 @@ onMounted(fetchClubs);
                             </div>
                             <button
                                 type="button"
-                                class="w-fit rounded bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-800"
-                                @click="clearAdventurerYearlyForm(club)"
+                                class="w-fit rounded bg-gray-700 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+                                @click="startAdventurerYearlyApplication(club)"
                             >
-                                {{ tr('Limpiar formulario', 'Clear form') }}
+                                {{ tr('Crear nueva', 'Create new') }}
                             </button>
                         </div>
 
+                        <div v-if="showAdventurerYearlyFormByClub[club.id]" class="mb-6 rounded border border-blue-100 bg-blue-50/30 p-4">
+                        <div class="mb-4 flex items-start justify-between gap-3">
+                            <div>
+                                <h4 class="font-semibold text-gray-900">
+                                    {{ selectedAdventurerYearlyApplicationByClub[club.id] ? tr('Abrir solicitud anual', 'Open yearly application') : tr('Nueva solicitud anual', 'New yearly application') }}
+                                </h4>
+                                <p class="text-xs text-gray-500">{{ tr('Completa los datos y guarda el formulario para administrar sus firmas.', 'Complete the information and save the form to manage its signatures.') }}</p>
+                            </div>
+                            <button type="button" class="text-sm font-semibold text-gray-600 hover:text-gray-900" @click="cancelAdventurerYearlyApplication(club)">
+                                {{ tr('Cerrar', 'Close') }}
+                            </button>
+                        </div>
                         <div class="grid gap-4 md:grid-cols-2">
                             <label class="text-sm font-medium text-gray-700">
                                 {{ tr('Año de solicitud', 'Application year') }}
@@ -2349,7 +2521,15 @@ onMounted(fetchClubs);
                             </div>
                         </div>
 
-                        <div class="mt-5 flex justify-end">
+                        <div class="mt-5 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                class="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                :disabled="savingAdventurerYearlyByClub[club.id]"
+                                @click="cancelAdventurerYearlyApplication(club)"
+                            >
+                                {{ tr('Cancelar', 'Cancel') }}
+                            </button>
                             <button
                                 type="button"
                                 class="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2359,8 +2539,9 @@ onMounted(fetchClubs);
                                 {{ savingAdventurerYearlyByClub[club.id] ? tr('Guardando...', 'Saving...') : tr('Enviar formulario', 'Submit form') }}
                             </button>
                         </div>
+                        </div>
 
-                        <div class="mt-6 border-t pt-5">
+                        <div>
                             <h4 class="font-semibold text-gray-900">{{ tr('Solicitudes enviadas', 'Submitted applications') }}</h4>
                             <p class="mb-3 text-xs text-gray-500">
                                 {{ tr('Después de enviar el formulario, puedes generar el Word o enviarlo por correo.', 'After submitting the form, you can generate the Word document or email it.') }}
@@ -2374,7 +2555,7 @@ onMounted(fetchClubs);
                                             <th class="px-3 py-2">{{ tr('Fecha', 'Date') }}</th>
                                             <th class="px-3 py-2">{{ tr('Estado', 'Status') }}</th>
                                             <th class="px-3 py-2">{{ tr('Último envío', 'Last sent') }}</th>
-                                            <th class="px-3 py-2">{{ tr('Documento', 'Document') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Acciones', 'Actions') }}</th>
                                             <th class="min-w-[280px] px-3 py-2">{{ tr('Enviar por correo', 'Send by email') }}</th>
                                         </tr>
                                     </thead>
@@ -2390,13 +2571,22 @@ onMounted(fetchClubs);
                                             </td>
                                             <td class="px-3 py-3 text-xs text-gray-600">{{ application.last_sent_to_email || '—' }}</td>
                                             <td class="px-3 py-3">
-                                                <button
-                                                    type="button"
-                                                    class="whitespace-nowrap rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                                                    @click="downloadAdventurerYearly(club, application)"
-                                                >
-                                                    {{ tr('Generar Word', 'Generate Word') }}
-                                                </button>
+                                                <div class="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        class="whitespace-nowrap rounded border border-blue-600 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                                                        @click="selectAdventurerYearlyApplication(club, application)"
+                                                    >
+                                                        {{ tr('Abrir', 'Open') }}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="whitespace-nowrap rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                                                        @click="downloadAdventurerYearly(club, application)"
+                                                    >
+                                                        {{ tr('Generar Word', 'Generate Word') }}
+                                                    </button>
+                                                </div>
                                             </td>
                                             <td class="px-3 py-3">
                                                 <div class="flex min-w-[260px] gap-2">
@@ -2421,11 +2611,12 @@ onMounted(fetchClubs);
                                 </table>
                             </div>
                             <p v-else class="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                                {{ tr('Envía el formulario para habilitar la generación del documento Word.', 'Submit the form to enable Word document generation.') }}
+                                {{ tr('Todavía no hay solicitudes anuales. Usa “Crear nueva” para comenzar.', 'There are no yearly applications yet. Use “Create new” to begin.') }}
                             </p>
 
                             <div
                                 v-for="application in getAdventurerYearlyApplications(club)"
+                                v-show="showAdventurerYearlyFormByClub[club.id] && Number(selectedAdventurerYearlyApplicationByClub[club.id]) === Number(application.id)"
                                 :key="`adventurer-signatures-${application.id}`"
                                 class="mt-5 rounded border border-gray-200 p-4"
                             >
@@ -2661,6 +2852,151 @@ onMounted(fetchClubs);
                                 </table>
                             </div>
                             <p v-else class="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{{ tr('Guarda el formulario para crear el primer documento Word.', 'Save the form to create the first Word document.') }}</p>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details v-if="adventurerHonorsClubs.length" class="border rounded">
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">
+                    {{ tr('Solicitudes de asistencia a inducción', 'Induction Attendance Requests') }}
+                </summary>
+                <div class="space-y-5 p-4">
+                    <div
+                        v-for="club in adventurerHonorsClubs"
+                        :key="`adventurer-induction-${club.id}`"
+                        class="rounded border bg-white p-4"
+                    >
+                        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">{{ club.club_name }}</h3>
+                                <p class="text-sm text-gray-600">
+                                    {{ tr('Solicita con anticipación la asistencia del coordinador de área o personal de la conferencia.', 'Request an area coordinator or conference staff member in advance so the conference can plan induction coverage.') }}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                class="w-fit rounded bg-gray-700 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+                                @click="startAdventurerInductionRequest(club)"
+                            >
+                                {{ tr('Nueva solicitud', 'New request') }}
+                            </button>
+                        </div>
+
+                        <div>
+                            <h4 class="font-semibold text-gray-900">{{ tr('Solicitudes anteriores', 'Previous requests') }}</h4>
+                            <p class="mb-3 text-xs text-gray-500">
+                                {{ tr('Abre una solicitud para actualizarla, descarga el Word generado o envíalo al correo indicado.', 'Open a request to update it, download the generated Word file, or email it to the address provided.') }}
+                            </p>
+                            <div v-if="getAdventurerInductionRequests(club).length" class="overflow-x-auto rounded border border-gray-200">
+                                <table class="min-w-full text-left text-sm">
+                                    <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+                                        <tr>
+                                            <th class="px-3 py-2">{{ tr('Fecha y hora', 'Date and time') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Lugar', 'Place') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Asistente solicitado', 'Requested attendee') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Estado', 'Status') }}</th>
+                                            <th class="px-3 py-2">{{ tr('Acciones', 'Actions') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <tr v-for="inductionRequest in getAdventurerInductionRequests(club)" :key="inductionRequest.id">
+                                            <td class="whitespace-nowrap px-3 py-3 font-medium">
+                                                {{ inductionRequest.induction_date }}
+                                                <div class="text-xs font-normal text-gray-500">{{ inductionRequest.induction_time }}</div>
+                                            </td>
+                                            <td class="px-3 py-3">{{ inductionRequest.induction_place }}</td>
+                                            <td class="px-3 py-3">{{ inductionRequest.requested_attendee }}</td>
+                                            <td class="px-3 py-3">
+                                                <span class="font-medium" :class="adventurerInductionStatusClass(inductionRequest)">
+                                                    {{ adventurerInductionStatusLabel(inductionRequest) }}
+                                                </span>
+                                                <div class="text-xs text-gray-500">{{ tr('Recibida', 'Received') }}: {{ String(inductionRequest.received_at || '').slice(0, 10) }}</div>
+                                                <div v-if="inductionRequest.last_sent_to_email" class="max-w-[220px] break-all text-xs text-gray-500">
+                                                    {{ inductionRequest.last_sent_to_email }}
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-3">
+                                                <div class="flex min-w-[250px] flex-col gap-2">
+                                                    <input
+                                                        v-model="adventurerInductionEmailByRequest[inductionRequest.id]"
+                                                        type="email"
+                                                        maxlength="255"
+                                                        class="w-full rounded border border-gray-300 px-3 py-2 text-xs"
+                                                        :placeholder="tr('Correo destino', 'Recipient email')"
+                                                    />
+                                                    <div class="flex flex-wrap gap-2">
+                                                        <button type="button" class="rounded border border-blue-600 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50" @click="selectAdventurerInductionRequest(club, inductionRequest)">
+                                                            {{ tr('Abrir', 'Open') }}
+                                                        </button>
+                                                        <button type="button" class="rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700" @click="downloadAdventurerInduction(club, inductionRequest)">
+                                                            {{ tr('Descargar Word', 'Download Word') }}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="rounded bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                                            :disabled="sendingAdventurerInductionByRequest[inductionRequest.id]"
+                                                            @click="sendAdventurerInduction(club, inductionRequest)"
+                                                        >
+                                                            {{ sendingAdventurerInductionByRequest[inductionRequest.id] ? tr('Enviando...', 'Sending...') : tr('Enviar por correo', 'Send by email') }}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p v-else class="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                {{ tr('Todavía no hay solicitudes de asistencia a inducción.', 'There are no induction attendance requests yet.') }}
+                            </p>
+                        </div>
+
+                        <div v-if="showAdventurerInductionFormByClub[club.id]" class="mt-6 rounded border border-blue-100 bg-blue-50/30 p-4">
+                            <div class="mb-4">
+                                <h4 class="font-semibold text-gray-900">
+                                    {{ getAdventurerInductionDraft(club).id ? tr('Editar solicitud', 'Edit request') : tr('Nueva solicitud de inducción', 'New induction request') }}
+                                </h4>
+                                <p class="text-xs text-gray-500">
+                                    {{ tr('La conferencia usará esta información para coordinar su asistencia.', 'The conference will use this information to coordinate attendance.') }}
+                                </p>
+                            </div>
+
+                            <div class="grid gap-4 md:grid-cols-2">
+                                <label class="text-sm font-medium text-gray-700 md:col-span-2">
+                                    {{ tr('Nos gustaría que asistiera', 'We would like this person or role to attend') }}
+                                    <input v-model="getAdventurerInductionDraft(club).requested_attendee" type="text" maxlength="255" class="mt-1 w-full rounded border p-2" :placeholder="tr('Coordinador de área o personal de la conferencia', 'Area Coordinator or conference staff')" />
+                                </label>
+                                <label class="text-sm font-medium text-gray-700">
+                                    {{ tr('Nombre del club', 'Club Name') }}
+                                    <input v-model="getAdventurerInductionDraft(club).club_name" type="text" maxlength="255" class="mt-1 w-full rounded border p-2" />
+                                </label>
+                                <label class="text-sm font-medium text-gray-700">
+                                    {{ tr('Lugar de la inducción', 'Place of Induction') }}
+                                    <input v-model="getAdventurerInductionDraft(club).induction_place" type="text" maxlength="255" class="mt-1 w-full rounded border p-2" />
+                                </label>
+                                <label class="text-sm font-medium text-gray-700">
+                                    {{ tr('Fecha de la inducción', 'Date of Induction') }}
+                                    <input v-model="getAdventurerInductionDraft(club).induction_date" type="date" class="mt-1 w-full rounded border p-2" />
+                                </label>
+                                <label class="text-sm font-medium text-gray-700">
+                                    {{ tr('Hora de la inducción', 'Time of Induction') }}
+                                    <input v-model="getAdventurerInductionDraft(club).induction_time" type="time" class="mt-1 w-full rounded border p-2" />
+                                </label>
+                                <label class="text-sm font-medium text-gray-700 md:col-span-2">
+                                    {{ tr('Direcciones para llegar', 'Directions') }}
+                                    <textarea v-model="getAdventurerInductionDraft(club).directions" rows="5" maxlength="5000" class="mt-1 w-full rounded border p-2" :placeholder="tr('Incluye instrucciones de acceso, estacionamiento o referencias útiles.', 'Include access, parking, or other useful directions.')"></textarea>
+                                </label>
+                            </div>
+
+                            <div class="mt-5 flex justify-end gap-2">
+                                <button type="button" class="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" :disabled="savingAdventurerInductionByClub[club.id]" @click="cancelAdventurerInductionRequest(club)">
+                                    {{ tr('Cancelar', 'Cancel') }}
+                                </button>
+                                <button type="button" class="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60" :disabled="savingAdventurerInductionByClub[club.id]" @click="saveAdventurerInduction(club)">
+                                    {{ savingAdventurerInductionByClub[club.id] ? tr('Guardando y generando...', 'Saving and generating...') : tr('Guardar y generar Word', 'Save and generate Word') }}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

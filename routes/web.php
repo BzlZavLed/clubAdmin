@@ -58,6 +58,7 @@ use App\Http\Controllers\ResendWebhookController;
 use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\AdventurerYearlyApplicationController;
 use App\Http\Controllers\AdventurerQuarterlyReportController;
+use App\Http\Controllers\AdventurerInductionRequestController;
 use App\Http\Controllers\PublicAdventurerYearlyApplicationSignatureController;
 use App\Http\Controllers\PathfinderAnnualApplicationController;
 use App\Http\Controllers\PathfinderMonthlyReportController;
@@ -232,6 +233,9 @@ Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->g
     Route::put('/association/workplan/events/{event}', [AssociationController::class, 'updateWorkplanEvent'])->name('association.workplan.events.update');
     Route::delete('/association/workplan/events/{event}', [AssociationController::class, 'destroyWorkplanEvent'])->name('association.workplan.events.destroy');
     Route::get('/association/programs', [AssociationController::class, 'programs'])->name('association.programs');
+    Route::get('/association/forms', [AssociationController::class, 'forms'])->name('association.forms');
+    Route::get('/association/forms/{formType}/{formId}/download', [AssociationController::class, 'downloadForm'])->name('association.forms.download');
+    Route::get('/association/forms/{formType}/{formId}', [AssociationController::class, 'showForm'])->name('association.forms.show');
     Route::get('/association/districts', [AssociationController::class, 'districtEvaluation'])->name('association.districts');
     Route::post('/association/districts', [AssociationController::class, 'storeDistrict'])->name('association.districts.store');
     Route::patch('/association/districts/{district}', [AssociationController::class, 'updateDistrict'])->name('association.districts.update');
@@ -941,6 +945,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/clubs/{club}/adventurer-yearly-applications/{application}/signature-requests', [AdventurerYearlyApplicationController::class, 'requestSignature'])->name('clubs.adventurer-yearly-applications.signature-requests');
     Route::post('/clubs/{club}/adventurer-quarterly-reports', [AdventurerQuarterlyReportController::class, 'store'])->name('clubs.adventurer-quarterly-reports.store');
     Route::get('/clubs/{club}/adventurer-quarterly-reports/{report}/download', [AdventurerQuarterlyReportController::class, 'download'])->name('clubs.adventurer-quarterly-reports.download');
+    Route::post('/clubs/{club}/adventurer-induction-requests', [AdventurerInductionRequestController::class, 'store'])->name('clubs.adventurer-induction-requests.store');
+    Route::get('/clubs/{club}/adventurer-induction-requests/{inductionRequest}/download', [AdventurerInductionRequestController::class, 'download'])->name('clubs.adventurer-induction-requests.download');
+    Route::post('/clubs/{club}/adventurer-induction-requests/{inductionRequest}/send', [AdventurerInductionRequestController::class, 'send'])->name('clubs.adventurer-induction-requests.send');
     Route::post('/clubs/{club}/pathfinder-annual-applications', [PathfinderAnnualApplicationController::class, 'store'])->name('clubs.pathfinder-annual-applications.store');
     Route::get('/clubs/{club}/pathfinder-annual-applications/{application}/download', [PathfinderAnnualApplicationController::class, 'download'])->name('clubs.pathfinder-annual-applications.download');
     Route::post('/clubs/{club}/pathfinder-annual-applications/{application}/send', [PathfinderAnnualApplicationController::class, 'send'])->name('clubs.pathfinder-annual-applications.send');
