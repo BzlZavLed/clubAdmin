@@ -21,6 +21,7 @@ import {
     updateClubObjective,
     deleteClubObjective,
     saveAdventurerYearlyApplication,
+    saveAdventurerQuarterlyReport,
     sendAdventurerYearlyApplication,
     saveAdventurerYearlyApplicationDirectorSignature,
     requestAdventurerYearlyApplicationSignature,
@@ -82,6 +83,9 @@ const objectiveDraftByClub = ref({})
 const editingObjectiveByClub = ref({})
 const showObjectiveFormByClub = ref({})
 const adventurerYearlyDraftByClub = ref({})
+const adventurerQuarterlyDraftByClub = ref({})
+const showAdventurerQuarterlyFormByClub = ref({})
+const savingAdventurerQuarterlyByClub = ref({})
 const adventurerYearlyEmailByApplication = ref({})
 const adventurerYearlyDefaultRecipient = 'areynolds@ccosda.org'
 const savingAdventurerYearlyByClub = ref({})
@@ -266,6 +270,8 @@ const fetchClubs = async () => {
         })
         annualApplicationDraftByClub.value = {}
         adventurerYearlyDraftByClub.value = {}
+        adventurerQuarterlyDraftByClub.value = {}
+        showAdventurerQuarterlyFormByClub.value = {}
         monthlyReportDraftByClub.value = {}
         hasClub.value = clubs.value.length > 0
         if (!clubId.value && clubs.value.length && !isSuperadmin.value) {
@@ -649,6 +655,158 @@ const syncAdventurerYearlyApplication = (clubId, application) => {
         .filter(item => Number(item.id) !== Number(application.id))
     club.adventurer_yearly_applications = [application, ...existing]
     preloadAdventurerYearlyRecipient(application)
+}
+
+const adventurerQuarterlyPeriodOrder = {
+    sep_oct: 1,
+    nov_dec: 2,
+    jan_feb: 3,
+    mar_apr: 4,
+}
+
+const currentAdventurerQuarter = () => {
+    const date = new Date()
+    const month = date.getMonth() + 1
+    if (month >= 9 && month <= 10) return { reporting_year: date.getFullYear(), reporting_period: 'sep_oct' }
+    if (month >= 11) return { reporting_year: date.getFullYear(), reporting_period: 'nov_dec' }
+    if (month <= 2) return { reporting_year: date.getFullYear() - 1, reporting_period: 'jan_feb' }
+    if (month <= 4) return { reporting_year: date.getFullYear() - 1, reporting_period: 'mar_apr' }
+    return { reporting_year: date.getFullYear(), reporting_period: 'sep_oct' }
+}
+
+const getAdventurerQuarterlyReports = (club) => (
+    Array.isArray(club?.adventurer_quarterly_reports)
+        ? club.adventurer_quarterly_reports.slice().sort((a, b) => {
+            const yearDifference = Number(b.reporting_year) - Number(a.reporting_year)
+            if (yearDifference !== 0) return yearDifference
+            return (adventurerQuarterlyPeriodOrder[b.reporting_period] || 0) - (adventurerQuarterlyPeriodOrder[a.reporting_period] || 0)
+        })
+        : []
+)
+
+const adventurerQuarterlyDefaults = (club) => ({
+    ...currentAdventurerQuarter(),
+    club_name: club?.club_name || '',
+    director_name: club?.director_name || user.value?.name || '',
+    cell_number: '',
+    email_address: user.value?.email || '',
+    membership_boys: 0,
+    membership_girls: 0,
+    staff_males: 0,
+    staff_females: 0,
+    news_item: '',
+    meetings_held: 0,
+    class_a_uniform_worn: false,
+    attendance_percentage: 0,
+    awards_taught: 0,
+    curriculum_taught: false,
+    outreach_activity: '',
+    staff_meetings_held: 0,
+})
+
+const getAdventurerQuarterlyDraft = (club) => {
+    if (!club?.id) return adventurerQuarterlyDefaults(club)
+    if (!adventurerQuarterlyDraftByClub.value[club.id]) {
+        adventurerQuarterlyDraftByClub.value[club.id] = adventurerQuarterlyDefaults(club)
+    }
+    return adventurerQuarterlyDraftByClub.value[club.id]
+}
+
+const clearAdventurerQuarterlyForm = (club) => {
+    adventurerQuarterlyDraftByClub.value[club.id] = adventurerQuarterlyDefaults(club)
+}
+
+const startAdventurerQuarterlyReport = (club) => {
+    clearAdventurerQuarterlyForm(club)
+    showAdventurerQuarterlyFormByClub.value[club.id] = true
+}
+
+const cancelAdventurerQuarterlyReport = (club) => {
+    showAdventurerQuarterlyFormByClub.value[club.id] = false
+}
+
+const selectAdventurerQuarterlyReport = (club, report) => {
+    adventurerQuarterlyDraftByClub.value[club.id] = {
+        ...adventurerQuarterlyDefaults(club),
+        ...report,
+    }
+    showAdventurerQuarterlyFormByClub.value[club.id] = true
+}
+
+const adventurerQuarterlyPeriodLabel = (period) => ({
+    sep_oct: tr('Sept.-Oct.', 'Sep.-Oct.'),
+    nov_dec: tr('Nov.-Dic.', 'Nov.-Dec.'),
+    jan_feb: tr('Ene.-Feb.', 'Jan.-Feb.'),
+    mar_apr: tr('Mar.-Abr.', 'Mar.-Apr.'),
+}[period] || period)
+
+const adventurerQuarterlyDisplayYear = (report) => {
+    const year = Number(report?.reporting_year)
+    return ['jan_feb', 'mar_apr'].includes(report?.reporting_period) ? year + 1 : year
+}
+
+const adventurerQuarterlyDueDate = (draft) => {
+    const year = Number(draft?.reporting_year)
+    if (!year) return ''
+    return {
+        sep_oct: `${year}-11-01`,
+        nov_dec: `${year + 1}-01-01`,
+        jan_feb: `${year + 1}-03-01`,
+        mar_apr: `${year + 1}-05-01`,
+    }[draft?.reporting_period] || ''
+}
+
+const adventurerQuarterlyPoints = (draft) => {
+    const submissionDate = draft?.submitted_at ? String(draft.submitted_at).slice(0, 10) : today
+    const points = {
+        meetings: Math.min(Math.max(Number(draft?.meetings_held) || 0, 0) * 10, 30),
+        uniform: draft?.class_a_uniform_worn ? 45 : 0,
+        attendance: (Number(draft?.attendance_percentage) || 0) >= 51 ? 60 : 30,
+        awards: Math.min(Math.max(Number(draft?.awards_taught) || 0, 0) * 10, 30),
+        curriculum: draft?.curriculum_taught ? 45 : 0,
+        outreach: String(draft?.outreach_activity || '').trim() ? 30 : 0,
+        staffMeetings: Math.min(Math.max(Number(draft?.staff_meetings_held) || 0, 0) * 15, 30),
+        promptness: submissionDate <= adventurerQuarterlyDueDate(draft) ? 15 : 0,
+        news: String(draft?.news_item || '').trim() ? 15 : 0,
+    }
+    points.total = Object.values(points).reduce((total, value) => total + Number(value), 0)
+    return points
+}
+
+const syncAdventurerQuarterlyReport = (clubId, report) => {
+    const club = clubs.value.find(item => Number(item.id) === Number(clubId))
+    if (!club) return
+    const existing = getAdventurerQuarterlyReports(club).filter(item => Number(item.id) !== Number(report.id))
+    club.adventurer_quarterly_reports = [report, ...existing]
+    selectAdventurerQuarterlyReport(club, report)
+}
+
+const saveAdventurerQuarterly = async (club) => {
+    const draft = getAdventurerQuarterlyDraft(club)
+    if (!draft.reporting_year || !draft.reporting_period || !draft.club_name?.trim() || !draft.director_name?.trim()) {
+        showToast(tr('Completa el año, el trimestre, el club y el director', 'Complete the year, quarter, club, and director'), 'error')
+        return
+    }
+
+    savingAdventurerQuarterlyByClub.value[club.id] = true
+    try {
+        const response = await saveAdventurerQuarterlyReport(club.id, draft)
+        syncAdventurerQuarterlyReport(club.id, response.data)
+        showAdventurerQuarterlyFormByClub.value[club.id] = false
+        showToast(tr('Reporte trimestral guardado y Word generado', 'Quarterly report saved and Word document generated'), 'success')
+    } catch (error) {
+        console.error('Failed to save Adventurer quarterly report:', error)
+        showToast(error?.response?.data?.message || tr('No se pudo guardar el reporte trimestral', 'Could not save the quarterly report'), 'error')
+    } finally {
+        savingAdventurerQuarterlyByClub.value[club.id] = false
+    }
+}
+
+const downloadAdventurerQuarterly = (club, report) => {
+    window.open(route('clubs.adventurer-quarterly-reports.download', {
+        club: club.id,
+        report: report.id,
+    }), '_blank')
 }
 
 const saveAdventurerYearly = async (club) => {
@@ -2331,6 +2489,178 @@ onMounted(fetchClubs);
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details v-if="adventurerHonorsClubs.length" class="border rounded">
+                <summary class="bg-gray-100 px-4 py-2 font-semibold cursor-pointer">
+                    {{ tr('Reportes trimestrales de Aventureros', 'Adventurer Quarterly Reports') }}
+                </summary>
+                <div class="space-y-5 p-4">
+                    <div
+                        v-for="club in adventurerHonorsClubs"
+                        :key="`adventurer-quarterly-${club.id}`"
+                        class="rounded border bg-white p-4"
+                    >
+                        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">{{ club.club_name }}</h3>
+                                <p class="text-sm text-gray-600">
+                                    {{ tr('Formulario oficial trimestral con puntuación automática sobre 300 puntos.', 'Official quarterly form with automatic scoring out of 300 points.') }}
+                                </p>
+                            </div>
+                            <button type="button" class="w-fit rounded bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-800" @click="startAdventurerQuarterlyReport(club)">
+                                {{ tr('Nuevo reporte', 'New report') }}
+                            </button>
+                        </div>
+
+                        <div v-if="showAdventurerQuarterlyFormByClub[club.id]" class="rounded border border-blue-100 bg-blue-50/30 p-4">
+                        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Año en que inicia el ciclo', 'Club year begins') }}
+                                <input v-model.number="getAdventurerQuarterlyDraft(club).reporting_year" type="number" min="2000" max="2100" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Periodo', 'Reporting period') }}
+                                <select v-model="getAdventurerQuarterlyDraft(club).reporting_period" class="mt-1 w-full rounded border p-2">
+                                    <option value="sep_oct">{{ adventurerQuarterlyPeriodLabel('sep_oct') }}</option>
+                                    <option value="nov_dec">{{ adventurerQuarterlyPeriodLabel('nov_dec') }}</option>
+                                    <option value="jan_feb">{{ adventurerQuarterlyPeriodLabel('jan_feb') }}</option>
+                                    <option value="mar_apr">{{ adventurerQuarterlyPeriodLabel('mar_apr') }}</option>
+                                </select>
+                            </label>
+                            <div class="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                                <div class="font-semibold">{{ tr('Fecha límite', 'Due date') }}</div>
+                                <div>{{ adventurerQuarterlyDueDate(getAdventurerQuarterlyDraft(club)) }}</div>
+                            </div>
+                            <div class="rounded border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                                <div class="font-semibold">{{ tr('Puntuación estimada', 'Estimated score') }}</div>
+                                <div class="text-xl font-bold">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).total }} / 300</div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 grid gap-4 md:grid-cols-2">
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Nombre del club', 'Club Name') }}
+                                <input v-model="getAdventurerQuarterlyDraft(club).club_name" type="text" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Nombre del director', 'Director’s Name') }}
+                                <input v-model="getAdventurerQuarterlyDraft(club).director_name" type="text" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Celular', 'Cell') }}
+                                <input v-model="getAdventurerQuarterlyDraft(club).cell_number" type="tel" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                {{ tr('Correo electrónico', 'Email') }}
+                                <input v-model="getAdventurerQuarterlyDraft(club).email_address" type="email" class="mt-1 w-full rounded border p-2" />
+                            </label>
+                        </div>
+
+                        <div class="mt-5 grid gap-4 md:grid-cols-2">
+                            <fieldset class="rounded border border-gray-200 p-4">
+                                <legend class="px-1 font-semibold text-gray-900">{{ tr('Membresía', 'Membership') }}</legend>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <label class="text-sm text-gray-700">{{ tr('Niños', 'Boys') }}<input v-model.number="getAdventurerQuarterlyDraft(club).membership_boys" type="number" min="0" class="mt-1 w-full rounded border p-2" /></label>
+                                    <label class="text-sm text-gray-700">{{ tr('Niñas', 'Girls') }}<input v-model.number="getAdventurerQuarterlyDraft(club).membership_girls" type="number" min="0" class="mt-1 w-full rounded border p-2" /></label>
+                                    <div class="text-sm text-gray-700"><span>{{ tr('Total', 'Total') }}</span><div class="mt-1 rounded bg-gray-100 p-2 font-semibold">{{ Number(getAdventurerQuarterlyDraft(club).membership_boys || 0) + Number(getAdventurerQuarterlyDraft(club).membership_girls || 0) }}</div></div>
+                                </div>
+                            </fieldset>
+                            <fieldset class="rounded border border-gray-200 p-4">
+                                <legend class="px-1 font-semibold text-gray-900">{{ tr('Personal', 'Staff') }}</legend>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <label class="text-sm text-gray-700">{{ tr('Hombres', 'Males') }}<input v-model.number="getAdventurerQuarterlyDraft(club).staff_males" type="number" min="0" class="mt-1 w-full rounded border p-2" /></label>
+                                    <label class="text-sm text-gray-700">{{ tr('Mujeres', 'Females') }}<input v-model.number="getAdventurerQuarterlyDraft(club).staff_females" type="number" min="0" class="mt-1 w-full rounded border p-2" /></label>
+                                    <div class="text-sm text-gray-700"><span>{{ tr('Total', 'Total') }}</span><div class="mt-1 rounded bg-gray-100 p-2 font-semibold">{{ Number(getAdventurerQuarterlyDraft(club).staff_males || 0) + Number(getAdventurerQuarterlyDraft(club).staff_females || 0) }}</div></div>
+                                </div>
+                            </fieldset>
+                        </div>
+
+                        <label class="mt-5 block text-sm font-medium text-gray-700">
+                            {{ tr('Escribe unas oraciones sobre algo interesante que hizo el club durante este periodo', 'Write a few sentences about something interesting the club did during this reporting period') }}
+                            <textarea v-model="getAdventurerQuarterlyDraft(club).news_item" rows="4" maxlength="5000" class="mt-1 w-full rounded border p-2"></textarea>
+                        </label>
+
+                        <div class="mt-6">
+                            <h4 class="mb-3 font-semibold text-gray-900">{{ tr('Puntos trimestrales', 'Quarterly Points') }}</h4>
+                            <div class="grid gap-3 lg:grid-cols-2">
+                                <label class="rounded border border-gray-200 p-3 text-sm text-gray-700">
+                                    <span class="font-semibold">A. {{ tr('Reuniones realizadas', 'Meetings held') }}</span>
+                                    <span class="float-right font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).meetings }} / 30</span>
+                                    <input v-model.number="getAdventurerQuarterlyDraft(club).meetings_held" type="number" min="0" class="mt-2 w-full rounded border p-2" />
+                                    <span class="mt-1 block text-xs text-gray-500">{{ tr('10 puntos por reunión; máximo 30.', '10 points per meeting; 30 maximum.') }}</span>
+                                </label>
+                                <label class="rounded border border-gray-200 p-3 text-sm text-gray-700">
+                                    <span class="font-semibold">B. {{ tr('Uniforme Clase A usado este trimestre', 'Class A uniform worn this quarter') }}</span>
+                                    <span class="float-right font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).uniform }} / 45</span>
+                                    <select v-model="getAdventurerQuarterlyDraft(club).class_a_uniform_worn" class="mt-2 w-full rounded border p-2"><option :value="false">{{ tr('No', 'No') }}</option><option :value="true">{{ tr('Sí', 'Yes') }}</option></select>
+                                </label>
+                                <label class="rounded border border-gray-200 p-3 text-sm text-gray-700">
+                                    <span class="font-semibold">C. {{ tr('Promedio de asistencia (%)', 'Average attendance (%)') }}</span>
+                                    <span class="float-right font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).attendance }} / 60</span>
+                                    <input v-model.number="getAdventurerQuarterlyDraft(club).attendance_percentage" type="number" min="0" max="100" step="0.01" class="mt-2 w-full rounded border p-2" />
+                                    <span class="mt-1 block text-xs text-gray-500">{{ tr('51% o más = 60; 50% o menos = 30.', '51% or above = 60; 50% or below = 30.') }}</span>
+                                </label>
+                                <label class="rounded border border-gray-200 p-3 text-sm text-gray-700">
+                                    <span class="font-semibold">D. {{ tr('Honores enseñados', 'Awards taught') }}</span>
+                                    <span class="float-right font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).awards }} / 30</span>
+                                    <input v-model.number="getAdventurerQuarterlyDraft(club).awards_taught" type="number" min="0" class="mt-2 w-full rounded border p-2" />
+                                    <span class="mt-1 block text-xs text-gray-500">{{ tr('10 puntos por honor; máximo 30.', '10 points per award; 30 maximum.') }}</span>
+                                </label>
+                                <label class="rounded border border-gray-200 p-3 text-sm text-gray-700">
+                                    <span class="font-semibold">E. {{ tr('Currículo enseñado para todos los niveles', 'Curriculum taught for all class levels') }}</span>
+                                    <span class="float-right font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).curriculum }} / 45</span>
+                                    <select v-model="getAdventurerQuarterlyDraft(club).curriculum_taught" class="mt-2 w-full rounded border p-2"><option :value="false">{{ tr('No', 'No') }}</option><option :value="true">{{ tr('Sí', 'Yes') }}</option></select>
+                                </label>
+                                <label class="rounded border border-gray-200 p-3 text-sm text-gray-700">
+                                    <span class="font-semibold">F. {{ tr('Actividad de alcance realizada', 'Outreach activity conducted') }}</span>
+                                    <span class="float-right font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).outreach }} / 30</span>
+                                    <input v-model="getAdventurerQuarterlyDraft(club).outreach_activity" type="text" maxlength="1000" class="mt-2 w-full rounded border p-2" :placeholder="tr('Describe la actividad', 'List the activity')" />
+                                </label>
+                                <label class="rounded border border-gray-200 p-3 text-sm text-gray-700">
+                                    <span class="font-semibold">G. {{ tr('Reuniones de personal', 'Staff meetings') }}</span>
+                                    <span class="float-right font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).staffMeetings }} / 30</span>
+                                    <input v-model.number="getAdventurerQuarterlyDraft(club).staff_meetings_held" type="number" min="0" class="mt-2 w-full rounded border p-2" />
+                                    <span class="mt-1 block text-xs text-gray-500">{{ tr('15 puntos por reunión; máximo 30.', '15 points per meeting; 30 maximum.') }}</span>
+                                </label>
+                                <div class="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                                    <div class="flex justify-between gap-3"><span class="font-semibold">H. {{ tr('Enviado puntualmente', 'Submitted on time') }}</span><span class="font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).promptness }} / 15</span></div>
+                                    <p class="mt-2 text-xs text-gray-500">{{ tr('El sistema usa la fecha del primer envío y la fecha límite del periodo.', 'The system uses the first submission date and the period due date.') }}</p>
+                                    <div class="mt-3 flex justify-between gap-3 border-t pt-3"><span class="font-semibold">I. {{ tr('Noticia escrita arriba', 'News item written above') }}</span><span class="font-bold text-blue-700">{{ adventurerQuarterlyPoints(getAdventurerQuarterlyDraft(club)).news }} / 15</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 flex justify-end gap-2">
+                            <button type="button" class="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" :disabled="savingAdventurerQuarterlyByClub[club.id]" @click="cancelAdventurerQuarterlyReport(club)">
+                                {{ tr('Cancelar', 'Cancel') }}
+                            </button>
+                            <button type="button" class="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60" :disabled="savingAdventurerQuarterlyByClub[club.id]" @click="saveAdventurerQuarterly(club)">
+                                {{ savingAdventurerQuarterlyByClub[club.id] ? tr('Guardando y generando...', 'Saving and generating...') : tr('Guardar y generar Word', 'Save and generate Word') }}
+                            </button>
+                        </div>
+                        </div>
+
+                        <div class="mt-6 border-t pt-5">
+                            <h4 class="font-semibold text-gray-900">{{ tr('Reportes guardados', 'Saved reports') }}</h4>
+                            <p class="mb-3 text-xs text-gray-500">{{ tr('Existe un reporte por club, ciclo y periodo. Guardar el mismo periodo actualiza el existente.', 'One report is kept per club, club year, and period. Saving the same period updates it.') }}</p>
+                            <div v-if="getAdventurerQuarterlyReports(club).length" class="overflow-x-auto rounded border border-gray-200">
+                                <table class="min-w-full text-left text-sm">
+                                    <thead class="bg-gray-50 text-xs uppercase text-gray-600"><tr><th class="px-3 py-2">{{ tr('Periodo', 'Period') }}</th><th class="px-3 py-2">{{ tr('Puntos', 'Points') }}</th><th class="px-3 py-2">{{ tr('Envío', 'Submission') }}</th><th class="px-3 py-2">{{ tr('Acciones', 'Actions') }}</th></tr></thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <tr v-for="report in getAdventurerQuarterlyReports(club)" :key="report.id">
+                                            <td class="px-3 py-3 font-medium">{{ adventurerQuarterlyPeriodLabel(report.reporting_period) }} {{ adventurerQuarterlyDisplayYear(report) }}</td>
+                                            <td class="px-3 py-3 font-semibold">{{ report.total_points }} / 300</td>
+                                            <td class="px-3 py-3"><span :class="report.submitted_on_time ? 'text-emerald-700' : 'text-amber-700'">{{ report.submitted_on_time ? tr('A tiempo', 'On time') : tr('Fuera de fecha', 'Late') }}</span><div class="text-xs text-gray-500">{{ tr('Vence', 'Due') }} {{ report.due_date }}</div></td>
+                                            <td class="px-3 py-3"><div class="flex gap-2"><button type="button" class="rounded border border-blue-600 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50" @click="selectAdventurerQuarterlyReport(club, report)">{{ tr('Abrir', 'Open') }}</button><button type="button" class="rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700" @click="downloadAdventurerQuarterly(club, report)">{{ tr('Descargar Word', 'Download Word') }}</button></div></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p v-else class="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{{ tr('Guarda el formulario para crear el primer documento Word.', 'Save the form to create the first Word document.') }}</p>
                         </div>
                     </div>
                 </div>

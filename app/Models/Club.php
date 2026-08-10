@@ -111,6 +111,13 @@ class Club extends Model
         return $this->hasMany(AdventurerYearlyApplication::class)->latest('application_year');
     }
 
+    public function adventurerQuarterlyReports()
+    {
+        return $this->hasMany(AdventurerQuarterlyReport::class)
+            ->orderByDesc('reporting_year')
+            ->orderByDesc('id');
+    }
+
     public function pathfinderMonthlyReports()
     {
         return $this->hasMany(PathfinderMonthlyReport::class)

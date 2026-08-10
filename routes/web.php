@@ -57,6 +57,7 @@ use App\Http\Controllers\MailTrackingController;
 use App\Http\Controllers\ResendWebhookController;
 use App\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\AdventurerYearlyApplicationController;
+use App\Http\Controllers\AdventurerQuarterlyReportController;
 use App\Http\Controllers\PublicAdventurerYearlyApplicationSignatureController;
 use App\Http\Controllers\PathfinderAnnualApplicationController;
 use App\Http\Controllers\PathfinderMonthlyReportController;
@@ -938,6 +939,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/clubs/{club}/adventurer-yearly-applications/{application}/send', [AdventurerYearlyApplicationController::class, 'send'])->name('clubs.adventurer-yearly-applications.send');
     Route::post('/clubs/{club}/adventurer-yearly-applications/{application}/director-signature', [AdventurerYearlyApplicationController::class, 'saveDirectorSignature'])->name('clubs.adventurer-yearly-applications.director-signature');
     Route::post('/clubs/{club}/adventurer-yearly-applications/{application}/signature-requests', [AdventurerYearlyApplicationController::class, 'requestSignature'])->name('clubs.adventurer-yearly-applications.signature-requests');
+    Route::post('/clubs/{club}/adventurer-quarterly-reports', [AdventurerQuarterlyReportController::class, 'store'])->name('clubs.adventurer-quarterly-reports.store');
+    Route::get('/clubs/{club}/adventurer-quarterly-reports/{report}/download', [AdventurerQuarterlyReportController::class, 'download'])->name('clubs.adventurer-quarterly-reports.download');
     Route::post('/clubs/{club}/pathfinder-annual-applications', [PathfinderAnnualApplicationController::class, 'store'])->name('clubs.pathfinder-annual-applications.store');
     Route::get('/clubs/{club}/pathfinder-annual-applications/{application}/download', [PathfinderAnnualApplicationController::class, 'download'])->name('clubs.pathfinder-annual-applications.download');
     Route::post('/clubs/{club}/pathfinder-annual-applications/{application}/send', [PathfinderAnnualApplicationController::class, 'send'])->name('clubs.pathfinder-annual-applications.send');

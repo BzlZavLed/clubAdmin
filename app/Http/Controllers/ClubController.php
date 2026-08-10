@@ -691,7 +691,7 @@ class ClubController extends Controller
 
         if ($authUser->profile_type === 'superadmin' && (int) $authUser->id === (int) $user->id) {
             $query = Club::query()
-                ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'adventurerYearlyApplications.signatures', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
+                ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'adventurerYearlyApplications.signatures', 'adventurerQuarterlyReports', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
                 ->orderBy('club_name');
 
             $contextClubId = session('superadmin_context.club_id');
@@ -710,7 +710,7 @@ class ClubController extends Controller
         $clubIds = ClubHelper::clubIdsForUser($user);
 
         $clubs = Club::whereIn('id', $clubIds)
-            ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'adventurerYearlyApplications.signatures', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
+            ->with(['clubClasses.investitureRequirements', 'carpetaClassActivations', 'staffAdventurers', 'localObjectives', 'adventurerYearlyApplications.signatures', 'adventurerQuarterlyReports', 'pathfinderAnnualApplications.signatures', 'pathfinderMonthlyReports.attachments', 'church:id,pastor_email,pastor_name', 'district.association.union'])
             ->orderBy('club_name')
             ->get();
 

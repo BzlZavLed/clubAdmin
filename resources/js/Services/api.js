@@ -626,6 +626,11 @@ export const saveAdventurerYearlyApplication = async (clubId, payload) => {
     return data;
 };
 
+export const saveAdventurerQuarterlyReport = async (clubId, payload) => {
+    const { data } = await axios.post(route('clubs.adventurer-quarterly-reports.store', { club: clubId }), payload);
+    return data;
+};
+
 export const sendAdventurerYearlyApplication = async (clubId, applicationId, email) => {
     const { data } = await axios.post(route('clubs.adventurer-yearly-applications.send', {
         club: clubId,
