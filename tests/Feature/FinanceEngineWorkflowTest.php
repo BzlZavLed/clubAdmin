@@ -889,6 +889,283 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertTrue($fundraiserMovements->every(fn (array $movement) => !empty($movement['receipt']['number'])));
     }
 
+    public function test_semi_automatic_fundraiser_defers_ledger_income_until_confirmed_close(): void
+    {
+        [$director, $club] = $this->makeDirectorAndClub();
+        $account = $this->createAccount($club, 'club_budget', 'Club Budget', 0);
+
+        $eventResponse = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.store'), [
+                'club_id' => $club->id,
+                'name' => 'Deferred bake sale',
+                'fundraiser_type' => 'products',
+                'event_date' => '2026-08-19',
+                'pay_to' => 'club_budget',
+                'accounting_mode' => 'semi_automatic',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('event.accounting_mode', 'semi_automatic');
+
+        $eventId = $eventResponse->json('event.id');
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.products.store', $eventId), [
+                'name' => 'Cake slice',
+                'sale_price' => 10,
+            ])
+            ->assertCreated();
+
+        $product = FundraiserProduct::query()->firstWhere('name', 'Cake slice');
+        foreach ([
+            ['customer_name' => 'Buyer One', 'quantity' => 1, 'payment_type' => 'cash'],
+            ['customer_name' => 'Buyer Two', 'quantity' => 2, 'payment_type' => 'cash'],
+        ] as $sale) {
+            $this->actingAs($director)
+                ->postJson(route('club.finance-engine.fundraisers.sales.store', $eventId), [
+                    'customer_name' => $sale['customer_name'],
+                    'sale_date' => '2026-08-19',
+                    'payment_type' => $sale['payment_type'],
+                    'items' => [[
+                        'fundraiser_product_id' => $product->id,
+                        'quantity' => $sale['quantity'],
+                    ]],
+                ])
+                ->assertCreated()
+                ->assertJsonPath('sale.payment_id', null)
+                ->assertJsonPath('receipt', null);
+        }
+
+        $this->assertDatabaseCount('fundraiser_sales', 2);
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('payment_receipts', 0);
+        $this->assertSame('0.00', Account::findOrFail($account->id)->balance);
+
+        $deferredSaleId = \App\Models\FundraiserSale::query()->where('fundraiser_event_id', $eventId)->value('id');
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.cancel', [
+                'fundraiserEvent' => $eventId,
+                'fundraiserSale' => $deferredSaleId,
+            ]), [
+                'correction_date' => '2026-08-19',
+                'reason' => 'Cancellation is automatic-only',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('fundraiser_sale_id');
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.close', $eventId), [
+                'close_date' => '2026-08-19',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('confirm_accounting_posting');
+
+        $this->assertDatabaseHas('fundraiser_events', ['id' => $eventId, 'status' => 'active']);
+        $this->assertDatabaseCount('payments', 0);
+
+        $closeResponse = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.close', $eventId), [
+                'close_date' => '2026-08-19',
+                'confirm_accounting_posting' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('accounting_posting.sale_count', 2)
+            ->assertJsonPath('accounting_posting.amount', 30);
+
+        $closedEvent = collect($closeResponse->json('data.events'))->firstWhere('id', $eventId);
+        $this->assertSame('closed', $closedEvent['status']);
+        $this->assertSame(0, $closedEvent['pending_accounting_sale_count']);
+        $this->assertNotEmpty($closedEvent['accounting_batch_uuid']);
+        $this->assertNotEmpty($closedEvent['accounting_posted_at']);
+        $this->assertDatabaseCount('payments', 2);
+        $this->assertDatabaseCount('payment_receipts', 2);
+        $this->assertSame('30.00', Account::findOrFail($account->id)->balance);
+        $this->assertSame(
+            [10.0, 20.0],
+            Payment::query()
+                ->where('source_type', FinanceFundraiserService::SOURCE_TYPE)
+                ->where('source_line_id', $eventId)
+                ->orderBy('amount_paid')
+                ->pluck('amount_paid')
+                ->map(fn ($amount) => (float) $amount)
+                ->all()
+        );
+
+        $movements = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.movements', [
+                'club_id' => $club->id,
+                'domain' => 'income',
+            ]))
+            ->assertOk()
+            ->json('data.movements');
+        $fundraiserMovements = collect($movements)->where('source_type', FinanceFundraiserService::SOURCE_TYPE)->values();
+        $this->assertCount(2, $fundraiserMovements);
+        $this->assertTrue($fundraiserMovements->every(
+            fn (array $movement) => (int) $movement['source_line_id'] === (int) $eventId
+        ));
+    }
+
+    public function test_automatic_fundraiser_sale_cancellation_reverses_accounting_and_restores_inventory(): void
+    {
+        [$director, $club] = $this->makeDirectorAndClub();
+        $account = $this->createAccount($club, 'club_budget', 'Club Budget', 0);
+
+        $eventId = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.store'), [
+                'club_id' => $club->id,
+                'name' => 'Automatic cancellation sale',
+                'fundraiser_type' => 'products',
+                'event_date' => '2026-08-19',
+                'pay_to' => 'club_budget',
+                'accounting_mode' => 'automatic',
+            ])
+            ->assertCreated()
+            ->json('event.id');
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.products.store', $eventId), [
+                'name' => 'Donated book',
+                'sale_price' => 10,
+                'tracks_inventory' => true,
+                'quantity_available' => 5,
+            ])
+            ->assertCreated();
+
+        $product = FundraiserProduct::query()->firstWhere('name', 'Donated book');
+        $saleResponse = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.store', $eventId), [
+                'customer_name' => 'Mistaken buyer',
+                'sale_date' => '2026-08-19',
+                'payment_type' => 'cash',
+                'items' => [[
+                    'fundraiser_product_id' => $product->id,
+                    'quantity' => 2,
+                ]],
+            ])
+            ->assertCreated();
+
+        $saleId = $saleResponse->json('sale.id');
+        $paymentId = $saleResponse->json('sale.payment_id');
+        $this->assertSame('20.00', Account::findOrFail($account->id)->balance);
+        $this->assertSame(2, (int) $product->fresh()->quantity_sold);
+
+        $cancelResponse = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.cancel', [
+                'fundraiserEvent' => $eventId,
+                'fundraiserSale' => $saleId,
+            ]), [
+                'correction_date' => '2026-08-20',
+                'reason' => 'Duplicate point of sale entry',
+            ])
+            ->assertOk()
+            ->assertJsonPath('used_existing_reversal', false);
+
+        $reversalId = $cancelResponse->json('reversal_payment_id');
+        $this->assertDatabaseHas('fundraiser_sales', [
+            'id' => $saleId,
+            'is_cancelled' => true,
+            'cancellation_reason' => 'Duplicate point of sale entry',
+            'reversal_payment_id' => $reversalId,
+            'kitchen_status' => 'cancelled',
+        ]);
+        $this->assertDatabaseHas('payments', [
+            'id' => $paymentId,
+            'is_cancelled' => true,
+            'related_canceled_movement_id' => $reversalId,
+        ]);
+        $this->assertDatabaseHas('payments', [
+            'id' => $reversalId,
+            'amount_paid' => -20,
+            'reversed_payment_id' => $paymentId,
+            'canceling_id' => $paymentId,
+            'source_type' => FinanceFundraiserService::SOURCE_TYPE,
+            'source_id' => $saleId,
+            'source_line_id' => $eventId,
+        ]);
+        $this->assertDatabaseHas('payment_receipts', ['payment_id' => $reversalId]);
+        $this->assertSame('0.00', Account::findOrFail($account->id)->balance);
+        $this->assertSame(0, (int) $product->fresh()->quantity_sold);
+
+        $event = collect($cancelResponse->json('data.events'))->firstWhere('id', $eventId);
+        $this->assertSame(0.0, (float) $event['totals']['revenue']);
+        $this->assertSame(0, (int) $event['totals']['sale_count']);
+        $this->assertSame(1, (int) $event['totals']['cancelled_sale_count']);
+        $this->assertTrue((bool) $event['sales'][0]['effective_cancelled']);
+        $this->assertNotNull($event['sales'][0]['reversal_receipt']);
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.cancel', [
+                'fundraiserEvent' => $eventId,
+                'fundraiserSale' => $saleId,
+            ]), [
+                'correction_date' => '2026-08-20',
+                'reason' => 'Second attempt',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('fundraiser_sale_id');
+        $this->assertDatabaseCount('payments', 2);
+    }
+
+    public function test_fundraiser_cancellation_reuses_an_existing_accounting_reversal(): void
+    {
+        [$director, $club] = $this->makeDirectorAndClub();
+        $account = $this->createAccount($club, 'club_budget', 'Club Budget', 0);
+
+        $eventId = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.store'), [
+                'club_id' => $club->id,
+                'name' => 'Existing reversal sale',
+                'fundraiser_type' => 'products',
+                'pay_to' => 'club_budget',
+            ])
+            ->assertCreated()
+            ->json('event.id');
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.products.store', $eventId), [
+                'name' => 'Ticket',
+                'sale_price' => 15,
+                'tracks_inventory' => true,
+                'quantity_available' => 2,
+            ])
+            ->assertCreated();
+        $product = FundraiserProduct::query()->firstWhere('name', 'Ticket');
+        $sale = $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.store', $eventId), [
+                'sale_date' => '2026-08-19',
+                'payment_type' => 'cash',
+                'items' => [['fundraiser_product_id' => $product->id, 'quantity' => 1]],
+            ])
+            ->assertCreated()
+            ->json('sale');
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.corrections.payments.reverse', $sale['payment_id']), [
+                'correction_date' => '2026-08-20',
+                'reason' => 'Reversed from accounting first',
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseCount('payments', 2);
+        $this->assertSame(1, (int) $product->fresh()->quantity_sold);
+
+        $this->actingAs($director)
+            ->postJson(route('club.finance-engine.fundraisers.sales.cancel', [
+                'fundraiserEvent' => $eventId,
+                'fundraiserSale' => $sale['id'],
+            ]), [
+                'correction_date' => '2026-08-20',
+                'reason' => 'Synchronize fundraiser sale',
+            ])
+            ->assertOk()
+            ->assertJsonPath('used_existing_reversal', true);
+
+        $this->assertDatabaseCount('payments', 2);
+        $this->assertSame('0.00', Account::findOrFail($account->id)->balance);
+        $this->assertSame(0, (int) $product->fresh()->quantity_sold);
+        $this->assertDatabaseHas('fundraiser_sales', [
+            'id' => $sale['id'],
+            'is_cancelled' => true,
+        ]);
+    }
+
     public function test_fundraiser_partnership_records_contributions_and_earnings_between_clubs(): void
     {
         [$director, $club] = $this->makeDirectorAndClub();

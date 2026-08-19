@@ -704,6 +704,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.finance-engine.fundraisers.products.update');
     Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/sales', [FinanceEngineController::class, 'storeFundraiserSale'])
         ->name('club.finance-engine.fundraisers.sales.store');
+    Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/sales/{fundraiserSale}/cancel', [FinanceEngineController::class, 'cancelFundraiserSale'])
+        ->name('club.finance-engine.fundraisers.sales.cancel');
     Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/close', [FinanceEngineController::class, 'closeFundraiserEvent'])
         ->name('club.finance-engine.fundraisers.close');
     Route::post('/club-director/finance-engine/fundraisers/{fundraiserEvent}/investment-receipts', [FinanceEngineController::class, 'uploadFundraiserInvestmentReceipts'])

@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class FinanceCorrectionWriter
 {
@@ -41,47 +42,86 @@ class FinanceCorrectionWriter
             return response()->json(['message' => 'Este ingreso ya fue revertido previamente.'], 422);
         }
 
-        $account = $payment->account ?: $this->resolveAccount($payment->club_id, $payment->pay_to ?: 'club_budget');
-        $amount = abs((float) $payment->amount_paid);
-        $reversal = null;
-
-        DB::transaction(function () use ($payment, $validated, $user, $account, $amount, &$reversal) {
-            $reversal = Payment::query()->create([
-                'club_id' => $payment->club_id,
-                'payment_concept_id' => $payment->payment_concept_id,
-                'concept_text' => $payment->concept_text ?: 'Correccion contable de ingreso',
-                'pay_to' => $payment->pay_to,
-                'account_id' => $account->id,
-                'member_id' => $payment->member_id,
-                'staff_id' => $payment->staff_id,
-                'payer_name' => $payment->payer_name,
-                'amount_paid' => -$amount,
-                'expected_amount' => null,
-                'balance_due_after' => null,
-                'payment_date' => $validated['correction_date'],
-                'payment_type' => 'internal',
-                'zelle_phone' => null,
-                'check_image_path' => null,
-                'received_by_user_id' => $user->id,
-                'notes' => trim("Correccion contable. Reversa del ingreso #{$payment->id}. Motivo: {$validated['reason']}"),
-                'reversed_payment_id' => $payment->id,
-                'canceling_id' => $payment->id,
-            ]);
-
-            $this->paymentReceiptService->syncForPayment($reversal);
-
-            $payment->update([
-                'is_cancelled' => true,
-                'related_canceled_movement_id' => $reversal->id,
-            ]);
-
-            $account->decrement('balance', $amount);
-        });
+        $reversal = $this->createPaymentReversal(
+            $payment,
+            $validated['correction_date'],
+            $validated['reason'],
+            $user->id
+        );
 
         return response()->json([
             'message' => 'Ingreso revertido mediante movimiento opuesto.',
             'data' => ['reversal_id' => $reversal->id],
         ], 201);
+    }
+
+    public function createPaymentReversal(
+        Payment $payment,
+        string $correctionDate,
+        string $reason,
+        ?int $receivedByUserId
+    ): Payment {
+        return DB::transaction(function () use ($payment, $correctionDate, $reason, $receivedByUserId) {
+            $lockedPayment = Payment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedPayment->payment_type === 'internal' || $lockedPayment->reversed_payment_id || $lockedPayment->canceling_id) {
+                throw ValidationException::withMessages([
+                    'fundraiser_sale_id' => ['Este movimiento no se puede revertir.'],
+                ]);
+            }
+
+            if ($lockedPayment->is_cancelled || $lockedPayment->related_canceled_movement_id || $lockedPayment->reversalPayment()->exists()) {
+                throw ValidationException::withMessages([
+                    'fundraiser_sale_id' => ['Este ingreso ya fue revertido previamente.'],
+                ]);
+            }
+
+            $account = Account::query()
+                ->whereKey($lockedPayment->account_id)
+                ->lockForUpdate()
+                ->first()
+                ?: $this->resolveAccount($lockedPayment->club_id, $lockedPayment->pay_to ?: 'club_budget');
+            $amount = abs((float) $lockedPayment->amount_paid);
+
+            $reversal = Payment::query()->create([
+                'club_id' => $lockedPayment->club_id,
+                'payment_concept_id' => $lockedPayment->payment_concept_id,
+                'concept_text' => $lockedPayment->concept_text ?: 'Correccion contable de ingreso',
+                'pay_to' => $lockedPayment->pay_to,
+                'account_id' => $account->id,
+                'member_id' => $lockedPayment->member_id,
+                'staff_id' => $lockedPayment->staff_id,
+                'payer_name' => $lockedPayment->payer_name,
+                'amount_paid' => -$amount,
+                'expected_amount' => null,
+                'balance_due_after' => null,
+                'payment_date' => $correctionDate,
+                'payment_type' => 'internal',
+                'zelle_phone' => null,
+                'check_image_path' => null,
+                'received_by_user_id' => $receivedByUserId,
+                'notes' => trim("Correccion contable. Reversa del ingreso #{$lockedPayment->id}. Motivo: {$reason}"),
+                'reversed_payment_id' => $lockedPayment->id,
+                'canceling_id' => $lockedPayment->id,
+                'source_type' => $lockedPayment->source_type,
+                'source_id' => $lockedPayment->source_id,
+                'source_line_id' => $lockedPayment->source_line_id,
+            ]);
+
+            $this->paymentReceiptService->syncForPayment($reversal);
+
+            $lockedPayment->update([
+                'is_cancelled' => true,
+                'related_canceled_movement_id' => $reversal->id,
+            ]);
+
+            $account->decrement('balance', $amount);
+
+            return $reversal;
+        });
     }
 
     public function reverseExpense(Request $request, Expense $expense): JsonResponse

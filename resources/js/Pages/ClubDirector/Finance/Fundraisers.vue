@@ -20,6 +20,7 @@ import {
     XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import {
+    cancelFinanceEngineFundraiserSale,
     closeFinanceEngineFundraiserEvent,
     createFinanceEngineFundraiserPartner,
     createFinanceEngineFundraiserEvent,
@@ -52,6 +53,7 @@ const savingPartnerTransfer = ref(null)
 const savingProduct = ref(false)
 const savingProductEdit = ref(false)
 const savingSale = ref(false)
+const cancellingSale = ref(false)
 const savingInvestmentReceipts = ref(false)
 const investmentReceiptUploadProgress = ref(0)
 const loadError = ref('')
@@ -63,6 +65,7 @@ const partnerTransferErrors = ref({})
 const productErrors = ref({})
 const productEditErrors = ref({})
 const saleErrors = ref({})
+const cancellationErrors = ref({})
 const selectedClubId = ref(null)
 const currentClub = ref(null)
 const clubs = ref([])
@@ -80,6 +83,8 @@ const receiptPreviewSale = ref(null)
 const showTutorialKitchen = ref(false)
 const showFundraiserGuide = ref(false)
 const showCloseModal = ref(false)
+const showCancelSaleModal = ref(false)
+const cancellationSale = ref(null)
 const showCreateEventForm = ref(false)
 const eventSelectionBeforeCreate = ref(null)
 const tutorialActive = ref(false)
@@ -97,6 +102,7 @@ const eventForm = ref({
     fundraiser_type: 'food',
     event_date: today(),
     pay_to: 'club_budget',
+    accounting_mode: 'automatic',
     investment_total: '',
     investment_pay_to: 'club_budget',
     investment_funds_location: 'cash',
@@ -136,6 +142,12 @@ const closeForm = ref({
     funds_location: 'cash',
     payment_type: 'cash',
     notes: '',
+    confirm_accounting_posting: false,
+})
+
+const cancellationForm = ref({
+    correction_date: today(),
+    reason: '',
 })
 
 const investmentReceiptFiles = ref([])
@@ -175,6 +187,8 @@ const selectedClosedEventId = computed(() => selectedEvent.value?.status === 'cl
 const showEventSetup = computed(() => events.value.length === 0 || showCreateEventForm.value)
 const selectedEventPartners = computed(() => selectedEvent.value?.partners || [])
 const selectedEventIsClosed = computed(() => selectedEvent.value?.status === 'closed')
+const selectedEventIsSemiAutomatic = computed(() => selectedEvent.value?.accounting_mode === 'semi_automatic')
+const selectedEventIsAutomatic = computed(() => !selectedEventIsSemiAutomatic.value)
 const selectedEventReport = computed(() => selectedEvent.value?.report || {})
 const selectedEventSummary = computed(() => selectedEventReport.value.summary || {
     total_sales: selectedEvent.value?.totals?.revenue || 0,
@@ -944,6 +958,7 @@ const openCloseModal = () => {
         funds_location: 'cash',
         payment_type: 'cash',
         notes: '',
+        confirm_accounting_posting: false,
     }
     showCloseModal.value = true
 }
@@ -985,6 +1000,7 @@ const resetEventForm = () => {
         fundraiser_type: 'food',
         event_date: today(),
         pay_to: operatingAccounts.value[0]?.value || 'club_budget',
+        accounting_mode: 'automatic',
         investment_total: '',
         investment_pay_to: operatingAccounts.value[0]?.value || 'club_budget',
         investment_funds_location: 'cash',
@@ -1049,6 +1065,7 @@ const submitEvent = async () => {
                 fundraiser_type: eventForm.value.fundraiser_type || 'food',
                 event_date: eventForm.value.event_date || today(),
                 pay_to: eventForm.value.pay_to || TUTORIAL_ACCOUNT,
+                accounting_mode: eventForm.value.accounting_mode || 'automatic',
                 account_label: tr('Presupuesto del club', 'Club budget'),
                 status: 'active',
                 investment_total: Number(eventForm.value.investment_total || 0),
@@ -1392,13 +1409,68 @@ const submitSale = async () => {
         const response = await createFinanceEngineFundraiserSale(selectedEvent.value.id, saleForm.value)
         applyData(response.data)
         resetSaleForm()
-        showToast(tr('Venta registrada con recibo.', 'Sale recorded with receipt.'), 'success')
+        showToast(
+            selectedEventIsSemiAutomatic.value
+                ? tr('Venta guardada. Su ingreso queda pendiente hasta el cierre.', 'Sale saved. Its income remains pending until closing.')
+                : tr('Venta registrada con recibo.', 'Sale recorded with receipt.'),
+            'success'
+        )
     } catch (error) {
         saleErrors.value = normalizeErrors(error)
         showToast(actionErrorMessage(error, tr('No se pudo registrar la venta.', 'Could not record sale.')), 'error')
         console.error(error)
     } finally {
         savingSale.value = false
+    }
+}
+
+const openCancelSaleModal = (sale) => {
+    if (!selectedEvent.value || !selectedEventIsAutomatic.value || selectedEventIsClosed.value || sale?.is_cancelled) return
+
+    cancellationSale.value = sale
+    cancellationErrors.value = {}
+    cancellationForm.value = {
+        correction_date: today(),
+        reason: '',
+    }
+    showCancelSaleModal.value = true
+}
+
+const closeCancelSaleModal = () => {
+    if (cancellingSale.value) return
+
+    showCancelSaleModal.value = false
+    cancellationSale.value = null
+    cancellationErrors.value = {}
+}
+
+const submitSaleCancellation = async () => {
+    if (!selectedEvent.value || !cancellationSale.value) return
+
+    cancellingSale.value = true
+    cancellationErrors.value = {}
+
+    try {
+        const response = await cancelFinanceEngineFundraiserSale(
+            selectedEvent.value.id,
+            cancellationSale.value.id,
+            cancellationForm.value
+        )
+        applyData(response.data)
+        showCancelSaleModal.value = false
+        cancellationSale.value = null
+        showToast(
+            response.used_existing_reversal
+                ? tr('Venta cancelada y sincronizada con la reversa contable existente.', 'Sale cancelled and synchronized with the existing accounting reversal.')
+                : tr('Venta cancelada e ingreso revertido en contabilidad.', 'Sale cancelled and accounting income reversed.'),
+            'success'
+        )
+    } catch (error) {
+        cancellationErrors.value = normalizeErrors(error)
+        showToast(actionErrorMessage(error, tr('No se pudo cancelar la venta.', 'Could not cancel the sale.')), 'error')
+        console.error(error)
+    } finally {
+        cancellingSale.value = false
     }
 }
 
@@ -1435,6 +1507,7 @@ const submitCloseEvent = async () => {
         const closePayload = {
             close_date: closeForm.value.close_date,
             notes: closeForm.value.notes,
+            confirm_accounting_posting: closeForm.value.confirm_accounting_posting,
         }
 
         if (selectedEventHasPartnerClubs.value) {
@@ -1449,7 +1522,13 @@ const submitCloseEvent = async () => {
         }
         showCloseModal.value = false
         closeErrors.value = {}
-        showToast(tr('Fundraiser cerrado.', 'Fundraiser closed.'), 'success')
+        const postedSales = Number(response.accounting_posting?.sale_count || 0)
+        showToast(
+            postedSales > 0
+                ? tr(`Fundraiser cerrado y ${postedSales} venta(s) registrada(s) en contabilidad.`, `Fundraiser closed and ${postedSales} sale(s) posted to accounting.`)
+                : tr('Fundraiser cerrado.', 'Fundraiser closed.'),
+            'success'
+        )
     } catch (error) {
         closeErrors.value = normalizeErrors(error)
         showToast(actionErrorMessage(error, tr('No se pudo cerrar el fundraiser.', 'Could not close fundraiser.')), 'error')
@@ -1541,6 +1620,9 @@ const removeSaleItem = (index) => {
 
 const resetFundraiserWorkspaceState = () => {
     cancelProductEdit()
+    showCancelSaleModal.value = false
+    cancellationSale.value = null
+    cancellationErrors.value = {}
     closeErrors.value = {}
     investmentReceiptErrors.value = {}
     investmentReceiptFiles.value = []
@@ -1591,7 +1673,7 @@ onBeforeUnmount(() => {
                         <p class="text-sm font-medium uppercase tracking-wide text-gray-500">{{ tr('Modulo financiero', 'Finance module') }}</p>
                         <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ tr('Ventas para recaudar fondos', 'Fundraiser sales') }}</h2>
                         <p class="mt-1 text-sm text-gray-600">
-                            {{ tr('Agrupa ventas por fundraiser, registra costos e inventario opcional, y envia cada ingreso al libro financiero.', 'Group sales by fundraiser, track costs and optional inventory, and post each income to the finance ledger.') }}
+                            {{ tr('Agrupa ventas, costos e inventario, y elige si los ingresos llegan al libro al instante o al cerrar.', 'Group sales, costs, and inventory, and choose whether income reaches the ledger instantly or at closing.') }}
                         </p>
                     </div>
 
@@ -1764,6 +1846,27 @@ onBeforeUnmount(() => {
                                 <option v-for="account in operatingAccounts" :key="account.value" :value="account.value">{{ account.label }}</option>
                             </select>
                             <p v-if="firstError(eventErrors, 'pay_to')" class="mt-1 text-xs text-rose-600">{{ firstError(eventErrors, 'pay_to') }}</p>
+                        </div>
+
+                        <div class="md:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                            <label class="flex cursor-pointer items-start gap-3">
+                                <input
+                                    v-model="eventForm.accounting_mode"
+                                    type="checkbox"
+                                    true-value="semi_automatic"
+                                    false-value="automatic"
+                                    class="mt-0.5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                >
+                                <span>
+                                    <span class="block text-sm font-semibold text-gray-900">{{ tr('Contabilidad semiautomatica', 'Semi-automatic accounting') }}</span>
+                                    <span class="mt-1 block text-xs leading-5 text-gray-600">
+                                        {{ tr('Guarda ventas e inventario dentro del fundraiser sin afectar el libro. Al cerrar, deberas confirmar todos los ingresos pendientes.', 'Saves sales and inventory inside the fundraiser without affecting the ledger. At closing, you must confirm all pending income.') }}
+                                    </span>
+                                </span>
+                            </label>
+                            <div v-if="eventForm.accounting_mode === 'semi_automatic'" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
+                                {{ tr('Las ventas no aumentaran el saldo ni generaran recibos contables hasta el cierre. El cierre sera atomico y conservara cada venta como movimiento individual.', 'Sales will not increase the balance or generate accounting receipts until closing. Closing will be atomic and preserve each sale as an individual movement.') }}
+                            </div>
                         </div>
 
                         <div>
@@ -1954,6 +2057,21 @@ onBeforeUnmount(() => {
                                 {{ tr('Fundraiser cerrado', 'Fundraiser closed') }}
                             </span>
                         </div>
+                    </div>
+
+                    <div
+                        v-if="selectedEventIsSemiAutomatic"
+                        class="rounded-lg border px-4 py-3 text-sm"
+                        :class="selectedEventIsClosed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'"
+                    >
+                        <p class="font-semibold">{{ tr('Contabilidad semiautomatica', 'Semi-automatic accounting') }}</p>
+                        <p v-if="!selectedEventIsClosed" class="mt-1">
+                            {{ tr('Estas ventas permanecen fuera del libro hasta el cierre.', 'These sales remain outside the ledger until closing.') }}
+                            {{ tr('Pendientes', 'Pending') }}: {{ selectedEvent.pending_accounting_sale_count }} · {{ formatMoney(selectedEvent.pending_accounting_amount) }}.
+                        </p>
+                        <p v-else class="mt-1">
+                            {{ tr('Los ingresos fueron registrados al cerrar, manteniendo un movimiento contable por venta.', 'Income was posted at closing while retaining one accounting movement per sale.') }}
+                        </p>
                     </div>
 
                         <div data-tour="fundraiser-summary" class="grid gap-3 sm:grid-cols-3">
@@ -2154,14 +2272,14 @@ onBeforeUnmount(() => {
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100 bg-white">
-                                        <tr v-for="sale in selectedEventSaleReceipts" :key="`closed-sale-${sale.id}`">
+                                        <tr v-for="sale in selectedEventSaleReceipts" :key="`closed-sale-${sale.id}`" :class="sale.effective_cancelled ? 'bg-gray-50' : ''">
                                             <td class="px-3 py-2 text-gray-700">{{ formatDate(sale.sale_date) }}</td>
                                             <td class="px-3 py-2 text-gray-700">{{ sale.customer_name || tr('Venta general', 'General sale') }}</td>
                                             <td class="px-3 py-2 text-gray-700">
                                                 {{ (sale.items || []).map((item) => `${item.quantity}x ${item.item_name}`).join(', ') }}
                                             </td>
                                             <td class="px-3 py-2 text-gray-700">{{ paymentTypeLabel(sale.payment_type) }}</td>
-                                            <td class="px-3 py-2 font-semibold text-gray-900">{{ formatMoney(sale.total_amount) }}</td>
+                                            <td class="px-3 py-2 font-semibold" :class="sale.effective_cancelled ? 'text-gray-400 line-through' : 'text-gray-900'">{{ formatMoney(sale.total_amount) }}</td>
                                             <td class="px-3 py-2">
                                                 <div v-if="sale.receipt?.url" class="flex items-center gap-2">
                                                     <a :href="sale.receipt.url" class="font-semibold text-red-700 hover:text-red-800">
@@ -2182,6 +2300,12 @@ onBeforeUnmount(() => {
                                                     </button>
                                                 </div>
                                                 <span v-else class="text-gray-400">—</span>
+                                                <div v-if="sale.effective_cancelled" class="mt-2 space-y-1">
+                                                    <span class="inline-flex rounded-full bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-700">{{ tr('Cancelada', 'Cancelled') }}</span>
+                                                    <a v-if="sale.reversal_receipt?.url" :href="sale.reversal_receipt.url" class="block text-xs font-semibold text-rose-700 hover:text-rose-800">
+                                                        {{ tr('Recibo de reversa', 'Reversal receipt') }}: {{ sale.reversal_receipt.number }}
+                                                    </a>
+                                                </div>
                                             </td>
                                         </tr>
                                         <tr v-if="selectedEventSaleReceipts.length === 0">
@@ -2523,16 +2647,17 @@ onBeforeUnmount(() => {
                                     <th class="px-3 py-2">{{ tr('Articulos', 'Items') }}</th>
                                     <th class="px-3 py-2">{{ tr('Total', 'Total') }}</th>
                                     <th class="px-3 py-2">{{ tr('Recibo / QR', 'Receipt / QR') }}</th>
+                                    <th class="px-3 py-2 text-right">{{ tr('Acciones', 'Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100 bg-white">
-                                <tr v-for="sale in selectedEvent.sales" :key="sale.id">
+                                <tr v-for="sale in selectedEvent.sales" :key="sale.id" :class="sale.effective_cancelled ? 'bg-gray-50' : ''">
                                     <td class="px-3 py-2 text-gray-700">{{ formatDate(sale.sale_date) }}</td>
                                     <td class="px-3 py-2 text-gray-700">{{ sale.customer_name || tr('Venta general', 'General sale') }}</td>
                                     <td class="px-3 py-2 text-gray-700">
                                         {{ sale.items.map((item) => `${item.quantity}x ${item.item_name}`).join(', ') }}
                                     </td>
-                                    <td class="px-3 py-2 font-semibold text-gray-900">{{ formatMoney(sale.total_amount) }}</td>
+                                    <td class="px-3 py-2 font-semibold" :class="sale.effective_cancelled ? 'text-gray-400 line-through' : 'text-gray-900'">{{ formatMoney(sale.total_amount) }}</td>
                                     <td class="px-3 py-2">
                                         <div v-if="sale.receipt?.url" class="flex items-center gap-2">
                                             <a :href="sale.receipt.url" class="font-semibold text-red-700 hover:text-red-800">
@@ -2553,11 +2678,28 @@ onBeforeUnmount(() => {
                                                 >
                                             </button>
                                         </div>
+                                        <span v-else-if="selectedEventIsSemiAutomatic" class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                                            {{ tr('Pendiente de cierre', 'Pending close') }}
+                                        </span>
                                         <span v-else class="text-gray-400">—</span>
+                                    </td>
+                                    <td class="px-3 py-2 text-right">
+                                        <span v-if="sale.is_cancelled" class="inline-flex rounded-full bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-700">
+                                            {{ tr('Cancelada', 'Cancelled') }}
+                                        </span>
+                                        <button
+                                            v-else-if="selectedEventIsAutomatic"
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                                            @click="openCancelSaleModal(sale)"
+                                        >
+                                            <XMarkIcon class="h-4 w-4" />
+                                            {{ sale.accounting_reversed ? tr('Completar cancelacion', 'Complete cancellation') : tr('Cancelar venta', 'Cancel sale') }}
+                                        </button>
                                     </td>
                                 </tr>
                                 <tr v-if="selectedEvent.sales.length === 0">
-                                    <td colspan="5" class="px-3 py-6 text-center text-gray-500">{{ tr('Sin ventas.', 'No sales.') }}</td>
+                                    <td colspan="6" class="px-3 py-6 text-center text-gray-500">{{ tr('Sin ventas.', 'No sales.') }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -2634,6 +2776,59 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
             </aside>
+        </div>
+
+        <div
+            v-if="showCancelSaleModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4"
+            @click.self="closeCancelSaleModal"
+        >
+            <section class="w-full max-w-lg rounded-lg bg-white shadow-2xl">
+                <header class="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
+                    <div>
+                        <p class="text-sm font-semibold text-rose-700">{{ tr('Cancelar venta', 'Cancel sale') }}</p>
+                        <h2 class="text-xl font-semibold text-gray-950">{{ cancellationSale?.customer_name || tr('Venta general', 'General sale') }}</h2>
+                        <p class="mt-1 text-sm text-gray-500">{{ formatMoney(cancellationSale?.total_amount) }}</p>
+                    </div>
+                    <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50" :disabled="cancellingSale" @click="closeCancelSaleModal">
+                        <XMarkIcon class="h-5 w-5" />
+                    </button>
+                </header>
+
+                <form class="space-y-4 p-5" @submit.prevent="submitSaleCancellation">
+                    <div class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-5 text-rose-800">
+                        <template v-if="cancellationSale?.accounting_reversed">
+                            {{ tr('Este ingreso ya fue revertido en Contabilidad. Esta accion terminara la cancelacion en el fundraiser y restaurara el inventario sin crear otra reversa.', 'This income was already reversed in Accounting. This action will finish cancelling it in the fundraiser and restore inventory without creating another reversal.') }}
+                        </template>
+                        <template v-else>
+                            {{ tr('Se creara un movimiento contable opuesto, se descontara el ingreso del saldo y se restauraran las unidades vendidas. La venta permanecera visible como cancelada para auditoria.', 'An opposite accounting movement will be created, the income will be removed from the balance, and sold units will be restored. The sale will remain visible as cancelled for audit.') }}
+                        </template>
+                    </div>
+
+                    <div>
+                        <label class="text-sm font-medium text-gray-700">{{ tr('Fecha de correccion', 'Correction date') }}</label>
+                        <input v-model="cancellationForm.correction_date" type="date" class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
+                        <p v-if="firstError(cancellationErrors, 'correction_date')" class="mt-1 text-xs text-rose-600">{{ firstError(cancellationErrors, 'correction_date') }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-sm font-medium text-gray-700">{{ tr('Motivo', 'Reason') }}</label>
+                        <textarea v-model="cancellationForm.reason" rows="3" required class="mt-1 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500" :placeholder="tr('Ejemplo: venta duplicada o cantidad incorrecta', 'Example: duplicate sale or incorrect quantity')" />
+                        <p v-if="firstError(cancellationErrors, 'reason')" class="mt-1 text-xs text-rose-600">{{ firstError(cancellationErrors, 'reason') }}</p>
+                        <p v-if="firstError(cancellationErrors, 'fundraiser_sale_id')" class="mt-1 text-xs text-rose-600">{{ firstError(cancellationErrors, 'fundraiser_sale_id') }}</p>
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                        <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" :disabled="cancellingSale" @click="closeCancelSaleModal">
+                            {{ tr('Volver', 'Back') }}
+                        </button>
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60" :disabled="cancellingSale || !cancellationForm.reason.trim()">
+                            <XMarkIcon class="h-4 w-4" />
+                            {{ cancellingSale ? tr('Cancelando...', 'Cancelling...') : tr('Confirmar cancelacion', 'Confirm cancellation') }}
+                        </button>
+                    </div>
+                </form>
+            </section>
         </div>
 
         <div
@@ -2831,6 +3026,30 @@ onBeforeUnmount(() => {
                         {{ tr('Hay aportes de inversion pendientes. Registralos antes de cerrar.', 'There are pending investment contributions. Record them before closing.') }}
                     </div>
 
+                    <div v-if="selectedEventIsSemiAutomatic" class="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                        <div>
+                            <p class="font-semibold">{{ tr('Este cierre afectara los libros', 'This close will affect the books') }}</p>
+                            <p class="mt-1 leading-5">
+                                {{ tr('Todas las ventas pendientes se registraran en una sola operacion atomica. El saldo aumentara por el total y cada venta conservara su movimiento y recibo individual.', 'All pending sales will be posted in one atomic operation. The balance will increase by the total, and each sale will retain its individual movement and receipt.') }}
+                            </p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 rounded-lg bg-white/70 p-3">
+                            <div>
+                                <p class="text-xs text-amber-700">{{ tr('Ventas pendientes', 'Pending sales') }}</p>
+                                <p class="font-semibold">{{ selectedEvent.pending_accounting_sale_count }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-amber-700">{{ tr('Total a registrar', 'Total to post') }}</p>
+                                <p class="font-semibold">{{ formatMoney(selectedEvent.pending_accounting_amount) }}</p>
+                            </div>
+                        </div>
+                        <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-300 bg-white px-3 py-2">
+                            <input v-model="closeForm.confirm_accounting_posting" type="checkbox" class="mt-0.5 rounded border-gray-300 text-red-600 focus:ring-red-500">
+                            <span class="font-medium">{{ tr('Confirmo que deseo registrar estos ingresos en contabilidad y cerrar el fundraiser.', 'I confirm that I want to post this income to accounting and close the fundraiser.') }}</span>
+                        </label>
+                        <p v-if="firstError(closeErrors, 'confirm_accounting_posting')" class="text-sm text-rose-700">{{ firstError(closeErrors, 'confirm_accounting_posting') }}</p>
+                    </div>
+
                     <div class="grid gap-3" :class="selectedEventHasPartnerClubs ? 'sm:grid-cols-3' : 'sm:grid-cols-1'">
                         <div>
                             <label class="text-sm font-medium text-gray-700">{{ tr('Fecha cierre', 'Close date') }}</label>
@@ -2876,7 +3095,7 @@ onBeforeUnmount(() => {
                         <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60" :disabled="closingEvent" @click="closeCloseModal">
                             {{ tr('Cancelar', 'Cancel') }}
                         </button>
-                        <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60" :disabled="closingEvent || selectedEventHasPendingPartnerContributions">
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60" :disabled="closingEvent || selectedEventHasPendingPartnerContributions || (selectedEventIsSemiAutomatic && !closeForm.confirm_accounting_posting)">
                             <CheckCircleIcon class="h-4 w-4" />
                             {{ closingEvent ? tr('Cerrando...', 'Closing...') : tr('Cerrar fundraiser', 'Close fundraiser') }}
                         </button>

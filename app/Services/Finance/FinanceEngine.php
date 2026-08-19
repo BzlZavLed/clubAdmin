@@ -120,6 +120,11 @@ class FinanceEngine
         return $this->fundraisers->storeSale($request, $fundraiserEvent);
     }
 
+    public function cancelFundraiserSale(Request $request, FundraiserEvent $fundraiserEvent, FundraiserSale $fundraiserSale)
+    {
+        return $this->fundraisers->cancelSale($request, $fundraiserEvent, $fundraiserSale);
+    }
+
     public function closeFundraiserEvent(Request $request, FundraiserEvent $fundraiserEvent)
     {
         return $this->fundraisers->closeEvent($request, $fundraiserEvent);

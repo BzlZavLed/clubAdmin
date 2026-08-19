@@ -662,6 +662,7 @@ Endpoints nuevos del motor:
 - `POST /club-director/finance-engine/fundraisers`
 - `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/products`
 - `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/sales`
+- `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/sales/{fundraiserSale}/cancel`
 - `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/close`
 - `POST /club-director/finance-engine/fundraisers/{fundraiserEvent}/partners`
 - `POST /club-director/finance-engine/fundraisers/partners/{fundraiserEventPartner}/contribution`
@@ -679,7 +680,14 @@ Tablas nuevas:
 Reglas actuales:
 
 - Cada fundraiser define una sola cuenta destino (`pay_to`) para todos sus ingresos.
-- Cada venta crea un `payments` normal, incrementa la cuenta, genera recibo con `PaymentReceiptService` y queda enlazada con `payments.source_type = fundraiser_sale`.
+- Al crear un fundraiser se puede elegir `accounting_mode = automatic` (predeterminado) o `semi_automatic`.
+- En modo automatico, cada venta crea un `payments` normal, incrementa la cuenta, genera recibo con `PaymentReceiptService` y queda enlazada con `payments.source_type = fundraiser_sale`.
+- Una venta de un fundraiser automatico activo se puede cancelar desde el mismo modulo. La operacion crea la reversa contable, resta el ingreso, restaura `quantity_sold` y conserva la venta visible como cancelada con motivo, usuario, fecha y recibo de reversa.
+- Si el ingreso ya fue revertido desde Contabilidad, la cancelacion del fundraiser reutiliza esa reversa y solo sincroniza el estado local e inventario; nunca crea una segunda reversa.
+- Las ventas canceladas no forman parte de ingresos, utilidad, conteos activos ni distribuciones posteriores. La cancelacion no se permite en modo semiautomatico ni despues del cierre para no invalidar distribuciones ya contabilizadas.
+- En modo semiautomatico, la venta, sus articulos y el inventario se guardan inmediatamente, pero `fundraiser_sales.payment_id` permanece nulo y no se afecta el saldo hasta el cierre.
+- El cierre semiautomatico exige confirmacion explicita. Dentro de una sola transaccion de base de datos bloquea el fundraiser y las ventas pendientes, crea un `payments` y recibo por cada venta, incrementa la cuenta por el total agregado y finalmente cierra el evento. Si falla un movimiento, se revierte todo el cierre.
+- Los movimientos creados durante ese cierre conservan `source_id = fundraiser_sales.id` para desglose individual y `source_line_id = fundraiser_events.id` para agruparlos; el fundraiser guarda tambien `accounting_batch_uuid` y la fecha del registro.
 - El inventario es opcional por producto.
 - Toda inversion registrada en un fundraiser se guarda tambien como `expenses`, descuenta efectivo o banco de la cuenta elegida y puede llevar comprobante opcional.
 - Todos los tipos de fundraiser usan la misma tabla de productos vendibles: producto/plato, cantidad preparada o comprada, inversion de materiales, comprobante opcional, precio de venta y costo unitario calculado.

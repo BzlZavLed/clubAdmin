@@ -352,6 +352,7 @@ class FinanceMovementReader
                     'balance_payment_type' => $balancePaymentType,
                     'source_type' => $payment->source_type,
                     'source_id' => $payment->source_id,
+                    'source_line_id' => $payment->source_line_id,
                     'settles_expense_id' => $payment->settles_expense_id,
                     'status' => $this->paymentStatus($payment),
                     'is_counted_in_balance' => $isCountedInBalance,

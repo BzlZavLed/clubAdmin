@@ -30,10 +30,13 @@ class FinanceFundraiserService
 {
     public const SOURCE_TYPE = 'fundraiser_sale';
     public const PARTNER_TRANSFER_SOURCE_TYPE = 'fundraiser_partner_transfer';
+    public const ACCOUNTING_MODE_AUTOMATIC = 'automatic';
+    public const ACCOUNTING_MODE_SEMI_AUTOMATIC = 'semi_automatic';
 
     public function __construct(
         private readonly PaymentReceiptService $paymentReceiptService,
         private readonly ClubTreasuryService $treasuryService,
+        private readonly FinanceCorrectionWriter $correctionWriter,
     ) {
     }
 
@@ -79,6 +82,8 @@ class FinanceFundraiserService
                 'sales' => fn ($query) => $query->latest('sale_date')->latest('id'),
                 'sales.items',
                 'sales.payment.receipt:id,payment_id,receipt_number',
+                'sales.payment.relatedCanceledMovement.receipt:id,payment_id,receipt_number',
+                'sales.reversalPayment.receipt:id,payment_id,receipt_number',
                 'partners' => fn ($query) => $query->where('status', 'active')->orderBy('id'),
                 'partners.partnerClub:id,club_name,club_type,church_id',
                 'partners.transfers' => fn ($query) => $query->orderBy('id'),
@@ -113,6 +118,7 @@ class FinanceFundraiserService
             'fundraiser_type' => ['required', Rule::in(['food', 'products', 'other'])],
             'event_date' => ['nullable', 'date'],
             'pay_to' => ['required', 'string', 'max:255'],
+            'accounting_mode' => ['nullable', Rule::in([self::ACCOUNTING_MODE_AUTOMATIC, self::ACCOUNTING_MODE_SEMI_AUTOMATIC])],
             'investment_total' => ['nullable', 'numeric', 'min:0'],
             'investment_pay_to' => ['nullable', 'string', 'max:255'],
             'investment_funds_location' => ['nullable', Rule::in(['cash', 'bank'])],
@@ -159,6 +165,7 @@ class FinanceFundraiserService
                 'fundraiser_type' => $validated['fundraiser_type'],
                 'event_date' => $validated['event_date'] ?? null,
                 'pay_to' => $payTo,
+                'accounting_mode' => $validated['accounting_mode'] ?? self::ACCOUNTING_MODE_AUTOMATIC,
                 'investment_total' => $investmentAmount,
                 'investment_expense_id' => $investmentExpense?->id,
                 'investment_pay_to' => $investmentExpense ? $investmentPayTo : null,
@@ -232,6 +239,7 @@ class FinanceFundraiserService
 
         $baseQuery = FundraiserSale::query()
             ->where('fundraiser_event_id', $event->id)
+            ->where('is_cancelled', false)
             ->with(['items', 'payment.receipt:id,payment_id,receipt_number']);
 
         $pending = (clone $baseQuery)
@@ -602,39 +610,23 @@ class FinanceFundraiserService
                 $line['product']->increment('quantity_sold', $line['payload']['quantity']);
             }
 
-            $account = $this->ensureAccount($club, $event->pay_to);
-            $payment = Payment::query()->create([
-                'club_id' => $club->id,
-                'payment_concept_id' => null,
-                'concept_text' => "Fundraiser: {$event->name}",
-                'pay_to' => $event->pay_to,
-                'account_id' => $account->id,
-                'payer_name' => $validated['customer_name'] ?? 'Venta fundraiser',
-                'amount_paid' => $totalAmount,
-                'expected_amount' => $totalAmount,
-                'balance_due_after' => 0,
-                'payment_date' => $validated['sale_date'],
-                'payment_type' => $validated['payment_type'],
-                'zelle_phone' => $validated['payment_type'] === 'zelle' ? ($validated['zelle_phone'] ?? null) : null,
-                'received_by_user_id' => $request->user()?->id,
-                'notes' => $validated['notes'] ?? null,
-                'source_type' => self::SOURCE_TYPE,
-                'source_id' => $sale->id,
-            ]);
-
-            $account->increment('balance', $totalAmount);
-            $receipt = $this->paymentReceiptService->syncForPayment($payment);
-
-            $sale->update(['payment_id' => $payment->id]);
+            if ($event->accounting_mode !== self::ACCOUNTING_MODE_SEMI_AUTOMATIC) {
+                $payment = $this->createSalePayment($sale, $event, $club, $request->user()?->id);
+                $this->ensureAccount($club, $event->pay_to)->increment('balance', $totalAmount);
+                $receipt = $this->paymentReceiptService->syncForPayment($payment);
+                $sale->update(['payment_id' => $payment->id]);
+            }
         });
 
         $sale->load(['items', 'payment.receipt']);
 
         return response()->json([
-            'message' => 'Fundraiser sale recorded',
+            'message' => $event->accounting_mode === self::ACCOUNTING_MODE_SEMI_AUTOMATIC
+                ? 'Fundraiser sale saved pending accounting'
+                : 'Fundraiser sale recorded',
             'data' => $this->data($request->user(), $event->club),
             'sale' => $this->salePayload($sale),
-            'receipt' => $this->receiptPayload($receipt),
+            'receipt' => $receipt ? $this->receiptPayload($receipt) : null,
         ], 201);
     }
 
@@ -684,6 +676,107 @@ class FinanceFundraiserService
             'message' => 'Fundraiser partner saved',
             'data' => $this->data($request->user(), $event->club),
         ], 201);
+    }
+
+    public function cancelSale(Request $request, FundraiserEvent $fundraiserEvent, FundraiserSale $fundraiserSale)
+    {
+        $event = $this->authorizedEvent($request, $fundraiserEvent);
+        $this->assertEventActive($event);
+
+        if ((int) $fundraiserSale->fundraiser_event_id !== (int) $event->id) {
+            abort(404);
+        }
+
+        if (($event->accounting_mode ?: self::ACCOUNTING_MODE_AUTOMATIC) !== self::ACCOUNTING_MODE_AUTOMATIC) {
+            throw ValidationException::withMessages([
+                'fundraiser_sale_id' => ['Solo las ventas de fundraisers con contabilidad automatica se pueden cancelar.'],
+            ]);
+        }
+
+        $validated = $request->validate([
+            'correction_date' => ['required', 'date'],
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $reversal = null;
+        $usedExistingReversal = false;
+
+        DB::transaction(function () use ($request, $event, $fundraiserSale, $validated, &$reversal, &$usedExistingReversal) {
+            FundraiserEvent::query()->whereKey($event->id)->lockForUpdate()->firstOrFail();
+            $sale = FundraiserSale::query()
+                ->whereKey($fundraiserSale->id)
+                ->lockForUpdate()
+                ->with(['items', 'payment.relatedCanceledMovement'])
+                ->firstOrFail();
+
+            if ($sale->is_cancelled) {
+                throw ValidationException::withMessages([
+                    'fundraiser_sale_id' => ['Esta venta ya fue cancelada.'],
+                ]);
+            }
+
+            $payment = $sale->payment;
+            if (!$payment) {
+                throw ValidationException::withMessages([
+                    'fundraiser_sale_id' => ['La venta no tiene un ingreso contable que se pueda revertir.'],
+                ]);
+            }
+
+            if ($payment->is_cancelled || $payment->related_canceled_movement_id || $payment->reversalPayment()->exists()) {
+                $reversal = $payment->relatedCanceledMovement ?: $payment->reversalPayment()->first();
+                if (!$reversal) {
+                    throw ValidationException::withMessages([
+                        'fundraiser_sale_id' => ['El ingreso figura revertido, pero no se encontro su movimiento de reversa.'],
+                    ]);
+                }
+                $usedExistingReversal = true;
+            } else {
+                $reversal = $this->correctionWriter->createPaymentReversal(
+                    $payment,
+                    $validated['correction_date'],
+                    $validated['reason'],
+                    $request->user()?->id
+                );
+            }
+
+            $quantitiesByProduct = $sale->items
+                ->whereNotNull('fundraiser_product_id')
+                ->groupBy('fundraiser_product_id')
+                ->map(fn ($items) => (int) $items->sum('quantity'));
+
+            if ($quantitiesByProduct->isNotEmpty()) {
+                FundraiserProduct::withTrashed()
+                    ->whereIn('id', $quantitiesByProduct->keys()->all())
+                    ->lockForUpdate()
+                    ->get()
+                    ->each(function (FundraiserProduct $product) use ($quantitiesByProduct) {
+                        $product->forceFill([
+                            'quantity_sold' => max(
+                                (int) $product->quantity_sold - (int) $quantitiesByProduct->get($product->id, 0),
+                                0
+                            ),
+                        ])->save();
+                    });
+            }
+
+            $sale->update([
+                'is_cancelled' => true,
+                'cancelled_at' => now(),
+                'cancelled_by_user_id' => $request->user()?->id,
+                'cancellation_reason' => $validated['reason'],
+                'reversal_payment_id' => $reversal->id,
+                'kitchen_status' => 'cancelled',
+            ]);
+        });
+
+        return response()->json([
+            'message' => $usedExistingReversal
+                ? 'Fundraiser sale cancelled and synchronized with its existing accounting reversal'
+                : 'Fundraiser sale cancelled and accounting income reversed',
+            'data' => $this->data($request->user(), $event->club),
+            'reversal_payment_id' => $reversal?->id,
+            'used_existing_reversal' => $usedExistingReversal,
+        ]);
     }
 
     public function recordPartnerContribution(Request $request, FundraiserEventPartner $fundraiserEventPartner)
@@ -740,11 +833,15 @@ class FinanceFundraiserService
             'funds_location' => ['nullable', Rule::in(['cash', 'bank'])],
             'payment_type' => ['nullable', Rule::in(['cash', 'check', 'transfer'])],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'confirm_accounting_posting' => ['nullable', 'boolean'],
         ]);
 
         $transfers = [];
 
-        DB::transaction(function () use ($request, $event, $validated, &$transfers) {
+        $postedSales = 0;
+        $postedAmount = 0.0;
+
+        DB::transaction(function () use ($request, $event, $validated, &$transfers, &$postedSales, &$postedAmount) {
             $lockedEvent = FundraiserEvent::query()
                 ->whereKey($event->id)
                 ->lockForUpdate()
@@ -758,6 +855,51 @@ class FinanceFundraiserService
                 ->firstOrFail();
 
             $this->assertEventActive($lockedEvent);
+
+            if ($lockedEvent->accounting_mode === self::ACCOUNTING_MODE_SEMI_AUTOMATIC) {
+                if (!($validated['confirm_accounting_posting'] ?? false)) {
+                    throw ValidationException::withMessages([
+                        'confirm_accounting_posting' => ['Confirma que deseas registrar todas las ventas pendientes en el libro financiero.'],
+                    ]);
+                }
+
+                $pendingSales = FundraiserSale::query()
+                    ->where('fundraiser_event_id', $lockedEvent->id)
+                    ->whereNull('payment_id')
+                    ->orderBy('sale_date')
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($pendingSales->isNotEmpty()) {
+                    $account = Account::query()
+                        ->where('club_id', $lockedEvent->club_id)
+                        ->where('pay_to', $lockedEvent->pay_to)
+                        ->lockForUpdate()
+                        ->first() ?: $this->ensureAccount($lockedEvent->club, $lockedEvent->pay_to);
+                    $batchUuid = (string) Str::uuid();
+
+                    foreach ($pendingSales as $pendingSale) {
+                        $payment = $this->createSalePayment(
+                            $pendingSale,
+                            $lockedEvent,
+                            $lockedEvent->club,
+                            $request->user()?->id
+                        );
+                        $this->paymentReceiptService->syncForPayment($payment);
+                        $pendingSale->update(['payment_id' => $payment->id]);
+                    }
+
+                    $postedSales = $pendingSales->count();
+                    $postedAmount = round((float) $pendingSales->sum('total_amount'), 2);
+                    $account->increment('balance', $postedAmount);
+                    $lockedEvent->forceFill([
+                        'accounting_batch_uuid' => $batchUuid,
+                        'accounting_posted_at' => now(),
+                        'accounting_posted_by_user_id' => $request->user()?->id,
+                    ])->save();
+                }
+            }
 
             $partners = $lockedEvent->partners
                 ->where('status', 'active')
@@ -814,6 +956,10 @@ class FinanceFundraiserService
                 ->map(fn (FundraiserPartnerTransfer $transfer) => $this->partnerTransferPayload($transfer->fresh(['fromExpense', 'toPayment.receipt'])))
                 ->values()
                 ->all(),
+            'accounting_posting' => [
+                'sale_count' => $postedSales,
+                'amount' => $postedAmount,
+            ],
         ]);
     }
 
@@ -1268,6 +1414,35 @@ class FinanceFundraiserService
         }
     }
 
+    private function createSalePayment(
+        FundraiserSale $sale,
+        FundraiserEvent $event,
+        Club $club,
+        ?int $receivedByUserId
+    ): Payment {
+        $account = $this->ensureAccount($club, $event->pay_to);
+
+        return Payment::query()->create([
+            'club_id' => $club->id,
+            'payment_concept_id' => null,
+            'concept_text' => "Fundraiser: {$event->name}",
+            'pay_to' => $event->pay_to,
+            'account_id' => $account->id,
+            'payer_name' => $sale->customer_name ?: 'Venta fundraiser',
+            'amount_paid' => $sale->total_amount,
+            'expected_amount' => $sale->total_amount,
+            'balance_due_after' => 0,
+            'payment_date' => $sale->sale_date,
+            'payment_type' => $sale->payment_type,
+            'zelle_phone' => $sale->payment_type === 'zelle' ? $sale->zelle_phone : null,
+            'received_by_user_id' => $receivedByUserId,
+            'notes' => $sale->notes,
+            'source_type' => self::SOURCE_TYPE,
+            'source_id' => $sale->id,
+            'source_line_id' => $event->id,
+        ]);
+    }
+
     private function ensureAccount(Club $club, string $payTo): Account
     {
         $this->assertOperatingAccount($payTo);
@@ -1287,19 +1462,22 @@ class FinanceFundraiserService
             'investmentReceipts',
             'sales.items',
             'sales.payment.receipt:id,payment_id,receipt_number',
+            'sales.payment.relatedCanceledMovement.receipt:id,payment_id,receipt_number',
+            'sales.reversalPayment.receipt:id,payment_id,receipt_number',
             'partners.partnerClub:id,club_name,club_type,church_id',
             'partners.transfers.fromExpense:id,receipt_path,status,amount,expense_date,description,pay_to,funds_location',
             'partners.transfers.toPayment.receipt:id,payment_id,receipt_number',
         ]);
 
         $sales = $event->sales->sortByDesc(fn (FundraiserSale $sale) => sprintf('%s-%010d', optional($sale->sale_date)->toDateString(), $sale->id));
+        $activeSales = $sales->reject(fn (FundraiserSale $sale) => $this->saleIsCancelled($sale));
         $products = $event->products->sortBy([
             fn (FundraiserProduct $product) => $product->is_active ? 0 : 1,
             fn (FundraiserProduct $product) => $product->name,
         ]);
         $unitCostsByProduct = $this->unitCostsForEventProducts($event, $products);
-        $totalRevenue = round((float) $sales->sum(fn (FundraiserSale $sale) => (float) $sale->total_amount), 2);
-        $totalCost = round((float) $sales->sum(fn (FundraiserSale $sale) => $this->saleCostForPayload($sale, $unitCostsByProduct)), 2);
+        $totalRevenue = round((float) $activeSales->sum(fn (FundraiserSale $sale) => (float) $sale->total_amount), 2);
+        $totalCost = round((float) $activeSales->sum(fn (FundraiserSale $sale) => $this->saleCostForPayload($sale, $unitCostsByProduct)), 2);
         $totalGain = round($totalRevenue - $totalCost, 2);
         $productInvestmentTotal = round((float) $products->sum(fn (FundraiserProduct $product) => (float) $product->investment_amount), 2);
         $investmentTotal = round((float) $event->investment_total + $productInvestmentTotal, 2);
@@ -1321,7 +1499,7 @@ class FinanceFundraiserService
         $salePayloads = $sales
             ->map(fn (FundraiserSale $sale) => $this->salePayload($sale, $unitCostsByProduct))
             ->values();
-        $incomeBreakdown = $this->incomeBreakdownForSales($sales);
+        $incomeBreakdown = $this->incomeBreakdownForSales($activeSales);
         $remainingInventory = $products
             ->filter(fn (FundraiserProduct $product) => $product->quantity_available !== null)
             ->sum(fn (FundraiserProduct $product) => max((int) $product->quantity_available - (int) $product->quantity_sold, 0));
@@ -1333,6 +1511,11 @@ class FinanceFundraiserService
             'fundraiser_type' => $event->fundraiser_type,
             'event_date' => optional($event->event_date)->toDateString(),
             'pay_to' => $event->pay_to,
+            'accounting_mode' => $event->accounting_mode ?: self::ACCOUNTING_MODE_AUTOMATIC,
+            'accounting_batch_uuid' => $event->accounting_batch_uuid,
+            'accounting_posted_at' => optional($event->accounting_posted_at)->toISOString(),
+            'pending_accounting_sale_count' => (int) $activeSales->whereNull('payment_id')->count(),
+            'pending_accounting_amount' => round((float) $activeSales->whereNull('payment_id')->sum('total_amount'), 2),
             'account_label' => $accountLabels ? ($accountLabels[$event->pay_to] ?? $event->pay_to) : $event->pay_to,
             'kitchen_url' => $event->fundraiser_type === 'food' && $event->status === 'active'
                 ? URL::signedRoute('fundraisers.kitchen.show', ['fundraiserEvent' => $event])
@@ -1356,8 +1539,9 @@ class FinanceFundraiserService
                     'total_sales' => $totalRevenue,
                     'total_expenses' => $initialInvestment,
                     'total_earnings' => $netGain,
-                    'sale_count' => (int) $sales->count(),
-                    'receipt_count' => (int) $sales->filter(fn (FundraiserSale $sale) => $sale->payment?->receipt)->count(),
+                    'sale_count' => (int) $activeSales->count(),
+                    'cancelled_sale_count' => (int) $sales->count() - (int) $activeSales->count(),
+                    'receipt_count' => (int) $activeSales->filter(fn (FundraiserSale $sale) => $sale->payment?->receipt)->count(),
                 ],
                 'income_breakdown' => $incomeBreakdown,
             ],
@@ -1371,10 +1555,11 @@ class FinanceFundraiserService
                 'cost_basis' => $costBasis,
                 'net_gain' => $netGain,
                 'unallocated_investment' => max(round($investmentTotal - $totalCost, 2), 0),
-                'items_sold' => (int) $sales->sum(fn (FundraiserSale $sale) => $sale->items->sum('quantity')),
+                'items_sold' => (int) $activeSales->sum(fn (FundraiserSale $sale) => $sale->items->sum('quantity')),
                 'remaining_inventory' => (int) $remainingInventory,
-                'receipt_count' => (int) $sales->filter(fn (FundraiserSale $sale) => $sale->payment?->receipt)->count(),
-                'sale_count' => (int) $sales->count(),
+                'receipt_count' => (int) $activeSales->filter(fn (FundraiserSale $sale) => $sale->payment?->receipt)->count(),
+                'sale_count' => (int) $activeSales->count(),
+                'cancelled_sale_count' => (int) $sales->count() - (int) $activeSales->count(),
                 'partner_split_base' => $partnerSplitBase,
                 'partner_investment_due' => round($partnerPayloads->sum('investment_due'), 2),
                 'partner_contributions_recorded' => round($partnerPayloads->sum('contribution_recorded'), 2),
@@ -1533,9 +1718,18 @@ class FinanceFundraiserService
 
     private function eventRevenue(FundraiserEvent $event): float
     {
-        $event->loadMissing('sales');
+        $event->loadMissing('sales.payment');
 
-        return round((float) $event->sales->sum(fn (FundraiserSale $sale) => (float) $sale->total_amount), 2);
+        return round((float) $event->sales
+            ->reject(fn (FundraiserSale $sale) => $this->saleIsCancelled($sale))
+            ->sum(fn (FundraiserSale $sale) => (float) $sale->total_amount), 2);
+    }
+
+    private function saleIsCancelled(FundraiserSale $sale): bool
+    {
+        return (bool) $sale->is_cancelled
+            || (bool) $sale->payment?->is_cancelled
+            || (bool) $sale->payment?->related_canceled_movement_id;
     }
 
     private function partnerRevenueShareDue(FundraiserEventPartner $partner, float $revenue): float
@@ -1817,8 +2011,17 @@ class FinanceFundraiserService
 
     private function salePayload(FundraiserSale $sale, ?array $unitCostsByProduct = null): array
     {
-        $sale->loadMissing(['items', 'payment.receipt:id,payment_id,receipt_number']);
+        $sale->loadMissing([
+            'items',
+            'payment.receipt:id,payment_id,receipt_number',
+            'payment.relatedCanceledMovement.receipt:id,payment_id,receipt_number',
+            'reversalPayment.receipt:id,payment_id,receipt_number',
+        ]);
         $receipt = $sale->payment?->receipt;
+        $reversalPayment = $sale->reversalPayment ?: $sale->payment?->relatedCanceledMovement;
+        $accountingReversed = (bool) $sale->payment?->is_cancelled
+            || (bool) $sale->payment?->related_canceled_movement_id
+            || (bool) $reversalPayment;
         $totalCost = $unitCostsByProduct === null
             ? (float) $sale->total_cost
             : $this->saleCostForPayload($sale, $unitCostsByProduct);
@@ -1837,6 +2040,13 @@ class FinanceFundraiserService
             'total_cost' => $totalCost,
             'gain_amount' => round($totalAmount - $totalCost, 2),
             'notes' => $sale->notes,
+            'is_cancelled' => (bool) $sale->is_cancelled,
+            'accounting_reversed' => $accountingReversed,
+            'effective_cancelled' => (bool) $sale->is_cancelled || $accountingReversed,
+            'cancelled_at' => optional($sale->cancelled_at)->toISOString(),
+            'cancellation_reason' => $sale->cancellation_reason,
+            'reversal_payment_id' => $reversalPayment?->id ? (int) $reversalPayment->id : null,
+            'reversal_receipt' => $reversalPayment?->receipt ? $this->receiptPayload($reversalPayment->receipt) : null,
             'kitchen_status' => $sale->kitchen_status ?: 'pending',
             'kitchen_completed_at' => optional($sale->kitchen_completed_at)->toISOString(),
             'receipt' => $receipt ? $this->receiptPayload($receipt) : null,

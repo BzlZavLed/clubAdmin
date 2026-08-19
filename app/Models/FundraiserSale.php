@@ -21,6 +21,11 @@ class FundraiserSale extends Model
         'total_cost',
         'gain_amount',
         'notes',
+        'is_cancelled',
+        'cancelled_at',
+        'cancelled_by_user_id',
+        'cancellation_reason',
+        'reversal_payment_id',
         'kitchen_status',
         'kitchen_completed_at',
         'kitchen_completed_by_user_id',
@@ -32,6 +37,8 @@ class FundraiserSale extends Model
         'total_amount' => 'decimal:2',
         'total_cost' => 'decimal:2',
         'gain_amount' => 'decimal:2',
+        'is_cancelled' => 'boolean',
+        'cancelled_at' => 'datetime',
         'kitchen_completed_at' => 'datetime',
     ];
 
@@ -53,6 +60,16 @@ class FundraiserSale extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function cancelledBy()
+    {
+        return $this->belongsTo(User::class, 'cancelled_by_user_id');
+    }
+
+    public function reversalPayment()
+    {
+        return $this->belongsTo(Payment::class, 'reversal_payment_id');
     }
 
     public function kitchenCompletedBy()

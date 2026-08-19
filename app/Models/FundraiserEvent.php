@@ -15,6 +15,7 @@ class FundraiserEvent extends Model
         'fundraiser_type',
         'event_date',
         'pay_to',
+        'accounting_mode',
         'investment_total',
         'investment_expense_id',
         'investment_pay_to',
@@ -22,6 +23,9 @@ class FundraiserEvent extends Model
         'planned_units',
         'description',
         'status',
+        'accounting_batch_uuid',
+        'accounting_posted_at',
+        'accounting_posted_by_user_id',
         'created_by_user_id',
     ];
 
@@ -29,6 +33,7 @@ class FundraiserEvent extends Model
         'event_date' => 'date',
         'investment_total' => 'decimal:2',
         'planned_units' => 'integer',
+        'accounting_posted_at' => 'datetime',
     ];
 
     public function club()
