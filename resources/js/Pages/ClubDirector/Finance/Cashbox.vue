@@ -74,6 +74,8 @@ const movementSort = ref('date')
 const movementSearch = ref('')
 const movementPage = ref(1)
 const movementPageSize = ref(10)
+const movementDateFrom = ref(`${new Date().getFullYear()}-01-01`)
+const movementDateTo = ref(new Date().toISOString().slice(0, 10))
 const balanceAccountFilter = ref('all')
 const openReimbursementMovementGroups = ref({})
 const openExpenseFollowUpSections = ref({
@@ -1773,7 +1775,11 @@ const loadCaja = async (clubId = null, quiet = false) => {
     loadError.value = ''
 
     try {
-        const payload = await fetchFinanceEngineCashbox(clubId)
+        const payload = await fetchFinanceEngineCashbox(clubId, {
+            date_from: movementDateFrom.value || undefined,
+            date_to: movementDateTo.value || undefined,
+            limit: 5000,
+        })
         if (tutorialActive.value) return
 
         const data = payload?.data || {}
@@ -1861,6 +1867,16 @@ const refreshCaja = () => {
     }
 
     return loadCaja(selectedClubId.value, true)
+}
+
+const loadMovementDateRange = async () => {
+    if (movementDateFrom.value && movementDateTo.value && movementDateFrom.value > movementDateTo.value) {
+        showToast(tr('La fecha inicial no puede ser posterior a la fecha final.', 'The start date cannot be after the end date.'), 'warning')
+        return
+    }
+
+    movementPage.value = 1
+    await loadCaja(selectedClubId.value, true)
 }
 
 const sendPendingReceipt = async (receipt) => {
@@ -4074,42 +4090,72 @@ onBeforeUnmount(() => {
                             {{ formatDate(displayedMovementDateRange.to) }}
                         </p>
                     </div>
-                    <div data-tour="cashbox-movement-filters" class="flex flex-col gap-2 sm:flex-row">
-                        <input
-                            v-model="movementSearch"
-                            type="search"
-                            :placeholder="tr('Buscar ID o descripcion', 'Search ID or description')"
-                            :aria-label="tr('Buscar movimientos por ID o descripcion', 'Search movements by ID or description')"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
-                        />
-                        <select
-                            v-model="movementDomain"
-                            :aria-label="tr('Filtrar movimientos', 'Filter movements')"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
-                        >
-                            <option value="all">{{ tr('Todos', 'All') }}</option>
-                            <option value="income">{{ tr('Ingresos', 'Income') }}</option>
-                            <option value="expense">{{ tr('Gastos', 'Expenses') }}</option>
-                            <option value="transfer">{{ tr('Transferencias', 'Transfers') }}</option>
-                        </select>
-                        <select
-                            v-model="movementSort"
-                            :aria-label="tr('Ordenar movimientos', 'Sort movements')"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
-                        >
-                            <option value="date">{{ tr('Ordenar por fecha y hora', 'Sort by date and time') }}</option>
-                            <option value="status">{{ tr('Ordenar por estado', 'Sort by status') }}</option>
-                            <option value="id">{{ tr('Ordenar por ID', 'Sort by ID') }}</option>
-                        </select>
-                        <select
-                            v-model.number="movementPageSize"
-                            :aria-label="tr('Movimientos por pagina', 'Movements per page')"
-                            class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
-                        >
-                            <option v-for="size in MOVEMENT_PAGE_SIZE_OPTIONS" :key="size" :value="size">
-                                {{ size }} {{ tr('por pagina', 'per page') }}
-                            </option>
-                        </select>
+                    <div data-tour="cashbox-movement-filters" class="space-y-2">
+                        <form class="flex flex-wrap items-end gap-2 lg:justify-end" @submit.prevent="loadMovementDateRange">
+                            <label class="text-xs font-semibold text-gray-600">
+                                <span class="mb-1 block">{{ tr('Desde', 'From') }}</span>
+                                <input
+                                    v-model="movementDateFrom"
+                                    type="date"
+                                    :max="movementDateTo || undefined"
+                                    class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                />
+                            </label>
+                            <label class="text-xs font-semibold text-gray-600">
+                                <span class="mb-1 block">{{ tr('Hasta', 'To') }}</span>
+                                <input
+                                    v-model="movementDateTo"
+                                    type="date"
+                                    :min="movementDateFrom || undefined"
+                                    class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                                />
+                            </label>
+                            <button
+                                type="submit"
+                                class="inline-flex min-h-10 items-center justify-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                                :disabled="loading || refreshing"
+                            >
+                                <ArrowPathIcon v-if="refreshing" class="mr-2 h-4 w-4 animate-spin" />
+                                {{ tr('Cargar rango', 'Load range') }}
+                            </button>
+                        </form>
+                        <div class="flex flex-col gap-2 sm:flex-row">
+                            <input
+                                v-model="movementSearch"
+                                type="search"
+                                :placeholder="tr('Buscar ID o descripcion', 'Search ID or description')"
+                                :aria-label="tr('Buscar movimientos por ID o descripcion', 'Search movements by ID or description')"
+                                class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                            />
+                            <select
+                                v-model="movementDomain"
+                                :aria-label="tr('Filtrar movimientos', 'Filter movements')"
+                                class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                            >
+                                <option value="all">{{ tr('Todos', 'All') }}</option>
+                                <option value="income">{{ tr('Ingresos', 'Income') }}</option>
+                                <option value="expense">{{ tr('Gastos', 'Expenses') }}</option>
+                                <option value="transfer">{{ tr('Transferencias', 'Transfers') }}</option>
+                            </select>
+                            <select
+                                v-model="movementSort"
+                                :aria-label="tr('Ordenar movimientos', 'Sort movements')"
+                                class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                            >
+                                <option value="date">{{ tr('Ordenar por fecha y hora', 'Sort by date and time') }}</option>
+                                <option value="status">{{ tr('Ordenar por estado', 'Sort by status') }}</option>
+                                <option value="id">{{ tr('Ordenar por ID', 'Sort by ID') }}</option>
+                            </select>
+                            <select
+                                v-model.number="movementPageSize"
+                                :aria-label="tr('Movimientos por pagina', 'Movements per page')"
+                                class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
+                            >
+                                <option v-for="size in MOVEMENT_PAGE_SIZE_OPTIONS" :key="size" :value="size">
+                                    {{ size }} {{ tr('por pagina', 'per page') }}
+                                </option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 

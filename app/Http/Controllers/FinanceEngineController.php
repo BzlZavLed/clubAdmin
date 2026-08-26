@@ -596,7 +596,9 @@ class FinanceEngineController extends Controller
     {
         $validated = $request->validate([
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
         ]);
 
         $club = ClubHelper::clubForUser($request->user(), $validated['club_id'] ?? null);

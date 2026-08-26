@@ -162,7 +162,9 @@ class FinanceBootstrapper
             'pending_parent_transfers' => $this->pendingParentTransfers($club),
             'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
             'engine_report' => $this->movementReport($club, [
-                'limit' => $filters['limit'] ?? 80,
+                'date_from' => $filters['date_from'] ?? null,
+                'date_to' => $filters['date_to'] ?? null,
+                'limit' => $filters['limit'] ?? 5000,
             ]),
         ];
     }

@@ -84,6 +84,7 @@ const ledgerPage = ref(1)
 const ledgerSearch = ref('')
 const ledgerFiltersOpen = ref(false)
 const openLedgerAccountSections = ref({})
+const ledgerSectionPages = ref({})
 const LEDGER_PAGE_SIZE = 25
 const settlementForm = ref({
     deposited_at: new Date().toISOString().slice(0, 16),
@@ -505,13 +506,19 @@ const scrollToLedgerMovement = async (movementKey) => {
             const movement = ledgerMovements.value[index]
             const sectionKey = movementAccountKeys(movement)[0]
             if (sectionKey) {
+                const section = ledgerAccountGroups.value.find((candidate) => candidate.key === sectionKey)
                 openLedgerAccountSections.value = {
                     ...openLedgerAccountSections.value,
                     [sectionKey]: true,
                 }
+                if (section) {
+                    const sectionIndex = section.rows.findIndex((row) => row.movement_id === movementKey)
+                    setLedgerSectionPage(section, Math.floor(sectionIndex / LEDGER_PAGE_SIZE) + 1)
+                }
             }
+        } else {
+            setLedgerPage(Math.floor(index / LEDGER_PAGE_SIZE) + 1)
         }
-        setLedgerPage(Math.floor(index / LEDGER_PAGE_SIZE) + 1)
         await nextTick()
     }
 
@@ -656,6 +663,29 @@ const ledgerDisplaySections = computed(() => ledgerIsAllAccounts.value
         label: null,
         rows: paginatedLedgerMovements.value,
     }])
+const ledgerSectionPageCount = (section) => ledgerIsAllAccounts.value
+    ? Math.max(Math.ceil(section.rows.length / LEDGER_PAGE_SIZE), 1)
+    : 1
+const ledgerSectionPage = (section) => Math.min(
+    Math.max(Number(ledgerSectionPages.value[section.key]) || 1, 1),
+    ledgerSectionPageCount(section),
+)
+const ledgerSectionRows = (section) => {
+    if (!ledgerIsAllAccounts.value) return section.rows
+
+    const start = (ledgerSectionPage(section) - 1) * LEDGER_PAGE_SIZE
+    return section.rows.slice(start, start + LEDGER_PAGE_SIZE)
+}
+const ledgerSectionPageStart = (section) => section.rows.length
+    ? ((ledgerSectionPage(section) - 1) * LEDGER_PAGE_SIZE) + 1
+    : 0
+const ledgerSectionPageEnd = (section) => Math.min(ledgerSectionPage(section) * LEDGER_PAGE_SIZE, section.rows.length)
+const setLedgerSectionPage = (section, page) => {
+    ledgerSectionPages.value = {
+        ...ledgerSectionPages.value,
+        [section.key]: Math.min(Math.max(Number(page) || 1, 1), ledgerSectionPageCount(section)),
+    }
+}
 const isLedgerSectionOpen = (section) => !ledgerIsAllAccounts.value || openLedgerAccountSections.value[section.key] === true
 const toggleLedgerAccountSection = (section) => {
     openLedgerAccountSections.value = {
@@ -749,6 +779,7 @@ const tutorialApplyTreasury = ({ accounts, movements, ledger, eventRows, staffRo
     engineReport.value = { movements: ledger }
     eventSettlementRows.value = eventRows
     openLedgerAccountSections.value = {}
+    ledgerSectionPages.value = {}
 }
 const tutorialResetSandbox = () => {
     const accounts = [
@@ -1003,6 +1034,7 @@ async function loadLedger() {
         const payload = await fetchFinanceEngineMovements(params)
         engineReport.value = payload?.data || null
         openLedgerAccountSections.value = {}
+        ledgerSectionPages.value = {}
     } catch (error) {
         console.error(error)
         showToast(error?.response?.data?.message || tr('No se pudo cargar el libro contable.', 'Could not load the ledger.'), 'error')
@@ -1039,6 +1071,9 @@ async function loadData() {
         accountReport.value = data.account_report || null
         normalizeClubs(accountReport.value)
         engineReport.value = data.engine_report || null
+        openLedgerAccountSections.value = {}
+        ledgerSectionPages.value = {}
+        ledgerPage.value = 1
         eventSettlementRows.value = Array.isArray(data.event_settlements) ? data.event_settlements : []
     } catch (error) {
         console.error(error)
@@ -1258,6 +1293,7 @@ watch(() => movementForm.value.from_pay_to, (fromPayTo) => {
 
 watch(ledgerSearch, () => {
     ledgerPage.value = 1
+    ledgerSectionPages.value = {}
 })
 
 watch(ledgerMovements, () => {
@@ -1609,7 +1645,7 @@ onBeforeUnmount(() => {
                 </article>
             </section>
 
-            <section id="accounting-ledger" data-tour="accounting-ledger" class="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <section id="accounting-ledger" data-tour="accounting-ledger" class="min-w-0 max-w-full scroll-mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">{{ tr('Libro contable normalizado', 'Normalized Accounting Ledger') }}</h2>
@@ -1703,7 +1739,7 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div v-if="ledgerMovements.length" class="space-y-3 lg:hidden">
+                <div v-if="ledgerMovements.length" class="min-w-0 space-y-3 xl:hidden">
                     <template v-for="section in ledgerDisplaySections" :key="section.key">
                         <button
                             v-if="section.label"
@@ -1722,7 +1758,7 @@ onBeforeUnmount(() => {
                         </button>
                         <template v-if="isLedgerSectionOpen(section)">
                             <article
-                                v-for="movement in section.rows"
+                                v-for="movement in ledgerSectionRows(section)"
                                 :key="`${section.key}-${movement.movement_id}`"
                                 :data-ledger-movement="movement.movement_id"
                                 class="rounded-xl border border-gray-200 p-3 scroll-mt-24"
@@ -1804,24 +1840,68 @@ onBeforeUnmount(() => {
                                 </button>
                             </div>
                             </article>
+                            <div
+                                v-if="ledgerIsAllAccounts && ledgerSectionPageCount(section) > 1"
+                                class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                                <p class="text-xs text-gray-600">
+                                    {{ tr('Mostrando', 'Showing') }}
+                                    <span class="font-semibold text-gray-900">{{ ledgerSectionPageStart(section) }}-{{ ledgerSectionPageEnd(section) }}</span>
+                                    {{ tr('de', 'of') }}
+                                    <span class="font-semibold text-gray-900">{{ section.rows.length }}</span>
+                                </p>
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 disabled:opacity-50"
+                                        :disabled="ledgerSectionPage(section) <= 1"
+                                        @click="setLedgerSectionPage(section, ledgerSectionPage(section) - 1)"
+                                    >
+                                        {{ tr('Anterior', 'Previous') }}
+                                    </button>
+                                    <span class="text-xs font-semibold text-gray-700">
+                                        {{ ledgerSectionPage(section) }} / {{ ledgerSectionPageCount(section) }}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 disabled:opacity-50"
+                                        :disabled="ledgerSectionPage(section) >= ledgerSectionPageCount(section)"
+                                        @click="setLedgerSectionPage(section, ledgerSectionPage(section) + 1)"
+                                    >
+                                        {{ tr('Siguiente', 'Next') }}
+                                    </button>
+                                </div>
+                            </div>
                         </template>
                     </template>
                 </div>
 
-                <div v-if="ledgerMovements.length" class="hidden overflow-x-auto lg:block">
-                    <table class="min-w-full text-sm text-gray-700">
+                <div v-if="ledgerMovements.length" class="hidden min-w-0 max-w-full overflow-hidden xl:block">
+                    <table class="w-full table-fixed text-xs text-gray-700 2xl:text-sm">
+                        <colgroup>
+                            <col class="w-[8%]" />
+                            <col class="w-[8%]" />
+                            <col class="w-[18%]" />
+                            <col class="w-[14%]" />
+                            <col class="w-[11%]" />
+                            <col class="w-[9%]" />
+                            <col class="w-[10%]" />
+                            <col class="w-[9%]" />
+                            <col class="w-[7%]" />
+                            <col class="w-[6%]" />
+                        </colgroup>
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Fecha', 'Date') }}</th>
-                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Tipo', 'Type') }}</th>
-                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Concepto', 'Concept') }}</th>
-                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Cuenta / ubicacion', 'Account / location') }}</th>
-                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Tercero', 'Counterparty') }}</th>
-                                <th class="px-3 py-2 text-right font-semibold">{{ tr('Monto', 'Amount') }}</th>
-                                <th class="px-3 py-2 text-right font-semibold">{{ tr('Balance', 'Balance') }}</th>
-                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Estatus', 'Status') }}</th>
-                                <th class="px-3 py-2 text-left font-semibold">{{ tr('Soportes', 'Files') }}</th>
-                                <th class="px-3 py-2 text-right font-semibold">{{ tr('Accion', 'Action') }}</th>
+                                <th class="break-words px-2 py-2 text-left font-semibold">{{ tr('Fecha', 'Date') }}</th>
+                                <th class="break-words px-2 py-2 text-left font-semibold">{{ tr('Tipo', 'Type') }}</th>
+                                <th class="break-words px-2 py-2 text-left font-semibold">{{ tr('Concepto', 'Concept') }}</th>
+                                <th class="break-words px-2 py-2 text-left font-semibold">{{ tr('Cuenta / ubicacion', 'Account / location') }}</th>
+                                <th class="break-words px-2 py-2 text-left font-semibold">{{ tr('Tercero', 'Counterparty') }}</th>
+                                <th class="break-words px-2 py-2 text-right font-semibold">{{ tr('Monto', 'Amount') }}</th>
+                                <th class="break-words px-2 py-2 text-right font-semibold">{{ tr('Balance', 'Balance') }}</th>
+                                <th class="break-words px-2 py-2 text-left font-semibold">{{ tr('Estatus', 'Status') }}</th>
+                                <th class="break-words px-2 py-2 text-left font-semibold">{{ tr('Soportes', 'Files') }}</th>
+                                <th class="break-words px-2 py-2 text-right font-semibold">{{ tr('Accion', 'Action') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
@@ -1830,7 +1910,7 @@ onBeforeUnmount(() => {
                                     <td colspan="10" class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
                                         <button
                                             type="button"
-                                            class="flex w-full items-center justify-between gap-3 text-left hover:text-gray-950"
+                                            class="flex w-full flex-wrap items-center justify-between gap-2 text-left hover:text-gray-950"
                                             @click="toggleLedgerAccountSection(section)"
                                         >
                                             <span class="flex min-w-0 items-center gap-2">
@@ -1841,7 +1921,7 @@ onBeforeUnmount(() => {
                                                     {{ section.rows.length }} {{ tr('movimientos', 'movements') }}
                                                 </span>
                                             </span>
-                                            <span class="flex shrink-0 gap-3 text-[11px] normal-case tracking-normal text-gray-600">
+                                            <span class="ml-auto flex flex-wrap justify-end gap-x-3 gap-y-1 text-[11px] normal-case tracking-normal text-gray-600">
                                                 <span class="text-emerald-700">{{ formatMoney(section.totals.income) }}</span>
                                                 <span class="text-red-700">-{{ formatMoney(section.totals.expenses) }}</span>
                                                 <span class="text-sky-700">{{ formatMoney(section.totals.transfers) }}</span>
@@ -1851,14 +1931,14 @@ onBeforeUnmount(() => {
                                 </tr>
                                 <template v-if="isLedgerSectionOpen(section)">
                                     <tr
-                                        v-for="movement in section.rows"
+                                        v-for="movement in ledgerSectionRows(section)"
                                         :key="`${section.key}-${movement.movement_id}`"
                                         :data-ledger-movement="movement.movement_id"
                                         class="scroll-mt-24"
                                     >
-                                    <td class="whitespace-nowrap px-3 py-2">{{ formatDate(movement.date) }}</td>
-                                    <td class="px-3 py-2">{{ domainLabel(movement.domain) }}</td>
-                                    <td class="max-w-xs px-3 py-2">
+                                    <td class="break-words px-2 py-2 align-top">{{ formatDate(movement.date) }}</td>
+                                    <td class="break-words px-2 py-2 align-top">{{ domainLabel(movement.domain) }}</td>
+                                    <td class="min-w-0 break-words px-2 py-2 align-top">
                                         <div class="flex items-start gap-2">
                                             <div class="min-w-0">
                                                 <MovementSummary
@@ -1876,21 +1956,21 @@ onBeforeUnmount(() => {
                                             />
                                         </div>
                                     </td>
-                                    <td class="px-3 py-2">{{ movementDescription(movement) }}</td>
-                                    <td class="px-3 py-2">{{ rowCounterparty(movement) }}</td>
+                                    <td class="break-words px-2 py-2 align-top">{{ movementDescription(movement) }}</td>
+                                    <td class="break-words px-2 py-2 align-top">{{ rowCounterparty(movement) }}</td>
                                     <td
-                                        class="whitespace-nowrap px-3 py-2 text-right font-semibold"
+                                        class="break-words px-2 py-2 text-right align-top font-semibold"
                                         :class="Number(movement.signed_amount) < 0 ? 'text-red-700' : Number(movement.signed_amount) > 0 ? 'text-emerald-700' : 'text-gray-900'"
                                     >
                                         {{ formatMoney(movement.amount) }}
                                     </td>
-                                    <td class="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900">
+                                    <td class="break-words px-2 py-2 text-right align-top font-semibold text-gray-900">
                                         {{ movementBalanceTextForAccount(movement, section.account) }}
                                     </td>
-                                    <td class="px-3 py-2">
+                                    <td class="min-w-0 break-words px-2 py-2 align-top">
                                         <div>
                                             <span
-                                                class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                                                class="inline-flex max-w-full break-words rounded-full px-2 py-0.5 text-[11px] font-semibold"
                                                 :class="movement.status === 'cancelled' ? 'bg-amber-50 text-amber-700' : movement.status === 'cancellation' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700'"
                                             >
                                                 {{ correctionStatusLabel(movement) }}
@@ -1916,27 +1996,58 @@ onBeforeUnmount(() => {
                                             </button>
                                         </div>
                                     </td>
-                                    <td class="px-3 py-2">
-                                        <div class="flex flex-wrap gap-2">
-                                            <a v-if="movement.receipt?.url" :href="movement.receipt.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
+                                    <td class="min-w-0 break-words px-2 py-2 align-top">
+                                        <div class="flex min-w-0 flex-col gap-1">
+                                            <a v-if="movement.receipt?.url" :href="movement.receipt.url" target="_blank" rel="noopener" class="break-all font-semibold text-red-700">
                                                 {{ tr('Recibo', 'Receipt') }}
                                             </a>
-                                            <a v-if="movement.proof?.url" :href="movement.proof.url" target="_blank" rel="noopener" class="font-semibold text-red-700">
+                                            <a v-if="movement.proof?.url" :href="movement.proof.url" target="_blank" rel="noopener" class="break-all font-semibold text-red-700">
                                                 {{ tr('Comprobante', 'Proof') }}
                                             </a>
                                         </div>
                                     </td>
-                                    <td class="whitespace-nowrap px-3 py-2 text-right">
+                                    <td class="px-1 py-2 text-right align-top">
                                         <button
                                             v-if="canCorrectMovement(movement)"
                                             type="button"
-                                            class="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                            class="inline-flex min-h-8 max-w-full items-center justify-center break-words rounded-lg border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50"
                                             @click="openCorrectionModal(movement)"
                                         >
                                             {{ tr('Corregir', 'Correct') }}
                                         </button>
                                         <span v-else class="text-xs text-gray-400">—</span>
                                     </td>
+                                    </tr>
+                                    <tr v-if="ledgerIsAllAccounts && ledgerSectionPageCount(section) > 1" class="bg-gray-50">
+                                        <td colspan="10" class="px-3 py-2">
+                                            <div class="flex items-center justify-between gap-3 text-xs text-gray-600">
+                                                <span>
+                                                    {{ tr('Mostrando', 'Showing') }}
+                                                    <strong class="text-gray-900">{{ ledgerSectionPageStart(section) }}-{{ ledgerSectionPageEnd(section) }}</strong>
+                                                    {{ tr('de', 'of') }}
+                                                    <strong class="text-gray-900">{{ section.rows.length }}</strong>
+                                                </span>
+                                                <div class="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        class="rounded-lg border border-gray-300 bg-white px-2 py-1 font-semibold text-gray-700 disabled:opacity-50"
+                                                        :disabled="ledgerSectionPage(section) <= 1"
+                                                        @click="setLedgerSectionPage(section, ledgerSectionPage(section) - 1)"
+                                                    >
+                                                        {{ tr('Anterior', 'Previous') }}
+                                                    </button>
+                                                    <span class="font-semibold text-gray-700">{{ ledgerSectionPage(section) }} / {{ ledgerSectionPageCount(section) }}</span>
+                                                    <button
+                                                        type="button"
+                                                        class="rounded-lg border border-gray-300 bg-white px-2 py-1 font-semibold text-gray-700 disabled:opacity-50"
+                                                        :disabled="ledgerSectionPage(section) >= ledgerSectionPageCount(section)"
+                                                        @click="setLedgerSectionPage(section, ledgerSectionPage(section) + 1)"
+                                                    >
+                                                        {{ tr('Siguiente', 'Next') }}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
                                     </tr>
                                 </template>
                             </template>

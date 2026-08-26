@@ -273,6 +273,78 @@ class FinanceEngineWorkflowTest extends TestCase
             ->assertJsonPath('data.0.requested_by.email', $director->email);
     }
 
+    public function test_cashbox_loads_and_filters_date_ranges_beyond_eighty_movements(): void
+    {
+        [$director, $club] = $this->makeDirectorAndClub();
+        $account = $this->createAccount($club, 'club_budget', 'Club Budget');
+
+        foreach (range(1, 81) as $sequence) {
+            Payment::query()->create([
+                'club_id' => $club->id,
+                'concept_text' => "Busy day movement {$sequence}",
+                'pay_to' => 'club_budget',
+                'account_id' => $account->id,
+                'payer_name' => "Payer {$sequence}",
+                'amount_paid' => 1,
+                'expected_amount' => 1,
+                'balance_due_after' => 0,
+                'payment_date' => '2026-08-26',
+                'payment_type' => 'cash',
+                'received_by_user_id' => $director->id,
+            ]);
+        }
+
+        $olderPayment = Payment::query()->create([
+            'club_id' => $club->id,
+            'concept_text' => 'Older movement in selected range',
+            'pay_to' => 'club_budget',
+            'account_id' => $account->id,
+            'payer_name' => 'Older payer',
+            'amount_paid' => 5,
+            'expected_amount' => 5,
+            'balance_due_after' => 0,
+            'payment_date' => '2026-01-15',
+            'payment_type' => 'cash',
+            'received_by_user_id' => $director->id,
+        ]);
+
+        $yearMovements = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', [
+                'club_id' => $club->id,
+                'date_from' => '2026-01-01',
+                'date_to' => '2026-08-26',
+                'limit' => 5000,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.engine_report.filters.date_from', '2026-01-01')
+            ->assertJsonPath('data.engine_report.filters.date_to', '2026-08-26')
+            ->json('data.engine_report.movements');
+
+        $this->assertCount(82, $yearMovements);
+        $this->assertContains("payment:{$olderPayment->id}", array_column($yearMovements, 'movement_id'));
+
+        $januaryMovements = $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', [
+                'club_id' => $club->id,
+                'date_from' => '2026-01-01',
+                'date_to' => '2026-01-31',
+            ]))
+            ->assertOk()
+            ->json('data.engine_report.movements');
+
+        $this->assertCount(1, $januaryMovements);
+        $this->assertSame("payment:{$olderPayment->id}", $januaryMovements[0]['movement_id']);
+
+        $this->actingAs($director)
+            ->getJson(route('club.finance-engine.cashbox', [
+                'club_id' => $club->id,
+                'date_from' => '2026-08-26',
+                'date_to' => '2026-01-01',
+            ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('date_to');
+    }
+
     public function test_finance_ledger_receipt_appendix_orders_attached_and_missing_sections_by_reference(): void
     {
         Storage::fake('public');

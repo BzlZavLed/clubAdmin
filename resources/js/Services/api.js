@@ -328,9 +328,12 @@ export const fetchFinanceEngineMovements = async (params = {}) => {
     return data;
 };
 
-export const fetchFinanceEngineCashbox = async (clubId = null) => {
+export const fetchFinanceEngineCashbox = async (clubId = null, filters = {}) => {
     const { data } = await axios.get(route('club.finance-engine.cashbox'), {
-        params: clubId ? { club_id: clubId } : {},
+        params: {
+            ...filters,
+            ...(clubId ? { club_id: clubId } : {}),
+        },
     });
     return data;
 };
