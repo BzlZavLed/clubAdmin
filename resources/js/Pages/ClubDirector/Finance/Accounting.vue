@@ -136,6 +136,45 @@ const rawLedgerMovements = computed(() => engineReport.value?.movements || [])
 const movementDisplayConcept = (movement) => movement?.display_concept || movement?.concept || movement?.reference || movementTypeLabel(movement?.kind)
 const movementNote = (movement) => String(movement?.notes || '').trim()
 const movementNoteIsLong = (movement) => movementNote(movement).length > LEDGER_NOTE_MAX_LENGTH
+const parseNoteAmount = (value) => Number(String(value || '').replace(',', '.'))
+const parseStructuredMovementNote = (movement) => {
+    const note = movementNote(movement)
+    const amountTokens = note.match(/\d+(?:[.,]\d{1,2})?\s*\$/gu) || []
+    if (amountTokens.length < 3) return null
+
+    const totalMatch = /\bTotal\s*:?\s*(\d+(?:[.,]\d{1,2})?)\s*\$/iu.exec(note)
+    const clubContributionMatch = /Club\s+est[aá]\s+dando\s*:?\s*(\d+(?:[.,]\d{1,2})?)\s*\$/iu.exec(note)
+    const referenceTotalMatch = /\bTotal\s*:?\s*\d+(?:[.,]\d{1,2})?\s*\$\s*-\s*(\d+(?:[.,]\d{1,2})?)/iu.exec(note)
+    const detailText = totalMatch?.index !== undefined ? note.slice(0, totalMatch.index) : note
+    const entries = []
+    const entryPattern = /([^$]+?)\s+(\d+(?:[.,]\d{1,2})?)\s*\$/gu
+    let match
+
+    while ((match = entryPattern.exec(detailText)) !== null) {
+        const label = match[1]
+            .replace(/^[\s,;:.-]+|[\s,;:.-]+$/gu, '')
+            .replace(/\s+/gu, ' ')
+            .trim()
+        if (!label || label.length > 140) continue
+
+        entries.push({
+            label,
+            amount: parseNoteAmount(match[2]),
+        })
+    }
+
+    if (entries.length < 3) return null
+
+    return {
+        entries,
+        collectedTotal: totalMatch ? parseNoteAmount(totalMatch[1]) : null,
+        referenceTotal: referenceTotalMatch ? parseNoteAmount(referenceTotalMatch[1]) : null,
+        clubContribution: clubContributionMatch ? parseNoteAmount(clubContributionMatch[1]) : null,
+    }
+}
+const selectedNoteStructure = computed(() => selectedNoteMovement.value
+    ? parseStructuredMovementNote(selectedNoteMovement.value)
+    : null)
 const openMovementNoteModal = (movement) => {
     selectedNoteMovement.value = movement
 }
@@ -2420,8 +2459,57 @@ onBeforeUnmount(() => {
                         ×
                     </button>
                 </div>
-                <div class="overflow-y-auto p-5">
-                    <p class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">{{ movementNote(selectedNoteMovement) }}</p>
+                <div class="space-y-5 overflow-y-auto p-5">
+                    <div v-if="selectedNoteStructure" class="overflow-hidden rounded-xl border border-gray-200">
+                        <div class="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                            <h3 class="text-sm font-semibold text-gray-900">{{ tr('Detalle detectado', 'Detected breakdown') }}</h3>
+                            <p class="mt-1 text-xs text-gray-500">
+                                {{ tr('La nota contiene aportes con importes y se organizo automaticamente.', 'The note contains contributions with amounts and was organized automatically.') }}
+                            </p>
+                        </div>
+                        <div class="max-h-80 overflow-y-auto">
+                            <table class="w-full table-fixed text-sm">
+                                <colgroup>
+                                    <col class="w-[72%]" />
+                                    <col class="w-[28%]" />
+                                </colgroup>
+                                <thead class="sticky top-0 bg-white text-xs uppercase tracking-wide text-gray-500">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left font-semibold">{{ tr('Detalle', 'Detail') }}</th>
+                                        <th class="px-4 py-2 text-right font-semibold">{{ tr('Monto', 'Amount') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <tr v-for="(entry, index) in selectedNoteStructure.entries" :key="`${index}-${entry.label}`">
+                                        <td class="break-words px-4 py-2 text-gray-700">{{ entry.label }}</td>
+                                        <td class="px-4 py-2 text-right font-semibold text-gray-900">{{ formatMoney(entry.amount) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div
+                            v-if="selectedNoteStructure.collectedTotal !== null || selectedNoteStructure.referenceTotal !== null || selectedNoteStructure.clubContribution !== null"
+                            class="grid gap-2 border-t border-gray-200 bg-gray-50 p-3 sm:grid-cols-3"
+                        >
+                            <div v-if="selectedNoteStructure.collectedTotal !== null" class="rounded-lg bg-white px-3 py-2">
+                                <p class="text-xs text-gray-500">{{ tr('Total recaudado', 'Collected total') }}</p>
+                                <p class="font-semibold text-gray-900">{{ formatMoney(selectedNoteStructure.collectedTotal) }}</p>
+                            </div>
+                            <div v-if="selectedNoteStructure.referenceTotal !== null" class="rounded-lg bg-white px-3 py-2">
+                                <p class="text-xs text-gray-500">{{ tr('Total de referencia', 'Reference total') }}</p>
+                                <p class="font-semibold text-gray-900">{{ formatMoney(selectedNoteStructure.referenceTotal) }}</p>
+                            </div>
+                            <div v-if="selectedNoteStructure.clubContribution !== null" class="rounded-lg bg-white px-3 py-2">
+                                <p class="text-xs text-gray-500">{{ tr('Aporte del club', 'Club contribution') }}</p>
+                                <p class="font-semibold text-gray-900">{{ formatMoney(selectedNoteStructure.clubContribution) }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 v-if="selectedNoteStructure" class="mb-2 text-sm font-semibold text-gray-900">{{ tr('Nota original', 'Original note') }}</h3>
+                        <p class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">{{ movementNote(selectedNoteMovement) }}</p>
+                    </div>
                 </div>
                 <div class="flex justify-end border-t px-5 py-4">
                     <button
