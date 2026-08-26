@@ -20,12 +20,21 @@ class PaymentReceiptPdfService
     {
         $receipt = $this->loadReceiptContext($receipt);
         $payment = $receipt->payment;
+        $fundraiserSale = $receipt->fundraiserSale;
         $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
         $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
         $club = $receipt->club ?? $payment?->club;
-        $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name ?? '-';
-        $conceptName = $this->receiptConceptName($payment);
-        $fundraiserOrder = $this->fundraiserOrderForPayment($payment);
+        $recipientName = $receipt->parentUser?->name ?? $receipt->staffUser?->name ?? $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name ?? $fundraiserSale?->customer_name ?? '-';
+        $conceptName = $payment
+            ? $this->receiptConceptName($payment)
+            : ($fundraiserSale ? 'Fundraiser: ' . ($fundraiserSale->fundraiserEvent?->name ?? 'Venta') : '-');
+        $fundraiserOrder = $this->fundraiserOrder($fundraiserSale ?: $this->fundraiserSaleForPayment($payment));
+        $amountPaid = (float) ($payment?->amount_paid ?? $fundraiserSale?->total_amount ?? 0);
+        $paymentDate = $payment?->payment_date ?? $fundraiserSale?->sale_date;
+        $paymentType = $payment?->payment_type ?? $fundraiserSale?->payment_type;
+        $accountLabel = $payment?->account?->label ?? $payment?->pay_to ?? $fundraiserSale?->fundraiserEvent?->pay_to;
+        $zellePhone = $payment?->zelle_phone ?? $fundraiserSale?->zelle_phone;
+        $notes = $payment?->notes ?? $fundraiserSale?->notes;
         $isCancellationReceipt = $payment && (
             (float) $payment->amount_paid < 0
             || !empty($payment->canceling_id)
@@ -42,18 +51,19 @@ class PaymentReceiptPdfService
                 'issued_at' => optional($receipt->issued_at)->toISOString(),
                 'club_id' => $club?->id,
                 'payment_id' => $payment?->id,
-                'payment_date' => optional($payment?->payment_date)->toDateString(),
-                'amount_paid' => $payment?->amount_paid,
-                'payment_type' => $payment?->payment_type,
+                'fundraiser_sale_id' => $fundraiserSale?->id,
+                'payment_date' => optional($paymentDate)->toDateString(),
+                'amount_paid' => $amountPaid,
+                'payment_type' => $paymentType,
                 'concept' => $conceptName,
-                'account' => $payment?->account?->label ?? $payment?->pay_to,
+                'account' => $accountLabel,
                 'recipient_name' => $recipientName,
                 'recipient_email' => $receipt->issued_to_email,
                 'is_cancellation' => $isCancellationReceipt,
                 'canceling_payment_id' => $payment?->canceling_id ?: $payment?->reversed_payment_id,
                 'member_name' => $memberDetail['name'] ?? null,
                 'staff_name' => $staffDetail['name'] ?? null,
-                'payer_name' => $payment?->payer_name,
+                'payer_name' => $payment?->payer_name ?? $fundraiserSale?->customer_name,
                 'fundraiser_order' => $fundraiserOrder,
             ],
             metadata: [
@@ -61,7 +71,7 @@ class PaymentReceiptPdfService
                 'Club' => $club?->club_name ?? '-',
                 'Pagador' => $recipientName,
                 'Concepto' => $conceptName,
-                'Importe' => '$' . number_format((float) ($payment?->amount_paid ?? 0), 2),
+                'Importe' => '$' . number_format($amountPaid, 2),
             ],
             generatedBy: $generatedBy,
             generatedAt: $generatedAt,
@@ -80,6 +90,12 @@ class PaymentReceiptPdfService
             'isCancellationReceipt' => $isCancellationReceipt,
             'originalPaymentId' => $payment?->canceling_id ?: $payment?->reversed_payment_id,
             'fundraiserOrder' => $fundraiserOrder,
+            'paymentDate' => $paymentDate,
+            'paymentType' => $paymentType,
+            'accountLabel' => $accountLabel,
+            'zellePhone' => $zellePhone,
+            'amountPaid' => $amountPaid,
+            'notes' => $notes,
             'clubLogoDataUri' => $this->clubLogoService->dataUri($club),
             'validationUrl' => $validation['url'],
             'qrCodeDataUri' => $validation['qr_code_data_uri'],
@@ -100,6 +116,8 @@ class PaymentReceiptPdfService
             'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
             'payment.account:id,club_id,pay_to,label',
             'payment.receivedBy:id,name,email',
+            'fundraiserSale.fundraiserEvent:id,name,fundraiser_type,pay_to',
+            'fundraiserSale.items',
             'parentUser:id,name,email',
             'staffUser:id,name,email',
         ]);
@@ -122,7 +140,7 @@ class PaymentReceiptPdfService
         return $payment->concept?->concept ?? $payment->concept_text ?? '-';
     }
 
-    private function fundraiserOrderForPayment($payment): ?array
+    private function fundraiserSaleForPayment($payment): ?FundraiserSale
     {
         if (
             !$payment
@@ -132,15 +150,20 @@ class PaymentReceiptPdfService
             return null;
         }
 
-        $sale = FundraiserSale::query()
+        return FundraiserSale::query()
             ->with(['fundraiserEvent:id,name,fundraiser_type', 'items'])
             ->whereKey($payment->source_id)
             ->where('payment_id', $payment->id)
             ->first();
+    }
 
+    private function fundraiserOrder(?FundraiserSale $sale): ?array
+    {
         if (!$sale) {
             return null;
         }
+
+        $sale->loadMissing(['fundraiserEvent:id,name,fundraiser_type', 'items']);
 
         return [
             'event_name' => $sale->fundraiserEvent?->name,

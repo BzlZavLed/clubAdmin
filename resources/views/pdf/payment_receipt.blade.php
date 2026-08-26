@@ -401,7 +401,7 @@
                             </td>
                             <td>
                                 <div class="label">Fecha de pago</div>
-                                <div class="value">{{ optional($payment?->payment_date)->format('Y-m-d') ?? '—' }}</div>
+                                <div class="value">{{ optional($paymentDate)->format('Y-m-d') ?? '—' }}</div>
                             </td>
                             <td>
                                 <div class="label">Recibido por</div>
@@ -461,16 +461,16 @@
                                         @endif
                                         <tr>
                                             <td class="info-label">Cuenta</td>
-                                            <td class="info-value">{{ $payment?->account?->label ?? $payment?->pay_to ?? '—' }}</td>
+                                            <td class="info-value">{{ $accountLabel ?? '—' }}</td>
                                         </tr>
                                         <tr>
                                             <td class="info-label">Metodo</td>
-                                            <td class="info-value">{{ ucfirst($payment?->payment_type ?? '—') }}</td>
+                                            <td class="info-value">{{ ucfirst($paymentType ?? '—') }}</td>
                                         </tr>
-                                        @if(!empty($payment?->zelle_phone))
+                                        @if(!empty($zellePhone))
                                             <tr>
                                                 <td class="info-label">Telefono Zelle</td>
-                                                <td class="info-value">{{ $payment->zelle_phone }}</td>
+                                                <td class="info-value">{{ $zellePhone }}</td>
                                             </tr>
                                         @endif
                                         @if(!empty($isCancellationReceipt) && !empty($originalPaymentId))
@@ -496,7 +496,7 @@
                                 </div>
                             </td>
                             <td class="total-amount">
-                                ${{ number_format(!empty($isCancellationReceipt) ? abs((float) ($payment?->amount_paid ?? 0)) : (float) ($payment?->amount_paid ?? 0), 2) }}
+                                ${{ number_format(!empty($isCancellationReceipt) ? abs((float) $amountPaid) : (float) $amountPaid, 2) }}
                             </td>
                         </tr>
                     </table>
@@ -537,9 +537,9 @@
                     </div>
                 @endif
 
-                @if(!empty($payment?->notes))
+                @if(!empty($notes))
                     <div class="note-box">
-                        <strong>Notas:</strong> {{ $payment->notes }}
+                        <strong>Notas:</strong> {{ $notes }}
                     </div>
                 @endif
 

@@ -915,11 +915,12 @@ class FinanceEngineWorkflowTest extends TestCase
             ->assertCreated();
 
         $product = FundraiserProduct::query()->firstWhere('name', 'Cake slice');
+        $receiptIds = [];
         foreach ([
             ['customer_name' => 'Buyer One', 'quantity' => 1, 'payment_type' => 'cash'],
             ['customer_name' => 'Buyer Two', 'quantity' => 2, 'payment_type' => 'cash'],
         ] as $sale) {
-            $this->actingAs($director)
+            $saleResponse = $this->actingAs($director)
                 ->postJson(route('club.finance-engine.fundraisers.sales.store', $eventId), [
                     'customer_name' => $sale['customer_name'],
                     'sale_date' => '2026-08-19',
@@ -930,13 +931,20 @@ class FinanceEngineWorkflowTest extends TestCase
                     ]],
                 ])
                 ->assertCreated()
-                ->assertJsonPath('sale.payment_id', null)
-                ->assertJsonPath('receipt', null);
+                ->assertJsonPath('sale.payment_id', null);
+
+            $this->assertStringStartsWith('RCPT-', $saleResponse->json('receipt.number'));
+            $this->assertSame($saleResponse->json('receipt.id'), $saleResponse->json('sale.receipt.id'));
+            $this->getJson($saleResponse->json('receipt.public_url'))
+                ->assertOk()
+                ->assertJsonPath('file_name', $saleResponse->json('receipt.number') . '.pdf');
+            $receiptIds[] = $saleResponse->json('receipt.id');
         }
 
         $this->assertDatabaseCount('fundraiser_sales', 2);
         $this->assertDatabaseCount('payments', 0);
-        $this->assertDatabaseCount('payment_receipts', 0);
+        $this->assertDatabaseCount('payment_receipts', 2);
+        $this->assertSame(2, PaymentReceipt::query()->whereNull('payment_id')->whereNotNull('fundraiser_sale_id')->count());
         $this->assertSame('0.00', Account::findOrFail($account->id)->balance);
 
         $deferredSaleId = \App\Models\FundraiserSale::query()->where('fundraiser_event_id', $eventId)->value('id');
@@ -977,6 +985,8 @@ class FinanceEngineWorkflowTest extends TestCase
         $this->assertNotEmpty($closedEvent['accounting_posted_at']);
         $this->assertDatabaseCount('payments', 2);
         $this->assertDatabaseCount('payment_receipts', 2);
+        $this->assertSame(0, PaymentReceipt::query()->whereNull('payment_id')->count());
+        $this->assertSame($receiptIds, PaymentReceipt::query()->orderBy('id')->pluck('id')->all());
         $this->assertSame('30.00', Account::findOrFail($account->id)->balance);
         $this->assertSame(
             [10.0, 20.0],

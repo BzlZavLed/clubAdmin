@@ -11,6 +11,7 @@ class PaymentReceipt extends Model
 
     protected $fillable = [
         'payment_id',
+        'fundraiser_sale_id',
         'club_id',
         'club_code',
         'receipt_year',
@@ -37,6 +38,11 @@ class PaymentReceipt extends Model
     public function payment()
     {
         return $this->belongsTo(Payment::class);
+    }
+
+    public function fundraiserSale()
+    {
+        return $this->belongsTo(FundraiserSale::class);
     }
 
     public function club()

@@ -57,6 +57,11 @@ class FundraiserSale extends Model
         return $this->belongsTo(Payment::class);
     }
 
+    public function receipt()
+    {
+        return $this->hasOne(PaymentReceipt::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by_user_id');

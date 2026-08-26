@@ -1,5 +1,6 @@
 @php
     $payment = $receipt->payment;
+    $fundraiserSale = $receipt->fundraiserSale;
     $club = $receipt->club ?? $payment?->club;
 @endphp
 
@@ -9,8 +10,8 @@
 
 <p>
     Club: {{ $club?->club_name ?? 'Club' }}<br>
-    Fecha: {{ optional($payment?->payment_date)->toDateString() ?? optional($receipt->issued_at)->toDateString() }}<br>
-    Importe: ${{ number_format((float) ($payment?->amount_paid ?? 0), 2) }}
+    Fecha: {{ optional($payment?->payment_date ?? $fundraiserSale?->sale_date)->toDateString() ?? optional($receipt->issued_at)->toDateString() }}<br>
+    Importe: ${{ number_format((float) ($payment?->amount_paid ?? $fundraiserSale?->total_amount ?? 0), 2) }}
 </p>
 
 <p>Gracias.</p>

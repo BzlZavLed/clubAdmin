@@ -392,11 +392,14 @@ class FinanceBootstrapper
                 'payment.allocations.concept:id,concept,event_id,event_fee_component_id',
                 'payment.allocations.concept.event:id,title,start_at',
                 'payment.allocations.concept.eventFeeComponent:id,label,amount,is_required,sort_order',
+                'fundraiserSale:id,fundraiser_event_id,customer_name,total_amount,sale_date',
+                'fundraiserSale.fundraiserEvent:id,name',
             ])
             ->latest('issued_at')
             ->get()
             ->map(function (PaymentReceipt $receipt) {
                 $payment = $receipt->payment;
+                $fundraiserSale = $receipt->fundraiserSale;
                 $memberDetail = $payment ? ClubHelper::memberDetail($payment->member) : null;
                 $staffDetail = $payment ? ClubHelper::staffDetail($payment->staff) : null;
 
@@ -420,11 +423,11 @@ class FinanceBootstrapper
                     'last_downloaded_at' => optional($receipt->last_downloaded_at)->toDateTimeString(),
                     'member_name' => $memberDetail['name'] ?? null,
                     'staff_name' => $staffDetail['name'] ?? null,
-                    'payer_name' => $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name,
+                    'payer_name' => $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name ?? $fundraiserSale?->customer_name,
                     'payer_email' => $payment?->payer_email,
-                    'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text,
-                    'amount_paid' => (float) ($payment?->amount_paid ?? 0),
-                    'payment_date' => optional($payment?->payment_date)->toDateString(),
+                    'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text ?? ($fundraiserSale ? 'Fundraiser: ' . ($fundraiserSale->fundraiserEvent?->name ?? 'Venta') : null),
+                    'amount_paid' => (float) ($payment?->amount_paid ?? $fundraiserSale?->total_amount ?? 0),
+                    'payment_date' => optional($payment?->payment_date ?? $fundraiserSale?->sale_date)->toDateString(),
                     'reason' => $reason,
                     'download_url' => route('payment-receipts.download', $receipt),
                 ];

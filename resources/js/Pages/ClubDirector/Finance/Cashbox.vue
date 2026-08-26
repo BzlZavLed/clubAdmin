@@ -267,6 +267,23 @@ const paginatedMovementGroups = computed(() => {
 
     return recentMovementGroups.value.slice(start, start + movementPageSize.value)
 })
+const displayedMovementDateRange = computed(() => {
+    const timestamps = paginatedMovementGroups.value
+        .flatMap((group) => group.movements || [])
+        .map((movement) => ({
+            timestamp: movementDateValue(movement),
+            value: movement?.occurred_at || movement?.created_at || movement?.date || null,
+        }))
+        .filter((entry) => entry.timestamp > 0)
+        .sort((a, b) => a.timestamp - b.timestamp)
+
+    if (!timestamps.length) return null
+
+    return {
+        from: timestamps[0].value,
+        to: timestamps[timestamps.length - 1].value,
+    }
+})
 const movementPageStart = computed(() => recentMovementGroups.value.length ? ((movementPage.value - 1) * movementPageSize.value) + 1 : 0)
 const movementPageEnd = computed(() => Math.min(movementPage.value * movementPageSize.value, recentMovementGroups.value.length))
 
@@ -4047,6 +4064,16 @@ onBeforeUnmount(() => {
                     <div>
                         <h3 class="text-base font-semibold text-gray-900">{{ tr('Movimientos', 'Movements') }}</h3>
                         <p class="text-sm text-gray-500">{{ tr('Aqui ingresos, gastos, transferencias, reembolsos, recibos y comprobantes', 'Here you will see income, expenses, transfers, reimbursements, receipts, and proofs.') }}</p>
+                        <p
+                            v-if="displayedMovementDateRange"
+                            data-testid="displayed-movement-date-range"
+                            class="mt-2 inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-800"
+                        >
+                            {{ tr('Rango mostrado', 'Displayed range') }}:
+                            {{ formatDate(displayedMovementDateRange.from) }}
+                            {{ tr('al', 'to') }}
+                            {{ formatDate(displayedMovementDateRange.to) }}
+                        </p>
                     </div>
                     <div data-tour="cashbox-movement-filters" class="flex flex-col gap-2 sm:flex-row">
                         <input

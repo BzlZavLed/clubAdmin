@@ -81,6 +81,7 @@ class FinanceFundraiserService
                 'investmentReceipts' => fn ($query) => $query->orderBy('id'),
                 'sales' => fn ($query) => $query->latest('sale_date')->latest('id'),
                 'sales.items',
+                'sales.receipt:id,fundraiser_sale_id,payment_id,receipt_number',
                 'sales.payment.receipt:id,payment_id,receipt_number',
                 'sales.payment.relatedCanceledMovement.receipt:id,payment_id,receipt_number',
                 'sales.reversalPayment.receipt:id,payment_id,receipt_number',
@@ -240,7 +241,11 @@ class FinanceFundraiserService
         $baseQuery = FundraiserSale::query()
             ->where('fundraiser_event_id', $event->id)
             ->where('is_cancelled', false)
-            ->with(['items', 'payment.receipt:id,payment_id,receipt_number']);
+            ->with([
+                'items',
+                'receipt:id,fundraiser_sale_id,payment_id,receipt_number',
+                'payment.receipt:id,payment_id,receipt_number',
+            ]);
 
         $pending = (clone $baseQuery)
             ->where('kitchen_status', 'pending')
@@ -613,16 +618,18 @@ class FinanceFundraiserService
             if ($event->accounting_mode !== self::ACCOUNTING_MODE_SEMI_AUTOMATIC) {
                 $payment = $this->createSalePayment($sale, $event, $club, $request->user()?->id);
                 $this->ensureAccount($club, $event->pay_to)->increment('balance', $totalAmount);
-                $receipt = $this->paymentReceiptService->syncForPayment($payment);
                 $sale->update(['payment_id' => $payment->id]);
+                $receipt = $this->paymentReceiptService->syncForPayment($payment);
+            } else {
+                $receipt = $this->paymentReceiptService->syncForFundraiserSale($sale);
             }
         });
 
-        $sale->load(['items', 'payment.receipt']);
+        $sale->load(['items', 'receipt', 'payment.receipt']);
 
         return response()->json([
             'message' => $event->accounting_mode === self::ACCOUNTING_MODE_SEMI_AUTOMATIC
-                ? 'Fundraiser sale saved pending accounting'
+                ? 'Fundraiser sale saved with receipt, pending accounting'
                 : 'Fundraiser sale recorded',
             'data' => $this->data($request->user(), $event->club),
             'sale' => $this->salePayload($sale),
@@ -2013,11 +2020,12 @@ class FinanceFundraiserService
     {
         $sale->loadMissing([
             'items',
+            'receipt:id,fundraiser_sale_id,payment_id,receipt_number',
             'payment.receipt:id,payment_id,receipt_number',
             'payment.relatedCanceledMovement.receipt:id,payment_id,receipt_number',
             'reversalPayment.receipt:id,payment_id,receipt_number',
         ]);
-        $receipt = $sale->payment?->receipt;
+        $receipt = $sale->receipt ?: $sale->payment?->receipt;
         $reversalPayment = $sale->reversalPayment ?: $sale->payment?->relatedCanceledMovement;
         $accountingReversed = (bool) $sale->payment?->is_cancelled
             || (bool) $sale->payment?->related_canceled_movement_id
@@ -2111,7 +2119,12 @@ class FinanceFundraiserService
 
     private function kitchenSalePayload(FundraiserSale $sale): array
     {
-        $sale->loadMissing(['items', 'payment.receipt:id,payment_id,receipt_number']);
+        $sale->loadMissing([
+            'items',
+            'receipt:id,fundraiser_sale_id,payment_id,receipt_number',
+            'payment.receipt:id,payment_id,receipt_number',
+        ]);
+        $receipt = $sale->receipt ?: $sale->payment?->receipt;
 
         return [
             'id' => (int) $sale->id,
@@ -2128,7 +2141,7 @@ class FinanceFundraiserService
                     'fundraiserEvent' => $sale->fundraiser_event_id,
                     'fundraiserSale' => $sale,
                 ]),
-            'receipt' => $sale->payment?->receipt ? $this->receiptPayload($sale->payment->receipt) : null,
+            'receipt' => $receipt ? $this->receiptPayload($receipt) : null,
             'items' => $sale->items->map(fn ($item) => [
                 'id' => (int) $item->id,
                 'item_name' => $item->item_name,

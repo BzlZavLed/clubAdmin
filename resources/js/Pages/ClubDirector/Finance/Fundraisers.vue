@@ -1411,7 +1411,7 @@ const submitSale = async () => {
         resetSaleForm()
         showToast(
             selectedEventIsSemiAutomatic.value
-                ? tr('Venta guardada. Su ingreso queda pendiente hasta el cierre.', 'Sale saved. Its income remains pending until closing.')
+                ? tr('Venta guardada con recibo. Su ingreso queda pendiente hasta el cierre.', 'Sale saved with receipt. Its income remains pending until closing.')
                 : tr('Venta registrada con recibo.', 'Sale recorded with receipt.'),
             'success'
         )
@@ -1865,7 +1865,7 @@ onBeforeUnmount(() => {
                                 </span>
                             </label>
                             <div v-if="eventForm.accounting_mode === 'semi_automatic'" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
-                                {{ tr('Las ventas no aumentaran el saldo ni generaran recibos contables hasta el cierre. El cierre sera atomico y conservara cada venta como movimiento individual.', 'Sales will not increase the balance or generate accounting receipts until closing. Closing will be atomic and preserve each sale as an individual movement.') }}
+                                {{ tr('Cada venta genera su recibo inmediatamente, pero no aumenta el saldo ni afecta el libro hasta el cierre. El cierre sera atomico y vinculara cada recibo con su movimiento individual.', 'Each sale generates its receipt immediately, but does not increase the balance or affect the ledger until closing. Closing is atomic and links each receipt to its individual movement.') }}
                             </div>
                         </div>
 

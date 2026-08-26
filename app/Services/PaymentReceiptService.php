@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Jobs\SendPaymentReceiptEmail;
 use App\Models\Club;
+use App\Models\FundraiserSale;
 use App\Models\Payment;
 use App\Models\PaymentReceipt;
 use App\Models\User;
+use App\Services\Finance\FinanceFundraiserService;
 use App\Services\Mail\MailerService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -61,12 +63,20 @@ class PaymentReceiptService
                 ->lockForUpdate()
                 ->first(['id']);
 
+            $fundraiserSaleId = $payment->source_type === FinanceFundraiserService::SOURCE_TYPE
+                ? $payment->source_id
+                : null;
             $receipt = PaymentReceipt::withTrashed()
-                ->where('payment_id', $payment->id)
+                ->where(function ($query) use ($payment, $fundraiserSaleId) {
+                    $query->where('payment_id', $payment->id);
+                    if ($fundraiserSaleId) {
+                        $query->orWhere('fundraiser_sale_id', $fundraiserSaleId);
+                    }
+                })
                 ->lockForUpdate()
                 ->first();
 
-            $issuedAt = $payment->created_at ?? now();
+            $issuedAt = $receipt?->issued_at ?? $payment->created_at ?? now();
             $receiptYear = (int) $issuedAt->format('Y');
             $clubCode = $receipt?->club_code ?: $this->clubCodeForPayment($payment);
             $clubSequence = $receipt?->club_sequence ?: $this->nextClubSequence((int) $payment->club_id, $receiptYear);
@@ -74,6 +84,8 @@ class PaymentReceiptService
 
             $payload = [
                 'club_id' => $payment->club_id,
+                'payment_id' => $payment->id,
+                'fundraiser_sale_id' => $fundraiserSaleId ?: $receipt?->fundraiser_sale_id,
                 'club_code' => $clubCode,
                 'receipt_year' => $receiptYear,
                 'club_sequence' => $clubSequence,
@@ -99,7 +111,6 @@ class PaymentReceiptService
             }
 
             return PaymentReceipt::query()->create([
-                'payment_id' => $payment->id,
                 ...$payload,
             ]);
         });
@@ -111,6 +122,49 @@ class PaymentReceiptService
         }
 
         return $receipt;
+    }
+
+    public function syncForFundraiserSale(FundraiserSale $sale): PaymentReceipt
+    {
+        $sale->loadMissing(['club:id,club_name', 'payment']);
+
+        if ($sale->payment) {
+            return $this->syncForPayment($sale->payment);
+        }
+
+        return DB::transaction(function () use ($sale) {
+            Club::query()->whereKey($sale->club_id)->lockForUpdate()->first(['id']);
+
+            $receipt = PaymentReceipt::withTrashed()
+                ->where('fundraiser_sale_id', $sale->id)
+                ->lockForUpdate()
+                ->first();
+            $issuedAt = $receipt?->issued_at ?? $sale->created_at ?? now();
+            $receiptYear = (int) $issuedAt->format('Y');
+            $clubCode = $receipt?->club_code ?: $this->clubCode($sale->club?->club_name, (int) $sale->club_id);
+            $clubSequence = $receipt?->club_sequence ?: $this->nextClubSequence((int) $sale->club_id, $receiptYear);
+            $payload = [
+                'payment_id' => null,
+                'fundraiser_sale_id' => $sale->id,
+                'club_id' => $sale->club_id,
+                'club_code' => $clubCode,
+                'receipt_year' => $receiptYear,
+                'club_sequence' => $clubSequence,
+                'receipt_number' => $receipt?->receipt_number ?: $this->receiptNumber($issuedAt, $clubCode, $clubSequence),
+                'issued_to_type' => $sale->customer_name ? 'external_payer' : null,
+                'issued_to_email' => null,
+                'issued_at' => $issuedAt,
+                'delivery_status' => 'manual_required',
+                'deleted_at' => null,
+            ];
+
+            if ($receipt) {
+                $receipt->fill($payload)->save();
+                return $receipt;
+            }
+
+            return PaymentReceipt::query()->create($payload);
+        });
     }
 
     public function deleteForPayment(Payment $payment): void
@@ -186,10 +240,15 @@ class PaymentReceiptService
 
     protected function clubCodeForPayment(Payment $payment): string
     {
-        $name = $payment->club?->club_name ?: 'CLUB';
+        return $this->clubCode($payment->club?->club_name, (int) $payment->club_id);
+    }
+
+    protected function clubCode(?string $clubName, int $clubId): string
+    {
+        $name = $clubName ?: 'CLUB';
         $letters = Str::upper(preg_replace('/[^A-Z0-9]/i', '', $name));
         $prefix = substr($letters ?: 'CLUB', 0, 4);
-        $suffix = str_pad((string) $payment->club_id, 7, '0', STR_PAD_LEFT);
+        $suffix = str_pad((string) $clubId, 7, '0', STR_PAD_LEFT);
 
         return substr(str_pad($prefix, 4, 'X') . $suffix, 0, 12);
     }
