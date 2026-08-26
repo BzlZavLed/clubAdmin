@@ -87,7 +87,7 @@ const ledgerFiltersOpen = ref(false)
 const openLedgerAccountSections = ref({})
 const ledgerSectionPages = ref({})
 const LEDGER_PAGE_SIZE = 25
-const LEDGER_NOTE_MAX_LENGTH = 120
+const LEDGER_NOTE_MAX_LENGTH = 60
 const settlementForm = ref({
     deposited_at: new Date().toISOString().slice(0, 16),
     reference: '',
@@ -136,12 +136,6 @@ const rawLedgerMovements = computed(() => engineReport.value?.movements || [])
 const movementDisplayConcept = (movement) => movement?.display_concept || movement?.concept || movement?.reference || movementTypeLabel(movement?.kind)
 const movementNote = (movement) => String(movement?.notes || '').trim()
 const movementNoteIsLong = (movement) => movementNote(movement).length > LEDGER_NOTE_MAX_LENGTH
-const movementNotePreview = (movement) => {
-    const note = movementNote(movement)
-    if (note.length <= LEDGER_NOTE_MAX_LENGTH) return note
-
-    return `${note.slice(0, LEDGER_NOTE_MAX_LENGTH).trimEnd()}…`
-}
 const openMovementNoteModal = (movement) => {
     selectedNoteMovement.value = movement
 }
@@ -1790,6 +1784,7 @@ onBeforeUnmount(() => {
                                             :movement="movement"
                                             :show-reference="false"
                                             :show-notes="false"
+                                            :show-original-concept="false"
                                             notes-class="mt-1 text-sm text-gray-600"
                                         />
                                         <MovementInlineEditor
@@ -1809,8 +1804,7 @@ onBeforeUnmount(() => {
                                             class="text-left text-red-700 underline decoration-red-300 underline-offset-2 hover:text-red-800"
                                             @click="openMovementNoteModal(movement)"
                                         >
-                                            {{ movementNotePreview(movement) }}
-                                            <span class="font-semibold">{{ tr('Ver nota completa', 'View full note') }}</span>
+                                            {{ tr('Ver nota completa', 'View full note') }}
                                         </button>
                                         <span v-else>{{ movementNote(movement) }}</span>
                                     </p>
@@ -1978,6 +1972,7 @@ onBeforeUnmount(() => {
                                                 <MovementSummary
                                                     :movement="movement"
                                                     :show-notes="false"
+                                                    :show-original-concept="false"
                                                     title-class="font-medium text-gray-900"
                                                 />
                                                 <p v-if="movementNote(movement)" class="mt-1 break-words text-xs text-gray-500">
@@ -1988,8 +1983,7 @@ onBeforeUnmount(() => {
                                                         class="text-left text-red-700 underline decoration-red-300 underline-offset-2 hover:text-red-800"
                                                         @click="openMovementNoteModal(movement)"
                                                     >
-                                                        {{ movementNotePreview(movement) }}
-                                                        <span class="font-semibold">{{ tr('Ver nota completa', 'View full note') }}</span>
+                                                        {{ tr('Ver nota completa', 'View full note') }}
                                                     </button>
                                                     <span v-else>{{ movementNote(movement) }}</span>
                                                 </p>
