@@ -268,8 +268,7 @@ const paginatedMovementGroups = computed(() => {
     return recentMovementGroups.value.slice(start, start + movementPageSize.value)
 })
 const displayedMovementDateRange = computed(() => {
-    const timestamps = paginatedMovementGroups.value
-        .flatMap((group) => group.movements || [])
+    const timestamps = recentMovements.value
         .map((movement) => ({
             timestamp: movementDateValue(movement),
             value: movement?.occurred_at || movement?.created_at || movement?.date || null,
