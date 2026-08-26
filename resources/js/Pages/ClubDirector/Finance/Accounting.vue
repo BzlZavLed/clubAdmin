@@ -72,6 +72,7 @@ const movementProofInput = ref(null)
 const validatingBatchId = ref('')
 const reversingKey = ref('')
 const selectedCorrectionMovement = ref(null)
+const selectedNoteMovement = ref(null)
 const correctionError = ref('')
 const correctionForm = ref({
     correction_date: today(),
@@ -86,6 +87,7 @@ const ledgerFiltersOpen = ref(false)
 const openLedgerAccountSections = ref({})
 const ledgerSectionPages = ref({})
 const LEDGER_PAGE_SIZE = 25
+const LEDGER_NOTE_MAX_LENGTH = 120
 const settlementForm = ref({
     deposited_at: new Date().toISOString().slice(0, 16),
     reference: '',
@@ -132,6 +134,20 @@ const pendingStaffRemittances = computed(() => treasury.value.pending_staff_remi
 const recentTreasuryMovements = computed(() => treasury.value.movements || [])
 const rawLedgerMovements = computed(() => engineReport.value?.movements || [])
 const movementDisplayConcept = (movement) => movement?.display_concept || movement?.concept || movement?.reference || movementTypeLabel(movement?.kind)
+const movementNote = (movement) => String(movement?.notes || '').trim()
+const movementNoteIsLong = (movement) => movementNote(movement).length > LEDGER_NOTE_MAX_LENGTH
+const movementNotePreview = (movement) => {
+    const note = movementNote(movement)
+    if (note.length <= LEDGER_NOTE_MAX_LENGTH) return note
+
+    return `${note.slice(0, LEDGER_NOTE_MAX_LENGTH).trimEnd()}…`
+}
+const openMovementNoteModal = (movement) => {
+    selectedNoteMovement.value = movement
+}
+const closeMovementNoteModal = () => {
+    selectedNoteMovement.value = null
+}
 const ledgerMovements = computed(() => {
     const query = ledgerSearch.value.trim().toLowerCase()
     if (!query) return rawLedgerMovements.value
@@ -950,6 +966,10 @@ const handleTutorialViewportChange = () => {
     if (tutorialActive.value) updateTutorialTarget(false)
 }
 const handleTutorialKeydown = (event) => {
+    if (event.key === 'Escape' && selectedNoteMovement.value) {
+        closeMovementNoteModal()
+        return
+    }
     if (!tutorialActive.value) return
     if (event.key === 'Escape') closeAccountingTutorial()
     if (event.key === 'ArrowRight') nextTutorialStep()
@@ -1769,6 +1789,7 @@ onBeforeUnmount(() => {
                                         <MovementSummary
                                             :movement="movement"
                                             :show-reference="false"
+                                            :show-notes="false"
                                             notes-class="mt-1 text-sm text-gray-600"
                                         />
                                         <MovementInlineEditor
@@ -1780,6 +1801,19 @@ onBeforeUnmount(() => {
                                             @updated="handleMovementEditUpdated"
                                         />
                                     </div>
+                                    <p v-if="movementNote(movement)" class="mt-1 break-words text-sm text-gray-600">
+                                        <span class="font-medium">{{ tr('Notas', 'Notes') }}:</span>
+                                        <button
+                                            v-if="movementNoteIsLong(movement)"
+                                            type="button"
+                                            class="text-left text-red-700 underline decoration-red-300 underline-offset-2 hover:text-red-800"
+                                            @click="openMovementNoteModal(movement)"
+                                        >
+                                            {{ movementNotePreview(movement) }}
+                                            <span class="font-semibold">{{ tr('Ver nota completa', 'View full note') }}</span>
+                                        </button>
+                                        <span v-else>{{ movementNote(movement) }}</span>
+                                    </p>
                                     <p class="text-sm text-gray-600">{{ formatDate(movement.date) }} · {{ domainLabel(movement.domain) }}</p>
                                 </div>
                                 <p
@@ -1943,8 +1977,22 @@ onBeforeUnmount(() => {
                                             <div class="min-w-0">
                                                 <MovementSummary
                                                     :movement="movement"
+                                                    :show-notes="false"
                                                     title-class="font-medium text-gray-900"
                                                 />
+                                                <p v-if="movementNote(movement)" class="mt-1 break-words text-xs text-gray-500">
+                                                    <span class="font-medium">{{ tr('Notas', 'Notes') }}:</span>
+                                                    <button
+                                                        v-if="movementNoteIsLong(movement)"
+                                                        type="button"
+                                                        class="text-left text-red-700 underline decoration-red-300 underline-offset-2 hover:text-red-800"
+                                                        @click="openMovementNoteModal(movement)"
+                                                    >
+                                                        {{ movementNotePreview(movement) }}
+                                                        <span class="font-semibold">{{ tr('Ver nota completa', 'View full note') }}</span>
+                                                    </button>
+                                                    <span v-else>{{ movementNote(movement) }}</span>
+                                                </p>
                                             </div>
                                             <MovementInlineEditor
                                                 v-if="!tutorialActive"
@@ -2348,6 +2396,47 @@ onBeforeUnmount(() => {
                 <div>
                     <p class="font-semibold uppercase tracking-wide text-amber-700">{{ tr('Reemb.', 'Reimb.') }}</p>
                     <p class="font-semibold text-amber-800">{{ formatMoney(reimbursementBalanceSummary.total_available) }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div
+            v-if="selectedNoteMovement"
+            class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+            role="dialog"
+            aria-modal="true"
+            :aria-label="tr('Nota del movimiento', 'Movement note')"
+            @click.self="closeMovementNoteModal"
+        >
+            <div class="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-white shadow-xl">
+                <div class="flex items-start justify-between gap-4 border-b px-5 py-4">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-semibold text-gray-900">{{ tr('Nota del movimiento', 'Movement note') }}</h2>
+                        <p class="mt-1 break-words text-sm font-medium text-gray-700">{{ movementDisplayConcept(selectedNoteMovement) }}</p>
+                        <p class="mt-1 text-xs text-gray-500">
+                            {{ selectedNoteMovement.movement_id }} · {{ formatDate(selectedNoteMovement.date) }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-2xl leading-none text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                        :aria-label="tr('Cerrar', 'Close')"
+                        @click="closeMovementNoteModal"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="overflow-y-auto p-5">
+                    <p class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">{{ movementNote(selectedNoteMovement) }}</p>
+                </div>
+                <div class="flex justify-end border-t px-5 py-4">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        @click="closeMovementNoteModal"
+                    >
+                        {{ tr('Cerrar', 'Close') }}
+                    </button>
                 </div>
             </div>
         </div>
