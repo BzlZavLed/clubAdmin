@@ -163,6 +163,69 @@ const filteredReceipts = computed(() => props.receipts.filter(receipt => Number(
 const pendingCount = computed(() => filteredTransferSubmissions.value.filter(item => item.status === 'pending').length)
 const payableCharges = computed(() => filteredExpectedPayments.value.filter(charge => charge.status !== 'paid'))
 const paidCharges = computed(() => filteredExpectedPayments.value.filter(charge => charge.status === 'paid'))
+const outstandingAmount = charge => Number(charge.reusable ? charge.expected_amount : charge.remaining_amount || 0)
+const paymentRequirementLabel = charge => charge.is_required
+    ? tr('Obligatorio', 'Required')
+    : tr('Opcional', 'Optional')
+const paymentRequirementClass = charge => charge.is_required
+    ? 'border-amber-200 bg-amber-100 text-amber-900'
+    : 'border-sky-200 bg-sky-100 text-sky-800'
+const payableItems = computed(() => {
+    const eventCharges = new Map()
+
+    filteredExpectedPayments.value.forEach(charge => {
+        if (!charge.event_id) return
+
+        const eventKey = String(charge.event_id)
+        if (!eventCharges.has(eventKey)) eventCharges.set(eventKey, [])
+        eventCharges.get(eventKey).push(charge)
+    })
+
+    const items = []
+    const groupedEvents = new Map()
+
+    payableCharges.value.forEach(charge => {
+        const eventKey = charge.event_id ? String(charge.event_id) : null
+        const allRelatedCharges = eventKey ? (eventCharges.get(eventKey) || []) : []
+        const shouldGroup = allRelatedCharges.length > 1 && allRelatedCharges.some(item => Boolean(item.is_required))
+
+        if (!shouldGroup) {
+            items.push({ type: 'charge', key: `charge-${charge.row_key}`, charges: [charge] })
+            return
+        }
+
+        if (!groupedEvents.has(eventKey)) {
+            const group = {
+                type: 'event',
+                key: `event-${eventKey}`,
+                eventTitle: charge.event_title,
+                eventStartAt: charge.event_start_at,
+                allCharges: allRelatedCharges,
+                charges: [],
+            }
+            groupedEvents.set(eventKey, group)
+            items.push(group)
+        }
+
+        groupedEvents.get(eventKey).charges.push(charge)
+    })
+
+    return items.map(item => {
+        if (item.type !== 'event') return item
+
+        const requiredCharges = item.allCharges.filter(charge => Boolean(charge.is_required))
+        const accountSignatures = new Set(item.charges.map(charge => JSON.stringify(charge.deposit_account || null)))
+        const sharedDepositAccount = accountSignatures.size === 1 ? (item.charges[0]?.deposit_account || null) : null
+
+        return {
+            ...item,
+            requiredOutstanding: requiredCharges.some(charge => charge.status !== 'paid'),
+            totalOutstanding: item.charges.reduce((total, charge) => total + outstandingAmount(charge), 0),
+            sharedDepositAccount,
+            sharedDepositAccountLabel: item.charges[0]?.deposit_account_label,
+        }
+    })
+})
 const allChargeReceiptIds = computed(() => new Set(
     filteredExpectedPayments.value
         .flatMap(charge => charge.receipt_links || [])
@@ -281,19 +344,71 @@ const standaloneReceipts = computed(() => filteredReceipts.value.filter(receipt 
                 </div>
 
                 <div v-else class="mt-4 space-y-4">
-                    <article
-                        v-for="charge in payableCharges"
-                        :key="charge.row_key"
-                        class="rounded-2xl border border-gray-200 p-4"
+                    <div
+                        v-for="item in payableItems"
+                        :key="item.key"
+                        :class="item.type === 'event' ? 'overflow-hidden rounded-2xl border-2 border-indigo-200 bg-indigo-50/40 shadow-sm' : 'contents'"
+                        :data-testid="item.type === 'event' ? 'event-payment-group' : null"
                     >
+                        <div v-if="item.type === 'event'" class="border-b border-indigo-200 bg-indigo-100/70 px-4 py-4 sm:px-5">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                    <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">{{ tr('Pagos relacionados de evento', 'Related event payments') }}</div>
+                                    <h3 class="mt-1 text-lg font-semibold text-indigo-950">{{ item.eventTitle || tr('Evento', 'Event') }}</h3>
+                                    <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-indigo-800">
+                                        <span v-if="item.eventStartAt">{{ formatDate(item.eventStartAt) }}</span>
+                                        <span>{{ item.allCharges.length }} {{ tr('conceptos vinculados', 'linked items') }}</span>
+                                        <span>{{ item.charges.length }} {{ tr('por pagar o revisar', 'to pay or review') }}</span>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+                                    <span
+                                        class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                        :class="item.requiredOutstanding ? 'border-amber-300 bg-amber-100 text-amber-900' : 'border-emerald-300 bg-emerald-100 text-emerald-800'"
+                                    >
+                                        {{ item.requiredOutstanding ? tr('Obligatorio pendiente', 'Required payment pending') : tr('Obligatorio cubierto', 'Required payment covered') }}
+                                    </span>
+                                    <span class="inline-flex items-center rounded-full border border-indigo-300 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-900">
+                                        {{ tr('Total pendiente', 'Total pending') }}: ${{ formatMoney(item.totalOutstanding) }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div v-if="item.sharedDepositAccount" class="mt-3 rounded-xl border border-indigo-200 bg-white/80 px-3 py-2 text-sm text-indigo-950">
+                                <div class="font-medium">{{ item.sharedDepositAccount.label || item.sharedDepositAccountLabel || tr('Cuenta de depósito', 'Deposit account') }}</div>
+                                <div class="mt-1 grid gap-1 md:grid-cols-2">
+                                    <div v-for="line in depositAccountLines(item.sharedDepositAccount)" :key="`${item.key}-${line}`">{{ line }}</div>
+                                </div>
+                                <div v-if="item.sharedDepositAccount.deposit_instructions" class="mt-2 text-xs text-indigo-800">
+                                    {{ item.sharedDepositAccount.deposit_instructions }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div :class="item.type === 'event' ? 'space-y-3 p-3 sm:p-4' : 'contents'">
+                            <article
+                                v-for="charge in item.charges"
+                                :key="charge.row_key"
+                                class="rounded-2xl border p-4"
+                                :class="item.type === 'event'
+                                    ? (charge.is_required ? 'border-amber-300 border-l-4 bg-white' : 'border-sky-200 border-l-4 bg-white')
+                                    : 'border-gray-200'"
+                            >
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div class="space-y-2">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <h3 class="text-base font-semibold text-gray-900">{{ charge.concept_name }}</h3>
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(charge.status)">
+                                    <span
+                                        v-if="charge.event_id"
+                                        class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold"
+                                        :class="paymentRequirementClass(charge)"
+                                    >
+                                        {{ paymentRequirementLabel(charge) }}
+                                    </span>
+                                    <span v-if="charge.status !== 'optional'" class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(charge.status)">
                                         {{ statusLabel(charge.status) }}
                                     </span>
-                                    <span v-if="charge.event_title" class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                                    <span v-if="charge.event_title && item.type !== 'event'" class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800">
                                         {{ charge.event_title }}
                                     </span>
                                 </div>
@@ -309,7 +424,7 @@ const standaloneReceipts = computed(() => filteredReceipts.value.filter(receipt 
                                         <span class="mx-1">•</span> {{ tr('Vence', 'Due') }} {{ formatDate(charge.due_date) }}
                                     </template>
                                 </div>
-                                <div v-if="charge.deposit_account" class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                                <div v-if="charge.deposit_account && !item.sharedDepositAccount" class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
                                     <div class="font-medium">{{ charge.deposit_account.label || charge.deposit_account_label || tr('Cuenta de depósito', 'Deposit account') }}</div>
                                     <div class="mt-1 grid gap-1 md:grid-cols-2">
                                         <div v-for="line in depositAccountLines(charge.deposit_account)" :key="`${charge.row_key}-${line}`">{{ line }}</div>
@@ -318,7 +433,7 @@ const standaloneReceipts = computed(() => filteredReceipts.value.filter(receipt 
                                         {{ charge.deposit_account.deposit_instructions }}
                                     </div>
                                 </div>
-                                <div v-else-if="charge.can_submit_transfer" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                <div v-else-if="charge.can_submit_transfer && !item.sharedDepositAccount" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                                     {{ tr('El club todavía no publicó datos de depósito para', 'The club has not published deposit information for') }} {{ charge.deposit_account_label || charge.pay_to || tr('esta cuenta', 'this account') }}.
                                 </div>
                             </div>
@@ -373,7 +488,9 @@ const standaloneReceipts = computed(() => filteredReceipts.value.filter(receipt 
                                 </div>
                             </div>
                         </div>
-                    </article>
+                            </article>
+                        </div>
+                    </div>
                 </div>
             </section>
 

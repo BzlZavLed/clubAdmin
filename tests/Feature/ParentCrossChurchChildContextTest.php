@@ -47,7 +47,7 @@ class ParentCrossChurchChildContextTest extends TestCase
         $homeMember = $this->child($homeClub, $parent, 'Home Child');
 
         $this->actingAs($foreignDirector)
-            ->post(route('members.store'), $this->adventurerPayload($foreignClub, $parent, 'Foreign Child'))
+            ->post(route('members.store'), $this->adventurerPayload($foreignClub, $parent, 'Foreign Parent'))
             ->assertRedirect();
 
         $foreignMember = Member::query()
@@ -62,7 +62,7 @@ class ParentCrossChurchChildContextTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Parent/Payments')
                 ->has('children', 2)
-                ->where('children.0.name', 'Foreign Child')
+                ->where('children.0.name', 'Foreign Parent')
                 ->where('children.0.church_name', $foreignChurch->church_name)
                 ->where('children.1.name', 'Home Child')
                 ->where('children.1.church_name', $homeChurch->church_name));
@@ -83,7 +83,7 @@ class ParentCrossChurchChildContextTest extends TestCase
             ->assertJsonPath('selected_club_id', $foreignClub->id)
             ->assertJsonFragment([
                 'member_id' => $foreignMember->id,
-                'name' => 'Foreign Child',
+                'name' => 'Foreign Parent',
                 'church_name' => $foreignChurch->church_name,
             ]);
 
@@ -94,6 +94,25 @@ class ParentCrossChurchChildContextTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame($parent->id, $homeMember->parent_id);
+    }
+
+    public function test_director_created_child_with_matching_parent_email_but_different_last_name_is_not_auto_linked(): void
+    {
+        [$homeChurch, $homeClub] = $this->churchAndClub('Home', 'Home Adventurers');
+        [, $foreignClub, $foreignDirector] = $this->churchAndClub('Foreign', 'Foreign Adventurers');
+        $parent = $this->parent($homeChurch, $homeClub)->forceFill(['name' => 'Maria Santos']);
+        $parent->save();
+
+        $this->actingAs($foreignDirector)
+            ->post(route('members.store'), $this->adventurerPayload($foreignClub, $parent, 'Elena Rivera'))
+            ->assertRedirect();
+
+        $detail = MemberAdventurer::query()->where('applicant_name', 'Elena Rivera')->firstOrFail();
+        $this->assertDatabaseHas('members', [
+            'type' => 'adventurers',
+            'id_data' => $detail->id,
+            'parent_id' => null,
+        ]);
     }
 
     public function test_three_matches_link_immediately_two_require_director_and_fewer_are_rejected(): void

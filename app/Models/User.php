@@ -68,12 +68,14 @@ class User extends Authenticatable
             'enrollment_confirmed_at' => 'datetime',
         ];
     }
+
     public function clubs()
     {
         return $this->belongsToMany(Club::class)
             ->withPivot('status')
             ->withTimestamps();
     }
+
     public function club()
     {
         return $this->belongsTo(Club::class);
@@ -118,8 +120,15 @@ class User extends Authenticatable
 
     public function canAccessParentPortal(): bool
     {
-        return $this->profile_type !== 'parent'
-            || ! $this->secure_enrollment_link_id
+        if ($this->profile_type !== 'parent') {
+            return true;
+        }
+
+        if ($this->status !== null && $this->status !== 'active') {
+            return false;
+        }
+
+        return ! $this->secure_enrollment_link_id
             || $this->hasVerifiedEmail()
             || $this->isDirectorActivatedParent();
     }
@@ -138,7 +147,7 @@ class User extends Authenticatable
             return;
         }
 
-        $this->notify(new VerifyEmail());
+        $this->notify(new VerifyEmail);
     }
 
     public function sendPasswordResetNotification($token): void
@@ -156,5 +165,4 @@ class User extends Authenticatable
     {
         return $this->hasMany(Event::class, 'created_by_user_id');
     }
-
 }

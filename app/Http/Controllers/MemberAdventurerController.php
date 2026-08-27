@@ -2,39 +2,41 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MemberAdventurer;
-use App\Models\MasterGuideMemberFormSchema;
-use App\Models\MemberMasterGuide;
-use App\Models\MemberPathfinder;
-use App\Models\MemberPathfinderInsuranceCard;
-use App\Models\Club;
 use App\Models\Account;
-use App\Models\Payment;
-use App\Models\PaymentConcept;
-use App\Models\User;
-use Illuminate\Http\Request;
-use PhpOffice\PhpWord\TemplateProcessor;
-use Illuminate\Support\Str;
-use App\Models\StaffAdventurer;
-use App\Services\DocumentExportService;
-use App\Services\ClubLogoService;
-use App\Models\Member;
+use App\Models\ClassMemberPathfinder;
+use App\Models\Club;
 use App\Models\ClubCarpetaClassActivation;
 use App\Models\ClubClass;
-use App\Models\Staff;
+use App\Models\MasterGuideMemberFormSchema;
+use App\Models\Member;
+use App\Models\MemberAdventurer;
+use App\Models\MemberMasterGuide;
 use App\Models\MemberPastoralCare;
-use App\Support\ClubHelper;
-use App\Models\ClassMemberPathfinder;
+use App\Models\MemberPathfinder;
+use App\Models\MemberPathfinderInsuranceCard;
+use App\Models\Payment;
+use App\Models\PaymentConcept;
+use App\Models\Staff;
+use App\Models\User;
+use App\Services\ClubLogoService;
+use App\Services\DocumentExportService;
+use App\Services\ParentChildLinkService;
 use App\Services\PaymentReceiptService;
-use Carbon\Carbon;
-use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
-
-use DB;
+use App\Support\ClubHelper;
 use Auth;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
+use DB;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use PhpOffice\PhpWord\TemplateProcessor;
+
 class MemberAdventurerController extends Controller
 {
+    public function __construct(private readonly ParentChildLinkService $parentChildLinkService) {}
+
     /**
      * Finance summary used by the member list's Charges modal.  Keeping this
      * server-side is important: a concept may apply through an individual,
@@ -75,7 +77,7 @@ class MemberAdventurerController extends Controller
     public function updateCharge(Request $request, Member $member, PaymentConcept $paymentConcept)
     {
         $this->authorizeMemberFinance($request, $member);
-        abort_unless((int) $paymentConcept->club_id === (int) $member->club_id && !$paymentConcept->event_id, 422, 'Event charges must be edited in Event Planner.');
+        abort_unless((int) $paymentConcept->club_id === (int) $member->club_id && ! $paymentConcept->event_id, 422, 'Event charges must be edited in Event Planner.');
 
         $payload = $request->validate([
             'concept' => ['required', 'string', 'max:255'],
@@ -91,7 +93,7 @@ class MemberAdventurerController extends Controller
     public function destroyCharge(Request $request, Member $member, PaymentConcept $paymentConcept)
     {
         $this->authorizeMemberFinance($request, $member);
-        abort_unless((int) $paymentConcept->club_id === (int) $member->club_id && !$paymentConcept->event_id, 422, 'Event charges must be managed in Event Planner.');
+        abort_unless((int) $paymentConcept->club_id === (int) $member->club_id && ! $paymentConcept->event_id, 422, 'Event charges must be managed in Event Planner.');
 
         DB::transaction(function () use ($paymentConcept, $member) {
             // Preserve the shared concept and exclude only this unified member.
@@ -117,11 +119,11 @@ class MemberAdventurerController extends Controller
 
     protected function resolveClubDirectorName(Club $club): ?string
     {
-        if (!empty($club->director_name)) {
+        if (! empty($club->director_name)) {
             return $club->director_name;
         }
 
-        if (!empty($club->user_id)) {
+        if (! empty($club->user_id)) {
             return User::query()->where('id', $club->user_id)->value('name');
         }
 
@@ -151,7 +153,7 @@ class MemberAdventurerController extends Controller
             ? auth()->user()->secureEnrollmentLink
             : null;
         $unifiedMember = null;
-        if (!$parentId && $clubType !== 'master_guide' && $request->filled('parent_id')) {
+        if (! $parentId && $clubType !== 'master_guide' && $request->filled('parent_id')) {
             abort_unless(
                 in_array(auth()->user()?->profile_type, ['club_director', 'superadmin'], true)
                     && ClubHelper::clubIdsForUser(auth()->user())->contains((int) $club->id),
@@ -277,11 +279,6 @@ class MemberAdventurerController extends Controller
                 }
             }
 
-            if (!$parentId) {
-                $parentId = $this->parentAccountIdForEmail($validated['father_guardian_email'] ?? null)
-                    ?: $this->parentAccountIdForEmail($validated['mother_guardian_email'] ?? null);
-            }
-
             $validated = $this->memberDetailPayload($validated);
 
             $validated['club_id'] = $club->id;
@@ -291,6 +288,13 @@ class MemberAdventurerController extends Controller
             $validated['status'] = 'active';
 
             $tempMember = MemberPathfinder::create($validated);
+
+            if (! $parentId) {
+                $parentId = $this->parentChildLinkService->parentIdForDirectorCreatedMember(
+                    auth()->user(),
+                    $tempMember,
+                );
+            }
 
             $member = Member::create([
                 'type' => 'pathfinders',
@@ -357,10 +361,6 @@ class MemberAdventurerController extends Controller
             }
             $validated['signed_at'] = now()->toDateString();
 
-            if (!$parentId) {
-                $parentId = $this->parentAccountIdForEmail($validated['email_address'] ?? null);
-            }
-
             $validated = $this->memberDetailPayload($validated);
 
             $validated['status'] = 'active';
@@ -370,6 +370,13 @@ class MemberAdventurerController extends Controller
             $validated['church_name'] = $club->church_name;
 
             $member = MemberAdventurer::create($validated);
+
+            if (! $parentId) {
+                $parentId = $this->parentChildLinkService->parentIdForDirectorCreatedMember(
+                    auth()->user(),
+                    $member,
+                );
+            }
 
             $memberRecord = Member::firstOrCreate(
                 [
@@ -413,26 +420,6 @@ class MemberAdventurerController extends Controller
         return redirect()->back()->with('success', 'Member registered successfully.');
     }
 
-    private function parentAccountIdForEmail(?string $email): ?int
-    {
-        if (!in_array(auth()->user()?->profile_type, ['club_director', 'superadmin'], true)) {
-            return null;
-        }
-
-        $normalizedEmail = strtolower(trim((string) $email));
-        if ($normalizedEmail === '') {
-            return null;
-        }
-
-        $parentId = User::query()
-            ->where('profile_type', 'parent')
-            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
-            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'deleted'))
-            ->value('id');
-
-        return $parentId ? (int) $parentId : null;
-    }
-
     protected function handleInsurancePayment(Club $club, $memberDetail, Member $memberRecord): void
     {
         if (($club->evaluation_system ?? 'honors') !== 'carpetas') {
@@ -443,7 +430,7 @@ class MemberAdventurerController extends Controller
         $association = $club->district?->association;
         $insuranceAmount = $association?->insurance_payment_amount;
 
-        if (!$insuranceAmount || (float) $insuranceAmount <= 0) {
+        if (! $insuranceAmount || (float) $insuranceAmount <= 0) {
             return;
         }
 
@@ -473,17 +460,17 @@ class MemberAdventurerController extends Controller
         $account->increment('balance', (float) $insuranceAmount);
 
         $payment = Payment::create([
-            'club_id'             => $club->id,
-            'payment_concept_id'  => $concept->id,
-            'concept_text'        => 'Seguro de membresía — ' . ($memberDetail->applicant_name ?? ''),
-            'pay_to'              => 'church_budget',
-            'account_id'          => $account->id,
-            'member_id'           => $memberRecord->id,
-            'amount_paid'         => (float) $insuranceAmount,
-            'expected_amount'     => (float) $insuranceAmount,
-            'payment_date'        => now()->toDateString(),
-            'payment_type'        => 'insurance',
-            'balance_due_after'   => 0,
+            'club_id' => $club->id,
+            'payment_concept_id' => $concept->id,
+            'concept_text' => 'Seguro de membresía — '.($memberDetail->applicant_name ?? ''),
+            'pay_to' => 'church_budget',
+            'account_id' => $account->id,
+            'member_id' => $memberRecord->id,
+            'amount_paid' => (float) $insuranceAmount,
+            'expected_amount' => (float) $insuranceAmount,
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'insurance',
+            'balance_due_after' => 0,
             'received_by_user_id' => auth()->id(),
         ]);
 
@@ -535,7 +522,7 @@ class MemberAdventurerController extends Controller
         $payment = Payment::create([
             'club_id' => $club->id,
             'payment_concept_id' => $concept->id,
-            'concept_text' => 'Cuota de inscripción — ' . ($memberDetail->applicant_name ?? ''),
+            'concept_text' => 'Cuota de inscripción — '.($memberDetail->applicant_name ?? ''),
             'pay_to' => 'club_budget',
             'account_id' => $account->id,
             'member_id' => $memberRecord->id,
@@ -558,7 +545,7 @@ class MemberAdventurerController extends Controller
             'member_record_id' => ['nullable', 'integer', 'exists:members,id'],
         ]);
 
-        $memberRecord = !empty($validated['member_record_id'])
+        $memberRecord = ! empty($validated['member_record_id'])
             ? Member::find($validated['member_record_id'])
             : null;
         $memberType = $validated['member_type'] ?? $memberRecord?->type ?? 'adventurers';
@@ -566,7 +553,7 @@ class MemberAdventurerController extends Controller
         if (in_array($memberType, ['pathfinders', 'temp_pathfinder'], true)) {
             $pathfinder = MemberPathfinder::findOrFail($memberRecord?->id_data ?? $id);
             $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
-            if (!in_array((int) $pathfinder->club_id, $allowedClubIds, true)) {
+            if (! in_array((int) $pathfinder->club_id, $allowedClubIds, true)) {
                 abort(403, 'Unauthorized');
             }
 
@@ -578,7 +565,7 @@ class MemberAdventurerController extends Controller
         if ($memberType === 'master_guide') {
             $masterGuide = MemberMasterGuide::findOrFail($memberRecord?->id_data ?? $id);
             $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
-            if (!in_array((int) $masterGuide->club_id, $allowedClubIds, true)) {
+            if (! in_array((int) $masterGuide->club_id, $allowedClubIds, true)) {
                 abort(403, 'Unauthorized');
             }
 
@@ -589,7 +576,7 @@ class MemberAdventurerController extends Controller
 
         $member = MemberAdventurer::findOrFail($memberRecord?->id_data ?? $id);
         $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
-        if (!in_array((int) $member->club_id, $allowedClubIds, true)) {
+        if (! in_array((int) $member->club_id, $allowedClubIds, true)) {
             abort(403, 'Unauthorized');
         }
 
@@ -630,7 +617,7 @@ class MemberAdventurerController extends Controller
 
         $club = Club::findOrFail($validatedClub['club_id']);
         $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
-        if (!in_array((int) $club->id, $allowedClubIds, true)) {
+        if (! in_array((int) $club->id, $allowedClubIds, true)) {
             abort(403, 'Unauthorized');
         }
 
@@ -677,11 +664,11 @@ class MemberAdventurerController extends Controller
                 $memberRecord->update($this->spiritualProfilePayload($request));
                 $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
 
-                if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
+                if ($request->boolean('mark_insurance_paid') && ! $wasInsurancePaid) {
                     $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
                 }
 
-                if ($request->boolean('mark_enrollment_paid') && !$wasEnrollmentPaid) {
+                if ($request->boolean('mark_enrollment_paid') && ! $wasEnrollmentPaid) {
                     $this->handleEnrollmentPayment($club, $member->fresh(), $memberRecord);
                 }
             }
@@ -753,11 +740,11 @@ class MemberAdventurerController extends Controller
                 $memberRecord->update($this->spiritualProfilePayload($request));
                 $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
 
-                if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
+                if ($request->boolean('mark_insurance_paid') && ! $wasInsurancePaid) {
                     $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
                 }
 
-                if ($request->boolean('mark_enrollment_paid') && !$wasEnrollmentPaid) {
+                if ($request->boolean('mark_enrollment_paid') && ! $wasEnrollmentPaid) {
                     $this->handleEnrollmentPayment($club, $member->fresh(), $memberRecord);
                 }
             }
@@ -812,11 +799,11 @@ class MemberAdventurerController extends Controller
             $memberRecord->update($this->spiritualProfilePayload($request));
             $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
 
-            if ($request->boolean('mark_insurance_paid') && !$wasInsurancePaid) {
+            if ($request->boolean('mark_insurance_paid') && ! $wasInsurancePaid) {
                 $this->handleInsurancePayment($club, $member->fresh(), $memberRecord);
             }
 
-            if ($request->boolean('mark_enrollment_paid') && !$wasEnrollmentPaid) {
+            if ($request->boolean('mark_enrollment_paid') && ! $wasEnrollmentPaid) {
                 $this->handleEnrollmentPayment($club, $member->fresh(), $memberRecord);
             }
         }
@@ -838,7 +825,7 @@ class MemberAdventurerController extends Controller
             ->all();
 
         $payload['program_year'] = (int) ($payload['program_year'] ?? 1);
-        if (!in_array($payload['program_year'], [1, 2], true)) {
+        if (! in_array($payload['program_year'], [1, 2], true)) {
             $payload['program_year'] = 1;
         }
 
@@ -855,7 +842,7 @@ class MemberAdventurerController extends Controller
 
     protected function masterGuideSchemaFieldsForClubId(?int $clubId): array
     {
-        if (!$clubId) {
+        if (! $clubId) {
             return [];
         }
 
@@ -879,7 +866,7 @@ class MemberAdventurerController extends Controller
         $clean = [];
         foreach ($schemaFields as $field) {
             $key = $field['key'] ?? null;
-            if (!$key) {
+            if (! $key) {
                 continue;
             }
 
@@ -897,7 +884,7 @@ class MemberAdventurerController extends Controller
         return collect($schemaFields)
             ->map(function ($field) use ($clean) {
                 $key = $field['key'] ?? null;
-                if (!$key || !array_key_exists($key, $clean)) {
+                if (! $key || ! array_key_exists($key, $clean)) {
                     return null;
                 }
 
@@ -967,7 +954,7 @@ class MemberAdventurerController extends Controller
         $member = MemberMasterGuide::query()->findOrFail($id);
         $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($clubId) => (int) $clubId)->all();
 
-        if (!in_array((int) $member->club_id, $allowedClubIds, true)) {
+        if (! in_array((int) $member->club_id, $allowedClubIds, true)) {
             abort(403, 'Unauthorized');
         }
 
@@ -976,7 +963,7 @@ class MemberAdventurerController extends Controller
 
         return response()->json([
             'program_year' => $programYear,
-            'program_year_label' => 'Year ' . $programYear,
+            'program_year_label' => 'Year '.$programYear,
         ]);
     }
 
@@ -988,7 +975,7 @@ class MemberAdventurerController extends Controller
         $seenKeys = [];
 
         foreach ($fields as $field) {
-            if (!is_array($field)) {
+            if (! is_array($field)) {
                 continue;
             }
 
@@ -1048,13 +1035,13 @@ class MemberAdventurerController extends Controller
     protected function syncPastoralCareForMember(Member $member, Club $club): void
     {
         $districtId = $club->district_id;
-        if (!$districtId && $club->church_id) {
+        if (! $districtId && $club->church_id) {
             $districtId = \App\Models\Church::query()
                 ->whereKey($club->church_id)
                 ->value('district_id');
         }
 
-        if (!$member->is_sda) {
+        if (! $member->is_sda) {
             MemberPastoralCare::query()->updateOrCreate(
                 ['member_id' => $member->id],
                 [
@@ -1116,7 +1103,6 @@ class MemberAdventurerController extends Controller
         return redirect()->back()->with('success', 'Child updated.');
     }
 
-
     public function byClub($id, Request $request)
     {
         $user = Auth::user();
@@ -1158,7 +1144,8 @@ class MemberAdventurerController extends Controller
                         return $currentClassId === (int) $class->id;
                     }
                     $assignments = collect($member['class_assignments'] ?? []);
-                    return $assignments->contains(fn ($a) => !empty($a['active']) && (int) ($a['club_class_id'] ?? 0) === (int) $class->id);
+
+                    return $assignments->contains(fn ($a) => ! empty($a['active']) && (int) ($a['club_class_id'] ?? 0) === (int) $class->id);
                 })
                 ->sortBy(fn ($member) => mb_strtolower((string) ($member['applicant_name'] ?? '')))
                 ->values();
@@ -1180,16 +1167,17 @@ class MemberAdventurerController extends Controller
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
         ]);
 
-        $filename = 'class-members-summary-' . $club->id . '-' . now()->format('Ymd-His') . '.pdf';
+        $filename = 'class-members-summary-'.$club->id.'-'.now()->format('Ymd-His').'.pdf';
 
         return $pdf->download($filename);
     }
+
     public function exportWord($id, DocumentExportService $exportService)
     {
         $member = MemberAdventurer::findOrFail($id);
         $outputDir = storage_path('app/temp');
 
-        if (!file_exists($outputDir)) {
+        if (! file_exists($outputDir)) {
             mkdir($outputDir, 0775, true);
         }
 
@@ -1210,7 +1198,7 @@ class MemberAdventurerController extends Controller
             'clubLogoDataUri' => $clubLogoService->dataUri($club),
         ])->setPaper('letter', 'portrait');
 
-        $filename = 'pathfinder-application-' . Str::slug($member->applicant_name ?: 'member') . '.pdf';
+        $filename = 'pathfinder-application-'.Str::slug($member->applicant_name ?: 'member').'.pdf';
 
         return $pdf->download($filename);
     }
@@ -1221,7 +1209,7 @@ class MemberAdventurerController extends Controller
         $clubId = $member->club_id ?: $member->member?->club_id;
         $allowedClubIds = ClubHelper::clubIdsForUser(Auth::user())->map(fn ($value) => (int) $value)->all();
 
-        if ($clubId && !in_array((int) $clubId, $allowedClubIds, true)) {
+        if ($clubId && ! in_array((int) $clubId, $allowedClubIds, true)) {
             abort(403, 'Unauthorized');
         }
 
@@ -1267,14 +1255,14 @@ class MemberAdventurerController extends Controller
         ]);
 
         $member = null;
-        if (!empty($data['member_id'])) {
+        if (! empty($data['member_id'])) {
             $member = Member::find($data['member_id']);
-        } elseif (!empty($data['members_adventurer_id'])) {
+        } elseif (! empty($data['members_adventurer_id'])) {
             $member = Member::where('type', 'adventurers')->where('id_data', $data['members_adventurer_id'])->first()
                 ?? Member::where('type', 'temp_pathfinder')->where('id_data', $data['members_adventurer_id'])->first();
         }
 
-        if (!$member) {
+        if (! $member) {
             return response()->json(['message' => 'Member not found'], 404);
         }
 
@@ -1284,7 +1272,7 @@ class MemberAdventurerController extends Controller
             ->where('club_id', $member->club_id)
             ->first();
 
-        if (!$clubClass) {
+        if (! $clubClass) {
             $activation = ClubCarpetaClassActivation::query()
                 ->with('unionClassCatalog')
                 ->where('id', $requestedClassId)
@@ -1307,12 +1295,12 @@ class MemberAdventurerController extends Controller
             }
         }
 
-        if (!$clubClass) {
+        if (! $clubClass) {
             return response()->json(['message' => 'Selected class does not belong to the member club.'], 422);
         }
 
         $newStaffId = $clubClass->staff()->pluck('staff.id')->first();
-        if (!$newStaffId && $clubClass->union_class_catalog_id) {
+        if (! $newStaffId && $clubClass->union_class_catalog_id) {
             $newStaffId = ClubCarpetaClassActivation::query()
                 ->where('club_id', $member->club_id)
                 ->where('union_class_catalog_id', $clubClass->union_class_catalog_id)
@@ -1324,7 +1312,7 @@ class MemberAdventurerController extends Controller
 
         if ($member->type === 'adventurers') {
             $adventurerId = $member->id_data;
-            if (!$adventurerId) {
+            if (! $adventurerId) {
                 return response()->json(['message' => 'Adventurer detail missing (id_data)'], 422);
             }
 
@@ -1389,20 +1377,20 @@ class MemberAdventurerController extends Controller
         ]);
 
         $member = null;
-        if (!empty($data['member_id'])) {
+        if (! empty($data['member_id'])) {
             $member = Member::find($data['member_id']);
-        } elseif (!empty($data['members_adventurer_id'])) {
+        } elseif (! empty($data['members_adventurer_id'])) {
             $member = Member::where('type', 'adventurers')->where('id_data', $data['members_adventurer_id'])->first()
                 ?? Member::where('type', 'temp_pathfinder')->where('id_data', $data['members_adventurer_id'])->first();
         }
 
-        if (!$member) {
+        if (! $member) {
             return response()->json(['message' => 'Member not found'], 404);
         }
 
         if ($member->type === 'adventurers') {
             $adventurerId = $member->id_data;
-            if (!$adventurerId) {
+            if (! $adventurerId) {
                 return response()->json(['message' => 'Adventurer detail missing (id_data)'], 422);
             }
 
@@ -1412,7 +1400,7 @@ class MemberAdventurerController extends Controller
                 ->orderByDesc('created_at')
                 ->first();
 
-            if (!$lastAssignment) {
+            if (! $lastAssignment) {
                 return response()->json(['message' => 'No assignment found to undo'], 404);
             }
 
@@ -1448,6 +1436,7 @@ class MemberAdventurerController extends Controller
             }
 
             $member->save();
+
             return response()->json(['message' => 'Undo successful']);
         }
 
@@ -1457,7 +1446,7 @@ class MemberAdventurerController extends Controller
                 ->orderByDesc('created_at')
                 ->first();
 
-            if (!$lastAssignment) {
+            if (! $lastAssignment) {
                 return response()->json(['message' => 'No assignment found to undo'], 404);
             }
 
@@ -1486,6 +1475,7 @@ class MemberAdventurerController extends Controller
             }
 
             $member->save();
+
             return response()->json(['message' => 'Undo successful']);
         }
 
@@ -1507,11 +1497,11 @@ class MemberAdventurerController extends Controller
         $parentPortalProfiles = ['superadmin'];
         $canOpenParentPortal = in_array(Auth::user()?->profile_type, $parentPortalProfiles, true);
         $parentPortalUrlFor = function ($memberRow, ?string $parentName = null) use ($canOpenParentPortal, $parentUsers) {
-            if (!$canOpenParentPortal || !$memberRow || blank($parentName)) {
+            if (! $canOpenParentPortal || ! $memberRow || blank($parentName)) {
                 return null;
             }
 
-            if (!empty($memberRow->parent_id) && $parentUsers->has($memberRow->parent_id)) {
+            if (! empty($memberRow->parent_id) && $parentUsers->has($memberRow->parent_id)) {
                 return route('superadmin.parents.portal', ['parent' => $memberRow->parent_id]);
             }
 
@@ -1548,6 +1538,7 @@ class MemberAdventurerController extends Controller
                 $m->parent_user_name = $parentUser?->name;
                 $m->parent_user_email = $parentUser?->email;
                 $m->father_portal_url = $parentPortalUrlFor($memberRow, $m->father_name);
+
                 return $m;
             });
 
@@ -1660,7 +1651,7 @@ class MemberAdventurerController extends Controller
                 $memberRow = $memberRows->first(fn ($memberRow) => $memberRow->type === 'master_guide'
                     && (int) $memberRow->id_data === (int) $row->id);
                 $memberId = optional($memberRow)->id;
-                $yearLabel = 'Year ' . ((int) ($row->program_year ?: 1));
+                $yearLabel = 'Year '.((int) ($row->program_year ?: 1));
                 $customFields = $this->sanitizeMasterGuideCustomFieldValues(
                     $row->custom_fields_json ?: [],
                     $masterGuideSchemaFields
@@ -1732,13 +1723,13 @@ class MemberAdventurerController extends Controller
         $namesByClass = [];
         foreach ($staffRecords as $staff) {
             $name = $staff->user?->name ?? null;
-            if (!$name) {
+            if (! $name) {
                 $detail = ClubHelper::staffDetail($staff);
                 $name = $detail['name'] ?? null;
             }
             if ($name) {
                 $classId = (int) $staff->assigned_class;
-                if (!isset($namesByClass[$classId])) {
+                if (! isset($namesByClass[$classId])) {
                     $namesByClass[$classId] = [];
                 }
                 $namesByClass[$classId][] = $name;
@@ -1747,7 +1738,7 @@ class MemberAdventurerController extends Controller
 
         foreach ($classes as $class) {
             $names = $namesByClass[(int) $class->id] ?? [];
-            $class->assigned_staff_name = !empty($names)
+            $class->assigned_staff_name = ! empty($names)
                 ? implode(', ', collect($names)->unique()->values()->all())
                 : '—';
         }
@@ -1768,7 +1759,7 @@ class MemberAdventurerController extends Controller
             ]);
         }
 
-        $path = 'parent-enrollment-signatures/' . Str::uuid() . '.png';
+        $path = 'parent-enrollment-signatures/'.Str::uuid().'.png';
         Storage::disk('public')->put($path, $decoded);
 
         return $path;
@@ -1815,7 +1806,5 @@ class MemberAdventurerController extends Controller
         return $outputPath;
     }
  */
-
-
 
 }

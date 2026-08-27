@@ -6,6 +6,7 @@ use App\Models\Church;
 use App\Models\Club;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
+use App\Models\ParentPaymentSubmission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -43,10 +44,24 @@ class ParentProfileDataOwnershipTest extends TestCase
     public function test_family_data_and_then_parent_account_are_deleted_in_two_separate_stages(): void
     {
         Storage::fake('public');
+        Storage::fake('local');
         [$church, $club] = $this->churchAndClub('Ownership Church', 'Ownership Club');
         $parent = $this->parent($church, $club);
         $child = $this->child($club, $parent, 'Private Child', 'signatures/private-child.png');
         Storage::disk('public')->put('signatures/private-child.png', 'signature');
+        $proofPath = 'parent-payment-proofs/private-child.png';
+        Storage::disk('local')->put($proofPath, 'payment-proof');
+        ParentPaymentSubmission::query()->create([
+            'club_id' => $club->id,
+            'member_id' => $child->id,
+            'parent_user_id' => $parent->id,
+            'amount' => 25,
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'transfer',
+            'receipt_image_path' => $proofPath,
+            'receipt_image_disk' => 'local',
+            'status' => 'pending',
+        ]);
 
         $this->actingAs($parent)
             ->deleteJson(route('parent.profile.family-data.destroy'), [
@@ -65,6 +80,7 @@ class ParentProfileDataOwnershipTest extends TestCase
         $this->assertDatabaseMissing('members', ['id' => $child->id]);
         $this->assertDatabaseMissing('members_adventurers', ['id' => $child->id_data]);
         Storage::disk('public')->assertMissing('signatures/private-child.png');
+        Storage::disk('local')->assertMissing($proofPath);
         $this->assertNotNull($parent->fresh());
         $this->assertAuthenticatedAs($parent);
 

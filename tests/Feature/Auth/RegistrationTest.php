@@ -169,4 +169,95 @@ class RegistrationTest extends TestCase
             'status' => 'pending',
         ]);
     }
+
+    public function test_parent_registration_consumes_a_limited_invite_atomically(): void
+    {
+        [$church, $club] = $this->parentRegistrationContext('Limited');
+        $invite = ChurchInviteCode::create([
+            'church_id' => $church->id,
+            'code' => 'LIMITED001',
+            'uses_left' => 1,
+            'status' => 'active',
+        ]);
+
+        $this->post('/register-parent', $this->parentRegistrationPayload($church, $club, $invite, [
+            'email' => '  FIRST.PARENT@EXAMPLE.TEST  ',
+        ]))->assertRedirect('/login');
+
+        $this->assertSame(0, $invite->fresh()->uses_left);
+        $this->assertDatabaseHas('users', ['email' => 'first.parent@example.test']);
+
+        $this->post('/register-parent', $this->parentRegistrationPayload($church, $club, $invite, [
+            'name' => 'Second Parent',
+            'email' => 'second.parent@example.test',
+        ]))->assertSessionHasErrors('invite_code');
+
+        $this->assertSame(0, $invite->fresh()->uses_left);
+        $this->assertDatabaseMissing('users', ['email' => 'second.parent@example.test']);
+    }
+
+    public function test_failed_parent_registration_does_not_consume_the_invite_or_create_partial_records(): void
+    {
+        [$church, $club] = $this->parentRegistrationContext('Rollback');
+        $invite = ChurchInviteCode::create([
+            'church_id' => $church->id,
+            'code' => 'ROLLBACK01',
+            'uses_left' => 1,
+            'status' => 'active',
+        ]);
+
+        $payload = $this->parentRegistrationPayload($church, $club, $invite, [
+            'email' => 'rollback.parent@example.test',
+            'church_name' => 'Wrong Church',
+        ]);
+
+        $this->post('/register-parent', $payload)->assertSessionHasErrors('church_name');
+
+        $this->assertSame(1, $invite->fresh()->uses_left);
+        $this->assertDatabaseMissing('users', ['email' => 'rollback.parent@example.test']);
+        $this->assertDatabaseCount('club_user', 0);
+    }
+
+    private function parentRegistrationContext(string $prefix): array
+    {
+        $church = Church::create([
+            'church_name' => "$prefix Registration Church",
+            'email' => strtolower($prefix).'@example.test',
+        ]);
+        $director = User::factory()->create([
+            'profile_type' => 'club_director',
+            'church_id' => $church->id,
+            'status' => 'active',
+        ]);
+        $club = Club::create([
+            'user_id' => $director->id,
+            'club_name' => "$prefix Registration Club",
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'director_name' => $director->name,
+            'creation_date' => now()->toDateString(),
+            'club_type' => 'adventurers',
+            'status' => 'active',
+        ]);
+
+        return [$church, $club];
+    }
+
+    private function parentRegistrationPayload(
+        Church $church,
+        Club $club,
+        ChurchInviteCode $invite,
+        array $overrides = [],
+    ): array {
+        return array_merge([
+            'name' => 'First Parent',
+            'email' => 'first.parent@example.test',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'church_id' => $church->id,
+            'church_name' => $church->church_name,
+            'club_id' => $club->id,
+            'invite_code' => strtolower($invite->code),
+        ], $overrides);
+    }
 }

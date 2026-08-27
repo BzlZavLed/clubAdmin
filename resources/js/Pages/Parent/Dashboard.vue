@@ -31,6 +31,7 @@ const workplanChildren = ref([])
 const selectedMemberId = ref(null)
 const selectedClubId = ref(null)
 const workplan = ref(null)
+const workplanLoading = ref(true)
 const events = ref([])
 const selectedEvent = ref(null)
 const eventModalOpen = ref(false)
@@ -62,6 +63,7 @@ const selectedWorkplanChild = computed(() => workplanChildren.value.find(child =
 const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value, member_id: selectedMemberId.value }) : '#')
 const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value, member_id: selectedMemberId.value }) : '#')
 const receipts = ref([])
+const receiptsLoading = ref(true)
 
 const cleanDate = (val) => {
     if (!val) return '—'
@@ -79,6 +81,7 @@ const cleanTime = (val) => {
 }
 
 const load = async (memberId = null) => {
+    workplanLoading.value = true
     try {
         const { children, selected_member_id, selected_club_id, workplan: wp } = await fetchParentWorkplan(memberId)
         workplanChildren.value = children || []
@@ -98,16 +101,21 @@ const load = async (memberId = null) => {
     } catch (e) {
         console.error(e)
         showToast(tr('No se pudo cargar el plan de trabajo', 'Could not load the workplan'), 'error')
+    } finally {
+        workplanLoading.value = false
     }
 }
 
 const loadReceipts = async () => {
+    receiptsLoading.value = true
     try {
         const payload = await fetchParentReceipts()
         receipts.value = payload.data || []
     } catch (e) {
         console.error(e)
         showToast(tr('No se pudieron cargar los recibos', 'Could not load receipts'), 'error')
+    } finally {
+        receiptsLoading.value = false
     }
 }
 
@@ -356,7 +364,8 @@ onMounted(() => {
                     {{ tr('Iglesia', 'Church') }}: {{ selectedWorkplanChild.church_name || '—' }} · {{ tr('Club', 'Club') }}: {{ selectedWorkplanChild.club_name || '—' }}
                 </p>
 
-                <div v-if="workplan">
+                <div v-if="workplanLoading" class="text-sm text-gray-600">{{ tr('Cargando plan de trabajo...', 'Loading workplan...') }}</div>
+                <div v-else-if="workplan">
                     <WorkplanCalendar
                         :events="events"
                         :is-read-only="true"
@@ -375,7 +384,8 @@ onMounted(() => {
                     <h3 class="text-lg font-semibold text-gray-800">{{ tr('Mis recibos', 'My receipts') }}</h3>
                     <p class="text-sm text-gray-600">{{ tr('Recibos emitidos por pagos de tus hijos.', 'Receipts issued for your children’s payments.') }}</p>
                 </div>
-                <div v-if="!receipts.length" class="text-sm text-gray-600">{{ tr('Aun no hay recibos disponibles.', 'There are no receipts available yet.') }}</div>
+                <div v-if="receiptsLoading" class="text-sm text-gray-600">{{ tr('Cargando recibos...', 'Loading receipts...') }}</div>
+                <div v-else-if="!receipts.length" class="text-sm text-gray-600">{{ tr('Aun no hay recibos disponibles.', 'There are no receipts available yet.') }}</div>
                 <div v-else class="space-y-2">
                     <div v-for="receipt in receipts" :key="receipt.id" class="flex flex-col gap-2 rounded border border-gray-200 p-3 md:flex-row md:items-center md:justify-between">
                         <div class="text-sm">

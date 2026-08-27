@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SendParentPaymentSubmissionEmail;
-use App\Models\Event;
 use App\Models\Account;
 use App\Models\BankInfo;
 use App\Models\Club;
+use App\Models\Event;
 use App\Models\Member;
 use App\Models\ParentPaymentSubmission;
 use App\Models\Payment;
@@ -14,12 +14,14 @@ use App\Models\PaymentAllocation;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
 use App\Models\Workplan;
+use App\Services\ParentPaymentProofService;
 use App\Support\BankInfoFormatter;
 use App\Support\ClubHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Inertia\Inertia;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
 
 class ParentPaymentController extends Controller
 {
@@ -54,9 +56,9 @@ class ParentPaymentController extends Controller
         $charge = $this->expectedPaymentsForParent($user)
             ->first(fn (array $row) => (int) $row['concept_id'] === (int) $validated['payment_concept_id'] && (int) $row['member_id'] === (int) $validated['member_id']);
 
-        abort_if(!$charge, 403, 'Ese concepto no aplica al menor seleccionado.');
+        abort_if(! $charge, 403, 'Ese concepto no aplica al menor seleccionado.');
 
-        if (!$charge['can_submit_transfer']) {
+        if (! $charge['can_submit_transfer']) {
             return back()->withErrors([
                 'amount' => $charge['transfer_blocked_reason'] ?? 'Ese cargo ya no admite nuevos comprobantes.',
             ]);
@@ -66,42 +68,49 @@ class ParentPaymentController extends Controller
         $availableAmount = (float) ($charge['available_amount'] ?? $remainingAmount);
         $amount = (float) $validated['amount'];
 
-        if (!$charge['reusable'] && $availableAmount <= 0.0001) {
+        if (! $charge['reusable'] && $availableAmount <= 0.0001) {
             return back()->withErrors([
                 'amount' => 'Ya hay comprobantes en revision que cubren el saldo pendiente de este cargo.',
             ]);
         }
 
-        if (!$charge['reusable'] && $availableAmount > 0 && $amount > $availableAmount) {
+        if (! $charge['reusable'] && $availableAmount > 0 && $amount > $availableAmount) {
             return back()->withErrors([
                 'amount' => 'El comprobante excede el saldo disponible considerando comprobantes en revision.',
             ]);
         }
 
-        $receiptImagePath = $request->file('receipt_image')->store('payments/transfers', 'public');
+        $receiptImagePath = $request->file('receipt_image')->store('parent-payment-proofs', 'local');
 
         $club = Club::withoutGlobalScopes()->find($charge['club_id']);
         $clubReceiptEmail = $club?->club_email;
 
-        $submission = ParentPaymentSubmission::query()->create([
-            'club_id' => $charge['club_id'],
-            'payment_concept_id' => $charge['concept_id'],
-            'member_id' => $charge['member_id'],
-            'parent_user_id' => $user->id,
-            'event_id' => $charge['event_id'],
-            'concept_text' => $charge['concept_name'],
-            'pay_to' => $charge['pay_to'],
-            'expected_amount' => $charge['expected_amount'],
-            'amount' => $amount,
-            'payment_date' => $validated['payment_date'],
-            'payment_type' => 'transfer',
-            'reference' => $validated['reference'] ?? null,
-            'receipt_image_path' => $receiptImagePath,
-            'club_receipt_email' => $clubReceiptEmail,
-            'club_receipt_email_status' => $clubReceiptEmail ? 'queued' : 'manual_required',
-            'notes' => $validated['notes'] ?? null,
-            'status' => 'pending',
-        ]);
+        try {
+            $submission = ParentPaymentSubmission::query()->create([
+                'club_id' => $charge['club_id'],
+                'payment_concept_id' => $charge['concept_id'],
+                'member_id' => $charge['member_id'],
+                'parent_user_id' => $user->id,
+                'event_id' => $charge['event_id'],
+                'concept_text' => $charge['concept_name'],
+                'pay_to' => $charge['pay_to'],
+                'expected_amount' => $charge['expected_amount'],
+                'amount' => $amount,
+                'payment_date' => $validated['payment_date'],
+                'payment_type' => 'transfer',
+                'reference' => $validated['reference'] ?? null,
+                'receipt_image_path' => $receiptImagePath,
+                'receipt_image_disk' => 'local',
+                'club_receipt_email' => $clubReceiptEmail,
+                'club_receipt_email_status' => $clubReceiptEmail ? 'queued' : 'manual_required',
+                'notes' => $validated['notes'] ?? null,
+                'status' => 'pending',
+            ]);
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($receiptImagePath);
+
+            throw $exception;
+        }
 
         if ($clubReceiptEmail) {
             SendParentPaymentSubmissionEmail::dispatch($submission->id)->afterCommit();
@@ -112,6 +121,16 @@ class ParentPaymentController extends Controller
             ->with('success', $clubReceiptEmail
                 ? 'Comprobante enviado para validación del club y remitido por correo.'
                 : 'Comprobante enviado para validación del club. El club no tiene correo configurado.');
+    }
+
+    public function proof(
+        Request $request,
+        ParentPaymentSubmission $submission,
+        ParentPaymentProofService $proofs,
+    ) {
+        $proofs->authorize($request->user(), $submission);
+
+        return $proofs->response($submission);
     }
 
     public function clubDepositAccountsForParent($user): Collection
@@ -312,13 +331,13 @@ class ParentPaymentController extends Controller
             $event = $concept->event_id ? $eventsById->get((int) $concept->event_id) : null;
             // Event deletion is soft, so an older active concept can outlive
             // its event. It must never become a normal club-wide charge.
-            if ($concept->event_id && !$event) {
+            if ($concept->event_id && ! $event) {
                 continue;
             }
             $isEnrollmentCharge = $this->isEnrollmentCharge($concept->concept);
-            $isRecurringMeetingCharge = (bool) $concept->reusable && !$event && !$isEnrollmentCharge;
-            $isEffectivelyReusable = (bool) $concept->reusable && !$isEnrollmentCharge;
-            $chargeIsReusable = !$isRecurringMeetingCharge && $isEffectivelyReusable;
+            $isRecurringMeetingCharge = (bool) $concept->reusable && ! $event && ! $isEnrollmentCharge;
+            $isEffectivelyReusable = (bool) $concept->reusable && ! $isEnrollmentCharge;
+            $chargeIsReusable = ! $isRecurringMeetingCharge && $isEffectivelyReusable;
             $plannedMeetingCount = $isRecurringMeetingCharge
                 ? (int) ($workplanMeetingCounts[(int) $concept->club_id] ?? 0)
                 : null;
@@ -359,7 +378,7 @@ class ParentPaymentController extends Controller
                         $matchedMembers->push($member);
                         $scopeLabels[$member->id] = match ($scope->scope_type) {
                             'club_wide' => 'Todo el club',
-                            'class' => 'Clase: ' . ($scope->class?->class_name ?: $member->class?->class_name ?: '—'),
+                            'class' => 'Clase: '.($scope->class?->class_name ?: $member->class?->class_name ?: '—'),
                             'member' => 'Cargo individual',
                             default => 'Alcance',
                         };
@@ -388,17 +407,17 @@ class ParentPaymentController extends Controller
                 $expectedAmount = $isRecurringMeetingCharge
                     ? round((float) ($concept->amount ?? 0.0) * $plannedMeetingCount, 2)
                     : (float) ($concept->amount ?? 0.0);
-                $remainingAmount = !$isRecurringMeetingCharge && $isEffectivelyReusable
+                $remainingAmount = ! $isRecurringMeetingCharge && $isEffectivelyReusable
                     ? 0.0
                     : max($expectedAmount - $paidAmount, 0.0);
-                $availableAmount = !$isRecurringMeetingCharge && $isEffectivelyReusable
+                $availableAmount = ! $isRecurringMeetingCharge && $isEffectivelyReusable
                     ? $expectedAmount
                     : max($remainingAmount - $pendingAmount, 0.0);
                 $receiptLinks = $receiptLinksByCharge->get($key, []);
 
                 $isRequired = (bool) ($concept->eventFeeComponent?->is_required ?? true);
                 $status = $isRequired ? 'due' : 'optional';
-                if (!$chargeIsReusable && $remainingAmount <= 0.0001) {
+                if (! $chargeIsReusable && $remainingAmount <= 0.0001) {
                     $status = 'paid';
                 } elseif ($pendingAmount > 0.0001) {
                     $status = 'pending_review';
@@ -448,11 +467,11 @@ class ParentPaymentController extends Controller
                     'event_component_label' => $concept->eventFeeComponent?->label,
                     'event_start_at' => $event?->start_at?->toDateTimeString(),
                     'can_submit_transfer' => (bool) $depositAccount && ($chargeIsReusable || $availableAmount > 0.0001),
-                    'transfer_blocked_reason' => !$depositAccount
+                    'transfer_blocked_reason' => ! $depositAccount
                         ? 'El club todavia no ha publicado datos bancarios para recibir transferencias.'
-                        : ((!$chargeIsReusable && $remainingAmount <= 0.0001)
+                        : ((! $chargeIsReusable && $remainingAmount <= 0.0001)
                             ? 'Este cargo ya esta cubierto.'
-                            : ((!$chargeIsReusable && $availableAmount <= 0.0001)
+                            : ((! $chargeIsReusable && $availableAmount <= 0.0001)
                                 ? 'Ya hay comprobantes en revision que cubren el saldo pendiente.'
                                 : null)),
                 ]);
@@ -468,7 +487,7 @@ class ParentPaymentController extends Controller
 
         return $rows
             ->map(function (array $row) use ($requiredStatusByEventMember) {
-                if ($row['event_id'] && !$row['is_required']) {
+                if ($row['event_id'] && ! $row['is_required']) {
                     $requiredKey = sprintf('%d|%d', $row['event_id'], $row['member_id']);
                     if ((bool) ($requiredStatusByEventMember[$requiredKey] ?? false)) {
                         $row['can_submit_transfer'] = false;
@@ -535,7 +554,7 @@ class ParentPaymentController extends Controller
             ->orderByDesc('id')
             ->get(['id', 'member_id', 'payment_concept_id', 'amount_paid', 'payment_date'])
             ->each(function (Payment $payment) use (&$linksByCharge, $conceptIdLookup) {
-                if (!$payment->receipt || !$payment->member_id) {
+                if (! $payment->receipt || ! $payment->member_id) {
                     return;
                 }
 
@@ -560,7 +579,7 @@ class ParentPaymentController extends Controller
                     return;
                 }
 
-                if (!isset($conceptIdLookup[(int) $payment->payment_concept_id])) {
+                if (! isset($conceptIdLookup[(int) $payment->payment_concept_id])) {
                     return;
                 }
 
@@ -575,7 +594,7 @@ class ParentPaymentController extends Controller
             ->map(fn (array $links) => collect($links)->unique('id')->values()->all());
     }
 
-    public function transferSubmissionsForParent($user): Collection
+    public function transferSubmissionsForParent($user, bool $mobile = false): Collection
     {
         return ParentPaymentSubmission::query()
             ->where('parent_user_id', $user->id)
@@ -588,7 +607,7 @@ class ParentPaymentController extends Controller
             ])
             ->latest()
             ->get()
-            ->map(function (ParentPaymentSubmission $submission) {
+            ->map(function (ParentPaymentSubmission $submission) use ($mobile) {
                 $memberDetail = ClubHelper::memberDetail($submission->member);
 
                 return [
@@ -610,7 +629,11 @@ class ParentPaymentController extends Controller
                     'review_notes' => $submission->review_notes,
                     'reviewed_at' => optional($submission->reviewed_at)->toDateTimeString(),
                     'reviewed_by' => $submission->reviewedBy?->name,
-                    'receipt_image_url' => $submission->receipt_image_path ? asset('storage/' . $submission->receipt_image_path) : null,
+                    'receipt_image_url' => $submission->receipt_image_path
+                        ? route($mobile
+                            ? 'api.mobile.parent.payment-proofs.show'
+                            : 'parent-payment-submissions.proof', $submission)
+                        : null,
                     'approved_receipt_number' => $submission->approvedPayment?->receipt?->receipt_number,
                     'approved_receipt_url' => $submission->approvedPayment?->receipt
                         ? route('payment-receipts.download', $submission->approvedPayment->receipt)

@@ -243,27 +243,40 @@ class PaymentReceiptController extends Controller
             abort(401);
         }
 
-        if ($user->profile_type === 'superadmin') {
-            return;
+        if ($user->status !== null && $user->status !== 'active') {
+            abort(403);
         }
 
-        if ($receipt->parent_user_id && (int) $receipt->parent_user_id === (int) $user->id) {
+        if ($user->profile_type === 'superadmin') {
             return;
         }
 
         if (
             $user->profile_type === 'parent'
-            && $receipt->payment?->member?->parent_id
-            && (int) $receipt->payment->member->parent_id === (int) $user->id
+            && $user->canAccessParentPortal()
+            && (
+                ($receipt->parent_user_id && (int) $receipt->parent_user_id === (int) $user->id)
+                || (
+                    $receipt->payment?->member?->parent_id
+                    && (int) $receipt->payment->member->parent_id === (int) $user->id
+                )
+            )
         ) {
             return;
         }
 
-        if ($receipt->staff_user_id && (int) $receipt->staff_user_id === (int) $user->id) {
+        if (
+            $receipt->staff_user_id
+            && (int) $receipt->staff_user_id === (int) $user->id
+            && $user->hasVerifiedEmail()
+        ) {
             return;
         }
 
-        if (in_array($user->profile_type, ['club_director', 'club_personal'], true)) {
+        if (
+            in_array($user->profile_type, ['club_director', 'club_personal', 'treasurer'], true)
+            && $user->hasVerifiedEmail()
+        ) {
             $clubIds = ClubHelper::clubIdsForUser($user);
             if ($clubIds->contains((int) $receipt->club_id)) {
                 return;

@@ -137,10 +137,13 @@
               <ion-label>
                 <h2>{{ candidate.name }}</h2>
                 <p>{{ candidate.member_type }} · {{ candidate.club_name || 'No club' }}</p>
+                <p v-if="candidate.requires_director_approval">Director approval required</p>
               </ion-label>
               <ion-button slot="end" size="small" :disabled="linking" @click="linkChild(candidate)">Link</ion-button>
             </ion-item>
           </ion-list>
+          <ion-note v-if="linkMessage" color="success">{{ linkMessage }}</ion-note>
+          <ion-note v-if="linkError" color="danger">{{ linkError }}</ion-note>
           <ion-note v-if="!linking && !linkable.length">No linkable children found for this parent church/account.</ion-note>
         </ion-content>
       </ion-modal>
@@ -189,6 +192,8 @@ const inviteError = ref('');
 const inviteMessage = ref('');
 const linkSearch = ref('');
 const linkable = ref<any[]>([]);
+const linkMessage = ref('');
+const linkError = ref('');
 
 const form = reactive({
   club_id: '',
@@ -329,6 +334,8 @@ async function saveChild() {
 async function openLink() {
   linkModalOpen.value = true;
   linkSearch.value = '';
+  linkMessage.value = '';
+  linkError.value = '';
   await loadLinkable();
 }
 
@@ -344,13 +351,24 @@ async function loadLinkable() {
 
 async function linkChild(candidate: any) {
   linking.value = true;
+  linkMessage.value = '';
+  linkError.value = '';
   try {
-    await mobileApi.parentLinkChild({
+    const payload = await mobileApi.parentLinkChild({
       member_type: candidate.member_type,
       id_data: candidate.id_data,
     });
-    linkModalOpen.value = false;
-    await load();
+    if (payload.status === 'pending') {
+      linkMessage.value = payload.message || 'A director confirmation request was created.';
+      linkable.value = linkable.value.filter((item) =>
+        item.member_type !== candidate.member_type || item.id_data !== candidate.id_data
+      );
+    } else {
+      linkModalOpen.value = false;
+      await load();
+    }
+  } catch (error: any) {
+    linkError.value = error?.response?.data?.message || 'Could not link this child.';
   } finally {
     linking.value = false;
   }

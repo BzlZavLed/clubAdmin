@@ -2,47 +2,45 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Club;
 use App\Models\Account;
+use App\Models\Club;
 use App\Models\ClubClass;
 use App\Models\Member;
+use App\Models\ParentPaymentSubmission;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
-use App\Models\ParentPaymentSubmission;
 use App\Models\Staff;
-use App\Support\ClubHelper;
 use App\Services\ClubTreasuryService;
 use App\Services\PaymentReceiptService;
+use App\Support\ClubHelper;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
-use Illuminate\Support\Str;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Collection;
 
 class ClubPaymentController extends Controller
 {
     public function __construct(
         protected PaymentReceiptService $paymentReceiptService,
         protected ClubTreasuryService $treasuryService,
-    )
-    {
-    }
+    ) {}
 
     // Utility: ensure user can access club
     protected function assertClubAccess(Club $club)
     {
         // Replace with your actual authorization logic
         // e.g., Gate::authorize('manage-club', $club);
-        if (!auth()->check())
+        if (! auth()->check()) {
             abort(403);
+        }
     }
 
     /**
@@ -63,11 +61,11 @@ class ClubPaymentController extends Controller
             ->with(['classes'])
             ->first();
 
-        $assignedClassId = $staff?->assigned_class ?: (int)optional($staff?->classes?->first())->id;
+        $assignedClassId = $staff?->assigned_class ?: (int) optional($staff?->classes?->first())->id;
         $assignedClass = $assignedClassId ? ClubClass::find($assignedClassId) : null;
 
         // Members dropdown source of truth: members table filtered by club+class
-        $assignedMembers = ClubHelper::getMembersByClassAndClub((int)$club->id, (int)$assignedClassId)
+        $assignedMembers = ClubHelper::getMembersByClassAndClub((int) $club->id, (int) $assignedClassId)
             ->map(function ($m) {
                 return [
                     // Use members.id as the value for payments
@@ -123,7 +121,7 @@ class ClubPaymentController extends Controller
             ->where('club_id', $club->id)
             ->whereNotNull('member_id')
             ->when(
-                !empty($assignedMemberIds),
+                ! empty($assignedMemberIds),
                 fn ($q) => $q->whereIn('member_id', $assignedMemberIds),
                 fn ($q) => $q->whereRaw('1 = 0')
             )
@@ -152,6 +150,7 @@ class ClubPaymentController extends Controller
             ->map(function ($p) {
                 $member = ClubHelper::memberDetail($p->member);
                 $staff = ClubHelper::staffDetail($p->staff);
+
                 return [
                     'id' => $p->id,
                     'club_id' => $p->club_id,
@@ -214,10 +213,9 @@ class ClubPaymentController extends Controller
                     'completed_payment_targets' => $completedPaymentTargets,
                     'payment_totals' => $paymentTotals,
                     'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
-                ]
+                ],
             ]);
         }
-
 
         // Inertia response (point to your page component)
         return Inertia::render('ClubPersonal/Payments', [
@@ -251,7 +249,7 @@ class ClubPaymentController extends Controller
 
         $clubsForUser = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
 
-        $members = ClubHelper::membersOfClub((int)$club->id)
+        $members = ClubHelper::membersOfClub((int) $club->id)
             ->map(function ($m) {
                 return [
                     'id' => $m['member_id'],
@@ -264,10 +262,11 @@ class ClubPaymentController extends Controller
             })
             ->values();
 
-        $staff = ClubHelper::staffOfClub((int)$club->id)
+        $staff = ClubHelper::staffOfClub((int) $club->id)
             ->loadMissing('user:id,name,email')
             ->map(function ($s) {
                 $detail = ClubHelper::staffDetail($s);
+
                 return [
                     'id' => $s->id,
                     'name' => $detail['name'] ?? $s->user?->name,
@@ -330,6 +329,7 @@ class ClubPaymentController extends Controller
             ->map(function ($p) {
                 $member = ClubHelper::memberDetail($p->member);
                 $staff = ClubHelper::staffDetail($p->staff);
+
                 return [
                     'id' => $p->id,
                     'club_id' => $p->club_id,
@@ -398,7 +398,7 @@ class ClubPaymentController extends Controller
                     'completed_payment_targets' => $completedPaymentTargets,
                     'payment_totals' => $paymentTotals,
                     'payment_types' => ['zelle', 'cash', 'check', 'transfer', 'initial'],
-                ]
+                ],
             ]);
         }
 
@@ -421,7 +421,6 @@ class ClubPaymentController extends Controller
             'prefill' => $request->only(['club_id', 'concept_id', 'member_id', 'staff_id', 'amount']),
         ]);
     }
-
 
     /**
      * POST /club-personal/payments
@@ -451,15 +450,15 @@ class ClubPaymentController extends Controller
         ]);
 
         $isInitial = $validated['payment_type'] === 'initial';
-        if ($isInitial && !in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
+        if ($isInitial && ! in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
             return response()->json(['message' => 'Saldo inicial solo puede ser registrado por director, tesorero o superadmin.'], 403);
         }
 
         // exactly one payer (unless initial balance)
-        $isMember = !empty($validated['member_id']);
-        $isStaff = !empty($validated['staff_id']);
-        $hasCustomPayer = !empty($validated['payer_name']);
-        if (!$isInitial && collect([$isMember, $isStaff, $hasCustomPayer])->filter()->count() !== 1) {
+        $isMember = ! empty($validated['member_id']);
+        $isStaff = ! empty($validated['staff_id']);
+        $hasCustomPayer = ! empty($validated['payer_name']);
+        if (! $isInitial && collect([$isMember, $isStaff, $hasCustomPayer])->filter()->count() !== 1) {
             return response()->json(['message' => 'Provide exactly one payer: member, staff, or external payer name.'], 422);
         }
 
@@ -472,7 +471,7 @@ class ClubPaymentController extends Controller
         $conceptText = $validated['concept_text'] ?? null;
         $eventBundleConcepts = collect();
         $eventAllocationRows = [];
-        $isEventBundle = !empty($validated['event_concept_ids']);
+        $isEventBundle = ! empty($validated['event_concept_ids']);
 
         if ($isEventBundle) {
             $eventBundleConcepts = PaymentConcept::query()
@@ -507,7 +506,7 @@ class ClubPaymentController extends Controller
             }
 
             $clubId = (int) $clubIds->first();
-            if (!$allowedClubIds->contains($clubId)) {
+            if (! $allowedClubIds->contains($clubId)) {
                 abort(403, 'You cannot record payments for this club.');
             }
 
@@ -528,14 +527,14 @@ class ClubPaymentController extends Controller
             $amountPaid = $bundlePlan['amount_paid'];
             $balanceAfter = $bundlePlan['balance_after'];
             $eventAllocationRows = $bundlePlan['allocations'];
-        } elseif (!empty($validated['payment_concept_id'])) {
+        } elseif (! empty($validated['payment_concept_id'])) {
             $concept = PaymentConcept::query()
                 ->where('id', $validated['payment_concept_id'])
                 ->where('status', 'active')
                 ->with(['eventFeeComponent:id,label,amount,is_required,sort_order', 'scopes'])
                 ->firstOrFail();
 
-            if (!$allowedClubIds->contains((int) $concept->club_id)) {
+            if (! $allowedClubIds->contains((int) $concept->club_id)) {
                 abort(403, 'You cannot record payments for this club.');
             }
 
@@ -552,7 +551,7 @@ class ClubPaymentController extends Controller
             }
         } else {
             $clubId = (int) ($validated['club_id'] ?? 0);
-            if (!$clubId || !$allowedClubIds->contains($clubId)) {
+            if (! $clubId || ! $allowedClubIds->contains($clubId)) {
                 abort(403, 'You cannot record payments for this club.');
             }
             $payTo = $validated['pay_to'] ?? 'club_budget';
@@ -564,11 +563,11 @@ class ClubPaymentController extends Controller
         }
 
         $isReusableConcept = (bool) ($concept?->reusable);
-        if (!$isEventBundle) {
+        if (! $isEventBundle) {
             // Sum prior paid for this (concept, payer) pair (exclude soft-deleted)
             $priorPaidQuery = Payment::query()
                 ->where('club_id', $clubId)
-                ->when($concept, fn($q) => $q->where('payment_concept_id', $concept->id));
+                ->when($concept, fn ($q) => $q->where('payment_concept_id', $concept->id));
 
             if ($isMember) {
                 $priorPaidQuery->where('member_id', $validated['member_id'] ?? null);
@@ -589,7 +588,7 @@ class ClubPaymentController extends Controller
 
             $remainingBefore = $expected !== null ? max($expected - $priorPaid, 0.0) : null;
 
-            if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $remainingBefore <= 0) {
+            if (! $isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $remainingBefore <= 0) {
                 return response()->json([
                     'errors' => [
                         'payment_concept_id' => ['Este concepto ya fue pagado completamente para este pagador.'],
@@ -605,7 +604,7 @@ class ClubPaymentController extends Controller
                     ],
                 ], 422);
             }
-            if (!$isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
+            if (! $isReusableConcept && $expected !== null && $expected > 0 && $remainingBefore !== null && $amountPaid > $remainingBefore) {
                 $amountPaid = $remainingBefore;
             }
 
@@ -616,7 +615,7 @@ class ClubPaymentController extends Controller
             ->where('club_id', $clubId)
             ->where('pay_to', $payTo)
             ->first();
-        if (!$account) {
+        if (! $account) {
             $account = Account::create([
                 'club_id' => $clubId,
                 'pay_to' => $payTo,
@@ -627,7 +626,7 @@ class ClubPaymentController extends Controller
 
         $club = Club::withoutGlobalScopes()->findOrFail($clubId);
         $clubBankInfo = $this->treasuryService->clubBankInfo($club);
-        if (in_array($validated['payment_type'], $this->treasuryService->electronicPaymentTypes(), true) && !$clubBankInfo) {
+        if (in_array($validated['payment_type'], $this->treasuryService->electronicPaymentTypes(), true) && ! $clubBankInfo) {
             return response()->json([
                 'message' => 'Registra la cuenta bancaria del club antes de recibir pagos electrónicos.',
             ], 422);
@@ -646,7 +645,7 @@ class ClubPaymentController extends Controller
                 return response()->json(['message' => 'El personal no puede registrar saldo inicial.'], 403);
             }
 
-            if (empty($validated['payment_concept_id']) && !$isEventBundle) {
+            if (empty($validated['payment_concept_id']) && ! $isEventBundle) {
                 return response()->json([
                     'errors' => [
                         'payment_concept_id' => ['El personal solo puede registrar pagos sobre conceptos existentes.'],
@@ -654,7 +653,7 @@ class ClubPaymentController extends Controller
                 ], 422);
             }
 
-            if (!$isMember || $isStaff) {
+            if (! $isMember || $isStaff) {
                 return response()->json([
                     'errors' => [
                         'member_id' => ['El personal solo puede recibir pagos de miembros asignados.'],
@@ -668,7 +667,7 @@ class ClubPaymentController extends Controller
                 ->with('classes:id')
                 ->first();
 
-            if (!$staffRecord) {
+            if (! $staffRecord) {
                 return response()->json(['message' => 'No se encontró un perfil de staff válido para registrar pagos.'], 403);
             }
 
@@ -692,7 +691,7 @@ class ClubPaymentController extends Controller
                 ->unique()
                 ->values();
 
-            if (!$allowedMemberIds->contains((int) $validated['member_id'])) {
+            if (! $allowedMemberIds->contains((int) $validated['member_id'])) {
                 return response()->json([
                     'errors' => [
                         'member_id' => ['Solo puedes registrar pagos de miembros de tu clase asignada.'],
@@ -718,7 +717,7 @@ class ClubPaymentController extends Controller
                     })
                     ->exists();
 
-                if (!$allowedScope) {
+                if (! $allowedScope) {
                     return response()->json([
                         'errors' => [
                             'payment_concept_id' => ['Ese concepto no está disponible para tu clase o alcance de club.'],
@@ -799,12 +798,12 @@ class ClubPaymentController extends Controller
     public function update(Request $request, Payment $payment): JsonResponse
     {
         $user = $request->user();
-        if (!in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
+        if (! in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
             return response()->json(['message' => 'Solo directores, tesoreros o superadmin pueden editar pagos registrados.'], 403);
         }
 
         $allowedClubIds = ClubHelper::clubIdsForUser($user);
-        if (!$allowedClubIds->contains((int) $payment->club_id)) {
+        if (! $allowedClubIds->contains((int) $payment->club_id)) {
             abort(403, 'You cannot edit payments for this club.');
         }
 
@@ -819,7 +818,7 @@ class ClubPaymentController extends Controller
 
         $club = Club::withoutGlobalScopes()->findOrFail((int) $payment->club_id);
         $clubBankInfo = $this->treasuryService->clubBankInfo($club);
-        if (in_array($validated['payment_type'], $this->treasuryService->electronicPaymentTypes(), true) && !$clubBankInfo) {
+        if (in_array($validated['payment_type'], $this->treasuryService->electronicPaymentTypes(), true) && ! $clubBankInfo) {
             return response()->json([
                 'message' => 'Registra la cuenta bancaria del club antes de usar pagos electrónicos.',
             ], 422);
@@ -864,10 +863,10 @@ class ClubPaymentController extends Controller
 
             if ($validated['payment_type'] !== 'check') {
                 $nextCheckImagePath = null;
-                $deleteOldCheckImage = !empty($payment->check_image_path);
+                $deleteOldCheckImage = ! empty($payment->check_image_path);
             } elseif ($request->hasFile('check_image')) {
                 $nextCheckImagePath = $request->file('check_image')->store('payments/checks', 'public');
-                $deleteOldCheckImage = !empty($payment->check_image_path) && $payment->check_image_path !== $nextCheckImagePath;
+                $deleteOldCheckImage = ! empty($payment->check_image_path) && $payment->check_image_path !== $nextCheckImagePath;
             }
 
             $account = $payment->account ?: Account::firstOrCreate(
@@ -955,7 +954,7 @@ class ClubPaymentController extends Controller
             ], 422);
         }
 
-        if (!$isReusableConcept && $expected !== null && $expected > 0) {
+        if (! $isReusableConcept && $expected !== null && $expected > 0) {
             $otherPaid = Payment::query()
                 ->where('club_id', $payment->club_id)
                 ->where('payment_concept_id', $payment->payment_concept_id)
@@ -982,14 +981,14 @@ class ClubPaymentController extends Controller
 
         if ($validated['payment_type'] !== 'check') {
             $nextCheckImagePath = null;
-            $deleteOldCheckImage = !empty($payment->check_image_path);
+            $deleteOldCheckImage = ! empty($payment->check_image_path);
         } elseif ($request->hasFile('check_image')) {
             $nextCheckImagePath = $request->file('check_image')->store('payments/checks', 'public');
-            $deleteOldCheckImage = !empty($payment->check_image_path) && $payment->check_image_path !== $nextCheckImagePath;
+            $deleteOldCheckImage = ! empty($payment->check_image_path) && $payment->check_image_path !== $nextCheckImagePath;
         }
 
         $account = $payment->account;
-        if (!$account) {
+        if (! $account) {
             $account = Account::firstOrCreate(
                 ['club_id' => $payment->club_id, 'pay_to' => $payment->pay_to ?: 'club_budget'],
                 ['label' => Str::title(str_replace('_', ' ', $payment->pay_to ?: 'club_budget')), 'balance' => 0]
@@ -1060,7 +1059,7 @@ class ClubPaymentController extends Controller
     public function approveParentTransfer(Request $request, ParentPaymentSubmission $submission)
     {
         $user = $request->user();
-        if (!in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
+        if (! in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
             abort(403);
         }
 
@@ -1078,7 +1077,7 @@ class ClubPaymentController extends Controller
 
         $payTo = $concept?->pay_to ?: ($submission->pay_to ?: 'club_budget');
         $club = Club::withoutGlobalScopes()->findOrFail((int) $submission->club_id);
-        if (!$this->treasuryService->hasClubBankInfo($club)) {
+        if (! $this->treasuryService->hasClubBankInfo($club)) {
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => 'Registra la cuenta bancaria del club antes de aprobar transferencias de padres.',
@@ -1114,7 +1113,7 @@ class ClubPaymentController extends Controller
         }
 
         $priorPaid = 0.0;
-        if (!$isReusableConcept && $expected !== null && $expected > 0 && $submission->payment_concept_id) {
+        if (! $isReusableConcept && $expected !== null && $expected > 0 && $submission->payment_concept_id) {
             $paidTotals = $this->paidTotalsForConceptsAndPayer(
                 [(int) $submission->payment_concept_id],
                 $submission->member_id ? (int) $submission->member_id : null,
@@ -1153,7 +1152,7 @@ class ClubPaymentController extends Controller
             ->where('pay_to', $payTo)
             ->first();
 
-        if (!$account) {
+        if (! $account) {
             $account = Account::create([
                 'club_id' => $submission->club_id,
                 'pay_to' => $payTo,
@@ -1170,7 +1169,7 @@ class ClubPaymentController extends Controller
         DB::transaction(function () use ($submission, $concept, $payTo, $account, $expected, $balanceAfter, $amountPaid, $validated, &$payment) {
             $notes = trim(collect([
                 'Transferencia aprobada desde portal de padres.',
-                $submission->reference ? 'Referencia: ' . $submission->reference : null,
+                $submission->reference ? 'Referencia: '.$submission->reference : null,
                 $submission->notes,
                 $validated['review_notes'] ?? null,
             ])->filter()->implode("\n"));
@@ -1217,7 +1216,7 @@ class ClubPaymentController extends Controller
     public function rejectParentTransfer(Request $request, ParentPaymentSubmission $submission)
     {
         $user = $request->user();
-        if (!in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
+        if (! in_array($user?->profile_type, ['club_director', 'treasurer', 'superadmin'], true)) {
             abort(403);
         }
 
@@ -1243,7 +1242,6 @@ class ClubPaymentController extends Controller
         return back()->with('success', 'Transferencia rechazada.');
     }
 
-
     /**
      * Helper to pull the active club from the session/user.
      * Replace with your actual logic (you mentioned session stores church/club).
@@ -1261,7 +1259,7 @@ class ClubPaymentController extends Controller
     protected function assertRequiredEventComponentsSelected(Collection $selectedConcepts, ?int $memberId, ?int $staffId, ?Payment $excludingPayment = null): void
     {
         $first = $selectedConcepts->first();
-        if (!$first?->event_id || !$first?->club_id) {
+        if (! $first?->event_id || ! $first?->club_id) {
             return;
         }
 
@@ -1294,7 +1292,7 @@ class ClubPaymentController extends Controller
         $missingRequired = $requiredConcepts->contains(function (PaymentConcept $concept) use ($selectedIds, $paidTotals) {
             $remaining = max(round((float) $concept->amount - (float) ($paidTotals[(int) $concept->id] ?? 0), 2), 0);
 
-            return $remaining > 0.0001 && !in_array((int) $concept->id, $selectedIds, true);
+            return $remaining > 0.0001 && ! in_array((int) $concept->id, $selectedIds, true);
         });
 
         if ($missingRequired) {
@@ -1313,7 +1311,7 @@ class ClubPaymentController extends Controller
         }
 
         foreach ($concepts as $concept) {
-            if (!$this->conceptAppliesToPayer($concept, $memberId, $staffId)) {
+            if (! $this->conceptAppliesToPayer($concept, $memberId, $staffId)) {
                 throw ValidationException::withMessages([
                     'event_concept_ids' => ['Uno de los componentes seleccionados no aplica al pagador.'],
                 ]);
@@ -1398,7 +1396,7 @@ class ClubPaymentController extends Controller
 
     protected function conceptAppliesToPayer(PaymentConcept $concept, ?int $memberId, ?int $staffId): bool
     {
-        if (!$memberId && !$staffId) {
+        if (! $memberId && ! $staffId) {
             return false;
         }
 
@@ -1406,7 +1404,7 @@ class ClubPaymentController extends Controller
 
         if ($memberId) {
             $member = Member::query()->find($memberId);
-            if (!$member) {
+            if (! $member) {
                 return false;
             }
 
@@ -1421,7 +1419,7 @@ class ClubPaymentController extends Controller
         }
 
         $staff = Staff::query()->find($staffId);
-        if (!$staff) {
+        if (! $staff) {
             return false;
         }
 
@@ -1500,7 +1498,7 @@ class ClubPaymentController extends Controller
 
     protected function recalculatePaymentBalances(Payment $payment): void
     {
-        if (!$payment->payment_concept_id || $payment->expected_amount === null) {
+        if (! $payment->payment_concept_id || $payment->expected_amount === null) {
             return;
         }
 
@@ -1511,7 +1509,7 @@ class ClubPaymentController extends Controller
                 ->where('payment_concept_id', $payment->payment_concept_id)
                 ->when($payment->member_id, fn ($q) => $q->where('member_id', $payment->member_id))
                 ->when($payment->staff_id, fn ($q) => $q->where('staff_id', $payment->staff_id))
-                ->when(!$payment->member_id && !$payment->staff_id, fn ($q) => $q
+                ->when(! $payment->member_id && ! $payment->staff_id, fn ($q) => $q
                     ->whereNull('member_id')
                     ->whereNull('staff_id')
                     ->where('payer_name', $payment->payer_name)
@@ -1532,7 +1530,7 @@ class ClubPaymentController extends Controller
             ->where('payment_concept_id', $payment->payment_concept_id)
             ->when($payment->member_id, fn ($q) => $q->where('member_id', $payment->member_id))
             ->when($payment->staff_id, fn ($q) => $q->where('staff_id', $payment->staff_id))
-            ->when(!$payment->member_id && !$payment->staff_id, fn ($q) => $q
+            ->when(! $payment->member_id && ! $payment->staff_id, fn ($q) => $q
                 ->whereNull('member_id')
                 ->whereNull('staff_id')
                 ->where('payer_name', $payment->payer_name)
@@ -1564,6 +1562,7 @@ class ClubPaymentController extends Controller
             ->filter(function ($totalPaid, $key) use ($expectedByConcept) {
                 $conceptId = (int) explode('|', (string) $key)[0];
                 $expected = (float) ($expectedByConcept[$conceptId] ?? 0);
+
                 return $expected > 0 && (float) $totalPaid >= $expected;
             })
             ->keys()
@@ -1591,6 +1590,7 @@ class ClubPaymentController extends Controller
                 if ($row->staff_id) {
                     return [sprintf('%d|staff|%d', $row->payment_concept_id, $row->staff_id) => (float) $row->total_paid];
                 }
+
                 return [];
             })
             ->all();
@@ -1609,6 +1609,7 @@ class ClubPaymentController extends Controller
                 if ($row->staff_id) {
                     return [sprintf('%d|staff|%d', $row->payment_concept_id, $row->staff_id) => (float) $row->total_paid];
                 }
+
                 return [];
             })
             ->all();
@@ -1709,7 +1710,9 @@ class ClubPaymentController extends Controller
                     'payment_date' => optional($submission->payment_date)->toDateString(),
                     'reference' => $submission->reference,
                     'notes' => $submission->notes,
-                    'receipt_image_url' => $submission->receipt_image_path ? asset('storage/' . $submission->receipt_image_path) : null,
+                    'receipt_image_url' => $submission->receipt_image_path
+                        ? route('parent-payment-submissions.proof', $submission)
+                        : null,
                     'created_at' => optional($submission->created_at)->toDateTimeString(),
                 ];
             })
@@ -1720,7 +1723,7 @@ class ClubPaymentController extends Controller
     protected function syncMissingReceipts(Collection $payments): void
     {
         $payments
-            ->filter(fn (Payment $payment) => !$payment->receipt && ($payment->member_id || $payment->staff_id))
+            ->filter(fn (Payment $payment) => ! $payment->receipt && ($payment->member_id || $payment->staff_id))
             ->each(function (Payment $payment) {
                 $receipt = $this->paymentReceiptService->syncForPayment($payment);
                 $payment->setRelation('receipt', $receipt);
@@ -1730,9 +1733,10 @@ class ClubPaymentController extends Controller
         $payments
             ->filter(function (Payment $payment) {
                 $receipt = $payment->receipt;
+
                 return $receipt
                     && $receipt->issued_to_type === 'member_unlinked'
-                    && !empty($payment->member?->parent_id);
+                    && ! empty($payment->member?->parent_id);
             })
             ->each(function (Payment $payment) {
                 $payment->unsetRelation('member');

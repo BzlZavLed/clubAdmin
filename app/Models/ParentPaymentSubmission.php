@@ -20,6 +20,7 @@ class ParentPaymentSubmission extends Model
         'payment_type',
         'reference',
         'receipt_image_path',
+        'receipt_image_disk',
         'club_receipt_email',
         'club_receipt_email_status',
         'club_receipt_emailed_at',

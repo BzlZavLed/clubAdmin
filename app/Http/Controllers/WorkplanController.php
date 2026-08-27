@@ -343,7 +343,15 @@ class WorkplanController extends Controller
             ->when($memberId, fn ($query) => $query->whereKey($memberId))
             ->get(['id', 'class_id']);
 
-        if ($members->isEmpty()) return $workplan;
+        if ($members->isEmpty()) {
+            $workplan->events = $workplan->events->map(function ($event) {
+                $event->classPlans = collect();
+
+                return $event;
+            });
+
+            return $workplan;
+        }
 
         $memberIds = $members->pluck('id')->all();
         $classIds = $members->pluck('class_id')->filter()->all();
@@ -369,6 +377,28 @@ class WorkplanController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function parentExportMember(Request $request, $user, ?int $clubId): ?Member
+    {
+        if ($user->profile_type !== 'parent') {
+            return null;
+        }
+
+        $validated = $request->validate([
+            'member_id' => ['required', 'integer'],
+        ]);
+
+        $member = Member::query()
+            ->whereKey((int) $validated['member_id'])
+            ->where('parent_id', $user->id)
+            ->where('club_id', $clubId)
+            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'deleted'))
+            ->first(['id', 'club_id', 'class_id', 'parent_id']);
+
+        abort_unless($member, 403, 'Not allowed to export this child workplan.');
+
+        return $member;
     }
 
     private function workplanChildrenForParent($user): Collection
@@ -409,6 +439,7 @@ class WorkplanController extends Controller
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
+        $parentMember = $this->parentExportMember($request, $user, $selectedClubId);
 
         $workplan = $this->getWorkplanForUser($user, $selectedClubId, false);
         if (!$workplan) {
@@ -423,18 +454,8 @@ class WorkplanController extends Controller
                     ->orderBy('start_time');
             }
         ]);
-        if ($user->profile_type === 'parent' && $request->integer('member_id')) {
-            $memberId = $request->integer('member_id');
-            abort_unless(
-                Member::query()
-                    ->whereKey($memberId)
-                    ->where('parent_id', $user->id)
-                    ->where('club_id', $selectedClubId)
-                    ->exists(),
-                403,
-                'Not allowed to export this child workplan.'
-            );
-            $workplan = $this->filterPlansForParent($workplan, $user, $memberId);
+        if ($parentMember) {
+            $workplan = $this->filterPlansForParent($workplan, $user, (int) $parentMember->id);
         }
 
         $start = Carbon::parse($request->input('start_date', $workplan->start_date))->startOfDay();
@@ -569,6 +590,7 @@ class WorkplanController extends Controller
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
+        $this->parentExportMember($request, $user, $selectedClubId);
 
         $workplan = $this->getWorkplanForUser($user, $selectedClubId, false);
         if (!$workplan) {
@@ -826,7 +848,14 @@ class WorkplanController extends Controller
             abort(403, 'Not allowed to view this club workplan.');
         }
 
+        $parentMember = $this->parentExportMember($request, $user, $selectedClubId);
         $classId = $request->input('class_id');
+        if ($parentMember) {
+            if ($classId && (int) $classId !== (int) $parentMember->class_id) {
+                abort(403, 'Not allowed to export class plans for this class.');
+            }
+            $classId = $parentMember->class_id;
+        }
         if ($user->profile_type === 'club_personal' && !$classId) {
             $staff = Staff::where('user_id', $user->id)->with('classes')->first();
             $classId = $staff?->classes?->first()?->id;
@@ -844,6 +873,9 @@ class WorkplanController extends Controller
             },
             'club',
         ]);
+        if ($parentMember) {
+            $workplan = $this->filterPlansForParent($workplan, $user, (int) $parentMember->id);
+        }
 
         $needsApproval = $request->boolean('needs_approval', false);
         $statusFilter = $request->input('status'); // approved, rejected, pending, all

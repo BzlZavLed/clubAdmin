@@ -13,14 +13,26 @@ use App\Models\MemberPathfinder;
 use App\Models\ParentPaymentSubmission;
 use App\Models\PaymentReceipt;
 use App\Models\Workplan;
+use App\Services\ParentChildIdentityMatcher;
+use App\Services\ParentChildLinkService;
+use App\Services\ParentPaymentProofService;
 use App\Support\ClubHelper;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 
 class MobileParentController extends Controller
 {
+    public function __construct(
+        private readonly ParentChildIdentityMatcher $identityMatcher,
+        private readonly ParentChildLinkService $parentChildLinkService,
+        private readonly ParentPaymentProofService $parentPaymentProofService,
+    ) {}
+
     public function dashboard(Request $request)
     {
         $user = $this->authorizeParent($request);
@@ -69,14 +81,14 @@ class MobileParentController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            if (!$invite || ($invite->uses_left !== null && $invite->uses_left <= 0)) {
+            if (! $invite || ($invite->uses_left !== null && $invite->uses_left <= 0)) {
                 throw ValidationException::withMessages([
                     'invite_code' => 'This invite code is not valid or has expired.',
                 ]);
             }
 
             $invite->load('church:id,church_name');
-            if (!$invite->church) {
+            if (! $invite->church) {
                 throw ValidationException::withMessages([
                     'invite_code' => 'This invite code is not attached to an active church.',
                 ]);
@@ -88,7 +100,7 @@ class MobileParentController extends Controller
                 ]);
             }
 
-            $wasUnassigned = !$user->church_id;
+            $wasUnassigned = ! $user->church_id;
 
             if ($wasUnassigned) {
                 $user->forceFill([
@@ -124,8 +136,8 @@ class MobileParentController extends Controller
     {
         $user = $this->authorizeParent($request);
         $search = strtolower(trim((string) $request->query('name', '')));
-        $parentName = strtolower($user->name ?? '');
-        $parentEmail = strtolower($user->email ?? '');
+        $parentName = strtolower(trim((string) $user->name));
+        $parentEmail = strtolower(trim((string) $user->email));
         $clubIds = $this->parentClubOptions($user)->pluck('id')->all();
 
         if (empty($clubIds)) {
@@ -152,33 +164,60 @@ class MobileParentController extends Controller
                     ->orWhereRaw('LOWER(emergency_contact) = ?', [$parentName])
                     ->orWhereRaw('LOWER(email_address) = ?', [$parentEmail]);
             })
-            ->when($search !== '', fn ($query) => $query->whereRaw('LOWER(applicant_name) LIKE ?', ['%' . $search . '%']))
-            ->limit(20)
-            ->get(['id', 'club_id', 'applicant_name'])
-            ->map(fn ($row) => [
-                'member_type' => 'adventurers',
-                'id_data' => (int) $row->id,
-                'name' => $row->applicant_name,
-                'club_id' => (int) $row->club_id,
-            ]);
+            ->when($search !== '', fn ($query) => $query->whereRaw('LOWER(applicant_name) LIKE ?', ['%'.$search.'%']))
+            ->limit(100)
+            ->get()
+            ->map(function (MemberAdventurer $row) use ($user) {
+                $evaluation = $this->identityMatcher->evaluate($user, $row);
+                if (! $evaluation['eligible']) {
+                    return null;
+                }
+
+                return [
+                    'member_type' => 'adventurers',
+                    'id_data' => (int) $row->id,
+                    'name' => $row->applicant_name,
+                    'club_id' => (int) $row->club_id,
+                    'match_factors' => $evaluation['factors'],
+                    'matched_count' => $evaluation['matched_count'],
+                    'requires_director_approval' => $evaluation['requires_director_approval'],
+                ];
+            })
+            ->filter()
+            ->take(20)
+            ->values();
 
         $pathfinders = MemberPathfinder::query()
             ->whereIn('club_id', $clubIds)
             ->whereNotIn('id', $linkedPathfinderIds)
             ->where(function ($query) use ($parentName, $parentEmail) {
                 $query->whereRaw('LOWER(father_guardian_name) = ?', [$parentName])
+                    ->orWhereRaw('LOWER(mother_guardian_name) = ?', [$parentName])
                     ->orWhereRaw('LOWER(father_guardian_email) = ?', [$parentEmail])
-                    ->orWhereRaw('LOWER(email_address) = ?', [$parentEmail]);
+                    ->orWhereRaw('LOWER(mother_guardian_email) = ?', [$parentEmail]);
             })
-            ->when($search !== '', fn ($query) => $query->whereRaw('LOWER(applicant_name) LIKE ?', ['%' . $search . '%']))
-            ->limit(20)
-            ->get(['id', 'club_id', 'applicant_name'])
-            ->map(fn ($row) => [
-                'member_type' => 'pathfinders',
-                'id_data' => (int) $row->id,
-                'name' => $row->applicant_name,
-                'club_id' => (int) $row->club_id,
-            ]);
+            ->when($search !== '', fn ($query) => $query->whereRaw('LOWER(applicant_name) LIKE ?', ['%'.$search.'%']))
+            ->limit(100)
+            ->get()
+            ->map(function (MemberPathfinder $row) use ($user) {
+                $evaluation = $this->identityMatcher->evaluate($user, $row);
+                if (! $evaluation['eligible']) {
+                    return null;
+                }
+
+                return [
+                    'member_type' => 'pathfinders',
+                    'id_data' => (int) $row->id,
+                    'name' => $row->applicant_name,
+                    'club_id' => (int) $row->club_id,
+                    'match_factors' => $evaluation['factors'],
+                    'matched_count' => $evaluation['matched_count'],
+                    'requires_director_approval' => $evaluation['requires_director_approval'],
+                ];
+            })
+            ->filter()
+            ->take(20)
+            ->values();
 
         $clubs = Club::query()
             ->whereIn('id', collect($adventurers)->pluck('club_id')->merge(collect($pathfinders)->pluck('club_id'))->unique())
@@ -188,6 +227,7 @@ class MobileParentController extends Controller
             'data' => $adventurers->concat($pathfinders)
                 ->map(function (array $row) use ($clubs) {
                     $row['club_name'] = $clubs[$row['club_id']] ?? null;
+
                     return $row;
                 })
                 ->values(),
@@ -202,29 +242,20 @@ class MobileParentController extends Controller
             'id_data' => ['required', 'integer'],
         ]);
 
-        if ($validated['member_type'] === 'adventurers') {
-            $detail = MemberAdventurer::query()->findOrFail($validated['id_data']);
-            $member = Member::query()->firstOrCreate(
-                ['type' => 'adventurers', 'id_data' => $detail->id],
-                ['club_id' => $detail->club_id, 'class_id' => null, 'status' => 'active']
+        $result = $this->parentChildLinkService->linkManually(
+            $user,
+            $validated['member_type'],
+            (int) $validated['id_data'],
+        );
+
+        $payload = collect($result)->except('member')->all();
+        if ($result['status'] === 'linked') {
+            $payload['child'] = $this->childPayload(
+                $result['member']->fresh(['club:id,club_name,club_type,evaluation_system', 'class:id,class_name'])
             );
-        } else {
-            $detail = MemberPathfinder::query()->findOrFail($validated['id_data']);
-            $member = Member::query()->firstOrCreate(
-                ['type' => 'pathfinders', 'id_data' => $detail->id],
-                ['club_id' => $detail->club_id, 'class_id' => null, 'status' => 'active']
-            );
-            if (!$detail->member_id) {
-                $detail->update(['member_id' => $member->id]);
-            }
         }
 
-        $member->forceFill(['parent_id' => $user->id])->save();
-
-        return response()->json([
-            'message' => 'Child linked.',
-            'child' => $this->childPayload($member->fresh(['club:id,club_name,club_type,evaluation_system', 'class:id,class_name'])),
-        ]);
+        return response()->json($payload, $result['status'] === 'pending' ? 202 : 200);
     }
 
     public function storeChild(Request $request)
@@ -407,7 +438,7 @@ class MobileParentController extends Controller
         return response()->json([
             'club_deposit_accounts' => $payments->clubDepositAccountsForParent($user)->values(),
             'expected_payments' => $payments->expectedPaymentsForParent($user)->values(),
-            'transfer_submissions' => $payments->transferSubmissionsForParent($user)->values(),
+            'transfer_submissions' => $payments->transferSubmissionsForParent($user, mobile: true)->values(),
             'receipts' => $payments->receiptsForParent($user)->values(),
         ]);
     }
@@ -431,7 +462,7 @@ class MobileParentController extends Controller
 
         abort_unless($charge, 403, 'This charge does not apply to the selected child.');
 
-        if (!$charge['can_submit_transfer']) {
+        if (! $charge['can_submit_transfer']) {
             throw ValidationException::withMessages([
                 'amount' => $charge['transfer_blocked_reason'] ?? 'This charge does not allow new transfer receipts.',
             ]);
@@ -440,41 +471,48 @@ class MobileParentController extends Controller
         $availableAmount = (float) ($charge['available_amount'] ?? $charge['remaining_amount'] ?? 0);
         $amount = (float) $validated['amount'];
 
-        if (!$charge['reusable'] && $availableAmount <= 0.0001) {
+        if (! $charge['reusable'] && $availableAmount <= 0.0001) {
             throw ValidationException::withMessages([
                 'amount' => 'Pending receipts already cover the available balance for this charge.',
             ]);
         }
 
-        if (!$charge['reusable'] && $availableAmount > 0 && $amount > $availableAmount) {
+        if (! $charge['reusable'] && $availableAmount > 0 && $amount > $availableAmount) {
             throw ValidationException::withMessages([
                 'amount' => 'The submitted amount exceeds the available balance for this charge.',
             ]);
         }
 
-        $receiptImagePath = $request->file('receipt_image')->store('payments/transfers', 'public');
+        $receiptImagePath = $request->file('receipt_image')->store('parent-payment-proofs', 'local');
         $club = Club::withoutGlobalScopes()->find($charge['club_id']);
         $clubReceiptEmail = $club?->club_email;
 
-        $submission = ParentPaymentSubmission::query()->create([
-            'club_id' => $charge['club_id'],
-            'payment_concept_id' => $charge['concept_id'],
-            'member_id' => $charge['member_id'],
-            'parent_user_id' => $user->id,
-            'event_id' => $charge['event_id'],
-            'concept_text' => $charge['concept_name'],
-            'pay_to' => $charge['pay_to'],
-            'expected_amount' => $charge['expected_amount'],
-            'amount' => $amount,
-            'payment_date' => $validated['payment_date'],
-            'payment_type' => 'transfer',
-            'reference' => $validated['reference'] ?? null,
-            'receipt_image_path' => $receiptImagePath,
-            'club_receipt_email' => $clubReceiptEmail,
-            'club_receipt_email_status' => $clubReceiptEmail ? 'queued' : 'manual_required',
-            'notes' => $validated['notes'] ?? null,
-            'status' => 'pending',
-        ]);
+        try {
+            $submission = ParentPaymentSubmission::query()->create([
+                'club_id' => $charge['club_id'],
+                'payment_concept_id' => $charge['concept_id'],
+                'member_id' => $charge['member_id'],
+                'parent_user_id' => $user->id,
+                'event_id' => $charge['event_id'],
+                'concept_text' => $charge['concept_name'],
+                'pay_to' => $charge['pay_to'],
+                'expected_amount' => $charge['expected_amount'],
+                'amount' => $amount,
+                'payment_date' => $validated['payment_date'],
+                'payment_type' => 'transfer',
+                'reference' => $validated['reference'] ?? null,
+                'receipt_image_path' => $receiptImagePath,
+                'receipt_image_disk' => 'local',
+                'club_receipt_email' => $clubReceiptEmail,
+                'club_receipt_email_status' => $clubReceiptEmail ? 'queued' : 'manual_required',
+                'notes' => $validated['notes'] ?? null,
+                'status' => 'pending',
+            ]);
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($receiptImagePath);
+
+            throw $exception;
+        }
 
         if ($clubReceiptEmail) {
             SendParentPaymentSubmissionEmail::dispatch($submission->id)->afterCommit();
@@ -484,9 +522,9 @@ class MobileParentController extends Controller
             'message' => $clubReceiptEmail
                 ? 'Receipt uploaded for club validation and emailed to the club.'
                 : 'Receipt uploaded for club validation.',
-            'submission' => $payments->transferSubmissionsForParent($user)->firstWhere('id', $submission->id),
+            'submission' => $payments->transferSubmissionsForParent($user, mobile: true)->firstWhere('id', $submission->id),
             'expected_payments' => $payments->expectedPaymentsForParent($user)->values(),
-            'transfer_submissions' => $payments->transferSubmissionsForParent($user)->values(),
+            'transfer_submissions' => $payments->transferSubmissionsForParent($user, mobile: true)->values(),
             'receipts' => $payments->receiptsForParent($user)->values(),
         ], 201);
     }
@@ -563,6 +601,14 @@ class MobileParentController extends Controller
         ]);
     }
 
+    public function paymentProof(Request $request, ParentPaymentSubmission $submission)
+    {
+        $user = $this->authorizeParent($request);
+        $this->parentPaymentProofService->authorize($user, $submission);
+
+        return $this->parentPaymentProofService->response($submission);
+    }
+
     public function workplan(Request $request)
     {
         $user = $this->authorizeParent($request);
@@ -574,6 +620,13 @@ class MobileParentController extends Controller
     {
         $user = $request->user();
         abort_unless($user && $user->profile_type === 'parent', 403, 'Parent mobile access required.');
+
+        if (! $user->canAccessParentPortal()) {
+            throw new HttpResponseException(response()->json([
+                'message' => 'Parent account activation is required.',
+                'code' => 'PARENT_ACTIVATION_REQUIRED',
+            ], Response::HTTP_FORBIDDEN));
+        }
 
         return $user;
     }
@@ -638,7 +691,7 @@ class MobileParentController extends Controller
         return [
             'member_id' => (int) $member->id,
             'id_data' => (int) $member->id_data,
-            'name' => $detail['name'] ?? 'Member #' . $member->id,
+            'name' => $detail['name'] ?? 'Member #'.$member->id,
             'member_type' => $member->type,
             'member_label' => $this->memberLabel($member->type),
             'club_id' => $member->club_id ? (int) $member->club_id : null,
@@ -667,7 +720,7 @@ class MobileParentController extends Controller
 
     private function parentClubOptions($user)
     {
-        if (!$user->church_id) {
+        if (! $user->church_id) {
             return collect();
         }
 
@@ -718,7 +771,7 @@ class MobileParentController extends Controller
 
                 return $workplan->events->map(function ($event) use ($club, $classIds, $workplan) {
                     $classPlans = $event->classPlans
-                        ->filter(fn ($plan) => !$plan->class_id || $classIds->contains((int) $plan->class_id))
+                        ->filter(fn ($plan) => ! $plan->class_id || $classIds->contains((int) $plan->class_id))
                         ->values();
 
                     return [

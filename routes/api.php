@@ -17,12 +17,13 @@ Route::prefix('mobile')->name('api.mobile.')->group(function () {
             Route::get('/dashboard', [MobileParentController::class, 'dashboard'])->name('dashboard');
             Route::get('/children', [MobileParentController::class, 'children'])->name('children');
             Route::post('/church-invite', [MobileParentController::class, 'applyChurchInvite'])->name('church-invite.apply');
-            Route::get('/children/linkable', [MobileParentController::class, 'linkableChildren'])->name('children.linkable');
-            Route::post('/children/link', [MobileParentController::class, 'linkChild'])->name('children.link');
+            Route::get('/children/linkable', [MobileParentController::class, 'linkableChildren'])->middleware('throttle:20,1')->name('children.linkable');
+            Route::post('/children/link', [MobileParentController::class, 'linkChild'])->middleware('throttle:10,1')->name('children.link');
             Route::post('/children', [MobileParentController::class, 'storeChild'])->name('children.store');
             Route::put('/children/{member}', [MobileParentController::class, 'updateChild'])->name('children.update');
             Route::get('/payments', [MobileParentController::class, 'payments'])->name('payments');
             Route::post('/payments/transfers', [MobileParentController::class, 'submitTransfer'])->name('payments.transfers.store');
+            Route::get('/payment-submissions/{submission}/proof', [MobileParentController::class, 'paymentProof'])->name('payment-proofs.show');
             Route::get('/receipts/{receipt}', [MobileParentController::class, 'receipt'])->name('receipts.show');
             Route::get('/workplan', [MobileParentController::class, 'workplan'])->name('workplan');
         });

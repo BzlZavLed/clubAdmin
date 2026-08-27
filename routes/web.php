@@ -1,84 +1,83 @@
 <?php
 
-use App\Http\Controllers\StaffAdventurerController;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use App\Http\Controllers\ClubController;
-use App\Http\Controllers\ClubCarpetaClassActivationController;
-use App\Http\Controllers\MemberAdventurerController;
-use App\Http\Controllers\ParentAuthController;
-use App\Http\Controllers\Auth\ParentEmailVerificationController;
-use App\Http\Controllers\ParentCarpetaController;
-use App\Http\Controllers\PublicMemberEvidenceController;
-use App\Models\Club;
-use App\Models\AiRequestLog;
-use App\Models\Church;
-use App\Models\User;
-use App\Http\Controllers\ChurchController;
-use App\Http\Controllers\ParentMemberController;
-use App\Http\Controllers\ParentPaymentController;
-use App\Http\Controllers\ExportController;
-use App\Http\Controllers\ClubClassController;
-use App\Http\Controllers\LLMQueryController as AIQueryController;
-use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\AdventurerInductionRequestController;
+use App\Http\Controllers\AdventurerQuarterlyReportController;
+use App\Http\Controllers\AdventurerYearlyApplicationController;
 use App\Http\Controllers\AssistanceReportController;
-use App\Http\Controllers\ClubPaymentController;
-use App\Http\Controllers\FinanceEngineController;
-use App\Http\Controllers\RepAssistanceAdvController;
-use App\Models\SubRole;
-use App\Http\Controllers\ReportController;
-use App\Http\Middleware\RedirectIfAuthenticated;
-use App\Http\Controllers\WorkplanController;
-use App\Http\Controllers\ClubSettingsController;
+use App\Http\Controllers\AssociationController;
+use App\Http\Controllers\Auth\ParentEmailVerificationController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\ChurchController;
+use App\Http\Controllers\ClassInvestitureRequirementController;
+use App\Http\Controllers\ClubCarpetaClassActivationController;
+use App\Http\Controllers\ClubClassController;
+use App\Http\Controllers\ClubController;
 use App\Http\Controllers\ClubEnrollmentConfirmationController;
+use App\Http\Controllers\ClubPaymentController;
+use App\Http\Controllers\ClubPersonalInvestitureProgressController;
+use App\Http\Controllers\ClubSettingsController;
 use App\Http\Controllers\ClubTreasuryController;
-use App\Http\Controllers\StaffPaymentCustodyController;
-use App\Http\Controllers\EventController;
-use App\Http\Controllers\EventClubSettlementController;
-use App\Http\Controllers\EventReadinessController;
-use App\Http\Controllers\EventPlanController;
-use App\Http\Controllers\EventTaskController;
+use App\Http\Controllers\DistrictController;
+use App\Http\Controllers\DistrictPastoralCareController;
+use App\Http\Controllers\DocumentValidationController;
 use App\Http\Controllers\EventBudgetItemController;
-use App\Http\Controllers\EventParticipantController;
+use App\Http\Controllers\EventClubSettlementController;
+use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventDocumentController;
 use App\Http\Controllers\EventDriverController;
-use App\Http\Controllers\EventVehicleController;
-use App\Http\Controllers\EventPlannerController;
+use App\Http\Controllers\EventParticipantController;
 use App\Http\Controllers\EventPlaceOptionController;
-use App\Http\Controllers\TaskFormController;
-use App\Http\Controllers\ClassInvestitureRequirementController;
-use App\Http\Controllers\ClubPersonalInvestitureProgressController;
+use App\Http\Controllers\EventPlanController;
+use App\Http\Controllers\EventPlannerController;
+use App\Http\Controllers\EventReadinessController;
+use App\Http\Controllers\EventTaskController;
+use App\Http\Controllers\EventVehicleController;
+use App\Http\Controllers\ExportController;
+use App\Http\Controllers\FinanceEngineController;
+use App\Http\Controllers\InvestitureRequestController;
+use App\Http\Controllers\LLMQueryController as AIQueryController;
+use App\Http\Controllers\MailTrackingController;
+use App\Http\Controllers\MemberAdventurerController;
+use App\Http\Controllers\ParentAuthController;
+use App\Http\Controllers\ParentCarpetaController;
+use App\Http\Controllers\ParentMemberController;
+use App\Http\Controllers\ParentPaymentController;
+use App\Http\Controllers\PathfinderAnnualApplicationController;
+use App\Http\Controllers\PathfinderMonthlyReportController;
+use App\Http\Controllers\PaymentReceiptController;
+use App\Http\Controllers\PublicAdventurerYearlyApplicationSignatureController;
+use App\Http\Controllers\PublicMemberEvidenceController;
+use App\Http\Controllers\PublicPathfinderAnnualApplicationSignatureController;
+use App\Http\Controllers\ReimbursementReceiptController;
+use App\Http\Controllers\RepAssistanceAdvController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ResendWebhookController;
+use App\Http\Controllers\StaffAdventurerController;
+use App\Http\Controllers\StaffPaymentCustodyController;
+use App\Http\Controllers\SuperAdminClubDeletionController;
 use App\Http\Controllers\SuperAdminContextController;
 use App\Http\Controllers\SuperAdminEventTaskFormCatalogController;
 use App\Http\Controllers\SuperAdminMailLogController;
 use App\Http\Controllers\SuperAdminParentPortalController;
 use App\Http\Controllers\SuperAdminPresenceController;
-use App\Http\Controllers\SuperAdminClubDeletionController;
-use App\Http\Controllers\MailTrackingController;
-use App\Http\Controllers\ResendWebhookController;
-use App\Http\Controllers\PaymentReceiptController;
-use App\Http\Controllers\AdventurerYearlyApplicationController;
-use App\Http\Controllers\AdventurerQuarterlyReportController;
-use App\Http\Controllers\AdventurerInductionRequestController;
-use App\Http\Controllers\PublicAdventurerYearlyApplicationSignatureController;
-use App\Http\Controllers\PathfinderAnnualApplicationController;
-use App\Http\Controllers\PathfinderMonthlyReportController;
-use App\Http\Controllers\PublicPathfinderAnnualApplicationSignatureController;
-use App\Http\Controllers\ReimbursementReceiptController;
+use App\Http\Controllers\TaskFormController;
 use App\Http\Controllers\UnionController;
 use App\Http\Controllers\UnionWorkplanController;
-use App\Http\Controllers\AssociationController;
-use App\Http\Controllers\DistrictController;
-use App\Http\Controllers\DistrictPastoralCareController;
-use App\Http\Controllers\DocumentValidationController;
-use App\Http\Controllers\InvestitureRequestController;
+use App\Http\Controllers\WorkplanController;
+use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Models\Association;
+use App\Models\Church;
+use App\Models\Club;
 use App\Models\District;
+use App\Models\SubRole;
 use App\Models\Union;
+use App\Models\User;
 use App\Support\ClubHelper;
 use App\Support\SuperadminContext;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 // ---------------------------------
 // 🔗 Public Routes
@@ -97,6 +96,7 @@ Route::post('/logout', function () {
     Auth::logout();
     request()->session()->invalidate();
     request()->session()->regenerateToken();
+
     return redirect('/');
 })->name('logout');
 
@@ -104,6 +104,7 @@ Route::get('/force-logout', function () {
     Auth::logout();
     request()->session()->invalidate();
     request()->session()->regenerateToken();
+
     return redirect('/login');
 });
 
@@ -167,7 +168,9 @@ Route::post('/evidence/{code}', [PublicMemberEvidenceController::class, 'storeEv
     ->name('public.member-evidence.store');
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('/dashboard', fn() => Inertia::render('Dashboard', [
+    Route::get('/payment-submissions/{submission}/proof', [ParentPaymentController::class, 'proof'])
+        ->name('parent-payment-submissions.proof');
+    Route::get('/dashboard', fn () => Inertia::render('Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('dashboard');
 });
@@ -182,7 +185,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secretary'])->group(function () {
-    Route::get('/district/dashboard', fn() => Inertia::render('District/Dashboard', [
+    Route::get('/district/dashboard', fn () => Inertia::render('District/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('district.dashboard');
     Route::get('/district/churches', [DistrictController::class, 'churches'])->name('district.churches');
@@ -225,7 +228,7 @@ Route::middleware(['auth', 'verified', 'profile:district_pastor,district_secreta
 });
 
 Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->group(function () {
-    Route::get('/association/dashboard', fn() => Inertia::render('Association/Dashboard', [
+    Route::get('/association/dashboard', fn () => Inertia::render('Association/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('association.dashboard');
     Route::get('/association/workplan', [AssociationController::class, 'workplan'])->name('association.workplan');
@@ -281,7 +284,7 @@ Route::middleware(['auth', 'verified', 'profile:association_youth_director'])->g
 });
 
 Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(function () {
-    Route::get('/union/dashboard', fn() => Inertia::render('Union/Dashboard', [
+    Route::get('/union/dashboard', fn () => Inertia::render('Union/Dashboard', [
         'auth_user' => auth()->user(),
     ]))->name('union.dashboard');
     Route::get('/union/associations', [UnionController::class, 'associations'])->name('union.associations');
@@ -324,17 +327,20 @@ Route::middleware(['auth', 'verified', 'profile:union_youth_director'])->group(f
 // 🔐 Guest Routes (Parent Self-Registration)
 // ---------------------------------
 Route::middleware(['guest'])->group(function () {
-Route::post('/setup/superadmin', [RegisteredUserController::class, 'storeSuperadmin'])->name('superadmin.setup.store');
-Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
-Route::post('/register-parent/resolve-invite', [ParentAuthController::class, 'resolveInvite'])->name('parent.register.resolve-invite');
-Route::post('/register-parent', [ParentAuthController::class, 'register']);
-Route::get('/register-parent/secure/{token}', [ParentAuthController::class, 'showSecureRegistrationForm'])
-    ->middleware('throttle:60,1')
-    ->name('parent.register.secure');
-Route::post('/register-parent/secure/{token}', [ParentAuthController::class, 'registerSecure'])
-    ->middleware('throttle:10,1')
-    ->name('parent.register.secure.store');
-Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
+    Route::post('/setup/superadmin', [RegisteredUserController::class, 'storeSuperadmin'])->name('superadmin.setup.store');
+    Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
+    Route::post('/register-parent/resolve-invite', [ParentAuthController::class, 'resolveInvite'])
+        ->middleware('throttle:20,1')
+        ->name('parent.register.resolve-invite');
+    Route::post('/register-parent', [ParentAuthController::class, 'register'])
+        ->middleware('throttle:5,1');
+    Route::get('/register-parent/secure/{token}', [ParentAuthController::class, 'showSecureRegistrationForm'])
+        ->middleware('throttle:60,1')
+        ->name('parent.register.secure');
+    Route::post('/register-parent/secure/{token}', [ParentAuthController::class, 'registerSecure'])
+        ->middleware('throttle:10,1')
+        ->name('parent.register.secure.store');
+    Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
 });
 
 Route::get('/parent/email/verify/{user}/{hash}', ParentEmailVerificationController::class)
@@ -363,21 +369,21 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
 // 🟣 Parent-Only Routes (Authenticated)
 // ---------------------------------
 Route::middleware(['auth', 'parent.activated', 'auth.parent'])->group(function () {
-    Route::get('/parent-enrollment', fn() => Inertia::render('Parent/Apply', [
+    Route::get('/parent-enrollment', fn () => Inertia::render('Parent/Apply', [
         'auth_user' => auth()->user(),
         'clubs' => Club::query()
             ->where('church_id', auth()->user()->church_id)
             ->orderBy('club_name')
             ->get(),
     ]))->name('parent.enrollment');
-    Route::get('/parent/dashboard', fn(\Illuminate\Http\Request $request) => Inertia::render('Parent/Dashboard', [
+    Route::get('/parent/dashboard', fn (\Illuminate\Http\Request $request) => Inertia::render('Parent/Dashboard', [
         'auth_user' => auth()->user(),
         'parent_setup' => SuperAdminParentPortalController::dashboardSetupPayload($request),
         'is_superadmin_parent_preview' => (bool) $request->session()->get('superadmin_parent_portal_actor_id'),
         'registration_success' => (bool) $request->session()->pull('secure_enrollment_success', false),
     ]))->name('parent.dashboard');
 
-    Route::get('/parent/apply', fn() => Inertia::render('Parent/Apply', [
+    Route::get('/parent/apply', fn () => Inertia::render('Parent/Apply', [
         'auth_user' => auth()->user(),
         'clubs' => Club::query()
             ->where('church_id', auth()->user()->church_id)
@@ -403,7 +409,7 @@ Route::middleware(['auth', 'parent.activated', 'auth.parent'])->group(function (
     Route::get('/parent/receipts', [PaymentReceiptController::class, 'parentIndex'])->name('parent.receipts.index');
 });
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware('auth')->group(function () {
     Route::get('/payment-receipts/{receipt}/download', [PaymentReceiptController::class, 'download'])->name('payment-receipts.download');
     Route::post('/payment-receipts/{receipt}/send', [PaymentReceiptController::class, 'sendManual'])->name('payment-receipts.send');
     Route::post('/payment-receipts/download-bulk', [PaymentReceiptController::class, 'downloadBulk'])->name('payment-receipts.download-bulk');
@@ -481,7 +487,7 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::put('/super-admin/districts/{district}', [DistrictController::class, 'update'])->name('superadmin.districts.update');
     Route::put('/super-admin/districts/{district}/deactivate', [DistrictController::class, 'deactivate'])->name('superadmin.districts.deactivate');
     Route::delete('/super-admin/districts/{district}', [DistrictController::class, 'destroy'])->name('superadmin.districts.delete');
-    Route::get('/super-admin/clubs', fn() => Inertia::render('SuperAdmin/Clubs', [
+    Route::get('/super-admin/clubs', fn () => Inertia::render('SuperAdmin/Clubs', [
         'churches' => Church::query()
             ->with('district.association.union:id,name,evaluation_system')
             ->orderBy('church_name')
@@ -671,33 +677,27 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         }
     )->name('club.my-club');
 
-    Route::get('/club-director/my-club-finances', fn(Request $request) =>
-        redirect()->route('club.director.finance.accounting', $request->query())
+    Route::get('/club-director/my-club-finances', fn (Request $request) => redirect()->route('club.director.finance.accounting', $request->query())
     )->name('club.my-club-finances');
     Route::get(
         '/club-director/finance/cashbox',
-        fn() =>
-        Inertia::render('ClubDirector/Finance/Cashbox', ['auth_user' => auth()->user()])
+        fn () => Inertia::render('ClubDirector/Finance/Cashbox', ['auth_user' => auth()->user()])
     )->name('club.director.finance.cashbox');
     Route::get(
         '/club-director/finance/accounting',
-        fn() =>
-        Inertia::render('ClubDirector/Finance/Accounting', ['auth_user' => auth()->user()])
+        fn () => Inertia::render('ClubDirector/Finance/Accounting', ['auth_user' => auth()->user()])
     )->name('club.director.finance.accounting');
     Route::get(
         '/club-director/finance/reports',
-        fn() =>
-        Inertia::render('ClubDirector/Finance/Reports', ['auth_user' => auth()->user()])
+        fn () => Inertia::render('ClubDirector/Finance/Reports', ['auth_user' => auth()->user()])
     )->name('club.director.finance.reports');
     Route::get(
         '/club-director/finance/fundraisers',
-        fn() =>
-        Inertia::render('ClubDirector/Finance/Fundraisers', ['auth_user' => auth()->user()])
+        fn () => Inertia::render('ClubDirector/Finance/Fundraisers', ['auth_user' => auth()->user()])
     )->name('club.director.finance.fundraisers');
     Route::get('/club-director/event-settlements', [EventClubSettlementController::class, 'indexForClub'])
         ->name('club.director.event-settlements.index');
-    Route::get('/club-director/treasury', fn(Request $request) =>
-        redirect()->route('club.director.finance.accounting', $request->query())
+    Route::get('/club-director/treasury', fn (Request $request) => redirect()->route('club.director.finance.accounting', $request->query())
     )
         ->name('club.director.treasury');
     Route::get('/club-director/treasury/data', [ClubTreasuryController::class, 'data'])
@@ -785,12 +785,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
     Route::get(
         '/club-director/members',
-        fn() =>
-        Inertia::render('ClubDirector/Members', ['auth_user' => auth()->user()])
+        fn () => Inertia::render('ClubDirector/Members', ['auth_user' => auth()->user()])
     )->name('club.members');
 
-    Route::get('/club-director/payments', fn(Request $request) =>
-        redirect()->route('club.director.finance.cashbox', $request->query())
+    Route::get('/club-director/payments', fn (Request $request) => redirect()->route('club.director.finance.cashbox', $request->query())
     )
         ->name('club.director.payments');
     Route::post('/club-director/payments/parent-transfers/{submission}/approve', [ClubPaymentController::class, 'approveParentTransfer'])
@@ -799,8 +797,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ->name('club.director.payments.parent-transfers.reject');
     Route::post('/club-director/staff/{staff}/approve', [\App\Http\Controllers\StaffApprovalController::class, 'approve'])->name('staff.approve');
     Route::post('/club-director/staff/{staff}/reject', [\App\Http\Controllers\StaffApprovalController::class, 'reject'])->name('staff.reject');
-    Route::get('/club-director/expenses', fn(Request $request) =>
-        redirect()->route('club.director.finance.cashbox', $request->query())
+    Route::get('/club-director/expenses', fn (Request $request) => redirect()->route('club.director.finance.cashbox', $request->query())
     )
         ->name('club.director.expenses');
     Route::post('/club-director/expenses', [FinanceEngineController::class, 'storeExpense'])
@@ -849,6 +846,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
                     ->get()
                     ->map(function ($member) {
                         $detail = \App\Support\ClubHelper::memberDetail($member);
+
                         return [
                             'id' => $member->id,
                             'member_type' => $member->type,
@@ -923,12 +921,10 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         ]);
     })->name('club.reports.assistance');
 
-    Route::get('/club-director/reports/finances', fn(Request $request) =>
-        redirect()->route('club.director.finance.reports', $request->query())
+    Route::get('/club-director/reports/finances', fn (Request $request) => redirect()->route('club.director.finance.reports', $request->query())
     )->name('club.reports.finances');
 
-    Route::get('/club-director/reports/accounts', fn(Request $request) =>
-        redirect()->route('club.director.finance.accounting', $request->query())
+    Route::get('/club-director/reports/accounts', fn (Request $request) => redirect()->route('club.director.finance.accounting', $request->query())
     )->name('club.reports.accounts');
 
     Route::get('/club-director/reports/investiture-requirements', [ReportController::class, 'investitureRequirementsReport'])
@@ -1035,7 +1031,6 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::put('/staff/update-class', [StaffAdventurerController::class, 'updateAssignedClass'])->name('staff.update-class');
     Route::put('/staff/{id}', [StaffAdventurerController::class, 'update'])->name('staff.update');
 
-
     // AI
     Route::post('/nl-query', [AIQueryController::class, 'handle']);
 
@@ -1049,6 +1044,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     // Debug route
     Route::get('/test-template-access', function () {
         $path = storage_path('app/templates/template_adventurer_new.docx');
+
         return file_exists($path) ? response()->download($path) : 'Template not found.';
     });
 
@@ -1111,7 +1107,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // 🔓 Authenticated (non-role-specific)
 // ---------------------------------
 Route::middleware(['auth'])->group(function () {
-    //Finances
+    // Finances
     Route::prefix('clubs/{club}')->name('clubs.')->group(function () {
         Route::get('accounts', [\App\Http\Controllers\AccountController::class, 'index'])->name('accounts.index');
         Route::post('accounts', [\App\Http\Controllers\AccountController::class, 'store'])->name('accounts.store');
@@ -1121,11 +1117,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('bank-info', [\App\Http\Controllers\BankInfoController::class, 'clubIndex'])->name('bank-info.index');
         Route::put('bank-info/{payTo}', [\App\Http\Controllers\BankInfoController::class, 'clubUpdate'])->name('bank-info.update');
 
-        Route::get('payment-concepts',                [ClubController::class, 'paymentConceptsIndex'])->name('payment-concepts.index');
-        Route::post('payment-concepts',               [ClubController::class, 'paymentConceptsStore'])->name('payment-concepts.store');
-        Route::get('payment-concepts/{paymentConcept}',   [ClubController::class, 'paymentConceptsShow'])->name('payment-concepts.show');
-        Route::put('payment-concepts/{paymentConcept}',   [ClubController::class, 'paymentConceptsUpdate'])->name('payment-concepts.update');
-        Route::delete('payment-concepts/{paymentConcept}',[ClubController::class, 'paymentConceptsDestroy'])->name('payment-concepts.destroy');
+        Route::get('payment-concepts', [ClubController::class, 'paymentConceptsIndex'])->name('payment-concepts.index');
+        Route::post('payment-concepts', [ClubController::class, 'paymentConceptsStore'])->name('payment-concepts.store');
+        Route::get('payment-concepts/{paymentConcept}', [ClubController::class, 'paymentConceptsShow'])->name('payment-concepts.show');
+        Route::put('payment-concepts/{paymentConcept}', [ClubController::class, 'paymentConceptsUpdate'])->name('payment-concepts.update');
+        Route::delete('payment-concepts/{paymentConcept}', [ClubController::class, 'paymentConceptsDestroy'])->name('payment-concepts.destroy');
 
         // Pathfinder temp records (available to any authenticated user with club access)
         Route::get('temp-members', [\App\Http\Controllers\TempPathfinderController::class, 'listMembers'])->name('temp-members.index');
@@ -1133,7 +1129,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'listStaff'])->name('temp-staff.index');
         Route::post('temp-staff', [\App\Http\Controllers\TempPathfinderController::class, 'storeStaff'])->name('temp-staff.store');
     });
-    //Update password
+    // Update password
     Route::put('/users/{id}/password', [StaffAdventurerController::class, 'updatePassword'])->name('users.updatePassword');
     Route::post('/staff', [StaffAdventurerController::class, 'store'])->name('staff.store');
     Route::put('/members/{id}', [MemberAdventurerController::class, 'update'])->name('members.update');
@@ -1142,9 +1138,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/club-class-reports/pdf', [ClubClassController::class, 'pdf'])->name('club-classes.pdf');
     Route::get('/club-class-reports/pdf-with-requirements', [ClubClassController::class, 'pdfWithRequirements'])->name('club-classes.pdf-with-requirements');
 
-    //Reports
+    // Reports
     Route::get('/pdf-assistance-reports/{id}/{date}/pdf', [ReportController::class, 'generateAssistancePDF'])->name('asistance-report.pdf');
-
 
     Route::prefix('assistance-reports')->group(function () {
         Route::get('/', [RepAssistanceAdvController::class, 'index']);
@@ -1166,11 +1161,11 @@ Route::middleware(['auth'])->group(function () {
                 $user->setAttribute('assigned_class_id', session('assigned_class_id'));
                 $user->setAttribute('assigned_class_name', session('assigned_class_name'));
             }
+
             return Inertia::render('ClubPersonal/ClubPersonalDashboard', [
-                'auth_user' => $user
+                'auth_user' => $user,
             ]);
         })->name('clubPersonal.dashboard');
-
 
         Route::get('/club-personal/assistance-report', [AssistanceReportController::class, 'index'])
             ->name('club.assistance_report');
@@ -1196,8 +1191,7 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::middleware(['auth', 'verified', 'profile:club_director,superadmin'])->group(function () {
-    Route::get('/club-director/accounting-corrections', fn(Request $request) =>
-        redirect()->route('club.director.finance.accounting', $request->query())
+    Route::get('/club-director/accounting-corrections', fn (Request $request) => redirect()->route('club.director.finance.accounting', $request->query())
     )
         ->name('club.director.accounting-corrections');
     Route::post('/club-director/accounting-corrections/payments/{payment}/reverse', [FinanceEngineController::class, 'reversePayment'])
@@ -1208,4 +1202,4 @@ Route::middleware(['auth', 'verified', 'profile:club_director,superadmin'])->gro
         ->name('club.director.accounting-corrections.reimbursements.reverse');
 });
 
-require __DIR__ . '/auth.php';
+require __DIR__.'/auth.php';

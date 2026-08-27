@@ -2,20 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
-use Illuminate\Validation\Rules;
-use Auth;
 use App\Models\Church;
 use App\Models\ChurchInviteCode;
-use App\Models\MemberAdventurer;
 use App\Models\Club;
-use App\Models\ParentMember;
 use App\Models\ClubParentEnrollmentLink;
+use App\Models\MemberAdventurer;
+use App\Models\ParentMember;
+use App\Models\User;
+use Auth;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 use Throwable;
+
 class ParentAuthController extends Controller
 {
     public function showRegistrationForm()
@@ -49,6 +52,7 @@ class ParentAuthController extends Controller
     {
         $link = $this->activeSecureLink($token);
         $club = $link->club;
+        $this->normalizeRegistrationInput($request);
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => [
@@ -64,38 +68,46 @@ class ParentAuthController extends Controller
             ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
-        $validated['email'] = mb_strtolower($validated['email']);
+        try {
+            $user = DB::transaction(function () use ($validated, $club, $link) {
+                $userData = [
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                    'profile_type' => 'parent',
+                    'role_key' => 'parent',
+                    'scope_type' => 'club',
+                    'scope_id' => $club->id,
+                    'church_id' => $club->church_id,
+                    'church_name' => $club->church?->church_name ?: $club->church_name,
+                    'club_id' => $club->id,
+                    'status' => 'active',
+                    'email_verified_at' => null,
+                    'parent_activation_method' => null,
+                    'secure_enrollment_link_id' => $link->id,
+                    'enrollment_confirmed_at' => null,
+                    'enrollment_confirmed_by' => null,
+                ];
+                $user = User::query()
+                    ->where('email', $validated['email'])
+                    ->where('status', 'deleted')
+                    ->lockForUpdate()
+                    ->first() ?: new User;
+                $user->forceFill($userData)->save();
 
-        $user = DB::transaction(function () use ($validated, $club, $link) {
-            $userData = [
-                'name' => $validated['name'],
-                'email' => $validated['email'],
-                'password' => Hash::make($validated['password']),
-                'profile_type' => 'parent',
-                'role_key' => 'parent',
-                'scope_type' => 'club',
-                'scope_id' => $club->id,
-                'church_id' => $club->church_id,
-                'church_name' => $club->church?->church_name ?: $club->church_name,
-                'club_id' => $club->id,
-                'status' => 'active',
-                'email_verified_at' => null,
-                'parent_activation_method' => null,
-                'secure_enrollment_link_id' => $link->id,
-                'enrollment_confirmed_at' => null,
-                'enrollment_confirmed_by' => null,
-            ];
-            $user = User::query()->where('email', $validated['email'])->where('status', 'deleted')->first() ?: new User();
-            $user->forceFill($userData)->save();
+                DB::table('club_user')->updateOrInsert(
+                    ['user_id' => $user->id, 'club_id' => $club->id],
+                    ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+                );
+                $link->update(['last_used_at' => now()]);
 
-            DB::table('club_user')->updateOrInsert(
-                ['user_id' => $user->id, 'club_id' => $club->id],
-                ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
-            );
-            $link->update(['last_used_at' => now()]);
-
-            return $user;
-        });
+                return $user;
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages([
+                'email' => 'The email has already been taken.',
+            ]);
+        }
 
         Auth::login($user);
         $request->session()->regenerate();
@@ -122,14 +134,14 @@ class ParentAuthController extends Controller
     public function resolveInvite(Request $request)
     {
         $validated = $request->validate([
-            'invite_code' => ['required', 'string'],
+            'invite_code' => ['required', 'string', 'max:32'],
         ]);
 
         $invite = $this->validInviteQuery($validated['invite_code'])
             ->with('church.district.association.union')
             ->first();
 
-        if (!$invite || $invite->uses_left === 0) {
+        if (! $invite || ($invite->uses_left !== null && $invite->uses_left <= 0)) {
             return response()->json(['message' => 'Invalid, expired, or fully used invite code.'], 422);
         }
 
@@ -156,6 +168,7 @@ class ParentAuthController extends Controller
 
     public function register(Request $request)
     {
+        $this->normalizeRegistrationInput($request);
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => [
@@ -163,110 +176,103 @@ class ParentAuthController extends Controller
                 'string',
                 'email',
                 'max:255',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    $emailInUse = User::query()
-                        ->where('email', $value)
-                        ->where(function ($query) {
-                            $query->whereNull('status')->orWhere('status', '!=', 'deleted');
-                        })
-                        ->exists();
-
-                    if ($emailInUse) {
-                        $fail('The email has already been taken.');
-                    }
-                },
             ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'church_id' => 'required|exists:churches,id',
             'church_name' => 'required|string|max:255',
             'club_id' => 'required|exists:clubs,id',
-            'invite_code' => ['required', 'string'],
+            'invite_code' => ['required', 'string', 'max:32'],
         ]);
-        $validated['email'] = mb_strtolower($validated['email']);
 
-        $invite = $this->validInviteQuery($validated['invite_code'])
-            ->where('church_id', (int) $validated['church_id'])
-            ->first();
+        try {
+            DB::transaction(function () use ($validated) {
+                $invite = $this->validInviteQuery($validated['invite_code'])
+                    ->where('church_id', (int) $validated['church_id'])
+                    ->lockForUpdate()
+                    ->first();
 
-        if (!$invite || $invite->uses_left === 0) {
-            return back()->withErrors(['invite_code' => 'Invalid, expired, or fully used invite code.'])->withInput();
-        }
+                if (! $invite || ($invite->uses_left !== null && $invite->uses_left <= 0)) {
+                    throw ValidationException::withMessages([
+                        'invite_code' => 'Invalid, expired, or fully used invite code.',
+                    ]);
+                }
 
-        $church = Church::query()->findOrFail($validated['church_id']);
-        if ($church->church_name !== $validated['church_name']) {
-            return back()->withErrors(['church_name' => 'Church does not match the invite code.'])->withInput();
-        }
+                $church = Church::query()->findOrFail($validated['church_id']);
+                if ($church->church_name !== $validated['church_name']) {
+                    throw ValidationException::withMessages([
+                        'church_name' => 'Church does not match the invite code.',
+                    ]);
+                }
 
-        $club = Club::query()
-            ->withoutGlobalScopes()
-            ->where('id', (int) $validated['club_id'])
-            ->where('church_id', (int) $validated['church_id'])
-            ->where('status', 'active')
-            ->first();
+                $club = Club::query()
+                    ->withoutGlobalScopes()
+                    ->where('id', (int) $validated['club_id'])
+                    ->where('church_id', (int) $validated['church_id'])
+                    ->where('status', 'active')
+                    ->first();
 
-        if (!$club) {
-            return back()->withErrors(['club_id' => 'Selected club is not valid for this church.'])->withInput();
-        }
+                if (! $club) {
+                    throw ValidationException::withMessages([
+                        'club_id' => 'Selected club is not valid for this church.',
+                    ]);
+                }
 
-        $userData = [
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'profile_type' => 'parent',
-            'role_key' => 'parent',
-            'scope_type' => 'club',
-            'scope_id' => $validated['club_id'],
-            'church_id' => $validated['church_id'],
-            'church_name' => $validated['church_name'],
-            'club_id' => $validated['club_id'],
-            'status' => 'pending',
-        ];
-        $deletedUser = User::query()
-            ->where('email', $validated['email'])
-            ->where('status', 'deleted')
-            ->first();
+                $existingUser = User::query()
+                    ->where('email', $validated['email'])
+                    ->lockForUpdate()
+                    ->first();
 
-        if ($deletedUser) {
-            $deletedUser->forceFill($userData)->save();
-            $user = $deletedUser;
-        } else {
-            $user = User::create($userData);
-        }
+                if ($existingUser && $existingUser->status !== 'deleted') {
+                    throw ValidationException::withMessages([
+                        'email' => 'The email has already been taken.',
+                    ]);
+                }
 
-        DB::table('club_user')->updateOrInsert(
-            ['user_id' => $user->id, 'club_id' => $club->id],
-            ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
-        );
+                $userData = [
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                    'profile_type' => 'parent',
+                    'role_key' => 'parent',
+                    'scope_type' => 'club',
+                    'scope_id' => $club->id,
+                    'church_id' => $church->id,
+                    'church_name' => $church->church_name,
+                    'club_id' => $club->id,
+                    'status' => 'pending',
+                ];
+                $user = $existingUser ?: new User;
+                $user->forceFill($userData)->save();
 
-        if ($invite->uses_left !== null) {
-            $invite->decrement('uses_left');
-        }
+                DB::table('club_user')->updateOrInsert(
+                    ['user_id' => $user->id, 'club_id' => $club->id],
+                    ['status' => 'active', 'created_at' => now(), 'updated_at' => now()]
+                );
 
-        $memberMatches = collect();
+                $memberMatches = match ($club->club_type) {
+                    'adventurer', 'adventurers' => MemberAdventurer::query()
+                        ->where('parent_name', $validated['name'])
+                        ->where('club_id', $club->id)
+                        ->get(),
+                    default => collect(),
+                };
 
-        switch ($club->club_type) {
-            case 'adventurer':
-            case 'adventurers':
-                $memberMatches = MemberAdventurer::where([
-                    ['parent_name', $validated['name']],
-                    ['club_id', $club->id],
-                ])->get();
-                break;
-            case 'pathfinder':
-            case 'pathfinders':
-                // Future: $memberMatches = MemberPathfinder::where(...)->get();
-                break;
-            case 'guide':
-                // Future support
-                break;
-        }
+                foreach ($memberMatches as $member) {
+                    ParentMember::firstOrCreate([
+                        'user_id' => $user->id,
+                        'member_id' => $member->id,
+                        'club_id' => $club->id,
+                        'church_id' => $church->id,
+                    ]);
+                }
 
-        foreach ($memberMatches as $member) {
-            ParentMember::firstOrCreate([
-                'user_id' => $user->id,
-                'member_id' => $member->id,
-                'club_id' => $club->id,
-                'church_id' => $validated['church_id'],
+                if ($invite->uses_left !== null) {
+                    $invite->decrement('uses_left');
+                }
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages([
+                'email' => 'The email has already been taken.',
             ]);
         }
 
@@ -281,6 +287,14 @@ class ParentAuthController extends Controller
             ->where(function ($query) {
                 $query->whereNull('expires_at')->orWhere('expires_at', '>=', now());
             });
+    }
+
+    private function normalizeRegistrationInput(Request $request): void
+    {
+        $request->merge([
+            'email' => mb_strtolower(trim((string) $request->input('email'))),
+            'invite_code' => strtoupper(trim((string) $request->input('invite_code'))),
+        ]);
     }
 
     private function activeSecureLink(string $token): ClubParentEnrollmentLink

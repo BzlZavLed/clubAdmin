@@ -7,9 +7,9 @@ use App\Mail\AdventurerYearlyApplicationMail;
 use App\Mail\AdventurerYearlyApplicationSignatureRequestMail;
 use App\Mail\ConferenceMemberExportMail;
 use App\Mail\FinanceLedgerReportMail;
-use App\Mail\ParentPaymentSubmissionMail;
 use App\Mail\ParentEmailVerificationMail;
 use App\Mail\ParentPasswordResetMail;
+use App\Mail\ParentPaymentSubmissionMail;
 use App\Mail\PathfinderAnnualApplicationMail;
 use App\Mail\PathfinderAnnualApplicationSignatureRequestMail;
 use App\Mail\PathfinderMonthlyReportMail;
@@ -25,6 +25,7 @@ use App\Models\PathfinderAnnualApplicationSignature;
 use App\Models\PathfinderMonthlyReport;
 use App\Models\PaymentReceipt;
 use App\Models\User;
+use App\Services\ParentPaymentProofService;
 use App\Services\PaymentReceiptPdfService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Mail;
@@ -35,7 +36,10 @@ use Throwable;
 
 class MailerService
 {
-    public function __construct(private readonly PaymentReceiptPdfService $receiptPdfService) {}
+    public function __construct(
+        private readonly PaymentReceiptPdfService $receiptPdfService,
+        private readonly ParentPaymentProofService $parentPaymentProofService,
+    ) {}
 
     public function sendParentEmailVerification(User $parent): void
     {
@@ -281,19 +285,14 @@ class MailerService
         $trackingPixelUrl = $this->trackingPixelUrl($mailLog);
 
         try {
-            $disk = Storage::disk('public');
             $path = $submission->receipt_image_path;
-
-            if (! $path || ! $disk->exists($path)) {
-                throw new \RuntimeException('Parent payment receipt image not found.');
-            }
 
             Mail::to($recipient)
                 ->send(new ParentPaymentSubmissionMail(
                     submission: $submission,
-                    receiptImageContents: $disk->get($path),
+                    receiptImageContents: $this->parentPaymentProofService->contents($submission),
                     receiptImageName: basename($path),
-                    receiptImageMime: $disk->mimeType($path) ?: 'application/octet-stream',
+                    receiptImageMime: $this->parentPaymentProofService->mimeType($submission),
                     trackingPixelUrl: $trackingPixelUrl,
                     emailUid: $mailLog->email_uid,
                 ));

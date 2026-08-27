@@ -93,7 +93,14 @@ class ParentFamilyDataDeletionService
             }
 
             $this->collectPublicFiles($files, 'parent_carpeta_requirement_evidences', 'file_path', 'member_id', $memberIds);
-            $this->collectPublicFiles($files, 'parent_payment_submissions', 'receipt_image_path', 'member_id', $memberIds);
+            $this->collectStoredFiles(
+                $files,
+                'parent_payment_submissions',
+                'receipt_image_path',
+                'receipt_image_disk',
+                'member_id',
+                $memberIds,
+            );
             $this->collectPublicFiles($files, 'members_adventurers', 'signature_path', 'id', $adventurerIds);
             $this->collectPublicFiles($files, 'members_pathfinders', 'signature_path', 'id', $pathfinderIds);
 
@@ -230,6 +237,41 @@ class ParentFamilyDataDeletionService
         DB::table($table)->whereIn($keyColumn, $ids)->pluck($pathColumn)->filter()->each(
             function ($path) use (&$files): void {
                 $files[] = ['public', $path];
+            }
+        );
+    }
+
+    private function collectStoredFiles(
+        array &$files,
+        string $table,
+        string $pathColumn,
+        string $diskColumn,
+        string $keyColumn,
+        array $ids,
+    ): void {
+        if ($ids === [] || ! Schema::hasTable($table) || ! Schema::hasColumn($table, $pathColumn)) {
+            return;
+        }
+
+        $columns = [$pathColumn];
+        $hasDiskColumn = Schema::hasColumn($table, $diskColumn);
+        if ($hasDiskColumn) {
+            $columns[] = $diskColumn;
+        }
+
+        DB::table($table)->whereIn($keyColumn, $ids)->get($columns)->each(
+            function ($record) use (&$files, $pathColumn, $diskColumn, $hasDiskColumn): void {
+                $path = $record->{$pathColumn};
+                if (! $path) {
+                    return;
+                }
+
+                $disk = $hasDiskColumn ? $record->{$diskColumn} : null;
+                if (! in_array($disk, ['local', 'public'], true)) {
+                    $disk = Storage::disk('local')->exists($path) ? 'local' : 'public';
+                }
+
+                $files[] = [$disk, $path];
             }
         );
     }

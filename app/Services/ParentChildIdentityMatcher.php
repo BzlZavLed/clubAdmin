@@ -21,8 +21,7 @@ class ParentChildIdentityMatcher
             fn (array $guardian) => $parentEmail !== '' && $parentEmail === strtolower(trim((string) $guardian['email']))
         );
         $guardianPairMatches = $parent->hasVerifiedEmail() && collect($guardians)->contains(
-            fn (array $guardian) =>
-                $parentName !== ''
+            fn (array $guardian) => $parentName !== ''
                 && $parentName === $this->normalize($guardian['name'])
                 && $parentEmail !== ''
                 && $parentEmail === strtolower(trim((string) $guardian['email']))
@@ -39,7 +38,7 @@ class ParentChildIdentityMatcher
             'matched_count' => $matchedCount,
             'guardian_pair_matches' => $guardianPairMatches,
             'can_link_immediately' => $matchedCount === 3 && $guardianPairMatches,
-            'requires_director_approval' => $matchedCount === 2 || ($matchedCount === 3 && !$guardianPairMatches),
+            'requires_director_approval' => $matchedCount === 2 || ($matchedCount === 3 && ! $guardianPairMatches),
             'eligible' => $matchedCount >= 2,
             'snapshot' => [
                 'parent_name' => $parent->name,
@@ -73,25 +72,31 @@ class ParentChildIdentityMatcher
         ], fn (array $guardian) => $guardian['name'] || $guardian['email']));
     }
 
-    private function lastNameMatches(?string $parentName, ?string $memberName): bool
+    public function lastNameMatches(?string $parentName, ?string $memberName): bool
     {
-        $parentParts = $this->nameParts($parentName);
-        $memberParts = $this->nameParts($memberName);
-        if (count($parentParts) < 2 || count($memberParts) < 2) {
-            return false;
+        $parentFirstSurname = $this->firstSurname($parentName);
+        $memberFirstSurname = $this->firstSurname($memberName);
+
+        return $parentFirstSurname !== null
+            && $memberFirstSurname !== null
+            && $parentFirstSurname === $memberFirstSurname;
+    }
+
+    private function firstSurname(?string $name): ?string
+    {
+        $ignored = ['de', 'del', 'la', 'las', 'los', 'y'];
+        $parts = array_values(array_filter(
+            $this->nameParts($name),
+            fn (string $part) => ! in_array($part, $ignored, true)
+        ));
+
+        if (count($parts) < 2) {
+            return null;
         }
 
-        $ignored = ['de', 'del', 'la', 'las', 'los', 'y'];
-        $parentSurnames = array_values(array_filter(
-            array_slice($parentParts, -2),
-            fn (string $part) => !in_array($part, $ignored, true)
-        ));
-        $memberSurnames = array_values(array_filter(
-            array_slice($memberParts, 1),
-            fn (string $part) => !in_array($part, $ignored, true)
-        ));
-
-        return count(array_intersect($parentSurnames, $memberSurnames)) > 0;
+        return count($parts) === 2
+            ? $parts[array_key_last($parts)]
+            : $parts[count($parts) - 2];
     }
 
     private function nameParts(?string $value): array

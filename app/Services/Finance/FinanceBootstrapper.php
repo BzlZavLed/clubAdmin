@@ -10,10 +10,10 @@ use App\Models\Event;
 use App\Models\EventClubSettlement;
 use App\Models\Expense;
 use App\Models\FinanceReimbursementPayee;
+use App\Models\ParentPaymentSubmission;
 use App\Models\Payment;
 use App\Models\PaymentConcept;
 use App\Models\PaymentReceipt;
-use App\Models\ParentPaymentSubmission;
 use App\Models\Staff;
 use App\Models\TreasuryMovement;
 use App\Services\AttendanceDuesPaymentService;
@@ -32,8 +32,7 @@ class FinanceBootstrapper
         private readonly EventClubSettlementService $settlementService,
         private readonly FinanceMovementReader $movementReader,
         private readonly PaymentReceiptService $paymentReceiptService,
-    ) {
-    }
+    ) {}
 
     public function cashboxData($user, Club $club, array $filters = []): array
     {
@@ -196,7 +195,9 @@ class FinanceBootstrapper
                     'payment_date' => optional($submission->payment_date)->toDateString(),
                     'reference' => $submission->reference,
                     'notes' => $submission->notes,
-                    'receipt_image_url' => $submission->receipt_image_path ? asset('storage/' . $submission->receipt_image_path) : null,
+                    'receipt_image_url' => $submission->receipt_image_path
+                        ? route('parent-payment-submissions.proof', $submission)
+                        : null,
                     'created_at' => optional($submission->created_at)->toDateTimeString(),
                 ];
             })
@@ -322,7 +323,7 @@ class FinanceBootstrapper
                 'movement_date' => optional($movement->movement_date)->toDateString(),
                 'reference' => $movement->reference,
                 'notes' => $movement->notes,
-                'proof_url' => $movement->proof_path ? asset('storage/' . $movement->proof_path) : null,
+                'proof_url' => $movement->proof_path ? asset('storage/'.$movement->proof_path) : null,
                 'event_title' => $movement->event?->title,
                 'receipt_number' => $movement->eventClubSettlement?->receipt_number,
                 'created_by' => $movement->creator?->name,
@@ -427,7 +428,7 @@ class FinanceBootstrapper
                     'staff_name' => $staffDetail['name'] ?? null,
                     'payer_name' => $memberDetail['name'] ?? $staffDetail['name'] ?? $payment?->payer_name ?? $fundraiserSale?->customer_name,
                     'payer_email' => $payment?->payer_email,
-                    'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text ?? ($fundraiserSale ? 'Fundraiser: ' . ($fundraiserSale->fundraiserEvent?->name ?? 'Venta') : null),
+                    'concept_name' => $payment?->allocations?->first()?->concept?->event?->title ?? $payment?->concept?->event?->title ?? $payment?->concept?->concept ?? $payment?->concept_text ?? ($fundraiserSale ? 'Fundraiser: '.($fundraiserSale->fundraiserEvent?->name ?? 'Venta') : null),
                     'amount_paid' => (float) ($payment?->amount_paid ?? $fundraiserSale?->total_amount ?? 0),
                     'payment_date' => optional($payment?->payment_date ?? $fundraiserSale?->sale_date)->toDateString(),
                     'reason' => $reason,
@@ -440,7 +441,7 @@ class FinanceBootstrapper
 
     private function eventSettlementRows($user, Club $club): array
     {
-        if (!$this->canManageSettlementForClub($user, $club)) {
+        if (! $this->canManageSettlementForClub($user, $club)) {
             return [];
         }
 
@@ -461,14 +462,14 @@ class FinanceBootstrapper
                 $summary = collect($this->eventFinanceService->clubSignupSummary($event))
                     ->firstWhere('club_id', $club->id);
 
-                if (!$summary) {
+                if (! $summary) {
                     return null;
                 }
 
                 $hasPending = (float) ($summary['pending_settlement_amount'] ?? 0) > 0;
-                $hasReceipts = !empty($summary['settlement_receipts'] ?? []);
+                $hasReceipts = ! empty($summary['settlement_receipts'] ?? []);
 
-                if (!$hasPending && !$hasReceipts) {
+                if (! $hasPending && ! $hasReceipts) {
                     return null;
                 }
 

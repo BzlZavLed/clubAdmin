@@ -9,6 +9,7 @@ use App\Models\WorkplanTaskAssignment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 
 class MobileAuthController extends Controller
 {
@@ -24,13 +25,20 @@ class MobileAuthController extends Controller
             ->where('email', $credentials['email'])
             ->first();
 
-        if (!$user || !Hash::check($credentials['password'], $user->password)) {
+        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        if (!$this->canUseMobile($user)) {
+        if (! $this->canUseMobile($user)) {
+            if ($user->profile_type === 'parent' && ! $user->canAccessParentPortal()) {
+                return response()->json([
+                    'message' => 'Parent account activation is required.',
+                    'code' => 'PARENT_ACTIVATION_REQUIRED',
+                ], Response::HTTP_FORBIDDEN);
+            }
+
             throw ValidationException::withMessages([
                 'email' => ['This account is not enabled for mobile access.'],
             ]);
@@ -64,7 +72,7 @@ class MobileAuthController extends Controller
         $user = $request->user()->load('mobileMember');
         $member = $user->mobileMember;
 
-        if (!$member) {
+        if (! $member) {
             return response()->json(['data' => []]);
         }
 
@@ -115,7 +123,7 @@ class MobileAuthController extends Controller
         }
 
         if ($user->profile_type === 'parent') {
-            return true;
+            return $user->canAccessParentPortal();
         }
 
         if ($user->profile_type !== 'member') {
