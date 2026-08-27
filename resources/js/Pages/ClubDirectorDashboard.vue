@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import axios from 'axios'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import { fetchInviteCode, regenerateInviteCode } from '@/Services/api'
 import { useGeneral } from '@/Composables/useGeneral'
@@ -13,11 +14,17 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  enrollment_confirmation_requests: {
+    type: Object,
+    default: () => ({ total: 0, parents: [], members: [] }),
+  },
 })
 
 const inviteModalOpen = ref(false)
 const inviteCode = ref(null)
 const inviteLoading = ref(false)
+const confirmationRequests = ref(props.enrollment_confirmation_requests)
+const confirmingRequest = ref(null)
 
 function labelOrMissing(value) {
   return value || tr('No registrado', 'Not registered')
@@ -50,6 +57,26 @@ async function regenerateCode() {
     inviteLoading.value = false
   }
 }
+
+async function confirmSecureEnrollment(kind, request) {
+  const key = `${kind}-${request.id}`
+  confirmingRequest.value = key
+  try {
+    const routeName = kind === 'parent'
+      ? 'club.enrollment-confirmations.parents.confirm'
+      : 'club.enrollment-confirmations.members.confirm'
+    const params = kind === 'parent' ? { user: request.id } : { member: request.id }
+    const { data } = await axios.post(route(routeName, params))
+    confirmationRequests.value = data.data
+    showToast(kind === 'parent'
+      ? tr('Cuenta de padre confirmada', 'Parent account confirmed')
+      : tr('Miembro confirmado', 'Member confirmed'))
+  } catch (error) {
+    showToast(error?.response?.data?.message || tr('No se pudo confirmar la solicitud', 'Could not confirm the request'), 'error')
+  } finally {
+    confirmingRequest.value = null
+  }
+}
 </script>
 
 <template>
@@ -57,6 +84,51 @@ async function regenerateCode() {
     <template #title>{{ tr('Panel del Director de Club', 'Club Director Dashboard') }}</template>
 
     <div class="space-y-6 text-gray-800">
+      <section v-if="confirmationRequests?.total" class="overflow-hidden rounded-xl border border-amber-300 bg-white shadow-sm">
+        <div class="flex flex-col gap-2 border-b border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">{{ tr('Inscripciones por enlace seguro', 'Secure-link enrollments') }}</p>
+            <h2 class="mt-1 text-xl font-semibold text-gray-950">{{ tr('Confirmaciones pendientes', 'Pending confirmations') }}</h2>
+            <p class="mt-1 text-sm text-gray-700">{{ tr('Estas personas ya pueden usar el portal. Confirma que pertenecen al club y que sus datos son correctos.', 'These people can already use the portal. Confirm that they belong to the club and that their information is correct.') }}</p>
+          </div>
+          <span class="inline-flex w-fit rounded-full bg-amber-600 px-3 py-1 text-sm font-bold text-white">{{ confirmationRequests.total }}</span>
+        </div>
+
+        <div class="grid gap-6 p-5 xl:grid-cols-2">
+          <div v-if="confirmationRequests.parents?.length">
+            <h3 class="font-semibold text-gray-900">{{ tr('Cuentas de padres', 'Parent accounts') }}</h3>
+            <div class="mt-3 space-y-3">
+              <article v-for="parent in confirmationRequests.parents" :key="parent.id" class="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <p class="font-semibold text-gray-900">{{ parent.name }}</p>
+                  <p class="break-all text-sm text-gray-600">{{ parent.email }}</p>
+                  <p class="mt-1 text-xs font-medium text-emerald-700">{{ parent.club_name }}</p>
+                </div>
+                <button type="button" class="shrink-0 rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60" :disabled="confirmingRequest === `parent-${parent.id}`" @click="confirmSecureEnrollment('parent', parent)">
+                  {{ confirmingRequest === `parent-${parent.id}` ? tr('Confirmando...', 'Confirming...') : tr('Confirmar cuenta', 'Confirm account') }}
+                </button>
+              </article>
+            </div>
+          </div>
+
+          <div v-if="confirmationRequests.members?.length">
+            <h3 class="font-semibold text-gray-900">{{ tr('Miembros nuevos', 'New members') }}</h3>
+            <div class="mt-3 space-y-3">
+              <article v-for="member in confirmationRequests.members" :key="member.id" class="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <p class="font-semibold text-gray-900">{{ member.name }}</p>
+                  <p class="text-sm text-gray-600">{{ member.parent_name || tr('Sin padre vinculado', 'No linked parent') }}</p>
+                  <p class="mt-1 text-xs font-medium text-emerald-700">{{ member.club_name }}</p>
+                </div>
+                <button type="button" class="shrink-0 rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60" :disabled="confirmingRequest === `member-${member.id}`" @click="confirmSecureEnrollment('member', member)">
+                  {{ confirmingRequest === `member-${member.id}` ? tr('Confirmando...', 'Confirming...') : tr('Confirmar miembro', 'Confirm member') }}
+                </button>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="bg-white border rounded-lg shadow-sm p-5">
         <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>

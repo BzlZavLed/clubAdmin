@@ -29,6 +29,7 @@ use App\Services\PaymentReceiptService;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 use DB;
 use Auth;
@@ -138,6 +139,13 @@ class MemberAdventurerController extends Controller
         $club = Club::findOrFail($request->input('club_id'));
         $clubType = strtolower($club->club_type ?? '');
         $parentId = auth()->user()?->profile_type === 'parent' && $clubType !== 'master_guide' ? auth()->id() : null;
+        $secureEnrollmentLink = auth()->user()?->profile_type === 'parent'
+            ? auth()->user()->secureEnrollmentLink
+            : null;
+        if ($secureEnrollmentLink) {
+            abort_unless((int) $secureEnrollmentLink->club_id === (int) $club->id, 403, 'This secure enrollment account is limited to its assigned club.');
+        }
+        $unifiedMember = null;
         if (!$parentId && $clubType !== 'master_guide' && $request->filled('parent_id')) {
             abort_unless(
                 in_array(auth()->user()?->profile_type, ['club_director', 'superadmin'], true)
@@ -190,6 +198,7 @@ class MemberAdventurerController extends Controller
                 'status' => 'active',
                 ...$this->spiritualProfilePayload($request),
             ]);
+            $unifiedMember = $member;
 
             $masterGuide->update(['member_id' => $member->id]);
             $this->syncPastoralCareForMember($member->fresh(), $club);
@@ -238,12 +247,31 @@ class MemberAdventurerController extends Controller
                 'insurance_provider' => 'nullable|string|max:255',
                 'insurance_number' => 'nullable|string|max:255',
                 'parent_guardian_signature' => 'nullable|string|max:255',
+                'signature_type' => ['nullable', 'in:typed,drawn'],
+                'signature' => ['nullable', 'required_if:signature_type,typed', 'string', 'max:255'],
+                'signature_data' => ['nullable', 'required_if:signature_type,drawn', 'string', 'max:1500000'],
                 'signed_at' => 'nullable|date',
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
                 'is_sda' => 'nullable|boolean',
                 'baptism_date' => ['nullable', 'date'],
             ]);
+            $signatureType = $validated['signature_type'] ?? null;
+            $signatureData = $validated['signature_data'] ?? null;
+            $typedSignature = $validated['signature'] ?? null;
+            unset($validated['signature'], $validated['signature_data']);
+
+            if ($signatureType) {
+                $validated['signature_type'] = $signatureType;
+                $validated['signed_at'] = $validated['signed_at'] ?? now()->toDateString();
+                if ($signatureType === 'drawn') {
+                    $validated['signature_path'] = $this->storeParentEnrollmentSignature($signatureData);
+                    $validated['parent_guardian_signature'] = $validated['father_guardian_name'];
+                } else {
+                    $validated['parent_guardian_signature'] = $typedSignature;
+                }
+            }
+
             $validated = $this->memberDetailPayload($validated);
 
             $validated['club_id'] = $club->id;
@@ -264,6 +292,7 @@ class MemberAdventurerController extends Controller
                 'status' => 'active',
                 ...$this->spiritualProfilePayload($request),
             ]);
+            $unifiedMember = $member;
 
             $tempMember->update(['member_id' => $member->id]);
             $this->syncPastoralCareForMember($member->fresh(), $club);
@@ -299,12 +328,25 @@ class MemberAdventurerController extends Controller
                 'parent_cell' => 'required|string|max:255',
                 'home_address' => 'required|string',
                 'email_address' => 'required|email',
-                'signature' => 'required|string|max:255',
+                'signature_type' => ['nullable', 'in:typed,drawn'],
+                'signature' => ['nullable', 'required_unless:signature_type,drawn', 'string', 'max:255'],
+                'signature_data' => ['nullable', 'required_if:signature_type,drawn', 'string', 'max:1500000'],
                 'mark_insurance_paid' => 'nullable|boolean',
                 'mark_enrollment_paid' => 'nullable|boolean',
                 'is_sda' => 'nullable|boolean',
                 'baptism_date' => ['nullable', 'date'],
             ]);
+            $signatureType = $validated['signature_type'] ?? 'typed';
+            $signatureData = $validated['signature_data'] ?? null;
+            unset($validated['signature_data']);
+
+            $validated['signature_type'] = $signatureType;
+            if ($signatureType === 'drawn') {
+                $validated['signature_path'] = $this->storeParentEnrollmentSignature($signatureData);
+                $validated['signature'] = $validated['parent_name'];
+            }
+            $validated['signed_at'] = now()->toDateString();
+
             $validated = $this->memberDetailPayload($validated);
 
             $validated['status'] = 'active';
@@ -329,6 +371,7 @@ class MemberAdventurerController extends Controller
                     ...$this->spiritualProfilePayload($request),
                 ]
             );
+            $unifiedMember = $memberRecord;
             $memberRecord->update($this->spiritualProfilePayload($request));
             $this->syncPastoralCareForMember($memberRecord->fresh(), $club);
 
@@ -339,6 +382,14 @@ class MemberAdventurerController extends Controller
             if ($request->boolean('mark_enrollment_paid')) {
                 $this->handleEnrollmentPayment($club, $member, $memberRecord);
             }
+        }
+
+        if ($secureEnrollmentLink && $unifiedMember) {
+            $unifiedMember->forceFill([
+                'secure_enrollment_link_id' => $secureEnrollmentLink->id,
+                'enrollment_confirmed_at' => null,
+                'enrollment_confirmed_by' => null,
+            ])->save();
         }
 
         if (auth()->user()?->profile_type === 'parent') {
@@ -1666,6 +1717,27 @@ class MemberAdventurerController extends Controller
                 ? implode(', ', collect($names)->unique()->values()->all())
                 : '—';
         }
+    }
+
+    private function storeParentEnrollmentSignature(string $signatureData): string
+    {
+        if (! preg_match('/^data:image\/png;base64,([A-Za-z0-9+\/=\r\n]+)$/', $signatureData, $matches)) {
+            throw ValidationException::withMessages([
+                'signature_data' => ['La firma dibujada debe ser una imagen PNG válida. / The drawn signature must be a valid PNG image.'],
+            ]);
+        }
+
+        $decoded = base64_decode($matches[1], true);
+        if ($decoded === false || strlen($decoded) > 1000000 || ! str_starts_with($decoded, "\x89PNG\r\n\x1a\n")) {
+            throw ValidationException::withMessages([
+                'signature_data' => ['La firma dibujada no es válida o es demasiado grande. / The drawn signature is invalid or too large.'],
+            ]);
+        }
+
+        $path = 'parent-enrollment-signatures/' . Str::uuid() . '.png';
+        Storage::disk('public')->put($path, $decoded);
+
+        return $path;
     }
 
     /* private function generateMemberDoc(MemberAdventurer $member, string $outputDir): string

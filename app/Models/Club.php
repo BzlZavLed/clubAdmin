@@ -41,6 +41,11 @@ class Club extends Model
         return $this->belongsToMany(User::class)->withTimestamps();
     }
 
+    public function parentEnrollmentLinks()
+    {
+        return $this->hasMany(ClubParentEnrollmentLink::class);
+    }
+
     public function adventurerMembers()
     {
         return $this->hasMany(MemberAdventurer::class, 'club_id');

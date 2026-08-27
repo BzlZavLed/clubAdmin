@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useForm, usePage, router } from '@inertiajs/vue3'
 import { formatPhoneNumber, forceLogout } from '@/Helpers/general'
 import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
@@ -16,6 +16,12 @@ const showSuccess = ref(false)
 const currentStep = ref(1)
 const selectedClubId = ref(null)
 const { showToast } = useGeneral()
+const isMobileDevice = ref(false)
+const signatureMode = ref('typed')
+const signatureCanvas = ref(null)
+const hasDrawnSignature = ref(false)
+let signatureContext = null
+let isDrawingSignature = false
 
 const matchingClubs = computed(() =>
     clubs.value.filter(club => club.church_name === auth_user.value.church_name)
@@ -25,7 +31,7 @@ const selectedClub = computed(() =>
 )
 const isPathfinderClub = computed(() => selectedClub.value?.club_type === 'pathfinders')
 const isMasterGuideClub = computed(() => selectedClub.value?.club_type === 'master_guide')
-const totalSteps = computed(() => isMasterGuideClub.value || isPathfinderClub.value ? 3 : 4)
+const totalSteps = computed(() => isMasterGuideClub.value ? 3 : 4)
 
 const nextStep = () => {
     if (currentStep.value === 1 && !form.club_id) {
@@ -44,7 +50,7 @@ const previousStep = () => {
 }
 
 const form = useForm({
-    club_id: '',
+    club_id: matchingClubs.value.length === 1 ? matchingClubs.value[0].id : '',
     club_name: '',
     director_name: '',
     church_name: '',
@@ -70,8 +76,106 @@ const form = useForm({
     home_address: '',
     email_address: '',
     signature: '',
+    signature_type: 'typed',
+    signature_data: '',
     program_year: 1,
 })
+
+const detectMobileDevice = () => {
+    isMobileDevice.value = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768
+}
+
+const prepareSignatureCanvas = () => {
+    const canvas = signatureCanvas.value
+    if (!canvas) return
+
+    const existingSignature = form.signature_data
+    const width = Math.max(canvas.getBoundingClientRect().width, 280)
+    const height = 180
+    const pixelRatio = Math.max(window.devicePixelRatio || 1, 1)
+    canvas.width = Math.round(width * pixelRatio)
+    canvas.height = Math.round(height * pixelRatio)
+    canvas.style.height = `${height}px`
+
+    signatureContext = canvas.getContext('2d')
+    signatureContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+    signatureContext.lineCap = 'round'
+    signatureContext.lineJoin = 'round'
+    signatureContext.lineWidth = 2.5
+    signatureContext.strokeStyle = '#0f172a'
+
+    if (existingSignature) {
+        const image = new Image()
+        image.onload = () => signatureContext?.drawImage(image, 0, 0, width, height)
+        image.src = existingSignature
+    }
+}
+
+const signaturePoint = (event) => {
+    const rect = signatureCanvas.value.getBoundingClientRect()
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+}
+
+const startSignature = (event) => {
+    if (!signatureContext) prepareSignatureCanvas()
+    const point = signaturePoint(event)
+    isDrawingSignature = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    signatureContext.beginPath()
+    signatureContext.moveTo(point.x, point.y)
+}
+
+const drawSignature = (event) => {
+    if (!isDrawingSignature || !signatureContext) return
+    const point = signaturePoint(event)
+    signatureContext.lineTo(point.x, point.y)
+    signatureContext.stroke()
+}
+
+const finishSignature = () => {
+    if (!isDrawingSignature || !signatureCanvas.value) return
+    isDrawingSignature = false
+    signatureContext?.closePath()
+    form.signature_data = signatureCanvas.value.toDataURL('image/png')
+    hasDrawnSignature.value = true
+}
+
+const clearSignature = () => {
+    const canvas = signatureCanvas.value
+    if (canvas) {
+        const pixelRatio = Math.max(window.devicePixelRatio || 1, 1)
+        signatureContext?.save()
+        signatureContext?.setTransform(1, 0, 0, 1, 0, 0)
+        signatureContext?.clearRect(0, 0, canvas.width, canvas.height)
+        signatureContext?.restore()
+        signatureContext?.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+    }
+    form.signature_data = ''
+    hasDrawnSignature.value = false
+}
+
+const selectSignatureMode = async (mode) => {
+    signatureMode.value = mode
+    form.signature_type = mode
+    if (mode === 'drawn') {
+        await nextTick()
+        prepareSignatureCanvas()
+    }
+}
+
+const handleSignatureResize = () => {
+    detectMobileDevice()
+    if (signatureMode.value === 'drawn' && currentStep.value === 4) {
+        prepareSignatureCanvas()
+    }
+}
+
+onMounted(() => {
+    detectMobileDevice()
+    window.addEventListener('resize', handleSignatureResize)
+})
+
+onBeforeUnmount(() => window.removeEventListener('resize', handleSignatureResize))
 
 
 watch(sameAsHomeAddress, (checked) => {
@@ -106,7 +210,7 @@ watch(() => form.club_id, (id) => {
         form.director_name = ''
         form.church_name = ''
     }
-})
+}, { immediate: true })
 
 watch(() => form.birthdate, (newDate) => {
     if (newDate) {
@@ -126,6 +230,17 @@ watch(() => form.birthdate, (newDate) => {
 })
 
 const submit = () => {
+    if (!isMasterGuideClub.value) {
+        if (form.signature_type === 'drawn' && !form.signature_data) {
+            showToast(tr('Dibuja tu firma antes de enviar.', 'Draw your signature before submitting.'), 'error')
+            return
+        }
+        if (form.signature_type === 'typed' && !form.signature.trim()) {
+            showToast(tr('Escribe tu nombre como firma antes de enviar.', 'Type your name as your signature before submitting.'), 'error')
+            return
+        }
+    }
+
     const payload = isMasterGuideClub.value
         ? {
             club_id: form.club_id,
@@ -139,13 +254,25 @@ const submit = () => {
             program_year: form.program_year,
             is_sda: true,
         }
-        : { ...form.data() }
+        : isPathfinderClub.value
+            ? {
+                ...form.data(),
+                father_guardian_name: form.parent_name,
+                father_guardian_email: form.email_address,
+                father_guardian_phone: form.parent_cell,
+                parent_guardian_signature: form.signature,
+                signed_at: new Date().toISOString().slice(0, 10),
+            }
+            : { ...form.data() }
 
     form.transform(() => payload).post('/parent/apply', {
         preserveScroll: true,
         onSuccess: () => {
             form.transform(data => data)
             form.reset()
+            form.signature = auth_user.value.name || ''
+            signatureMode.value = 'typed'
+            hasDrawnSignature.value = false
             currentStep.value = 1
             showSuccess.value = true
             showToast('Member registered successfully!', 'success')
@@ -192,6 +319,11 @@ const labels = {
         restrictions: 'Physical Restrictions',
         health: 'Health History',
         signature: 'Signature (Typed)',
+        signatureChoice: 'How would you like to sign?',
+        typeSignature: 'Type my name',
+        drawSignature: 'Draw signature',
+        drawHint: 'Use your finger inside the box below.',
+        clearSignature: 'Clear and try again',
         submit: 'Submit Registration',
         pathfinderName: 'Name',
         programYear: 'Program Year',
@@ -220,6 +352,11 @@ const labels = {
         restrictions: 'Restricciones físicas',
         health: 'Historial médico',
         signature: 'Firma (escrita)',
+        signatureChoice: '¿Cómo deseas firmar?',
+        typeSignature: 'Escribir mi nombre',
+        drawSignature: 'Dibujar firma',
+        drawHint: 'Usa tu dedo dentro del recuadro.',
+        clearSignature: 'Borrar e intentar de nuevo',
         submit: 'Enviar registro',
         pathfinderName: 'Nombre',
         programYear: 'Año del programa',
@@ -452,11 +589,43 @@ const t = (key) => labels[locale.value]?.[key] || key
                         <p v-if="form.errors.email_address" class="text-red-600 text-sm mt-1">{{ form.errors.email_address }}</p>
                     </div>
 
-                    <div v-if="currentStep === 4">
-                        <label>Signature (Typed)</label>
-                        <input v-model="form.signature" type="text" class="w-full p-2 border rounded" />
-                        <p v-if="form.errors.signature" class="text-red-600 text-sm mt-1">{{ form.errors.signature }}</p>
+                </div>
+
+                <div v-if="currentStep === 4 && !isMasterGuideClub" class="signature-section">
+                    <p v-if="isMobileDevice" class="signature-choice-label">{{ t('signatureChoice') }}</p>
+                    <div v-if="isMobileDevice" class="signature-mode-options" role="group" :aria-label="t('signatureChoice')">
+                        <button type="button" :class="['signature-mode-button', { active: signatureMode === 'typed' }]" @click="selectSignatureMode('typed')">
+                            {{ t('typeSignature') }}
+                        </button>
+                        <button type="button" :class="['signature-mode-button', { active: signatureMode === 'drawn' }]" @click="selectSignatureMode('drawn')">
+                            {{ t('drawSignature') }}
+                        </button>
                     </div>
+
+                    <div v-if="signatureMode === 'typed'">
+                        <label for="parent-signature">{{ t('signature') }}</label>
+                        <input id="parent-signature" v-model="form.signature" type="text" autocomplete="name" class="w-full p-2 border rounded" />
+                    </div>
+                    <div v-else class="drawn-signature-panel">
+                        <p class="signature-draw-hint">{{ t('drawHint') }}</p>
+                        <canvas
+                            ref="signatureCanvas"
+                            class="signature-canvas"
+                            :aria-label="t('drawSignature')"
+                            @pointerdown.prevent="startSignature"
+                            @pointermove.prevent="drawSignature"
+                            @pointerup.prevent="finishSignature"
+                            @pointercancel.prevent="finishSignature"
+                            @pointerleave="finishSignature"
+                        ></canvas>
+                        <div class="signature-canvas-footer">
+                            <span :class="hasDrawnSignature ? 'text-emerald-700' : 'text-slate-500'">
+                                {{ hasDrawnSignature ? tr('Firma capturada', 'Signature captured') : tr('Firma pendiente', 'Signature pending') }}
+                            </span>
+                            <button type="button" class="signature-clear-button" @click="clearSignature">{{ t('clearSignature') }}</button>
+                        </div>
+                    </div>
+                    <p v-if="form.errors.signature || form.errors.signature_data" class="text-red-600 text-sm mt-1">{{ form.errors.signature || form.errors.signature_data }}</p>
                 </div>
 
                 <div class="wizard-footer">
@@ -587,6 +756,51 @@ const t = (key) => labels[locale.value]?.[key] || key
 .wizard-next-button:hover { background: #1d4ed8; }
 .wizard-next-button span { margin-left: 0.5rem; }
 .wizard-button-spacer { width: 3rem; }
+
+.signature-choice-label {
+    color: #1f2937;
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+
+.signature-mode-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.signature-mode-button {
+    min-height: 3rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: #fff;
+    color: #334155;
+    font-weight: 600;
+}
+
+.signature-mode-button.active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+    box-shadow: 0 0 0 1px #2563eb;
+}
+
+.signature-draw-hint { color: #475569; font-size: 0.95rem; margin-bottom: 0.6rem; }
+.signature-canvas {
+    display: block;
+    width: 100%;
+    height: 180px;
+    border: 2px dashed #94a3b8;
+    border-radius: 0.6rem;
+    background: #fff;
+    cursor: crosshair;
+    touch-action: none;
+}
+.signature-canvas-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.6rem; font-size: 0.875rem; }
+.signature-clear-button { color: #b91c1c; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
 @media (max-width: 640px) {
     .enrollment-page { padding: 0; }

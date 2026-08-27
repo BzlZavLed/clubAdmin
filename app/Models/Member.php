@@ -14,6 +14,9 @@ class Member extends Model
         'parent_id',
         'assigned_staff_id',
         'status',
+        'secure_enrollment_link_id',
+        'enrollment_confirmed_at',
+        'enrollment_confirmed_by',
         'is_sda',
         'baptism_date',
     ];
@@ -21,11 +24,17 @@ class Member extends Model
     protected $casts = [
         'is_sda' => 'boolean',
         'baptism_date' => 'date',
+        'enrollment_confirmed_at' => 'datetime',
     ];
 
     public function club()
     {
         return $this->belongsTo(Club::class);
+    }
+
+    public function secureEnrollmentLink()
+    {
+        return $this->belongsTo(ClubParentEnrollmentLink::class, 'secure_enrollment_link_id');
     }
 
     public function parentUser()

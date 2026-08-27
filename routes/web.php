@@ -31,6 +31,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Controllers\WorkplanController;
 use App\Http\Controllers\ClubSettingsController;
+use App\Http\Controllers\ClubEnrollmentConfirmationController;
 use App\Http\Controllers\ClubTreasuryController;
 use App\Http\Controllers\StaffPaymentCustodyController;
 use App\Http\Controllers\EventController;
@@ -325,6 +326,12 @@ Route::post('/setup/superadmin', [RegisteredUserController::class, 'storeSuperad
 Route::get('/register-parent', [ParentAuthController::class, 'showRegistrationForm'])->name('parent.register');
 Route::post('/register-parent/resolve-invite', [ParentAuthController::class, 'resolveInvite'])->name('parent.register.resolve-invite');
 Route::post('/register-parent', [ParentAuthController::class, 'register']);
+Route::get('/register-parent/secure/{token}', [ParentAuthController::class, 'showSecureRegistrationForm'])
+    ->middleware('throttle:60,1')
+    ->name('parent.register.secure');
+Route::post('/register-parent/secure/{token}', [ParentAuthController::class, 'registerSecure'])
+    ->middleware('throttle:10,1')
+    ->name('parent.register.secure.store');
 Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
 });
 
@@ -352,17 +359,22 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
 Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
     Route::get('/parent-enrollment', fn() => Inertia::render('Parent/Apply', [
         'auth_user' => auth()->user(),
-        'clubs' => Club::all(),
+        'clubs' => auth()->user()->secure_enrollment_link_id
+            ? Club::query()->whereKey(auth()->user()->club_id)->get()
+            : Club::all(),
     ]))->name('parent.enrollment');
     Route::get('/parent/dashboard', fn(\Illuminate\Http\Request $request) => Inertia::render('Parent/Dashboard', [
         'auth_user' => auth()->user(),
         'parent_setup' => SuperAdminParentPortalController::dashboardSetupPayload($request),
         'is_superadmin_parent_preview' => (bool) $request->session()->get('superadmin_parent_portal_actor_id'),
+        'registration_success' => (bool) $request->session()->get('secure_enrollment_success'),
     ]))->name('parent.dashboard');
 
     Route::get('/parent/apply', fn() => Inertia::render('Parent/Apply', [
         'auth_user' => auth()->user(),
-        'clubs' => Club::all(),
+        'clubs' => auth()->user()->secure_enrollment_link_id
+            ? Club::query()->whereKey(auth()->user()->club_id)->get()
+            : Club::all(),
     ]))->name('parent.apply');
 
     Route::post('/parent/apply', [MemberAdventurerController::class, 'store'])->name('parent.apply.submit');
@@ -569,6 +581,7 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
         $union = $association?->union;
 
         return Inertia::render('ClubDirectorDashboard', [
+            'enrollment_confirmation_requests' => app(ClubEnrollmentConfirmationController::class)->payload(request()),
             'club_hierarchy' => $club ? [
                 'club' => [
                     'id' => $club->id,
@@ -600,6 +613,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
             ] : null,
         ]);
     })->name('club.dashboard');
+    Route::get('/club-director/enrollment-confirmations', [ClubEnrollmentConfirmationController::class, 'index'])->name('club.enrollment-confirmations.index');
+    Route::post('/club-director/enrollment-confirmations/parents/{user}', [ClubEnrollmentConfirmationController::class, 'confirmParent'])->name('club.enrollment-confirmations.parents.confirm');
+    Route::post('/club-director/enrollment-confirmations/members/{member}', [ClubEnrollmentConfirmationController::class, 'confirmMember'])->name('club.enrollment-confirmations.members.confirm');
 
     Route::get(
         '/club-director/my-club',
@@ -862,6 +878,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     Route::post('/club-director/settings/save', [ClubSettingsController::class, 'saveConfig'])->name('club.settings.save');
     Route::get('/club-director/settings/enrollment-session', [ClubSettingsController::class, 'enrollmentSession'])->name('club.settings.enrollment-session');
     Route::get('/club-director/settings/enrollment-session/qr/{club}', [ClubSettingsController::class, 'enrollmentQr'])->name('club.settings.enrollment.qr');
+    Route::post('/club-director/settings/enrollment-session/secure-link', [ClubSettingsController::class, 'regenerateSecureParentEnrollmentLink'])->name('club.settings.enrollment.secure-link.regenerate');
+    Route::delete('/club-director/settings/enrollment-session/secure-link', [ClubSettingsController::class, 'revokeSecureParentEnrollmentLink'])->name('club.settings.enrollment.secure-link.revoke');
+    Route::get('/club-director/settings/enrollment-session/secure-link/{link}/qr', [ClubSettingsController::class, 'secureParentEnrollmentQr'])->name('club.settings.enrollment.secure-link.qr');
     Route::post('/club-director/settings/enrollment-session/parents/{user}/approve', [ClubSettingsController::class, 'approveEnrollmentParent'])->name('club.settings.enrollment.parents.approve');
     Route::post('/club-director/settings/enrollment-session/parents/{user}/reject', [ClubSettingsController::class, 'rejectEnrollmentParent'])->name('club.settings.enrollment.parents.reject');
     Route::post('/club-director/settings/enrollment-session/staff/{user}/approve', [ClubSettingsController::class, 'approveEnrollmentStaff'])->name('club.settings.enrollment.staff.approve');

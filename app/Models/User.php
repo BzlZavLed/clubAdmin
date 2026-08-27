@@ -31,6 +31,9 @@ class User extends Authenticatable
         'church_id',
         'club_id',
         'status',
+        'secure_enrollment_link_id',
+        'enrollment_confirmed_at',
+        'enrollment_confirmed_by',
         'must_change_password',
         'last_seen_at',
         'mobile_member_id',
@@ -58,6 +61,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'must_change_password' => 'boolean',
             'last_seen_at' => 'datetime',
+            'enrollment_confirmed_at' => 'datetime',
         ];
     }
     public function clubs()
@@ -96,6 +100,11 @@ class User extends Authenticatable
     public function mobileMember()
     {
         return $this->belongsTo(Member::class, 'mobile_member_id');
+    }
+
+    public function secureEnrollmentLink()
+    {
+        return $this->belongsTo(ClubParentEnrollmentLink::class, 'secure_enrollment_link_id');
     }
 
     public function createdEvents()

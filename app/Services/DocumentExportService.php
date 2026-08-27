@@ -7,6 +7,7 @@ use App\Models\StaffAdventurer;
 use Barryvdh\DomPDF\Facade\Pdf;
 use PhpOffice\PhpWord\TemplateProcessor;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
 
 class DocumentExportService
 {
@@ -33,7 +34,7 @@ class DocumentExportService
         $processor->setValue('physical_restrictions', $member->physical_restrictions);
         $processor->setValue('health_history', $member->health_history);
     
-        $processor->setValue('signature', $member->signature);
+        $this->setMemberSignature($processor, $member);
         $processor->setValue('parent_signature', $member->parent_name);
         $processor->setValue('parent_name', $member->parent_name);
         $processor->setValue('parent_cell', $member->parent_cell);
@@ -49,6 +50,26 @@ class DocumentExportService
         $processor->saveAs($outputPath);
     
         return $outputPath;
+    }
+
+    private function setMemberSignature(TemplateProcessor $processor, MemberAdventurer $member): void
+    {
+        if (
+            $member->signature_type === 'drawn'
+            && $member->signature_path
+            && Storage::disk('public')->exists($member->signature_path)
+        ) {
+            $processor->setImageValue('signature', [
+                'path' => Storage::disk('public')->path($member->signature_path),
+                'width' => 110,
+                'height' => 36,
+                'ratio' => true,
+            ]);
+
+            return;
+        }
+
+        $processor->setValue('signature', $member->signature ?: $member->parent_name ?: '');
     }
 
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\ClubIntegrationConfig;
+use App\Models\ClubParentEnrollmentLink;
 use App\Models\ChurchInviteCode;
 use App\Models\ClubClass;
 use App\Models\Member;
@@ -16,12 +17,16 @@ use App\Models\User;
 use App\Services\ClubLogoService;
 use App\Support\ClubHelper;
 use Endroid\QrCode\QrCode;
+use Endroid\QrCode\Label\Font\OpenSans;
+use Endroid\QrCode\Label\Label;
+use Endroid\QrCode\Label\Margin\Margin;
 use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Log;
 
@@ -50,7 +55,7 @@ class ClubSettingsController extends Controller
             'integration_config' => $config,
             'club_logo_url' => $clubLogoService->url($clubs->firstWhere('id', (int) $selectedClubId)),
             'selected_club' => $selectedClubId
-                ? $clubs->firstWhere('id', (int) $selectedClubId)?->only(['id', 'club_name', 'church_id', 'club_email'])
+                ? $clubs->firstWhere('id', (int) $selectedClubId)?->only(['id', 'club_name', 'church_id', 'club_email', 'logo_path'])
                 : null,
             'enrollment_session' => $selectedClubId
                 ? $this->enrollmentSessionPayload($clubs->firstWhere('id', (int) $selectedClubId), $user)
@@ -84,6 +89,63 @@ class ClubSettingsController extends Controller
                 ? $this->enrollmentSessionPayload($clubs->firstWhere('id', (int) $selectedClubId), $user)
                 : null,
         ]);
+    }
+
+    public function regenerateSecureParentEnrollmentLink(Request $request)
+    {
+        $payload = $request->validate(['club_id' => ['required', 'integer']]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+
+        $link = DB::transaction(function () use ($club, $request) {
+            ClubParentEnrollmentLink::query()
+                ->where('club_id', $club->id)
+                ->whereNull('revoked_at')
+                ->update(['revoked_at' => now(), 'updated_at' => now()]);
+
+            return ClubParentEnrollmentLink::create([
+                'club_id' => $club->id,
+                'token' => Str::random(64),
+                'created_by' => $request->user()->id,
+            ]);
+        });
+
+        return response()->json(['data' => $this->secureLinkPayload($link)]);
+    }
+
+    public function revokeSecureParentEnrollmentLink(Request $request)
+    {
+        $payload = $request->validate(['club_id' => ['required', 'integer']]);
+        $club = $this->resolveAllowedClub($request, (int) $payload['club_id']);
+
+        ClubParentEnrollmentLink::query()
+            ->where('club_id', $club->id)
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => now(), 'updated_at' => now()]);
+
+        return response()->json(['data' => null]);
+    }
+
+    public function secureParentEnrollmentQr(Request $request, ClubParentEnrollmentLink $link)
+    {
+        $club = $this->resolveAllowedClub($request, (int) $link->club_id);
+        abort_if($link->revoked_at, 404);
+
+        $qrCode = new QrCode(
+            route('parent.register.secure', ['token' => $link->token]),
+            size: 1200,
+            margin: 40,
+        );
+        $result = (new PngWriter())->write(
+            $qrCode,
+            label: $this->enrollmentQrLabel($club, 1200),
+        );
+        $headers = ['Content-Type' => $result->getMimeType()];
+
+        if ($request->boolean('download')) {
+            $headers['Content-Disposition'] = 'attachment; filename="secure-parent-enrollment-club-' . $link->club_id . '.png"';
+        }
+
+        return response($result->getString(), 200, $headers);
     }
 
     public function approveEnrollmentParent(Request $request, User $user)
@@ -289,7 +351,7 @@ class ClubSettingsController extends Controller
 
     public function enrollmentQr(Request $request, Club $club)
     {
-        $this->resolveAllowedClub($request, (int) $club->id);
+        $club = $this->resolveAllowedClub($request, (int) $club->id);
 
         $registrationUrl = $request->query('kind') === 'staff'
             ? route('register', ['profile_type' => 'club_personal', 'club_id' => $club->id])
@@ -299,9 +361,46 @@ class ClubSettingsController extends Controller
             size: 520,
             margin: 16,
         );
-        $result = (new PngWriter())->write($qrCode);
+        $result = (new PngWriter())->write(
+            $qrCode,
+            label: $this->enrollmentQrLabel($club, 520),
+        );
 
         return response($result->getString(), 200, ['Content-Type' => $result->getMimeType()]);
+    }
+
+    private function enrollmentQrLabel(Club $club, int $qrSize): Label
+    {
+        $clubType = match ($club->club_type) {
+            'adventurers' => 'Adventurers',
+            'pathfinders', 'temp_pathfinder' => 'Pathfinders',
+            'master_guide' => 'Master Guide',
+            default => Str::headline((string) $club->club_type),
+        };
+        $caption = trim((string) $club->club_name).' - '.$clubType;
+        $fontSize = $qrSize >= 1000 ? 48 : 24;
+        $minimumFontSize = $qrSize >= 1000 ? 22 : 12;
+        $fontPath = (new OpenSans())->getPath();
+        $availableWidth = $qrSize - ($qrSize >= 1000 ? 100 : 48);
+
+        while ($fontSize > $minimumFontSize) {
+            $box = imagettfbbox($fontSize, 0, $fontPath, $caption);
+            if (is_array($box) && ($box[2] - $box[0]) <= $availableWidth) {
+                break;
+            }
+            $fontSize -= 2;
+        }
+
+        return new Label(
+            text: $caption,
+            font: new OpenSans($fontSize),
+            margin: new Margin(
+                $qrSize >= 1000 ? 28 : 14,
+                24,
+                $qrSize >= 1000 ? 32 : 18,
+                24,
+            ),
+        );
     }
 
     public function updateContact(Request $request)
@@ -346,7 +445,7 @@ class ClubSettingsController extends Controller
         ]);
     }
 
-    public function removeLogo(Request $request)
+    public function removeLogo(Request $request, ClubLogoService $clubLogoService)
     {
         $payload = $request->validate([
             'club_id' => ['required', 'integer'],
@@ -362,7 +461,7 @@ class ClubSettingsController extends Controller
 
         return response()->json([
             'status' => 'ok',
-            'logo_url' => null,
+            'logo_url' => $clubLogoService->url($club),
             'club' => $club->only(['id', 'club_name', 'logo_path']),
         ]);
     }
@@ -483,6 +582,12 @@ class ClubSettingsController extends Controller
             ];
         };
 
+        $secureLink = ClubParentEnrollmentLink::query()
+            ->where('club_id', $club->id)
+            ->whereNull('revoked_at')
+            ->latest('id')
+            ->first();
+
         return [
             'club' => $club->only(['id', 'club_name', 'church_id', 'club_type']),
             'registration_url' => route('parent.register'),
@@ -490,6 +595,7 @@ class ClubSettingsController extends Controller
             'staff_registration_url' => route('register', ['profile_type' => 'club_personal', 'club_id' => $club->id]),
             'staff_qr_url' => route('club.settings.enrollment.qr', ['club' => $club->id, 'kind' => 'staff']),
             'church_invite_code' => $invite->code,
+            'secure_parent_enrollment' => $secureLink ? $this->secureLinkPayload($secureLink) : null,
             'pending_parents' => $parents->where('status', 'pending')->map($formatParent)->values(),
             'pending_staff' => $staffRequests->map(fn (User $staff) => [
                 'id' => $staff->id,
@@ -524,6 +630,18 @@ class ClubSettingsController extends Controller
                 })
                 ->values(),
             'refreshed_at' => now()->toIso8601String(),
+        ];
+    }
+
+    private function secureLinkPayload(ClubParentEnrollmentLink $link): array
+    {
+        return [
+            'id' => $link->id,
+            'url' => route('parent.register.secure', ['token' => $link->token]),
+            'qr_url' => route('club.settings.enrollment.secure-link.qr', ['link' => $link->id]),
+            'qr_download_url' => route('club.settings.enrollment.secure-link.qr', ['link' => $link->id, 'download' => 1]),
+            'created_at' => $link->created_at?->toIso8601String(),
+            'last_used_at' => $link->last_used_at?->toIso8601String(),
         ];
     }
 

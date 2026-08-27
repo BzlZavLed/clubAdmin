@@ -77,6 +77,7 @@ const catalog = ref(
 const catalogLoading = ref(false)
 const saving = ref(false)
 const logoUrl = ref(props.club_logo_url || null)
+const hasUploadedLogo = ref(Boolean(props.selected_club?.logo_path))
 const logoUploading = ref(false)
 const logoInput = ref(null)
 const clubEmail = ref(props.selected_club?.club_email || '')
@@ -88,6 +89,8 @@ const bankInfoSavingPayTo = ref(null)
 const enrollmentSession = ref(props.enrollment_session || null)
 const enrollmentRefreshing = ref(false)
 const enrollmentActionId = ref(null)
+const secureEnrollmentLinkBusy = ref(false)
+const secureQrCopying = ref(false)
 const enrollmentPanel = ref(null)
 let enrollmentPollingTimer = null
 
@@ -128,6 +131,7 @@ watch(() => props.club_logo_url, (value) => {
 
 watch(() => props.selected_club, (value) => {
     clubEmail.value = value?.club_email || ''
+    hasUploadedLogo.value = Boolean(value?.logo_path)
 })
 
 watch(() => props.enrollment_session, (value) => {
@@ -178,6 +182,75 @@ async function copyEnrollmentUrl() {
         showToast(tr('Enlace copiado', 'Link copied'))
     } catch (error) {
         showToast(tr('No se pudo copiar el enlace', 'Could not copy the link'), 'error')
+    }
+}
+
+async function regenerateSecureEnrollmentLink() {
+    if (!hasClubSelected.value) return
+    secureEnrollmentLinkBusy.value = true
+    try {
+        const { data } = await axios.post(route('club.settings.enrollment.secure-link.regenerate'), {
+            club_id: selectedClubId.value,
+        })
+        enrollmentSession.value = {
+            ...(enrollmentSession.value || {}),
+            secure_parent_enrollment: data.data,
+        }
+        showToast(tr('Enlace seguro creado', 'Secure link created'))
+    } catch (error) {
+        showToast(error?.response?.data?.message || tr('No se pudo crear el enlace seguro', 'Could not create the secure link'), 'error')
+    } finally {
+        secureEnrollmentLinkBusy.value = false
+    }
+}
+
+async function copySecureEnrollmentUrl() {
+    const url = enrollmentSession.value?.secure_parent_enrollment?.url
+    if (!url) return
+    try {
+        await navigator.clipboard.writeText(url)
+        showToast(tr('Enlace seguro copiado', 'Secure link copied'))
+    } catch (error) {
+        showToast(tr('No se pudo copiar el enlace', 'Could not copy the link'), 'error')
+    }
+}
+
+async function copySecureEnrollmentQr() {
+    const qrUrl = enrollmentSession.value?.secure_parent_enrollment?.qr_url
+    if (!qrUrl) return
+    secureQrCopying.value = true
+    try {
+        if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+            throw new Error('image-clipboard-unavailable')
+        }
+        const response = await fetch(qrUrl, { credentials: 'same-origin' })
+        if (!response.ok) throw new Error('qr-fetch-failed')
+        const blob = await response.blob()
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        showToast(tr('Imagen QR copiada', 'QR image copied'))
+    } catch (error) {
+        showToast(tr('Este navegador no permitió copiar la imagen. Usa Descargar QR.', 'This browser did not allow copying the image. Use Download QR.'), 'warning')
+    } finally {
+        secureQrCopying.value = false
+    }
+}
+
+async function revokeSecureEnrollmentLink() {
+    if (!hasClubSelected.value || !enrollmentSession.value?.secure_parent_enrollment) return
+    secureEnrollmentLinkBusy.value = true
+    try {
+        await axios.delete(route('club.settings.enrollment.secure-link.revoke'), {
+            data: { club_id: selectedClubId.value },
+        })
+        enrollmentSession.value = {
+            ...enrollmentSession.value,
+            secure_parent_enrollment: null,
+        }
+        showToast(tr('Enlace seguro desactivado', 'Secure link deactivated'))
+    } catch (error) {
+        showToast(error?.response?.data?.message || tr('No se pudo desactivar el enlace', 'Could not deactivate the link'), 'error')
+    } finally {
+        secureEnrollmentLinkBusy.value = false
     }
 }
 
@@ -259,6 +332,7 @@ async function handleLogoSelected(event) {
     try {
         const data = await uploadClubLogo({ clubId: selectedClubId.value, file })
         logoUrl.value = data.logo_url
+        hasUploadedLogo.value = true
         showToast(tr('Logo del club actualizado', 'Club logo updated'))
     } catch (error) {
         console.error(error)
@@ -274,8 +348,9 @@ async function deleteLogo() {
     if (!hasClubSelected.value) return
     logoUploading.value = true
     try {
-        await removeClubLogo(selectedClubId.value)
-        logoUrl.value = null
+        const data = await removeClubLogo(selectedClubId.value)
+        logoUrl.value = data.logo_url
+        hasUploadedLogo.value = false
         showToast(tr('Logo removido', 'Logo removed'))
     } catch (error) {
         console.error(error)
@@ -381,9 +456,52 @@ onBeforeUnmount(() => {
                     <h2 class="text-lg font-semibold text-gray-800">{{ tr('Sesión de inscripciones', 'Enrollment session') }}</h2>
                     <p class="text-sm text-gray-600">{{ tr('Abre la pantalla de proyección con el QR, código de iglesia y solicitudes en vivo.', 'Open the projection screen with the QR code, church code, and live requests.') }}</p>
                 </div>
-                <Link :href="route('club.settings.enrollment.display', { club_id: selectedClubId })" class="rounded bg-slate-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-slate-800">
-                    {{ tr('Abrir sesión', 'Open session') }}
-                </Link>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <Link :href="route('club.settings.enrollment.display', { club_id: selectedClubId })" class="rounded bg-slate-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-slate-800">
+                        {{ tr('Abrir sesión', 'Open session') }}
+                    </Link>
+                    <button
+                        type="button"
+                        class="rounded bg-emerald-700 px-4 py-2 text-center text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+                        :disabled="secureEnrollmentLinkBusy || !hasClubSelected"
+                        @click="regenerateSecureEnrollmentLink"
+                    >
+                        {{ enrollmentSession?.secure_parent_enrollment ? tr('Regenerar enlace seguro', 'Regenerate secure link') : tr('Crear enlace seguro', 'Create secure link') }}
+                    </button>
+                </div>
+            </div>
+            <div v-if="enrollmentSession?.secure_parent_enrollment" class="rounded-lg border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+                <div class="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+                    <div class="rounded-xl border border-emerald-200 bg-white p-3">
+                        <img
+                            :src="enrollmentSession.secure_parent_enrollment.qr_url"
+                            :alt="tr('QR del enlace seguro de inscripción', 'Secure enrollment link QR code')"
+                            class="aspect-square w-full object-contain"
+                        />
+                        <p class="mt-2 text-center text-xs text-gray-600">{{ tr('Listo para proyectar o publicar', 'Ready to project or publish') }}</p>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="font-semibold text-emerald-950">{{ tr('Inscripción autónoma por enlace seguro', 'Self-service enrollment through secure link') }}</h3>
+                        <p class="mt-1 text-sm text-emerald-900">
+                            {{ tr('Este enlace fija el club, omite el código de invitación y permite acceso inmediato. Las cuentas y miembros creados aparecerán en el panel del director para confirmación.', 'This link fixes the club, skips the invitation code, and permits immediate access. Accounts and members created through it will appear on the director dashboard for confirmation.') }}
+                        </p>
+                        <p class="mt-3 break-all rounded border border-emerald-200 bg-white p-3 font-mono text-xs text-gray-700">{{ enrollmentSession.secure_parent_enrollment.url }}</p>
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <button type="button" class="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800" @click="copySecureEnrollmentUrl">
+                                {{ tr('Copiar enlace', 'Copy link') }}
+                            </button>
+                            <button type="button" class="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60" :disabled="secureQrCopying" @click="copySecureEnrollmentQr">
+                                {{ secureQrCopying ? tr('Copiando...', 'Copying...') : tr('Copiar imagen QR', 'Copy QR image') }}
+                            </button>
+                            <a :href="enrollmentSession.secure_parent_enrollment.qr_download_url" class="rounded border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                                {{ tr('Descargar QR', 'Download QR') }}
+                            </a>
+                            <button type="button" class="rounded border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" :disabled="secureEnrollmentLinkBusy" @click="revokeSecureEnrollmentLink">
+                                {{ tr('Desactivar', 'Deactivate') }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
             <template v-if="false">
             <section ref="enrollmentPanel" class="bg-slate-950 p-5 text-white shadow-sm sm:p-8">
@@ -477,13 +595,14 @@ onBeforeUnmount(() => {
                     <div>
                         <h2 class="text-lg font-semibold text-gray-800">{{ tr('Logo del club', 'Club Logo') }}</h2>
                         <p class="text-sm text-gray-600">
-                            {{ tr('Este logo se usará en recibos, reportes financieros y carpetas PDF del club. Si varios clubes pertenecen a la misma iglesia, pueden usar el mismo archivo de logo.', 'This logo will be used on receipts, financial reports, and club PDF folders. If multiple clubs belong to the same church, they can use the same logo file.') }}
+                            {{ tr('Este logo se usará en recibos, reportes financieros y carpetas PDF del club. Si no subes una imagen, se genera un avatar con las iniciales del club.', 'This logo will be used on receipts, financial reports, and club PDF folders. If you do not upload an image, an avatar is generated from the club initials.') }}
                         </p>
                     </div>
                     <div class="w-full sm:w-auto">
                         <div v-if="logoUrl" class="flex items-start gap-3">
                             <img :src="logoUrl" :alt="tr('Logo del club', 'Club logo')" class="h-20 w-20 rounded border object-contain bg-white p-2" />
                             <button
+                                v-if="hasUploadedLogo"
                                 type="button"
                                 class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 text-red-700 transition hover:bg-red-50 disabled:opacity-60"
                                 :disabled="logoUploading || !hasClubSelected"

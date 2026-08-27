@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class MemberPathfinder extends Model
 {
@@ -52,6 +53,8 @@ class MemberPathfinder extends Model
         'insurance_provider',
         'insurance_number',
         'parent_guardian_signature',
+        'signature_type',
+        'signature_path',
         'signed_at',
         'additional_signatures',
         'application_data',
@@ -106,6 +109,21 @@ class MemberPathfinder extends Model
     public function insuranceCard()
     {
         return $this->hasOne(MemberPathfinderInsuranceCard::class, 'member_pathfinder_id');
+    }
+
+    public function drawnSignatureDataUri(): ?string
+    {
+        if (
+            $this->signature_type !== 'drawn'
+            || ! $this->signature_path
+            || ! Storage::disk('public')->exists($this->signature_path)
+        ) {
+            return null;
+        }
+
+        $mime = Storage::disk('public')->mimeType($this->signature_path) ?: 'image/png';
+
+        return 'data:'.$mime.';base64,'.base64_encode(Storage::disk('public')->get($this->signature_path));
     }
 
     public function getNombreAttribute(): ?string

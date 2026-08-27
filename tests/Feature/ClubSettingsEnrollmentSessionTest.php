@@ -56,10 +56,13 @@ class ClubSettingsEnrollmentSessionTest extends TestCase
 
         $this->assertDatabaseHas('church_invite_codes', ['church_id' => $church->id, 'status' => 'active']);
 
-        $this->actingAs($director)
+        $qrResponse = $this->actingAs($director)
             ->get(route('club.settings.enrollment.qr', $club))
             ->assertOk()
             ->assertHeader('content-type', 'image/png');
+        $qrDimensions = getimagesizefromstring($qrResponse->getContent());
+        $this->assertIsArray($qrDimensions);
+        $this->assertGreaterThan($qrDimensions[0], $qrDimensions[1], 'The QR image should include a caption below the square code.');
 
         $this->actingAs($director)
             ->postJson(route('club.settings.enrollment.parents.approve', $parent), ['club_id' => $club->id])

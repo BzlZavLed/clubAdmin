@@ -1,6 +1,7 @@
 <script setup>
 import InputError from "@/Components/InputError.vue";
 import InputLabel from "@/Components/InputLabel.vue";
+import PasswordInput from "@/Components/PasswordInput.vue";
 import PrimaryButton from "@/Components/PrimaryButton.vue";
 import TextInput from "@/Components/TextInput.vue";
 import PathfinderLayout from "@/Layouts/AuthLayout.vue";
@@ -167,16 +168,16 @@ watch(
 
             <div>
                 <InputLabel for="password" :value="tr('Contraseña', 'Password')" />
-                <TextInput id="password" type="password"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
+                <PasswordInput id="password"
+                    input-class="focus:ring-red-600 focus:border-red-600"
                     v-model="form.password" required autocomplete="new-password" />
                 <InputError class="mt-2" :message="form.errors.password" />
             </div>
 
             <div>
                 <InputLabel for="password_confirmation" :value="tr('Confirmar contraseña', 'Confirm password')" />
-                <TextInput id="password_confirmation" type="password"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-red-600 focus:border-red-600"
+                <PasswordInput id="password_confirmation"
+                    input-class="focus:ring-red-600 focus:border-red-600"
                     v-model="form.password_confirmation" required autocomplete="new-password" />
                 <InputError class="mt-2" :message="form.errors.password_confirmation" />
             </div>

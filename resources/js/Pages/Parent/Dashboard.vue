@@ -18,6 +18,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    registration_success: {
+        type: Boolean,
+        default: false,
+    },
 })
 
 const { showToast } = useGeneral()
@@ -36,6 +40,7 @@ const parentSetup = ref(props.parent_setup)
 const creatingParentAccount = ref(false)
 const parentAccountResult = ref(null)
 const parentAccountError = ref('')
+const showRegistrationSuccess = ref(props.registration_success)
 const needsParentAccountSetup = computed(() => Boolean(parentSetup.value?.needs_account))
 const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value }) : '#')
 const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value }) : '#')
@@ -130,6 +135,9 @@ const createParentAccount = async () => {
 }
 
 onMounted(() => {
+    if (props.registration_success) {
+        showToast(tr('Cuenta creada correctamente. Ya puedes registrar a tus hijos.', 'Account created successfully. You can now register your children.'), 'success')
+    }
     if (needsParentAccountSetup.value) return
 
     load()
@@ -143,6 +151,14 @@ onMounted(() => {
 <template>
     <PathfinderLayout>
         <template #title>{{ tr('Panel de padres', 'Parent Dashboard') }}</template>
+
+        <div v-if="showRegistrationSuccess" role="status" class="mb-4 flex items-start justify-between gap-4 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-emerald-900 shadow-sm">
+            <div>
+                <p class="font-semibold">{{ tr('¡Registro completado!', 'Registration complete!') }}</p>
+                <p class="mt-1 text-sm">{{ tr('Tu cuenta fue creada y ya puedes registrar a tus hijos. El director confirmará posteriormente la cuenta y los miembros registrados.', 'Your account was created and you can now register your children. The director will confirm the account and registered members afterward.') }}</p>
+            </div>
+            <button type="button" class="shrink-0 text-xl leading-none text-emerald-700 hover:text-emerald-950" :aria-label="tr('Cerrar mensaje', 'Dismiss message')" @click="showRegistrationSuccess = false">×</button>
+        </div>
 
         <div v-if="needsParentAccountSetup" class="space-y-4">
             <div class="rounded border border-blue-200 bg-white p-5 shadow-sm">
@@ -224,12 +240,17 @@ onMounted(() => {
                         <h2 class="text-xl font-semibold text-gray-800">{{ tr('Bienvenido,', 'Welcome,') }} {{ props.auth_user?.name }}</h2>
                         <p class="text-gray-600 text-sm mt-1">{{ tr('Consulta los planes de trabajo de los clubes de tus hijos.', 'Review the workplans for your children’s clubs.') }}</p>
                     </div>
-                    <button
-                        class="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                        @click="openPasswordModal"
-                    >
-                        {{ tr('Actualizar contrasena', 'Update password') }}
-                    </button>
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <a :href="route('parent.apply')" class="rounded bg-emerald-700 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-emerald-800">
+                            {{ tr('Registrar un miembro', 'Register a member') }}
+                        </a>
+                        <button
+                            class="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+                            @click="openPasswordModal"
+                        >
+                            {{ tr('Actualizar contrasena', 'Update password') }}
+                        </button>
+                    </div>
                 </div>
             </div>
 

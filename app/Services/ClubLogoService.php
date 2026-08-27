@@ -11,29 +11,42 @@ class ClubLogoService
     {
         $logoPath = $this->resolveLogoPath($club);
 
-        if (!$logoPath) {
-            return null;
+        if ($logoPath) {
+            return url('/storage/' . ltrim($logoPath, '/'));
         }
 
-        return url('/storage/' . ltrim($logoPath, '/'));
+        return $club ? $this->avatarDataUri($club) : null;
     }
 
     public function dataUri(?Club $club): ?string
     {
         $logoPath = $this->resolveLogoPath($club);
 
-        if (!$logoPath) {
-            return null;
+        if ($logoPath) {
+            $path = Storage::disk('public')->path($logoPath);
+            $mime = mime_content_type($path) ?: 'image/png';
+
+            return 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($path));
         }
 
-        $path = Storage::disk('public')->path($logoPath);
-        if (!is_file($path)) {
-            return null;
+        return $club ? $this->avatarDataUri($club) : null;
+    }
+
+    public function initials(?Club $club): string
+    {
+        $name = trim((string) $club?->club_name);
+        $name = preg_replace('/\s+/u', ' ', $name) ?: '';
+        $words = preg_split('/\s+/u', $name, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if (count($words) === 1) {
+            return mb_strtoupper(mb_substr($words[0], 0, 2));
         }
 
-        $mime = mime_content_type($path) ?: 'image/png';
+        if (count($words) >= 2) {
+            return mb_strtoupper(mb_substr($words[0], 0, 1).mb_substr($words[1], 0, 1));
+        }
 
-        return 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($path));
+        return 'CL';
     }
 
     private function resolveLogoPath(?Club $club): ?string
@@ -42,20 +55,62 @@ class ClubLogoService
             return null;
         }
 
-        if ($club->logo_path) {
+        if ($club->logo_path && Storage::disk('public')->exists($club->logo_path)) {
             return $club->logo_path;
         }
 
-        if (!$club->church_id) {
-            return null;
+        return null;
+    }
+
+    private function avatarDataUri(Club $club): string
+    {
+        $size = 512;
+        $image = imagecreatetruecolor($size, $size);
+        imagealphablending($image, true);
+        imagesavealpha($image, true);
+        if (function_exists('imageantialias')) {
+            imageantialias($image, true);
         }
 
-        return Club::withoutGlobalScopes()
-            ->where('church_id', $club->church_id)
-            ->whereNotNull('logo_path')
-            ->where('logo_path', '!=', '')
-            ->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [$club->id])
-            ->orderBy('club_name')
-            ->value('logo_path');
+        $transparent = imagecolorallocatealpha($image, 255, 255, 255, 127);
+        imagefill($image, 0, 0, $transparent);
+
+        $palette = [
+            [30, 64, 175],
+            [3, 105, 161],
+            [4, 120, 87],
+            [180, 83, 9],
+            [190, 24, 93],
+            [109, 40, 217],
+        ];
+        $colorIndex = (int) (sprintf('%u', crc32(mb_strtolower((string) $club->club_name))) % count($palette));
+        [$red, $green, $blue] = $palette[$colorIndex];
+        $background = imagecolorallocate($image, $red, $green, $blue);
+        imagefilledellipse($image, $size / 2, $size / 2, $size - 24, $size - 24, $background);
+
+        $initials = $this->initials($club);
+        $fontPath = base_path('vendor/endroid/qr-code/assets/open_sans.ttf');
+        $fontSize = mb_strlen($initials) === 1 ? 230 : 190;
+        $box = imagettfbbox($fontSize, 0, $fontPath, $initials);
+        $textWidth = is_array($box) ? $box[2] - $box[0] : 0;
+        $textHeight = is_array($box) ? $box[1] - $box[7] : 0;
+        $white = imagecolorallocate($image, 255, 255, 255);
+        imagettftext(
+            $image,
+            $fontSize,
+            0,
+            (int) (($size - $textWidth) / 2),
+            (int) (($size + $textHeight) / 2),
+            $white,
+            $fontPath,
+            $initials,
+        );
+
+        ob_start();
+        imagepng($image, null, 6);
+        $png = ob_get_clean();
+        imagedestroy($image);
+
+        return 'data:image/png;base64,'.base64_encode($png ?: '');
     }
 }

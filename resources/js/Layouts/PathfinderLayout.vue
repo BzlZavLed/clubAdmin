@@ -14,7 +14,7 @@ const isCollapsed = ref(false)
 const isMobileOpen = ref(false)
 const isMobile = ref(false)
 const page = usePage()
-const { t } = useLocale()
+const { t, tr } = useLocale()
 const user = computed(() => page.props.auth?.user ?? null)
 const isSuperadminParentPreview = computed(() => Boolean(page.props.is_superadmin_parent_preview))
 const effectiveRole = computed(() => {
@@ -24,6 +24,21 @@ const effectiveRole = computed(() => {
 })
 const primaryDirectorClub = computed(() => page.props.auth?.primary_director_club ?? null)
 const activeClub = computed(() => page.props.auth?.active_club ?? null)
+const isParentWatermark = computed(() => effectiveRole.value === 'parent')
+const isStaffWatermark = computed(() => effectiveRole.value === 'club_personal')
+const clubWatermarkUrl = computed(() => {
+    if (isParentWatermark.value) return null
+
+    return activeClub.value?.logo_url || primaryDirectorClub.value?.logo_url || null
+})
+const clubWatermarkName = computed(() => activeClub.value?.club_name || primaryDirectorClub.value?.club_name || '')
+const watermarkLabel = computed(() => {
+    if (isParentWatermark.value) return tr('Portal de Padres', 'Parent Portal')
+    if (isStaffWatermark.value) return 'Staff'
+
+    return ''
+})
+const hasPortalWatermark = computed(() => isParentWatermark.value || Boolean(clubWatermarkUrl.value))
 const sidebarClubLabel = computed(() => primaryDirectorClub.value?.club_name || activeClub.value?.club_name || null)
 const sidebarClubCaption = computed(() => primaryDirectorClub.value?.club_name ? t('primary_director') : t('active_club'))
 const sessionDisplayName = computed(() => {
@@ -124,6 +139,13 @@ const mainOffsetClass = computed(() => {
         <!-- Navigation by Role -->
         <component :is="getNavComponent()" />
 
+        <div
+            v-if="user && !navCollapsed && isParentWatermark"
+            class="mx-3 mb-3 whitespace-nowrap rounded-md bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white"
+        >
+            {{ watermarkLabel }}
+        </div>
+
         <div v-if="user && !navCollapsed" class="mx-3 mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('session') }}</p>
             <p class="mt-1 text-sm font-semibold text-gray-900 truncate">{{ sessionDisplayName }}</p>
@@ -149,7 +171,43 @@ const mainOffsetClass = computed(() => {
     <div v-if="isMobile && isMobileOpen" class="fixed inset-0 bg-black/40 z-30" @click="closeMobileSidebar"></div>
 
     <!-- Main content -->
-    <main :class="[mainOffsetClass]" class="flex-1 min-h-screen md:h-screen md:overflow-y-auto p-4 sm:p-6 md:p-8">
+    <main :class="[mainOffsetClass]" class="relative flex-1 min-h-screen overflow-hidden md:h-screen">
+        <div
+            v-if="hasPortalWatermark"
+            class="pointer-events-none fixed z-0 flex select-none opacity-[0.055]"
+            :class="isParentWatermark
+                ? 'bottom-4 right-4 h-auto w-auto items-end justify-end sm:bottom-6 sm:right-6'
+                : 'bottom-[-5rem] right-[-4rem] h-[25rem] w-[25rem] items-center justify-center sm:bottom-[-7rem] sm:right-[-5rem] sm:h-[34rem] sm:w-[34rem] lg:bottom-[-9rem] lg:right-[-6rem] lg:h-[42rem] lg:w-[42rem]'"
+            aria-hidden="true"
+            data-testid="club-watermark"
+        >
+            <div
+                v-if="isParentWatermark"
+                class="whitespace-nowrap text-right text-3xl font-semibold leading-tight text-gray-800 sm:text-4xl lg:text-5xl"
+            >
+                {{ watermarkLabel }}
+            </div>
+            <div v-else-if="isStaffWatermark" class="flex h-full w-full flex-col items-center justify-center gap-2">
+                <img
+                    :src="clubWatermarkUrl"
+                    :alt="clubWatermarkName"
+                    class="max-h-[72%] max-w-[85%] object-contain grayscale"
+                    draggable="false"
+                />
+                <div class="text-5xl font-black uppercase tracking-[0.2em] text-slate-900 sm:text-7xl">
+                    {{ watermarkLabel }}
+                </div>
+            </div>
+            <img
+                v-else
+                :src="clubWatermarkUrl"
+                :alt="clubWatermarkName"
+                class="max-h-full max-w-full object-contain grayscale"
+                draggable="false"
+            />
+        </div>
+
+        <div class="relative z-10 h-full overflow-y-auto p-4 sm:p-6 md:p-8">
         <div class="max-w-5xl mx-auto">
             <div class="mb-4 flex items-center gap-3 md:hidden">
                 <button @click="openMobileSidebar"
@@ -165,6 +223,7 @@ const mainOffsetClass = computed(() => {
                 <slot name="title">{{ t('pathfinder_portal') }}</slot>
             </h1>
             <slot />
+        </div>
         </div>
     </main>
 </div>

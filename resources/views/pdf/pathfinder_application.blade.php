@@ -48,6 +48,7 @@
             min-height: 34px;
             white-space: normal;
         }
+        .signature-image { display: block; width: 110px; height: 36px; object-fit: contain; }
         .section-note { margin: 8px 0; text-align: justify; }
         .question-list { margin-top: 6px; }
         .question-row { margin: 3px 0; }
@@ -81,6 +82,7 @@
         $pickupPeople = is_array($member->pickup_authorized_people ?? null) ? implode(', ', $member->pickup_authorized_people) : '';
         $guardianPrimary = $member->father_guardian_name ?: $member->mother_guardian_name;
         $guardianSignature = $member->parent_guardian_signature ?: $guardianPrimary;
+        $guardianSignatureImage = $member->drawnSignatureDataUri();
         $signedAt = $member->signed_at ? \Carbon\Carbon::parse($member->signed_at)->format('m/d/Y') : '';
         $yesNo = fn ($value) => $value ? 'Yes' : 'No';
         $checkbox = fn ($value) => $value ? 'X' : '';
@@ -191,7 +193,15 @@
     <table class="row-table">
         <tr>
             <td class="label">Parents/Guardians Signature:</td>
-            <td><span class="line">{{ $guardianSignature }}</span></td>
+            <td>
+                <span class="line">
+                    @if($guardianSignatureImage)
+                        <img class="signature-image" src="{{ $guardianSignatureImage }}" alt="Parent or guardian signature">
+                    @else
+                        {{ $guardianSignature }}
+                    @endif
+                </span>
+            </td>
             <td class="label">Date:</td>
             <td><span class="line">{{ $signedAt }}</span></td>
         </tr>

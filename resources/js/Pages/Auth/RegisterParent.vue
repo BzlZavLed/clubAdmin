@@ -1,16 +1,24 @@
 <script setup>
 import axios from 'axios'
 import LocaleSwitcher from '@/Components/LocaleSwitcher.vue'
+import PasswordInput from '@/Components/PasswordInput.vue'
 import { useLocale } from '@/Composables/useLocale'
 import { Head, Link, useForm } from '@inertiajs/vue3'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useToast } from 'vue-toastification'
 
+const props = defineProps({
+    secure_enrollment: {
+        type: Object,
+        default: null,
+    },
+})
 const toast = useToast()
-const clubs = ref([])
-const resolvedChurch = ref(null)
+const isSecureEnrollment = Boolean(props.secure_enrollment)
+const clubs = ref(props.secure_enrollment?.club ? [props.secure_enrollment.club] : [])
+const resolvedChurch = ref(props.secure_enrollment?.church || null)
 const resolvingInvite = ref(false)
-const inviteResolved = ref(false)
+const inviteResolved = ref(isSecureEnrollment)
 const { tr } = useLocale()
 
 const form = useForm({
@@ -19,10 +27,11 @@ const form = useForm({
     password: '',
     password_confirmation: '',
     invite_code: '',
-    church_name: '',
-    church_id: '',
-    club_id: '',
+    church_name: props.secure_enrollment?.church?.church_name || '',
+    church_id: props.secure_enrollment?.church?.id || '',
+    club_id: props.secure_enrollment?.club?.id || '',
 })
+const submissionError = computed(() => Object.values(form.errors || {})[0] || '')
 
 const resolveInvite = async () => {
     form.clearErrors('invite_code')
@@ -63,7 +72,12 @@ const resolveInvite = async () => {
 }
 
 const submit = () => {
-    form.post('/register-parent', {
+    form.clearErrors()
+    form.post(props.secure_enrollment?.submit_url || '/register-parent', {
+        onError: (errors) => {
+            const firstError = Object.values(errors || {})[0]
+            toast.error(firstError || tr('No pudimos completar el registro. Revisa los campos e inténtalo nuevamente.', 'We could not complete the registration. Review the fields and try again.'))
+        },
         onFinish: () => form.reset('password', 'password_confirmation'),
     })
 }
@@ -79,8 +93,21 @@ const submit = () => {
                 <LocaleSwitcher :compact="true" />
             </div>
 
+            <div v-if="submissionError" role="alert" class="mb-4 rounded border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+                <p class="font-semibold">{{ tr('No se pudo completar el registro', 'Registration could not be completed') }}</p>
+                <p class="mt-1">{{ submissionError }}</p>
+                <p class="mt-1 text-xs">{{ tr('Revisa los campos indicados e inténtalo nuevamente.', 'Review the indicated fields and try again.') }}</p>
+            </div>
+
             <form @submit.prevent="submit" class="space-y-4">
-                <div class="rounded border border-amber-200 bg-amber-50 p-3">
+                <div v-if="isSecureEnrollment" class="rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                    <div class="font-semibold">{{ tr('Enlace seguro del club', 'Secure club link') }}</div>
+                    <p class="mt-1">
+                        {{ tr('Este enlace ya te conecta con el club correcto. Podrás entrar inmediatamente; el director confirmará después la cuenta y los miembros que registres.', 'This link already connects you to the correct club. You can enter immediately; the director will confirm the account and members you register afterward.') }}
+                    </p>
+                </div>
+
+                <div v-else class="rounded border border-amber-200 bg-amber-50 p-3">
                     <label for="invite_code" class="block text-sm font-medium text-gray-700">{{ tr('Código de invitación de la iglesia', 'Church invitation code') }}</label>
                     <div class="mt-1 flex gap-2">
                         <input
@@ -130,13 +157,13 @@ const submit = () => {
 
                 <div>
                     <label for="password" class="block text-sm font-medium text-gray-700">{{ tr('Contraseña', 'Password') }}</label>
-                    <input v-model="form.password" type="password" id="password" required class="w-full mt-1 p-2 border rounded" />
+                    <PasswordInput v-model="form.password" id="password" required autocomplete="new-password" input-class="p-2" />
                     <p v-if="form.errors.password" class="text-sm text-red-600 mt-1">{{ form.errors.password }}</p>
                 </div>
 
                 <div>
                     <label for="password_confirmation" class="block text-sm font-medium text-gray-700">{{ tr('Confirmar contraseña', 'Confirm password') }}</label>
-                    <input v-model="form.password_confirmation" type="password" id="password_confirmation" required class="w-full mt-1 p-2 border rounded" />
+                    <PasswordInput v-model="form.password_confirmation" id="password_confirmation" required autocomplete="new-password" input-class="p-2" />
                 </div>
 
                 <div class="mb-4">
@@ -146,7 +173,7 @@ const submit = () => {
                         id="club_id"
                         class="w-full border rounded p-2"
                         required
-                        :disabled="!inviteResolved || !clubs.length"
+                        :disabled="isSecureEnrollment || !inviteResolved || !clubs.length"
                     >
                         <option disabled value="">-- {{ tr('Selecciona un club', 'Select a club') }} --</option>
                         <option v-for="club in clubs" :key="club.id" :value="club.id">

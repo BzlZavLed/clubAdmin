@@ -29,6 +29,9 @@ class MemberAdventurer extends Model
         'home_address',
         'email_address',
         'signature',
+        'signature_type',
+        'signature_path',
+        'signed_at',
         'status',
         'notes_deleted',
         'insurance_paid',
@@ -44,6 +47,7 @@ class MemberAdventurer extends Model
         'insurance_paid_at' => 'datetime',
         'enrollment_paid' => 'boolean',
         'enrollment_paid_at' => 'datetime',
+        'signed_at' => 'date',
     ];
 
 

@@ -13,6 +13,7 @@ use App\Models\Association;
 use App\Models\Union;
 use App\Support\ClubHelper;
 use App\Support\SuperadminContext;
+use App\Services\ClubLogoService;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -140,14 +141,15 @@ class HandleInertiaRequests extends Middleware
             ? Church::query()->where('id', $effectiveChurchId)->first(['id', 'church_name'])
             : null;
         $effectiveClub = $activeClub ?: ($effectiveClubId
-            ? Club::query()->where('id', $effectiveClubId)->first(['id', 'club_name', 'club_type', 'evaluation_system', 'church_id', 'church_name'])
+            ? Club::query()->where('id', $effectiveClubId)->first(['id', 'club_name', 'club_type', 'evaluation_system', 'church_id', 'church_name', 'logo_path'])
             : null);
         $primaryDirectorClub = $user && in_array($user->profile_type, ['club_director', 'superadmin'], true)
             ? Club::query()
                 ->where('user_id', $user->id)
                 ->orderBy('club_name')
-                ->first(['id', 'club_name', 'club_type', 'evaluation_system', 'church_id', 'church_name'])
+                ->first(['id', 'club_name', 'club_type', 'evaluation_system', 'church_id', 'church_name', 'logo_path'])
             : null;
+        $clubLogoService = app(ClubLogoService::class);
 
         return array_merge(parent::share($request), [
             'auth' => [
@@ -213,6 +215,7 @@ class HandleInertiaRequests extends Middleware
                     'evaluation_system' => $effectiveClub->evaluation_system,
                     'church_id' => $effectiveClub->church_id,
                     'church_name' => $effectiveClub->church_name,
+                    'logo_url' => $clubLogoService->url($effectiveClub),
                 ] : null,
                 'active_church' => fn() => $effectiveChurch ? [
                     'id' => $effectiveChurch->id,
@@ -224,6 +227,7 @@ class HandleInertiaRequests extends Middleware
                     'club_type' => $primaryDirectorClub->club_type,
                     'church_id' => $primaryDirectorClub->church_id,
                     'church_name' => $primaryDirectorClub->church_name,
+                    'logo_url' => $clubLogoService->url($primaryDirectorClub),
                 ] : null,
                 'available_clubs' => fn() => $availableClubs->map(fn($club) => [
                     'id' => $club->id,
