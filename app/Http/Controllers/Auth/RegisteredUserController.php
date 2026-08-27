@@ -14,6 +14,8 @@ use App\Providers\RouteServiceProvider;
 use App\Models\Church;
 use App\Models\Club;
 use App\Models\ChurchInviteCode;
+use App\Support\PrivacyNotice;
+use App\Services\PrivacyConsentRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -452,7 +454,7 @@ class RegisteredUserController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function store(Request $request)
+    public function store(Request $request, PrivacyConsentRecorder $consentRecorder)
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -487,6 +489,7 @@ class RegisteredUserController extends Controller
                 },
             ],
             'invite_code' => ['required', 'string'],
+            'privacy_consent' => ['accepted'],
         ]);
 
         $invite = ChurchInviteCode::where('code', $validated['invite_code'])
@@ -522,7 +525,10 @@ class RegisteredUserController extends Controller
             'church_name' => $validated['church_name'],
             'club_id' => $clubId,
             'status' => $status,
+            'privacy_consent_at' => now(),
+            'privacy_notice_version' => PrivacyNotice::VERSION,
         ]);
+        $consentRecorder->record($user, $request, 'account_registration');
 
         if ($clubId) {
             DB::table('club_user')->updateOrInsert(

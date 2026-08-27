@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Http\Middleware\RedirectIfAuthenticated;
+use App\Support\AuditRecorder;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -37,6 +38,13 @@ class AuthenticatedSessionController extends Controller
         $user = Auth::user();
 
         if ($user->status && $user->status !== 'active') {
+            AuditRecorder::event('login_rejected_inactive_account', [
+                'actor_id' => $user->id,
+                'entity_type' => 'User',
+                'entity_id' => $user->id,
+                'entity_label' => $user->email,
+                'metadata' => ['account_status' => $user->status],
+            ], $request);
             Auth::logout();
             return back()->withErrors([
                 'email' => 'Your account is pending approval by the club director.',

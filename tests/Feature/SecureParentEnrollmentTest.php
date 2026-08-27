@@ -58,7 +58,7 @@ class SecureParentEnrollmentTest extends TestCase
         $this->from(route('parent.register.secure', $link->token))
             ->post(route('parent.register.secure.store', $link->token), [])
             ->assertRedirect(route('parent.register.secure', $link->token))
-            ->assertSessionHasErrors(['name', 'email', 'password']);
+            ->assertSessionHasErrors(['name', 'email', 'password', 'privacy_consent']);
         $this->assertGuest();
 
         $this->post(route('parent.register.secure.store', $link->token), [
@@ -66,6 +66,7 @@ class SecureParentEnrollmentTest extends TestCase
             'email' => 'secure-parent@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'privacy_consent' => true,
         ])->assertRedirect(route('verification.notice'));
 
         $parent = User::query()->where('email', 'secure-parent@example.com')->firstOrFail();
@@ -74,6 +75,13 @@ class SecureParentEnrollmentTest extends TestCase
         $this->assertSame($link->id, $parent->secure_enrollment_link_id);
         $this->assertNull($parent->enrollment_confirmed_at);
         $this->assertNull($parent->email_verified_at);
+        $this->assertNotNull($parent->privacy_consent_at);
+        $this->assertSame('2026-08-27', $parent->privacy_notice_version);
+        $this->assertDatabaseHas('privacy_consents', [
+            'user_id' => $parent->id,
+            'notice_version' => '2026-08-27',
+            'source' => 'secure_parent_registration',
+        ]);
 
         $verificationUrl = null;
         Mail::assertSent(ParentEmailVerificationMail::class, function (ParentEmailVerificationMail $mail) use (&$verificationUrl, $parent) {

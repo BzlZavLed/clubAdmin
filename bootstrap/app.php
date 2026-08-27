@@ -33,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Append web middleware
         $middleware->web(append: [
             \App\Http\Middleware\TrackUserPresence::class,
+            \App\Http\Middleware\AuditMutationRequest::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);

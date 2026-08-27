@@ -263,6 +263,10 @@ export const generalTranslations = {
         es: 'Perfil',
         en: 'Profile',
     },
+    help: {
+        es: 'Ayuda',
+        en: 'Help',
+    },
     primary_director: {
         es: 'Director principal',
         en: 'Primary director',

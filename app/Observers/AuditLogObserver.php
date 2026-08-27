@@ -3,7 +3,9 @@
 namespace App\Observers;
 
 use App\Models\AuditLog;
+use App\Support\AuditRecorder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class AuditLogObserver
 {
@@ -28,8 +30,8 @@ class AuditLogObserver
         }
 
         $this->log('updated', $model, [
-            'before' => $before,
-            'after' => $changes,
+            'before' => $this->sanitize($before),
+            'after' => $this->sanitize($changes),
         ]);
     }
 
@@ -60,12 +62,10 @@ class AuditLogObserver
             return;
         }
 
-        $request = request();
         $user = auth()->user();
 
-        AuditLog::create([
+        AuditRecorder::event($action, [
             'actor_id' => $user?->id,
-            'action' => $action,
             'entity_type' => class_basename($model),
             'entity_id' => $model->getKey(),
             'entity_label' => $this->labelFor($model),
@@ -74,11 +74,6 @@ class AuditLogObserver
                 'club_id' => $model->club_id ?? null,
                 'church_id' => $model->church_id ?? null,
             ],
-            'route' => $request?->route()?->getName(),
-            'method' => $request?->method(),
-            'url' => $request?->fullUrl(),
-            'ip' => $request?->ip(),
-            'user_agent' => $request?->userAgent(),
         ]);
     }
 
@@ -94,8 +89,38 @@ class AuditLogObserver
 
     protected function attributesForLog(Model $model): array
     {
-        $attributes = $model->getAttributes();
-        unset($attributes['password'], $attributes['remember_token']);
+        return $this->sanitize($model->getAttributes());
+    }
+
+    protected function sanitize(array $attributes): array
+    {
+        $sensitivePatterns = [
+            'password', 'remember_token', 'token', 'secret', 'api_key',
+            'signature', 'receipt_path', 'proof_path', 'check_image',
+            'insurance_card', 'identity_snapshot', 'medical', 'health',
+        ];
+
+        foreach ($attributes as $key => $value) {
+            $normalizedKey = Str::lower((string) $key);
+            if (collect($sensitivePatterns)->contains(fn (string $pattern) => str_contains($normalizedKey, $pattern))) {
+                $attributes[$key] = '[REDACTED]';
+                continue;
+            }
+
+            if (is_array($value)) {
+                $attributes[$key] = $this->sanitize($value);
+                continue;
+            }
+
+            if (is_string($value) && strlen($value) > 500) {
+                $attributes[$key] = [
+                    'redacted_large_value' => true,
+                    'length' => strlen($value),
+                    'sha256' => hash('sha256', $value),
+                ];
+            }
+        }
+
         return $attributes;
     }
 }

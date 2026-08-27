@@ -2,6 +2,7 @@
 import axios from 'axios'
 import LocaleSwitcher from '@/Components/LocaleSwitcher.vue'
 import PasswordInput from '@/Components/PasswordInput.vue'
+import PrivacyNotice from '@/Components/PrivacyNotice.vue'
 import { useLocale } from '@/Composables/useLocale'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import { computed, ref } from 'vue'
@@ -30,6 +31,7 @@ const form = useForm({
     church_name: props.secure_enrollment?.church?.church_name || '',
     church_id: props.secure_enrollment?.church?.id || '',
     club_id: props.secure_enrollment?.club?.id || '',
+    privacy_consent: false,
 })
 const submissionError = computed(() => Object.values(form.errors || {})[0] || '')
 
@@ -182,6 +184,8 @@ const submit = () => {
                     </select>
                     <span v-if="form.errors.club_id" class="text-red-500 text-sm">{{ form.errors.club_id }}</span>
                 </div>
+
+                <PrivacyNotice v-model="form.privacy_consent" mode="consent" :error="form.errors.privacy_consent" />
 
                 <button
                     type="submit"

@@ -18,6 +18,7 @@ class RegistrationTest extends TestCase
         $response = $this->get('/register');
 
         $response->assertStatus(200);
+        $this->get('/privacy')->assertOk();
     }
 
     public function test_new_users_can_register(): void
@@ -34,7 +35,7 @@ class RegistrationTest extends TestCase
             'status' => 'active',
         ]);
 
-        $response = $this->post('/register', [
+        $payload = [
             'name' => 'Test User',
             'email' => 'test@example.com',
             'password' => 'password',
@@ -45,10 +46,30 @@ class RegistrationTest extends TestCase
             'church_name' => $church->church_name,
             'club_id' => 'new',
             'invite_code' => $invite->code,
-        ]);
+        ];
+
+        $this->post('/register', $payload)->assertSessionHasErrors('privacy_consent');
+        $this->assertGuest();
+        $this->assertDatabaseMissing('users', ['email' => 'test@example.com']);
+
+        $response = $this->post('/register', [...$payload, 'privacy_consent' => true]);
 
         $this->assertAuthenticated();
         $response->assertRedirect('/club-director/dashboard');
+        $this->assertDatabaseHas('users', [
+            'email' => 'test@example.com',
+            'privacy_notice_version' => '2026-08-27',
+        ]);
+        $this->assertNotNull(User::where('email', 'test@example.com')->firstOrFail()->privacy_consent_at);
+        $this->assertDatabaseHas('privacy_consents', [
+            'user_id' => User::where('email', 'test@example.com')->firstOrFail()->id,
+            'notice_version' => '2026-08-27',
+            'source' => 'account_registration',
+        ]);
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'privacy_consent_recorded',
+            'entity_type' => 'PrivacyConsent',
+        ]);
     }
 
     public function test_parent_registration_is_pending_until_the_club_director_approves_it(): void
@@ -91,6 +112,7 @@ class RegistrationTest extends TestCase
             'church_name' => $church->church_name,
             'club_id' => $club->id,
             'invite_code' => $invite->code,
+            'privacy_consent' => true,
         ]);
 
         $response->assertRedirect('/login');
@@ -159,6 +181,7 @@ class RegistrationTest extends TestCase
             'church_name' => $church->church_name,
             'club_id' => $club->id,
             'invite_code' => $invite->code,
+            'privacy_consent' => true,
         ])->assertRedirect('/login');
 
         $this->assertDatabaseHas('users', [
@@ -258,6 +281,7 @@ class RegistrationTest extends TestCase
             'church_name' => $church->church_name,
             'club_id' => $club->id,
             'invite_code' => strtolower($invite->code),
+            'privacy_consent' => true,
         ], $overrides);
     }
 }

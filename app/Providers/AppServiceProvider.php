@@ -9,7 +9,10 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\Failed;
-use App\Models\AuditLog;
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Auth\Events\Verified;
+use App\Support\AuditRecorder;
 use App\Observers\AuditLogObserver;
 use App\Models\User;
 use App\Models\Member;
@@ -41,6 +44,21 @@ use App\Models\EventTask;
 use App\Models\EventBudgetItem;
 use App\Models\EventParticipant;
 use App\Models\EventDocument;
+use App\Models\Account;
+use App\Models\Expense;
+use App\Models\ParentChildLinkRequest;
+use App\Models\ParentPaymentSubmission;
+use App\Models\Payment;
+use App\Models\PaymentAllocation;
+use App\Models\PaymentConcept;
+use App\Models\PaymentConceptScope;
+use App\Models\PaymentReceipt;
+use App\Models\TreasuryMovement;
+use App\Models\ClubParentEnrollmentLink;
+use App\Models\LocationSharingConsent;
+use App\Models\AdventurerYearlyApplicationSignature;
+use App\Models\PathfinderAnnualApplicationSignature;
+use App\Models\InvestitureRequest;
 use App\Policies\EventPolicy;
 use App\Models\MailDeliveryLog;
 use Illuminate\Mail\Events\MessageSent;
@@ -95,6 +113,21 @@ class AppServiceProvider extends ServiceProvider
             EventBudgetItem::class,
             EventParticipant::class,
             EventDocument::class,
+            Account::class,
+            Expense::class,
+            ParentChildLinkRequest::class,
+            ParentPaymentSubmission::class,
+            Payment::class,
+            PaymentAllocation::class,
+            PaymentConcept::class,
+            PaymentConceptScope::class,
+            PaymentReceipt::class,
+            TreasuryMovement::class,
+            ClubParentEnrollmentLink::class,
+            LocationSharingConsent::class,
+            AdventurerYearlyApplicationSignature::class,
+            PathfinderAnnualApplicationSignature::class,
+            InvestitureRequest::class,
         ];
 
         foreach ($auditableModels as $modelClass) {
@@ -102,55 +135,61 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Event::listen(Login::class, function (Login $event) {
-            AuditLog::create([
+            AuditRecorder::event('login_succeeded', [
                 'actor_id' => $event->user?->id,
-                'action' => 'login',
                 'entity_type' => 'User',
                 'entity_id' => $event->user?->id,
                 'entity_label' => $event->user?->email,
                 'metadata' => ['guard' => $event->guard],
-                'route' => request()?->route()?->getName(),
-                'method' => request()?->method(),
-                'url' => request()?->fullUrl(),
-                'ip' => request()?->ip(),
-                'user_agent' => request()?->userAgent(),
             ]);
         });
 
         Event::listen(Logout::class, function (Logout $event) {
-            AuditLog::create([
+            AuditRecorder::event('logout', [
                 'actor_id' => $event->user?->id,
-                'action' => 'logout',
                 'entity_type' => 'User',
                 'entity_id' => $event->user?->id,
                 'entity_label' => $event->user?->email,
                 'metadata' => ['guard' => $event->guard],
-                'route' => request()?->route()?->getName(),
-                'method' => request()?->method(),
-                'url' => request()?->fullUrl(),
-                'ip' => request()?->ip(),
-                'user_agent' => request()?->userAgent(),
             ]);
         });
 
         Event::listen(Failed::class, function (Failed $event) {
-            AuditLog::create([
+            $email = $event->credentials['email'] ?? null;
+            AuditRecorder::event('login_failed', [
                 'actor_id' => $event->user?->id,
-                'action' => 'failed_login',
                 'entity_type' => 'User',
                 'entity_id' => $event->user?->id,
-                'entity_label' => $event->credentials['email'] ?? null,
+                'entity_label' => AuditRecorder::maskedEmail($email),
                 'metadata' => [
                     'guard' => $event->guard,
-                    'credentials' => array_keys($event->credentials ?? []),
+                    'identifier_hash' => AuditRecorder::identifierHash($email),
                 ],
-                'route' => request()?->route()?->getName(),
-                'method' => request()?->method(),
-                'url' => request()?->fullUrl(),
-                'ip' => request()?->ip(),
-                'user_agent' => request()?->userAgent(),
             ]);
         });
+
+        Event::listen(Lockout::class, function (Lockout $event) {
+            $email = $event->request->input('email');
+            AuditRecorder::event('login_locked_out', [
+                'entity_type' => 'User',
+                'entity_label' => AuditRecorder::maskedEmail($email),
+                'metadata' => ['identifier_hash' => AuditRecorder::identifierHash($email)],
+            ], $event->request);
+        });
+
+        Event::listen(PasswordReset::class, fn (PasswordReset $event) => AuditRecorder::event('password_reset', [
+            'actor_id' => $event->user->id,
+            'entity_type' => 'User',
+            'entity_id' => $event->user->id,
+            'entity_label' => $event->user->email,
+        ]));
+
+        Event::listen(Verified::class, fn (Verified $event) => AuditRecorder::event('email_verified', [
+            'actor_id' => $event->user->id,
+            'entity_type' => 'User',
+            'entity_id' => $event->user->id,
+            'entity_label' => $event->user->email,
+        ]));
 
         Event::listen(MessageSent::class, function (MessageSent $event) {
             $headers = $event->message->getHeaders();

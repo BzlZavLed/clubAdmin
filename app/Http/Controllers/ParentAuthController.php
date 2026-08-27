@@ -9,6 +9,8 @@ use App\Models\ClubParentEnrollmentLink;
 use App\Models\MemberAdventurer;
 use App\Models\ParentMember;
 use App\Models\User;
+use App\Support\PrivacyNotice;
+use App\Services\PrivacyConsentRecorder;
 use Auth;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
@@ -48,7 +50,7 @@ class ParentAuthController extends Controller
         ]);
     }
 
-    public function registerSecure(Request $request, string $token)
+    public function registerSecure(Request $request, string $token, PrivacyConsentRecorder $consentRecorder)
     {
         $link = $this->activeSecureLink($token);
         $club = $link->club;
@@ -67,9 +69,10 @@ class ParentAuthController extends Controller
                 },
             ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'privacy_consent' => ['accepted'],
         ]);
         try {
-            $user = DB::transaction(function () use ($validated, $club, $link) {
+            $user = DB::transaction(function () use ($validated, $club, $link, $consentRecorder, $request) {
                 $userData = [
                     'name' => $validated['name'],
                     'email' => $validated['email'],
@@ -87,6 +90,8 @@ class ParentAuthController extends Controller
                     'secure_enrollment_link_id' => $link->id,
                     'enrollment_confirmed_at' => null,
                     'enrollment_confirmed_by' => null,
+                    'privacy_consent_at' => now(),
+                    'privacy_notice_version' => PrivacyNotice::VERSION,
                 ];
                 $user = User::query()
                     ->where('email', $validated['email'])
@@ -94,6 +99,7 @@ class ParentAuthController extends Controller
                     ->lockForUpdate()
                     ->first() ?: new User;
                 $user->forceFill($userData)->save();
+                $consentRecorder->record($user, $request, 'secure_parent_registration');
 
                 DB::table('club_user')->updateOrInsert(
                     ['user_id' => $user->id, 'club_id' => $club->id],
@@ -166,7 +172,7 @@ class ParentAuthController extends Controller
         ]);
     }
 
-    public function register(Request $request)
+    public function register(Request $request, PrivacyConsentRecorder $consentRecorder)
     {
         $this->normalizeRegistrationInput($request);
         $validated = $request->validate([
@@ -182,10 +188,11 @@ class ParentAuthController extends Controller
             'church_name' => 'required|string|max:255',
             'club_id' => 'required|exists:clubs,id',
             'invite_code' => ['required', 'string', 'max:32'],
+            'privacy_consent' => ['accepted'],
         ]);
 
         try {
-            DB::transaction(function () use ($validated) {
+            DB::transaction(function () use ($validated, $consentRecorder, $request) {
                 $invite = $this->validInviteQuery($validated['invite_code'])
                     ->where('church_id', (int) $validated['church_id'])
                     ->lockForUpdate()
@@ -240,9 +247,12 @@ class ParentAuthController extends Controller
                     'church_name' => $church->church_name,
                     'club_id' => $club->id,
                     'status' => 'pending',
+                    'privacy_consent_at' => now(),
+                    'privacy_notice_version' => PrivacyNotice::VERSION,
                 ];
                 $user = $existingUser ?: new User;
                 $user->forceFill($userData)->save();
+                $consentRecorder->record($user, $request, 'parent_registration');
 
                 DB::table('club_user')->updateOrInsert(
                     ['user_id' => $user->id, 'club_id' => $club->id],

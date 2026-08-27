@@ -41,6 +41,8 @@ class User extends Authenticatable
         'must_change_password',
         'last_seen_at',
         'mobile_member_id',
+        'privacy_consent_at',
+        'privacy_notice_version',
     ];
 
     /**
@@ -66,6 +68,7 @@ class User extends Authenticatable
             'must_change_password' => 'boolean',
             'last_seen_at' => 'datetime',
             'enrollment_confirmed_at' => 'datetime',
+            'privacy_consent_at' => 'datetime',
         ];
     }
 

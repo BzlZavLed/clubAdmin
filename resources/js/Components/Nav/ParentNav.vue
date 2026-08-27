@@ -9,6 +9,7 @@ import {
     FolderOpenIcon,
     CreditCardIcon,
     UserCircleIcon,
+    QuestionMarkCircleIcon,
 } from '@heroicons/vue/24/outline'
 
 defineProps({
@@ -30,6 +31,8 @@ const menuItems = computed(() => {
     if (page.props.auth?.user?.password_self_service_enabled) {
         items.push({ name: t('profile'), href: '/profile', route: 'profile.edit', icon: UserCircleIcon })
     }
+
+    items.push({ name: t('help'), href: '/parent/help', route: 'parent.help', icon: QuestionMarkCircleIcon })
 
     return items
 })

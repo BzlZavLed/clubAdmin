@@ -40,6 +40,7 @@ use App\Http\Controllers\MailTrackingController;
 use App\Http\Controllers\MemberAdventurerController;
 use App\Http\Controllers\ParentAuthController;
 use App\Http\Controllers\ParentCarpetaController;
+use App\Http\Controllers\ParentHelpController;
 use App\Http\Controllers\ParentMemberController;
 use App\Http\Controllers\ParentPaymentController;
 use App\Http\Controllers\PathfinderAnnualApplicationController;
@@ -90,6 +91,7 @@ Route::get('/', function () {
 
     return Inertia::render('Landing');
 });
+Route::get('/privacy', fn () => Inertia::render('Legal/Privacy'))->name('privacy');
 Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
 
 Route::post('/logout', function () {
@@ -401,6 +403,9 @@ Route::middleware(['auth', 'parent.activated', 'auth.parent'])->group(function (
     Route::post('/parent/carpeta-investidura/evidence', [ParentCarpetaController::class, 'storeEvidence'])->name('parent.carpeta-investidura.evidence.store');
     Route::get('/parent/payments', [ParentPaymentController::class, 'index'])->name('parent.payments.index');
     Route::post('/parent/payments/transfers', [ParentPaymentController::class, 'storeTransfer'])->name('parent.payments.transfers.store');
+    Route::get('/parent/help', [ParentHelpController::class, 'index'])->name('parent.help');
+    Route::get('/parent/help/account-and-children-guide', [ParentHelpController::class, 'guide'])->name('parent.help.guide');
+    Route::get('/parent/help/payments-guide', [ParentHelpController::class, 'paymentsGuide'])->name('parent.help.payments-guide');
 
     Route::get('/parent/workplan/data', [WorkplanController::class, 'data'])->name('parent.workplan.data');
     Route::get('/parent/workplan/pdf', [WorkplanController::class, 'pdf'])->name('parent.workplan.pdf');

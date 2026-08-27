@@ -3,6 +3,7 @@ import Checkbox from '@/Components/Checkbox.vue'
 import InputError from '@/Components/InputError.vue'
 import InputLabel from '@/Components/InputLabel.vue'
 import PasswordInput from '@/Components/PasswordInput.vue'
+import PrivacyNotice from '@/Components/PrivacyNotice.vue'
 import PrimaryButton from '@/Components/PrimaryButton.vue'
 import TextInput from '@/Components/TextInput.vue'
 import PathfinderLayout from '@/Layouts/AuthLayout.vue'
@@ -70,6 +71,8 @@ const submit = () => {
                     <span class="ms-2 text-sm text-gray-600">{{ tr('Recordarme', 'Remember me') }}</span>
                 </label>
             </div>
+
+            <PrivacyNotice mode="login" />
 
             <div class="flex items-center justify-between pt-2">
                 <Link v-if="canResetPassword" :href="route('password.request')"

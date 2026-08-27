@@ -2,6 +2,7 @@
 import InputError from "@/Components/InputError.vue";
 import InputLabel from "@/Components/InputLabel.vue";
 import PasswordInput from "@/Components/PasswordInput.vue";
+import PrivacyNotice from "@/Components/PrivacyNotice.vue";
 import PrimaryButton from "@/Components/PrimaryButton.vue";
 import TextInput from "@/Components/TextInput.vue";
 import PathfinderLayout from "@/Layouts/AuthLayout.vue";
@@ -31,7 +32,8 @@ const form = useForm({
     church_id: '',
     church_name: '',
     club_id: '',
-    invite_code: ''
+    invite_code: '',
+    privacy_consent: false,
 });
 const { tr } = useLocale();
 
@@ -184,6 +186,8 @@ watch(
 
 
 
+
+            <PrivacyNotice v-model="form.privacy_consent" mode="consent" :error="form.errors.privacy_consent" />
 
             <div class="flex items-center justify-between pt-2">
                 <span v-if="churches.length == 0" class="text-sm text-gray-500">
