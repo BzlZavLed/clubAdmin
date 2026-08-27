@@ -7,6 +7,7 @@ use App\Models\Club;
 use App\Models\Member;
 use App\Models\MemberAdventurer;
 use App\Models\ParentPaymentSubmission;
+use App\Models\PaymentReceipt;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -62,6 +63,16 @@ class ParentProfileDataOwnershipTest extends TestCase
             'receipt_image_disk' => 'local',
             'status' => 'pending',
         ]);
+        $historicalStaffReceipt = PaymentReceipt::query()->create([
+            'payment_id' => null,
+            'club_id' => $club->id,
+            'staff_user_id' => $parent->id,
+            'receipt_number' => 'RCPT-2026-ACCOUNT-DELETION',
+            'issued_to_type' => 'staff',
+            'issued_to_email' => $parent->email,
+            'issued_at' => now(),
+            'delivery_status' => 'delivered',
+        ]);
 
         $this->actingAs($parent)
             ->deleteJson(route('parent.profile.family-data.destroy'), [
@@ -101,6 +112,12 @@ class ParentProfileDataOwnershipTest extends TestCase
             ->assertJsonPath('redirect_url', route('login'));
 
         $this->assertDatabaseMissing('users', ['id' => $parent->id]);
+        $this->assertDatabaseHas('payment_receipts', [
+            'id' => $historicalStaffReceipt->id,
+            'staff_user_id' => null,
+            'issued_to_email' => null,
+            'issued_to_type' => 'deleted_account',
+        ]);
         $this->assertGuest();
     }
 
@@ -116,6 +133,32 @@ class ParentProfileDataOwnershipTest extends TestCase
 
         $this->assertDatabaseHas('users', ['id' => $parent->id]);
         $this->assertDatabaseHas('members', ['id' => $child->id]);
+    }
+
+    public function test_deleting_a_user_nulls_receipt_user_links_without_deleting_the_receipt(): void
+    {
+        [$church, $club] = $this->churchAndClub('Receipt History Church', 'Receipt History Club');
+        $user = $this->parent($church, $club);
+        $receipt = PaymentReceipt::query()->create([
+            'payment_id' => null,
+            'club_id' => $club->id,
+            'parent_user_id' => $user->id,
+            'staff_user_id' => $user->id,
+            'receipt_number' => 'RCPT-2026-FK-SET-NULL',
+            'issued_to_type' => 'parent',
+            'issued_to_email' => $user->email,
+            'issued_at' => now(),
+            'delivery_status' => 'delivered',
+        ]);
+
+        User::query()->whereKey($user->id)->delete();
+
+        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+        $this->assertDatabaseHas('payment_receipts', [
+            'id' => $receipt->id,
+            'parent_user_id' => null,
+            'staff_user_id' => null,
+        ]);
     }
 
     private function churchAndClub(string $churchName, string $clubName, string $clubType = 'adventurers'): array

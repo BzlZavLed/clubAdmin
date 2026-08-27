@@ -204,6 +204,16 @@ class ParentFamilyDataDeletionService
                     'issued_to_type' => 'deleted_parent',
                     'updated_at' => now(),
                 ]);
+
+                // A user may have previously served as club staff before the
+                // account became a parent account. Preserve the immutable
+                // receipt while removing that historical user reference.
+                DB::table('payment_receipts')->where('staff_user_id', $parent->id)->update([
+                    'staff_user_id' => null,
+                    'issued_to_email' => null,
+                    'issued_to_type' => 'deleted_account',
+                    'updated_at' => now(),
+                ]);
             }
 
             DB::table('audit_logs')
