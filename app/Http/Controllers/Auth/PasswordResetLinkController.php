@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\User;
 
 class PasswordResetLinkController extends Controller
 {
@@ -32,13 +33,21 @@ class PasswordResetLinkController extends Controller
         $request->validate([
             'email' => 'required|email',
         ]);
+        $request->merge(['email' => mb_strtolower($request->string('email')->toString())]);
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        $user = User::query()
+            ->where('email', $request->string('email')->lower()->toString())
+            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'deleted'))
+            ->first();
+
+        if ($user?->profile_type === 'parent' && ! $user->canSelfServiceCredentials()) {
+            throw ValidationException::withMessages([
+                'email' => ['This parent account cannot use email recovery. Ask the club director to issue a new password.'],
+            ]);
+        }
+
+        $broker = $user?->profile_type === 'parent' ? Password::broker('parents') : Password::broker();
+        $status = $broker->sendResetLink($request->only('email'));
 
         if ($status == Password::RESET_LINK_SENT) {
             return back()->with('status', __($status));

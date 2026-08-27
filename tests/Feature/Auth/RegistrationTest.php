@@ -116,7 +116,7 @@ class RegistrationTest extends TestCase
         $this->post('/login', [
             'email' => 'parent@example.com',
             'password' => 'password',
-        ])->assertRedirect('/parent-enrollment');
+        ])->assertRedirect('/parent/dashboard');
     }
 
     public function test_deleted_parent_email_can_be_reused_from_the_parent_registration_form(): void

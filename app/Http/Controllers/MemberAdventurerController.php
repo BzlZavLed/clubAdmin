@@ -138,13 +138,18 @@ class MemberAdventurerController extends Controller
 
         $club = Club::findOrFail($request->input('club_id'));
         $clubType = strtolower($club->club_type ?? '');
-        $parentId = auth()->user()?->profile_type === 'parent' && $clubType !== 'master_guide' ? auth()->id() : null;
+        $parentUser = auth()->user()?->profile_type === 'parent' ? auth()->user() : null;
+        if ($parentUser) {
+            abort_unless(
+                $parentUser->church_id && (int) $parentUser->church_id === (int) $club->church_id,
+                403,
+                'Parents may enroll new children only in clubs from their account church.'
+            );
+        }
+        $parentId = $parentUser && $clubType !== 'master_guide' ? $parentUser->id : null;
         $secureEnrollmentLink = auth()->user()?->profile_type === 'parent'
             ? auth()->user()->secureEnrollmentLink
             : null;
-        if ($secureEnrollmentLink) {
-            abort_unless((int) $secureEnrollmentLink->club_id === (int) $club->id, 403, 'This secure enrollment account is limited to its assigned club.');
-        }
         $unifiedMember = null;
         if (!$parentId && $clubType !== 'master_guide' && $request->filled('parent_id')) {
             abort_unless(
@@ -272,6 +277,11 @@ class MemberAdventurerController extends Controller
                 }
             }
 
+            if (!$parentId) {
+                $parentId = $this->parentAccountIdForEmail($validated['father_guardian_email'] ?? null)
+                    ?: $this->parentAccountIdForEmail($validated['mother_guardian_email'] ?? null);
+            }
+
             $validated = $this->memberDetailPayload($validated);
 
             $validated['club_id'] = $club->id;
@@ -347,6 +357,10 @@ class MemberAdventurerController extends Controller
             }
             $validated['signed_at'] = now()->toDateString();
 
+            if (!$parentId) {
+                $parentId = $this->parentAccountIdForEmail($validated['email_address'] ?? null);
+            }
+
             $validated = $this->memberDetailPayload($validated);
 
             $validated['status'] = 'active';
@@ -397,6 +411,26 @@ class MemberAdventurerController extends Controller
         }
 
         return redirect()->back()->with('success', 'Member registered successfully.');
+    }
+
+    private function parentAccountIdForEmail(?string $email): ?int
+    {
+        if (!in_array(auth()->user()?->profile_type, ['club_director', 'superadmin'], true)) {
+            return null;
+        }
+
+        $normalizedEmail = strtolower(trim((string) $email));
+        if ($normalizedEmail === '') {
+            return null;
+        }
+
+        $parentId = User::query()
+            ->where('profile_type', 'parent')
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'deleted'))
+            ->value('id');
+
+        return $parentId ? (int) $parentId : null;
     }
 
     protected function handleInsurancePayment(Club $club, $memberDetail, Member $memberRecord): void

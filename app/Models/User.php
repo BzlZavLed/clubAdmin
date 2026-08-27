@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Services\Mail\MailerService;
+use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailBehavior;
+use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -11,7 +14,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, MustVerifyEmailBehavior, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -31,6 +34,7 @@ class User extends Authenticatable
         'church_id',
         'club_id',
         'status',
+        'parent_activation_method',
         'secure_enrollment_link_id',
         'enrollment_confirmed_at',
         'enrollment_confirmed_by',
@@ -105,6 +109,47 @@ class User extends Authenticatable
     public function secureEnrollmentLink()
     {
         return $this->belongsTo(ClubParentEnrollmentLink::class, 'secure_enrollment_link_id');
+    }
+
+    public function isDirectorActivatedParent(): bool
+    {
+        return $this->profile_type === 'parent' && $this->parent_activation_method === 'director';
+    }
+
+    public function canAccessParentPortal(): bool
+    {
+        return $this->profile_type !== 'parent'
+            || ! $this->secure_enrollment_link_id
+            || $this->hasVerifiedEmail()
+            || $this->isDirectorActivatedParent();
+    }
+
+    public function canSelfServiceCredentials(): bool
+    {
+        return $this->profile_type !== 'parent'
+            || (! $this->isDirectorActivatedParent() && $this->hasVerifiedEmail());
+    }
+
+    public function sendEmailVerificationNotification(): void
+    {
+        if ($this->profile_type === 'parent') {
+            app(MailerService::class)->sendParentEmailVerification($this);
+
+            return;
+        }
+
+        $this->notify(new VerifyEmail());
+    }
+
+    public function sendPasswordResetNotification($token): void
+    {
+        if ($this->profile_type === 'parent') {
+            app(MailerService::class)->sendParentPasswordReset($this, (string) $token);
+
+            return;
+        }
+
+        $this->notify(new ResetPassword($token));
     }
 
     public function createdEvents()

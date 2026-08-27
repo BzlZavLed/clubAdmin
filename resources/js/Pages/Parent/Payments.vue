@@ -8,6 +8,7 @@ import { CreditCardIcon, ArrowUpTrayIcon, ClockIcon, CheckCircleIcon } from '@he
 
 const props = defineProps({
     auth_user: Object,
+    children: { type: Array, default: () => [] },
     club_deposit_accounts: { type: Array, default: () => [] },
     expected_payments: { type: Array, default: () => [] },
     transfer_submissions: { type: Array, default: () => [] },
@@ -18,6 +19,7 @@ const page = usePage()
 const { tr, locale } = useLocale()
 const selectedCharge = ref(null)
 const previewUrl = ref(null)
+const selectedMemberId = ref(props.children[0]?.member_id ? String(props.children[0].member_id) : '')
 
 const flashSuccess = computed(() => page.props.flash?.success || null)
 
@@ -150,16 +152,24 @@ const submitTransfer = () => {
     })
 }
 
-const pendingCount = computed(() => props.transfer_submissions.filter(item => item.status === 'pending').length)
-const payableCharges = computed(() => props.expected_payments.filter(charge => charge.status !== 'paid'))
-const paidCharges = computed(() => props.expected_payments.filter(charge => charge.status === 'paid'))
+const selectedMemberIdNumber = computed(() => Number(selectedMemberId.value) || null)
+const selectedChild = computed(() => props.children.find(child => Number(child.member_id) === selectedMemberIdNumber.value) || null)
+const filteredDepositAccounts = computed(() => props.club_deposit_accounts.filter(account =>
+    (account.member_ids || []).some(id => Number(id) === selectedMemberIdNumber.value)
+))
+const filteredExpectedPayments = computed(() => props.expected_payments.filter(charge => Number(charge.member_id) === selectedMemberIdNumber.value))
+const filteredTransferSubmissions = computed(() => props.transfer_submissions.filter(item => Number(item.member_id) === selectedMemberIdNumber.value))
+const filteredReceipts = computed(() => props.receipts.filter(receipt => Number(receipt.member_id) === selectedMemberIdNumber.value))
+const pendingCount = computed(() => filteredTransferSubmissions.value.filter(item => item.status === 'pending').length)
+const payableCharges = computed(() => filteredExpectedPayments.value.filter(charge => charge.status !== 'paid'))
+const paidCharges = computed(() => filteredExpectedPayments.value.filter(charge => charge.status === 'paid'))
 const allChargeReceiptIds = computed(() => new Set(
-    props.expected_payments
+    filteredExpectedPayments.value
         .flatMap(charge => charge.receipt_links || [])
         .map(receipt => Number(receipt.id))
         .filter(Boolean)
 ))
-const standaloneReceipts = computed(() => props.receipts.filter(receipt => !allChargeReceiptIds.value.has(Number(receipt.id))))
+const standaloneReceipts = computed(() => filteredReceipts.value.filter(receipt => !allChargeReceiptIds.value.has(Number(receipt.id))))
 </script>
 
 <template>
@@ -167,6 +177,21 @@ const standaloneReceipts = computed(() => props.receipts.filter(receipt => !allC
         <template #title>{{ tr('Pagos', 'Payments') }}</template>
 
         <div class="space-y-6">
+            <section class="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
+                <label for="payment-child" class="block text-sm font-semibold text-gray-800">
+                    {{ tr('Selecciona un hijo', 'Select a child') }}
+                </label>
+                <select id="payment-child" v-model="selectedMemberId" class="mt-2 w-full rounded-lg border-gray-300 text-sm md:max-w-xl">
+                    <option v-for="child in children" :key="child.member_id" :value="String(child.member_id)">
+                        {{ child.name }} — {{ child.church_name || '—' }} — {{ child.club_name || '—' }}
+                    </option>
+                </select>
+                <p v-if="selectedChild" class="mt-2 text-xs text-gray-600">
+                    {{ tr('Iglesia', 'Church') }}: {{ selectedChild.church_name || '—' }} · {{ tr('Club', 'Club') }}: {{ selectedChild.club_name || '—' }}
+                </p>
+                <p v-else class="mt-2 text-sm text-gray-500">{{ tr('No hay hijos vinculados.', 'No linked children.') }}</p>
+            </section>
+
             <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
@@ -203,13 +228,13 @@ const standaloneReceipts = computed(() => props.receipts.filter(receipt => !allC
                     </p>
                 </div>
 
-                <div v-if="!club_deposit_accounts.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
-                    {{ tr('No hay clubes vinculados a esta cuenta de padre todavía.', 'There are no clubs linked to this parent account yet.') }}
+                <div v-if="!filteredDepositAccounts.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                    {{ tr('El club de este hijo no tiene una cuenta de depósito disponible.', 'This child’s club does not have an available deposit account.') }}
                 </div>
 
                 <div v-else class="mt-4 grid gap-4 lg:grid-cols-2">
                     <article
-                        v-for="clubAccount in club_deposit_accounts"
+                        v-for="clubAccount in filteredDepositAccounts"
                         :key="clubAccount.club_id"
                         class="rounded-2xl border border-gray-200 p-4"
                     >
@@ -453,12 +478,12 @@ const standaloneReceipts = computed(() => props.receipts.filter(receipt => !allC
                     </div>
                 </div>
 
-                <div v-if="!transfer_submissions.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                <div v-if="!filteredTransferSubmissions.length" class="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
                     {{ tr('Aún no has enviado comprobantes de transferencia.', 'You have not submitted transfer receipts yet.') }}
                 </div>
 
                 <div v-else class="mt-4 space-y-3">
-                    <article v-for="submission in transfer_submissions" :key="submission.id" class="rounded-2xl border border-gray-200 p-4">
+                    <article v-for="submission in filteredTransferSubmissions" :key="submission.id" class="rounded-2xl border border-gray-200 p-4">
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div class="space-y-2">
                                 <div class="flex flex-wrap items-center gap-2">

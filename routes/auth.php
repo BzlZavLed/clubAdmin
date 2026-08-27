@@ -40,6 +40,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::delete('/parent/profile/family-data', [ProfileController::class, 'destroyFamilyData'])
+        ->middleware('throttle:6,1')
+        ->name('parent.profile.family-data.destroy');
+    Route::delete('/parent/profile/account', [ProfileController::class, 'destroyParentAccount'])
+        ->middleware('throttle:6,1')
+        ->name('parent.profile.account.destroy');
 
     Route::get('verify-email', EmailVerificationPromptController::class)
         ->name('verification.notice');

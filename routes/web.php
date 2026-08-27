@@ -9,6 +9,7 @@ use App\Http\Controllers\ClubController;
 use App\Http\Controllers\ClubCarpetaClassActivationController;
 use App\Http\Controllers\MemberAdventurerController;
 use App\Http\Controllers\ParentAuthController;
+use App\Http\Controllers\Auth\ParentEmailVerificationController;
 use App\Http\Controllers\ParentCarpetaController;
 use App\Http\Controllers\PublicMemberEvidenceController;
 use App\Models\Club;
@@ -54,6 +55,7 @@ use App\Http\Controllers\SuperAdminEventTaskFormCatalogController;
 use App\Http\Controllers\SuperAdminMailLogController;
 use App\Http\Controllers\SuperAdminParentPortalController;
 use App\Http\Controllers\SuperAdminPresenceController;
+use App\Http\Controllers\SuperAdminClubDeletionController;
 use App\Http\Controllers\MailTrackingController;
 use App\Http\Controllers\ResendWebhookController;
 use App\Http\Controllers\PaymentReceiptController;
@@ -335,6 +337,10 @@ Route::post('/register-parent/secure/{token}', [ParentAuthController::class, 're
 Route::get('/churches/{church}/clubs', [ClubController::class, 'getByChurch']);
 });
 
+Route::get('/parent/email/verify/{user}/{hash}', ParentEmailVerificationController::class)
+    ->middleware(['signed', 'throttle:12,1'])
+    ->name('parent.email.verify');
+
 Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function () {
     Route::get('/club-personal/workplan', [WorkplanController::class, 'index'])->name('club.personal.workplan');
     Route::get('/club-personal/workplan/pdf', [WorkplanController::class, 'pdf'])->name('club.personal.workplan.pdf');
@@ -356,32 +362,34 @@ Route::middleware(['auth', 'verified', 'profile:club_personal'])->group(function
 // ---------------------------------
 // 🟣 Parent-Only Routes (Authenticated)
 // ---------------------------------
-Route::middleware(['auth', 'verified', 'auth.parent'])->group(function () {
+Route::middleware(['auth', 'parent.activated', 'auth.parent'])->group(function () {
     Route::get('/parent-enrollment', fn() => Inertia::render('Parent/Apply', [
         'auth_user' => auth()->user(),
-        'clubs' => auth()->user()->secure_enrollment_link_id
-            ? Club::query()->whereKey(auth()->user()->club_id)->get()
-            : Club::all(),
+        'clubs' => Club::query()
+            ->where('church_id', auth()->user()->church_id)
+            ->orderBy('club_name')
+            ->get(),
     ]))->name('parent.enrollment');
     Route::get('/parent/dashboard', fn(\Illuminate\Http\Request $request) => Inertia::render('Parent/Dashboard', [
         'auth_user' => auth()->user(),
         'parent_setup' => SuperAdminParentPortalController::dashboardSetupPayload($request),
         'is_superadmin_parent_preview' => (bool) $request->session()->get('superadmin_parent_portal_actor_id'),
-        'registration_success' => (bool) $request->session()->get('secure_enrollment_success'),
+        'registration_success' => (bool) $request->session()->pull('secure_enrollment_success', false),
     ]))->name('parent.dashboard');
 
     Route::get('/parent/apply', fn() => Inertia::render('Parent/Apply', [
         'auth_user' => auth()->user(),
-        'clubs' => auth()->user()->secure_enrollment_link_id
-            ? Club::query()->whereKey(auth()->user()->club_id)->get()
-            : Club::all(),
+        'clubs' => Club::query()
+            ->where('church_id', auth()->user()->church_id)
+            ->orderBy('club_name')
+            ->get(),
     ]))->name('parent.apply');
 
     Route::post('/parent/apply', [MemberAdventurerController::class, 'store'])->name('parent.apply.submit');
     Route::get('/parent/children', [ParentMemberController::class, 'index'])->name('parent-links.index.parent');
     Route::put('/parent/children/{id}', [ParentMemberController::class, 'update'])->name('parent.children.update');
-    Route::get('/parent/children/linkable', [ParentMemberController::class, 'linkable'])->name('parent.children.linkable');
-    Route::post('/parent/children/link', [ParentMemberController::class, 'link'])->name('parent.children.link');
+    Route::get('/parent/children/linkable', [ParentMemberController::class, 'linkable'])->middleware('throttle:20,1')->name('parent.children.linkable');
+    Route::post('/parent/children/link', [ParentMemberController::class, 'link'])->middleware('throttle:10,1')->name('parent.children.link');
     Route::get('/parent/carpeta-investidura', [ParentCarpetaController::class, 'index'])->name('parent.carpeta-investidura');
     Route::get('/parent/carpeta-investidura/{member}/pdf', [ParentCarpetaController::class, 'pdf'])->name('parent.carpeta-investidura.pdf');
     Route::post('/parent/carpeta-investidura/evidence', [ParentCarpetaController::class, 'storeEvidence'])->name('parent.carpeta-investidura.evidence.store');
@@ -503,7 +511,15 @@ Route::middleware(['auth', 'verified', 'profile:superadmin'])->group(function ()
     Route::post('/super-admin/clubs', [ClubController::class, 'storeBySuperadmin'])->name('superadmin.clubs.store');
     Route::put('/super-admin/clubs/{club}', [ClubController::class, 'updateBySuperadmin'])->name('superadmin.clubs.update');
     Route::put('/super-admin/clubs/{club}/deactivate', [ClubController::class, 'deactivateBySuperadmin'])->name('superadmin.clubs.deactivate');
-    Route::delete('/super-admin/clubs/{club}', [ClubController::class, 'deleteBySuperadmin'])->name('superadmin.clubs.delete');
+    Route::get('/super-admin/clubs/{club}/financial-archive', [SuperAdminClubDeletionController::class, 'archive'])
+        ->middleware('throttle:3,1')
+        ->name('superadmin.clubs.financial-archive');
+    Route::delete('/super-admin/clubs/{club}/data', [SuperAdminClubDeletionController::class, 'clean'])
+        ->middleware('throttle:5,1')
+        ->name('superadmin.clubs.data.clean');
+    Route::delete('/super-admin/clubs/{club}', [SuperAdminClubDeletionController::class, 'destroy'])
+        ->middleware('throttle:5,1')
+        ->name('superadmin.clubs.delete');
     Route::get('/super-admin/users', function () {
         $userColumns = ['id', 'name', 'email', 'profile_type', 'role_key', 'scope_type', 'scope_id', 'sub_role', 'church_id', 'church_name', 'club_id', 'status'];
         if (\Illuminate\Support\Facades\Schema::hasColumn('users', 'last_seen_at')) {
@@ -615,7 +631,9 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
     })->name('club.dashboard');
     Route::get('/club-director/enrollment-confirmations', [ClubEnrollmentConfirmationController::class, 'index'])->name('club.enrollment-confirmations.index');
     Route::post('/club-director/enrollment-confirmations/parents/{user}', [ClubEnrollmentConfirmationController::class, 'confirmParent'])->name('club.enrollment-confirmations.parents.confirm');
-    Route::post('/club-director/enrollment-confirmations/members/{member}', [ClubEnrollmentConfirmationController::class, 'confirmMember'])->name('club.enrollment-confirmations.members.confirm');
+    Route::put('/club-director/enrollment-confirmations/parents/{user}/password', [ClubEnrollmentConfirmationController::class, 'resetParentPassword'])->name('club.enrollment-confirmations.parents.password');
+    Route::post('/club-director/child-link-requests/{linkRequest}/approve', [ClubEnrollmentConfirmationController::class, 'approveChildLink'])->name('club.child-link-requests.approve');
+    Route::post('/club-director/child-link-requests/{linkRequest}/reject', [ClubEnrollmentConfirmationController::class, 'rejectChildLink'])->name('club.child-link-requests.reject');
 
     Route::get(
         '/club-director/my-club',
@@ -815,7 +833,13 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
 
         $parentAccounts = \App\Models\User::with('clubs')
             ->where('profile_type', 'parent')
-            ->whereIn('id', $parentIdsWithKids)
+            ->where(function ($query) use ($clubId, $parentIdsWithKids) {
+                $query->whereIn('id', $parentIdsWithKids);
+                if ($clubId) {
+                    $query->orWhere('club_id', $clubId)
+                        ->orWhereHas('clubs', fn ($clubQuery) => $clubQuery->where('clubs.id', $clubId));
+                }
+            })
             ->where(fn ($query) => $query->whereNull('status')->orWhere('status', '!=', 'deleted'))
             ->get()
             ->map(function ($parent) use ($clubId) {
@@ -843,6 +867,8 @@ Route::middleware(['auth', 'verified', 'profile:club_director'])->group(function
                     'club_id' => $parent->club_id,
                     'profile_type' => $parent->profile_type,
                     'status' => $parent->status ?: 'active',
+                    'parent_activation_method' => $parent->parent_activation_method,
+                    'email_verified_at' => $parent->email_verified_at?->toIso8601String(),
                     'children' => $children,
                 ];
             });

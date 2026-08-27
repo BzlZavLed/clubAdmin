@@ -31,6 +31,10 @@ const submit = () => {
             {{ tr('¿Olvidaste tu contraseña? No hay problema. Indícanos tu correo electrónico y te enviaremos un enlace para restablecerla y elegir una nueva.', 'Forgot your password? No problem. Enter your email and we will send you a reset link so you can choose a new one.') }}
         </div>
 
+        <div class="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {{ tr('Las cuentas de padres activadas manualmente por un director deben solicitar al director una nueva contraseña.', 'Parent accounts activated manually by a director must ask the director for a new password.') }}
+        </div>
+
         <div
             v-if="status"
             class="mb-4 text-sm font-medium text-green-600"

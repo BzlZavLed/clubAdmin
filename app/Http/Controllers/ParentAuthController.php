@@ -15,6 +15,7 @@ use App\Models\MemberAdventurer;
 use App\Models\Club;
 use App\Models\ParentMember;
 use App\Models\ClubParentEnrollmentLink;
+use Throwable;
 class ParentAuthController extends Controller
 {
     public function showRegistrationForm()
@@ -63,6 +64,7 @@ class ParentAuthController extends Controller
             ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
+        $validated['email'] = mb_strtolower($validated['email']);
 
         $user = DB::transaction(function () use ($validated, $club, $link) {
             $userData = [
@@ -77,6 +79,8 @@ class ParentAuthController extends Controller
                 'church_name' => $club->church?->church_name ?: $club->church_name,
                 'club_id' => $club->id,
                 'status' => 'active',
+                'email_verified_at' => null,
+                'parent_activation_method' => null,
                 'secure_enrollment_link_id' => $link->id,
                 'enrollment_confirmed_at' => null,
                 'enrollment_confirmed_by' => null,
@@ -104,7 +108,15 @@ class ParentAuthController extends Controller
             'email' => $user->email,
         ]);
 
-        return redirect()->route('parent.dashboard')->with('secure_enrollment_success', true);
+        try {
+            $user->sendEmailVerificationNotification();
+            $status = 'verification-link-sent';
+        } catch (Throwable $exception) {
+            report($exception);
+            $status = 'verification-delivery-failed';
+        }
+
+        return redirect()->route('verification.notice')->with('status', $status);
     }
 
     public function resolveInvite(Request $request)
@@ -170,6 +182,7 @@ class ParentAuthController extends Controller
             'club_id' => 'required|exists:clubs,id',
             'invite_code' => ['required', 'string'],
         ]);
+        $validated['email'] = mb_strtolower($validated['email']);
 
         $invite = $this->validInviteQuery($validated['invite_code'])
             ->where('church_id', (int) $validated['church_id'])

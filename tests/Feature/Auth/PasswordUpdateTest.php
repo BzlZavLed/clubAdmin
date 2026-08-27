@@ -48,4 +48,24 @@ class PasswordUpdateTest extends TestCase
             ->assertSessionHasErrors('current_password')
             ->assertRedirect('/profile');
     }
+
+    public function test_parent_dashboard_modal_password_update_returns_json_without_redirecting_the_put_request(): void
+    {
+        $user = User::factory()->create([
+            'profile_type' => 'parent',
+            'email_verified_at' => now(),
+            'parent_activation_method' => 'email',
+        ]);
+
+        $this->actingAs($user)
+            ->putJson(route('password.update'), [
+                'current_password' => 'password',
+                'password' => 'new-parent-password',
+                'password_confirmation' => 'new-parent-password',
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Password updated successfully.');
+
+        $this->assertTrue(Hash::check('new-parent-password', $user->refresh()->password));
+    }
 }

@@ -47,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
             'profile' => EnsureProfileIs::class,
             'auth.parent' => \App\Http\Middleware\EnsureParent::class,
+            'parent.activated' => \App\Http\Middleware\EnsureParentAccountActivated::class,
             'redirect_if_authenticated' => \App\Http\Middleware\RedirectIfAuthenticated::class,
         ]);
     })

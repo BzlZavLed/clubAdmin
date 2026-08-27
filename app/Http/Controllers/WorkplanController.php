@@ -275,13 +275,27 @@ class WorkplanController extends Controller
     public function data(Request $request)
     {
         $user = $request->user();
+        $parentChildren = $user->profile_type === 'parent'
+            ? $this->workplanChildrenForParent($user)
+            : collect();
         $clubIds = $user->profile_type === 'parent'
-            ? $this->clubIdsForParent($user)
+            ? $parentChildren->pluck('club_id')->filter()->unique()->values()->all()
             : ClubHelper::clubIdsForUser($user)->all();
-        $clubs = Club::whereIn('id', $clubIds)->orderBy('club_name')->get(['id', 'club_name']);
-        $selectedClubId = $request->input('club_id')
-            ?: ($user->profile_type === 'parent' ? null : $user->club_id)
-            ?: ($clubs->first()->id ?? null);
+        $clubs = Club::with('church:id,church_name')
+            ->whereIn('id', $clubIds)
+            ->orderBy('club_name')
+            ->get(['id', 'club_name', 'church_id', 'church_name']);
+        $selectedMember = null;
+        if ($user->profile_type === 'parent') {
+            $requestedMemberId = $request->integer('member_id');
+            $selectedMember = $requestedMemberId
+                ? $parentChildren->firstWhere('member_id', $requestedMemberId)
+                : $parentChildren->first();
+            abort_if($requestedMemberId && !$selectedMember, 403, 'Not allowed to view this child workplan.');
+        }
+        $selectedClubId = $user->profile_type === 'parent'
+            ? ($selectedMember['club_id'] ?? null)
+            : ($request->input('club_id') ?: $user->club_id ?: ($clubs->first()->id ?? null));
         if ($selectedClubId && !$clubs->contains('id', $selectedClubId)) {
             abort(403, 'Not allowed to view this club workplan.');
         }
@@ -303,8 +317,10 @@ class WorkplanController extends Controller
 
         return response()->json([
             'clubs' => $clubs,
+            'children' => $parentChildren->values(),
+            'selected_member_id' => $selectedMember['member_id'] ?? null,
             'selected_club_id' => $selectedClubId,
-            'workplan' => $this->filterPlansForParent($workplan, $user),
+            'workplan' => $this->filterPlansForParent($workplan, $user, $selectedMember['member_id'] ?? null),
             'memberships' => [],
             'local_objectives' => $selectedClubId
                 ? ClubObjective::where('club_id', $selectedClubId)->where('status', 'active')->orderBy('name')->get()
@@ -318,12 +334,13 @@ class WorkplanController extends Controller
         ]);
     }
 
-    private function filterPlansForParent($workplan, $user)
+    private function filterPlansForParent($workplan, $user, ?int $memberId = null)
     {
         if (!$workplan || $user->profile_type !== 'parent') return $workplan;
 
         $members = \App\Models\Member::where('parent_id', $user->id)
             ->where('club_id', $workplan->club_id)
+            ->when($memberId, fn ($query) => $query->whereKey($memberId))
             ->get(['id', 'class_id']);
 
         if ($members->isEmpty()) return $workplan;
@@ -354,6 +371,31 @@ class WorkplanController extends Controller
             ->all();
     }
 
+    private function workplanChildrenForParent($user): Collection
+    {
+        return Member::query()
+            ->where('parent_id', $user->id)
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->where('status', '!=', 'deleted')
+            ->with(['club:id,club_name,club_type,church_id,church_name', 'club.church:id,church_name'])
+            ->get(['id', 'type', 'id_data', 'club_id', 'parent_id', 'status'])
+            ->map(function (Member $member) {
+                $detail = ClubHelper::memberDetail($member);
+
+                return [
+                    'member_id' => (int) $member->id,
+                    'name' => $detail['name'] ?? '—',
+                    'member_type' => $member->type,
+                    'club_id' => $member->club_id ? (int) $member->club_id : null,
+                    'club_name' => $member->club?->club_name,
+                    'club_type' => $member->club?->club_type,
+                    'church_name' => $member->club?->church?->church_name ?: $member->club?->church_name,
+                ];
+            })
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
+    }
+
     public function pdf(Request $request, ClubLogoService $clubLogoService)
     {
         $user = $request->user();
@@ -381,6 +423,19 @@ class WorkplanController extends Controller
                     ->orderBy('start_time');
             }
         ]);
+        if ($user->profile_type === 'parent' && $request->integer('member_id')) {
+            $memberId = $request->integer('member_id');
+            abort_unless(
+                Member::query()
+                    ->whereKey($memberId)
+                    ->where('parent_id', $user->id)
+                    ->where('club_id', $selectedClubId)
+                    ->exists(),
+                403,
+                'Not allowed to export this child workplan.'
+            );
+            $workplan = $this->filterPlansForParent($workplan, $user, $memberId);
+        }
 
         $start = Carbon::parse($request->input('start_date', $workplan->start_date))->startOfDay();
         $end = Carbon::parse($request->input('end_date', $workplan->end_date))->endOfDay();

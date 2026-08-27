@@ -9,42 +9,53 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use App\Models\Member;
 use App\Models\MemberPathfinder;
+use App\Models\ParentChildLinkRequest;
+use App\Services\ParentChildIdentityMatcher;
 use Carbon\Carbon;
 
 class ParentMemberController extends Controller
 {
+    public function __construct(private readonly ParentChildIdentityMatcher $identityMatcher)
+    {
+    }
+
     // View all parent-member links
     public function index()
     {
         $parentId = auth()->id();
         $parent = auth()->user();
         $parentEmail = $parent?->email ? strtolower($parent->email) : null;
+        $homeClubIds = $parent?->church_id
+            ? Club::query()->where('church_id', $parent->church_id)->pluck('id')->all()
+            : [];
 
-        // Ensure links exist for known records by matching on parent email (legacy data)
-        if ($parentEmail) {
+        // Safely attach legacy records in the account church only when all identity fields match.
+        if ($parentEmail && !empty($homeClubIds)) {
             $linkedAdvIds = Member::where('parent_id', $parentId)
                 ->where('type', 'adventurers')
                 ->pluck('id_data')
                 ->all();
 
             $emailMatchedAdventurers = MemberAdventurer::whereRaw('LOWER(email_address) = ?', [$parentEmail])
+                ->whereIn('club_id', $homeClubIds)
                 ->whereNotIn('id', $linkedAdvIds)
-                ->get();
+                ->get()
+                ->filter(fn (MemberAdventurer $row) => $this->identityMatcher->evaluate($parent, $row)['can_link_immediately']);
 
             foreach ($emailMatchedAdventurers as $adv) {
-                Member::firstOrCreate(
-                    [
-                        'type' => 'adventurers',
-                        'id_data' => $adv->id,
-                    ],
-                    [
+                $member = Member::firstOrNew([
+                    'type' => 'adventurers',
+                    'id_data' => $adv->id,
+                ]);
+                if (!$member->exists || !$member->parent_id) {
+                    $member->fill([
                         'club_id' => $adv->club_id,
                         'class_id' => null,
                         'parent_id' => $parentId,
                         'assigned_staff_id' => null,
                         'status' => 'active',
-                    ]
-                );
+                    ])->save();
+                }
             }
 
             $linkedTempIds = Member::where('parent_id', $parentId)
@@ -52,24 +63,30 @@ class ParentMemberController extends Controller
                 ->pluck('id_data')
                 ->all();
 
-            $emailMatchedTemps = MemberPathfinder::whereRaw('LOWER(email_address) = ?', [$parentEmail])
+            $emailMatchedTemps = MemberPathfinder::query()
+                ->whereIn('club_id', $homeClubIds)
+                ->where(function ($query) use ($parentEmail) {
+                    $query->whereRaw('LOWER(father_guardian_email) = ?', [$parentEmail])
+                        ->orWhereRaw('LOWER(mother_guardian_email) = ?', [$parentEmail]);
+                })
                 ->whereNotIn('id', $linkedTempIds)
-                ->get();
+                ->get()
+                ->filter(fn (MemberPathfinder $row) => $this->identityMatcher->evaluate($parent, $row)['can_link_immediately']);
 
             foreach ($emailMatchedTemps as $temp) {
-                $member = Member::firstOrCreate(
-                    [
-                        'type' => 'pathfinders',
-                        'id_data' => $temp->id,
-                    ],
-                    [
+                $member = Member::firstOrNew([
+                    'type' => 'pathfinders',
+                    'id_data' => $temp->id,
+                ]);
+                if (!$member->exists || !$member->parent_id) {
+                    $member->fill([
                         'club_id' => $temp->club_id,
                         'class_id' => null,
                         'parent_id' => $parentId,
                         'assigned_staff_id' => null,
                         'status' => 'active',
-                    ]
-                );
+                    ])->save();
+                }
                 if (!$temp->member_id) {
                     $temp->update(['member_id' => $member->id]);
                 }
@@ -83,17 +100,21 @@ class ParentMemberController extends Controller
 
         $adventurerIds = $memberLinks->where('type', 'adventurers')->pluck('id_data')->all();
         $pathfinderIds = $memberLinks->whereIn('type', ['pathfinders', 'temp_pathfinder'])->pluck('id_data')->all();
-        $clubMap = Club::whereIn('id', $memberLinks->pluck('club_id')->filter()->unique())
-            ->pluck('club_name', 'id');
+        $clubMap = Club::with('church:id,church_name')
+            ->whereIn('id', $memberLinks->pluck('club_id')->filter()->unique())
+            ->get(['id', 'club_name', 'church_id', 'church_name'])
+            ->keyBy('id');
 
         $adventurerChildren = MemberAdventurer::whereIn('id', $adventurerIds)
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($child) use ($memberLinks, $clubMap) {
                 $member = $memberLinks->firstWhere('id_data', $child->id);
+                $club = $member?->club_id ? $clubMap->get($member->club_id) : null;
                 $child->member_id = $member?->id;
                 $child->club_id = $member?->club_id;
-                $child->club_name = $member?->club_id ? ($clubMap[$member->club_id] ?? null) : null;
+                $child->club_name = $club?->club_name;
+                $child->church_name = $club?->church?->church_name ?: $club?->church_name;
                 $child->member_type = 'adventurers';
                 return $child;
             });
@@ -101,12 +122,14 @@ class ParentMemberController extends Controller
         $pathfinderRows = MemberPathfinder::whereIn('id', $pathfinderIds)->get();
         $pathfinderChildren = $pathfinderRows->map(function ($row) use ($memberLinks, $clubMap) {
             $member = $memberLinks->firstWhere('id_data', $row->id);
+            $club = $member?->club_id ? $clubMap->get($member->club_id) : null;
             return [
                 'id' => $row->id,
                 'member_id' => $member?->id,
                 'member_type' => 'temp_pathfinder',
                 'club_id' => $member?->club_id,
-                'club_name' => $member?->club_id ? ($clubMap[$member->club_id] ?? null) : null,
+                'club_name' => $club?->club_name,
+                'church_name' => $club?->church?->church_name ?: $club?->church_name,
                 'applicant_name' => $row->applicant_name,
                 'birthdate' => $row->birthdate,
                 'age' => $row->birthdate ? Carbon::parse($row->birthdate)->age : null,
@@ -131,6 +154,7 @@ class ParentMemberController extends Controller
 
         return inertia('Parent/Children', [
             'children' => $children,
+            'link_requests' => $this->parentLinkRequests($parent),
         ]);
     }
 
@@ -141,8 +165,6 @@ class ParentMemberController extends Controller
             abort(401);
         }
         $parentId = $parent->id;
-        $parentName = strtolower($parent->name ?? '');
-        $parentEmail = strtolower($parent->email ?? '');
         $churchId = $parent->church_id;
         $searchName = strtolower(trim(request()->input('name', '')));
 
@@ -165,56 +187,61 @@ class ParentMemberController extends Controller
             ->pluck('id_data')
             ->all();
         $linkedTempIds = Member::whereNotNull('parent_id')
-            ->where('type', 'temp_pathfinder')
+            ->whereIn('type', ['temp_pathfinder', 'pathfinders'])
             ->pluck('id_data')
             ->all();
 
-        // Adventurers: match on parent_name OR emergency_contact OR email_address
         $advCandidates = MemberAdventurer::query()
             ->whereIn('club_id', $clubIds)
             ->whereNotIn('id', $linkedAdvIds)
-            ->where(function ($q) use ($parentName, $parentEmail) {
-                $q->whereRaw('LOWER(parent_name) = ?', [$parentName])
-                    ->orWhereRaw('LOWER(emergency_contact) = ?', [$parentName])
-                    ->orWhereRaw('LOWER(email_address) = ?', [$parentEmail]);
-            })
             ->when($searchName !== '', function ($q) use ($searchName) {
                 $q->whereRaw('LOWER(applicant_name) LIKE ?', ['%' . $searchName . '%']);
             })
-            ->limit(20)
             ->get()
-            ->map(function ($row) {
+            ->map(function (MemberAdventurer $row) use ($parent) {
+                $evaluation = $this->identityMatcher->evaluate($parent, $row);
+                if (!$evaluation['eligible']) return null;
+
                 return [
                     'member_type' => 'adventurers',
                     'id_data' => $row->id,
                     'display_name' => $row->applicant_name,
                     'club_id' => $row->club_id,
                     'detail' => 'Adventurer',
+                    'match_factors' => $evaluation['factors'],
+                    'matched_count' => $evaluation['matched_count'],
+                    'requires_director_approval' => $evaluation['requires_director_approval'],
                 ];
-            });
+            })
+            ->filter()
+            ->take(20)
+            ->values();
 
-        // Pathfinder temp: match on father_name OR email
         $pathfinderCandidates = MemberPathfinder::query()
             ->whereIn('club_id', $clubIds)
             ->whereNotIn('id', $linkedTempIds)
-            ->where(function ($q) use ($parentName, $parentEmail) {
-                $q->whereRaw('LOWER(father_guardian_name) = ?', [$parentName])
-                    ->orWhereRaw('LOWER(email_address) = ?', [$parentEmail]);
-            })
             ->when($searchName !== '', function ($q) use ($searchName) {
                 $q->whereRaw('LOWER(applicant_name) LIKE ?', ['%' . $searchName . '%']);
             })
-            ->limit(20)
             ->get()
-            ->map(function ($row) {
+            ->map(function (MemberPathfinder $row) use ($parent) {
+                $evaluation = $this->identityMatcher->evaluate($parent, $row);
+                if (!$evaluation['eligible']) return null;
+
                 return [
                     'member_type' => 'temp_pathfinder',
                     'id_data' => $row->id,
                     'display_name' => $row->applicant_name,
                     'club_id' => $row->club_id,
-                    'detail' => 'Pathfinder (temp)',
+                    'detail' => 'Pathfinder',
+                    'match_factors' => $evaluation['factors'],
+                    'matched_count' => $evaluation['matched_count'],
+                    'requires_director_approval' => $evaluation['requires_director_approval'],
                 ];
-            });
+            })
+            ->filter()
+            ->take(20)
+            ->values();
 
         $clubs = Club::whereIn('id', $advCandidates->pluck('club_id')
             ->merge($pathfinderCandidates->pluck('club_id'))
@@ -245,46 +272,151 @@ class ParentMemberController extends Controller
 
         if ($data['member_type'] === 'adventurers') {
             $exists = MemberAdventurer::findOrFail($data['id_data']);
-            $member = Member::firstOrCreate(
-                [
-                    'type' => 'adventurers',
-                    'id_data' => $exists->id,
-                ],
-                [
-                    'club_id' => $exists->club_id,
-                    'class_id' => null,
-                    'parent_id' => $parent->id,
-                    'assigned_staff_id' => null,
-                    'status' => 'active',
-                ]
-            );
-            $member->parent_id = $parent->id;
-            $member->save();
+            $memberType = 'adventurers';
         } else {
             $exists = MemberPathfinder::findOrFail($data['id_data']);
-            $member = Member::firstOrCreate(
+            $memberType = 'pathfinders';
+        }
+
+        abort_unless(
+            $parent->church_id
+                && Club::query()
+                    ->whereKey($exists->club_id)
+                    ->where('church_id', $parent->church_id)
+                    ->exists(),
+            403,
+            'Parents may manually link children only within their account church.'
+        );
+        $evaluation = $this->identityMatcher->evaluate($parent, $exists);
+        abort_unless($evaluation['eligible'], 422, 'At least two verified identity factors must match.');
+
+        $member = Member::query()
+            ->whereIn('type', $memberType === 'pathfinders'
+                ? ['pathfinders', 'temp_pathfinder']
+                : ['adventurers'])
+            ->where('id_data', $exists->id)
+            ->first();
+        abort_if(
+            $member?->parent_id && (int) $member->parent_id !== (int) $parent->id,
+            409,
+            'This child is already linked to another parent account.'
+        );
+
+        if (!$evaluation['can_link_immediately']) {
+            ParentChildLinkRequest::query()
+                ->where('parent_user_id', $parent->id)
+                ->where('member_type', $memberType)
+                ->where('id_data', $exists->id)
+                ->where('status', 'pending')
+                ->where('expires_at', '<=', now())
+                ->update(['status' => 'expired', 'decided_at' => now()]);
+
+            $latestRejected = ParentChildLinkRequest::query()
+                ->where('parent_user_id', $parent->id)
+                ->where('member_type', $memberType)
+                ->where('id_data', $exists->id)
+                ->where('status', 'rejected')
+                ->latest('decided_at')
+                ->first();
+            abort_if(
+                $latestRejected
+                    && $latestRejected->match_factors === $evaluation['factors']
+                    && $latestRejected->identity_snapshot === $evaluation['snapshot'],
+                409,
+                'This request was rejected. Update the mismatched information or contact the club director before trying again.'
+            );
+
+            $linkRequest = ParentChildLinkRequest::query()->firstOrCreate(
                 [
-                    'type' => 'pathfinders',
+                    'parent_user_id' => $parent->id,
+                    'member_type' => $memberType,
                     'id_data' => $exists->id,
+                    'status' => 'pending',
                 ],
                 [
+                    'member_id' => $member?->id,
                     'club_id' => $exists->club_id,
-                    'class_id' => null,
-                    'parent_id' => $parent->id,
-                    'assigned_staff_id' => null,
-                    'status' => 'active',
+                    'match_factors' => $evaluation['factors'],
+                    'matched_count' => $evaluation['matched_count'],
+                    'identity_snapshot' => $evaluation['snapshot'],
+                    'requested_at' => now(),
+                    'expires_at' => now()->addDays(30),
                 ]
             );
-            $member->parent_id = $parent->id;
-            $member->save();
-            if (!$exists->member_id) {
-                $exists->update(['member_id' => $member->id]);
-            }
+
+            return response()->json([
+                'message' => 'A director confirmation request was created.',
+                'status' => 'pending',
+                'request_id' => $linkRequest->id,
+            ], 202);
         }
+
+        $this->linkResolvedMember($parent, $exists, $memberType, $member);
 
         return response()->json([
             'message' => 'Member linked to your account.',
         ]);
+    }
+
+    private function linkResolvedMember(
+        User $parent,
+        MemberAdventurer|MemberPathfinder $detail,
+        string $memberType,
+        ?Member $member = null
+    ): Member
+    {
+        if (!$member) {
+            $member = Member::query()->create([
+                'type' => $memberType,
+                'id_data' => $detail->id,
+                'club_id' => $detail->club_id,
+                'class_id' => null,
+                'parent_id' => $parent->id,
+                'assigned_staff_id' => null,
+                'status' => 'active',
+            ]);
+        }
+        $member->forceFill(['parent_id' => $parent->id])->save();
+
+        if ($detail instanceof MemberPathfinder && !$detail->member_id) {
+            $detail->update(['member_id' => $member->id]);
+        }
+
+        return $member;
+    }
+
+    private function parentLinkRequests(User $parent): array
+    {
+        ParentChildLinkRequest::query()
+            ->where('parent_user_id', $parent->id)
+            ->where('status', 'pending')
+            ->where('expires_at', '<=', now())
+            ->update(['status' => 'expired', 'decided_at' => now()]);
+
+        return ParentChildLinkRequest::query()
+            ->with(['club:id,club_name'])
+            ->where('parent_user_id', $parent->id)
+            ->latest('requested_at')
+            ->limit(20)
+            ->get()
+            ->map(function (ParentChildLinkRequest $linkRequest) {
+                $detail = $this->identityMatcher->detail($linkRequest->member_type, $linkRequest->id_data);
+
+                return [
+                    'id' => $linkRequest->id,
+                    'child_name' => $detail?->applicant_name ?: data_get($linkRequest->identity_snapshot, 'member_name', '—'),
+                    'club_name' => $linkRequest->club?->club_name,
+                    'status' => $linkRequest->status,
+                    'matched_count' => $linkRequest->matched_count,
+                    'match_factors' => $linkRequest->match_factors,
+                    'requested_at' => $linkRequest->requested_at?->toIso8601String(),
+                    'expires_at' => $linkRequest->expires_at?->toIso8601String(),
+                    'decided_at' => $linkRequest->decided_at?->toIso8601String(),
+                    'decision_note' => $linkRequest->decision_note,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     // View all parent links for a specific member

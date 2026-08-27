@@ -48,6 +48,9 @@ const sessionDisplayName = computed(() => {
 
     return user.value?.name
 })
+const parentAccountChurchName = computed(() => (
+    effectiveRole.value === 'parent' ? user.value?.account_church_name : null
+))
 
 const logout = () => {
     if (!user.value) return
@@ -149,6 +152,8 @@ const mainOffsetClass = computed(() => {
         <div v-if="user && !navCollapsed" class="mx-3 mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('session') }}</p>
             <p class="mt-1 text-sm font-semibold text-gray-900 truncate">{{ sessionDisplayName }}</p>
+            <p v-if="parentAccountChurchName" class="mt-2 text-xs text-gray-500">{{ tr('Iglesia de la cuenta', 'Account church') }}</p>
+            <p v-if="parentAccountChurchName" class="truncate text-sm text-gray-800">{{ parentAccountChurchName }}</p>
             <p v-if="sidebarClubLabel" class="mt-2 text-xs text-gray-500">{{ sidebarClubCaption }}</p>
             <p v-if="sidebarClubLabel" class="text-sm text-gray-800 truncate">{{ sidebarClubLabel }}</p>
         </div>

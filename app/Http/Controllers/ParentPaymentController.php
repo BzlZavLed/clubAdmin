@@ -29,6 +29,7 @@ class ParentPaymentController extends Controller
 
         return Inertia::render('Parent/Payments', [
             'auth_user' => $user,
+            'children' => $this->childrenForParent($user)->values()->all(),
             'club_deposit_accounts' => $this->clubDepositAccountsForParent($user)->values()->all(),
             'expected_payments' => $this->expectedPaymentsForParent($user)->values()->all(),
             'transfer_submissions' => $this->transferSubmissionsForParent($user)->values()->all(),
@@ -119,7 +120,7 @@ class ParentPaymentController extends Controller
             ->where('parent_id', $user->id)
             ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
             ->where('status', '!=', 'deleted')
-            ->with(['club:id,club_name,club_type,evaluation_system,club_email'])
+            ->with(['club:id,club_name,club_type,evaluation_system,club_email,church_id,church_name', 'club.church:id,church_name'])
             ->get(['id', 'type', 'id_data', 'club_id', 'parent_id', 'status']);
 
         if ($members->isEmpty()) {
@@ -158,6 +159,7 @@ class ParentPaymentController extends Controller
                     'club_name' => $club?->club_name,
                     'club_type' => $club?->club_type,
                     'club_email' => $club?->club_email,
+                    'church_name' => $club?->church?->church_name ?: $club?->church_name,
                     'club_type_label' => $this->clubTypeLabel($club?->club_type),
                     'evaluation_system' => $club?->evaluation_system,
                     'account_label' => $bankPayload['label'] ?? $account?->label ?? 'Presupuesto del club',
@@ -168,6 +170,7 @@ class ParentPaymentController extends Controller
                         ->unique()
                         ->values()
                         ->all(),
+                    'member_ids' => $clubMembers->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
                 ];
             })
             ->sortBy([
@@ -196,7 +199,8 @@ class ParentPaymentController extends Controller
             ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
             ->where('status', '!=', 'deleted')
             ->with([
-                'club:id,club_name,club_email',
+                'club:id,club_name,club_email,church_id,church_name',
+                'club.church:id,church_name',
                 'class:id,class_name',
             ])
             ->get(['id', 'type', 'id_data', 'club_id', 'class_id', 'parent_id', 'status']);
@@ -409,6 +413,7 @@ class ParentPaymentController extends Controller
                     'row_key' => $key,
                     'club_id' => (int) $concept->club_id,
                     'club_name' => $member->club?->club_name ?: $concept->club?->club_name,
+                    'church_name' => $member->club?->church?->church_name ?: $member->club?->church_name,
                     'club_email' => $member->club?->club_email ?: $concept->club?->club_email,
                     'member_id' => (int) $member->id,
                     'member_name' => $memberDetail['name'] ?? '—',
@@ -588,6 +593,7 @@ class ParentPaymentController extends Controller
 
                 return [
                     'id' => $submission->id,
+                    'member_id' => (int) $submission->member_id,
                     'club_name' => $submission->club?->club_name,
                     'club_email' => $submission->club_receipt_email ?: $submission->club?->club_email,
                     'club_receipt_email_status' => $submission->club_receipt_email_status,
@@ -643,6 +649,7 @@ class ParentPaymentController extends Controller
 
                 return [
                     'id' => $receipt->id,
+                    'member_id' => $payment?->member_id ? (int) $payment->member_id : null,
                     'receipt_number' => $receipt->receipt_number,
                     'issued_at' => optional($receipt->issued_at)->toDateString(),
                     'club_name' => $receipt->club?->club_name,
@@ -654,5 +661,29 @@ class ParentPaymentController extends Controller
                     'download_url' => route('payment-receipts.download', $receipt),
                 ];
             });
+    }
+
+    private function childrenForParent($user): Collection
+    {
+        return Member::query()
+            ->where('parent_id', $user->id)
+            ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
+            ->where('status', '!=', 'deleted')
+            ->with(['club:id,club_name,church_id,church_name', 'club.church:id,church_name'])
+            ->get(['id', 'type', 'id_data', 'club_id', 'parent_id', 'status'])
+            ->map(function (Member $member) {
+                $detail = ClubHelper::memberDetail($member);
+
+                return [
+                    'member_id' => (int) $member->id,
+                    'name' => $detail['name'] ?? '—',
+                    'member_type' => $member->type,
+                    'club_id' => $member->club_id ? (int) $member->club_id : null,
+                    'club_name' => $member->club?->club_name,
+                    'church_name' => $member->club?->church?->church_name ?: $member->club?->church_name,
+                ];
+            })
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
     }
 }

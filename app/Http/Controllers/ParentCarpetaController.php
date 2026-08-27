@@ -249,7 +249,7 @@ class ParentCarpetaController extends Controller
     private function childrenPayload(int $parentId): array
     {
         $members = Member::query()
-            ->with(['club.district.association.union'])
+            ->with(['club.church', 'club.district.association.union'])
             ->where('parent_id', $parentId)
             ->whereIn('type', ['adventurers', 'pathfinders', 'temp_pathfinder'])
             ->where('status', 'active')
@@ -314,6 +314,7 @@ class ParentCarpetaController extends Controller
                     'birthdate' => optional($detail?->birthdate)->toDateString(),
                     'grade' => $detail?->grade,
                     'club_name' => $club?->club_name,
+                    'church_name' => $club?->church?->church_name ?: $club?->church_name,
                     'class_name' => $this->classNameForMember($member),
                     'requirements' => $requirements,
                     'completed_count' => collect($requirements)->where('completed', true)->count(),

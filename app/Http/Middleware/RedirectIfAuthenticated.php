@@ -39,7 +39,7 @@ class RedirectIfAuthenticated
             'regional_manager' => '/regional/dashboard',
             'union_manager' => '/union/dashboard',
             'nad_manager' => '/nad/dashboard',
-            'parent' => '/parent-enrollment',
+            'parent' => '/parent/dashboard',
             'superadmin' => '/super-admin/dashboard',
             default => RouteServiceProvider::HOME,
         };

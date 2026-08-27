@@ -952,9 +952,9 @@ export const fetchFinancialReportBootstrap = async (clubId = null) => {
 }
 
 // Parent workplan
-export const fetchParentWorkplan = async (clubId = null) => {
+export const fetchParentWorkplan = async (memberId = null) => {
     const { data } = await axios.get(route('parent.workplan.data'), {
-        params: clubId ? { club_id: clubId } : {}
+        params: memberId ? { member_id: memberId } : {}
     })
     return data
 }

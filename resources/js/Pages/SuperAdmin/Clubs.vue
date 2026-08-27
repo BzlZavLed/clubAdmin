@@ -3,9 +3,11 @@ import PathfinderLayout from '@/Layouts/PathfinderLayout.vue'
 import InputError from '@/Components/InputError.vue'
 import InputLabel from '@/Components/InputLabel.vue'
 import PrimaryButton from '@/Components/PrimaryButton.vue'
+import PasswordInput from '@/Components/PasswordInput.vue'
 import { router, useForm } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 import { useLocale } from '@/Composables/useLocale'
+import axios from 'axios'
 
 const props = defineProps({
     churches: { type: Array, default: () => [] },
@@ -15,6 +17,13 @@ const props = defineProps({
 
 const editingClubId = ref(null)
 const { tr } = useLocale()
+const deletionClub = ref(null)
+const deletionStage = ref(0)
+const deletionBusy = ref(false)
+const deletionError = ref('')
+const deletionSummary = ref(null)
+const cleanForm = ref({ current_password: '', confirmation: '' })
+const deleteForm = ref({ current_password: '', confirmation: '' })
 
 const form = useForm({
     club_name: '',
@@ -141,12 +150,83 @@ const deactivateClub = (club) => {
     )
 }
 
-const deleteClub = (club) => {
-    if (!confirm(tr(`Eliminar club "${club.club_name}"? Esto lo ocultará de las listas activas.`, `Delete club "${club.club_name}"? This will hide it from active lists.`))) return
-    router.delete(route('superadmin.clubs.delete', club.id), {
-        preserveScroll: true,
-        onSuccess: () => router.reload({ only: ['clubs'] }),
-    })
+const openClubDeletion = (club) => {
+    deletionClub.value = club
+    deletionStage.value = 0
+    deletionError.value = ''
+    deletionSummary.value = null
+    cleanForm.value = { current_password: '', confirmation: '' }
+    deleteForm.value = { current_password: '', confirmation: '' }
+}
+
+const closeClubDeletion = () => {
+    if (deletionBusy.value) return
+    deletionClub.value = null
+    deletionError.value = ''
+    if (deletionSummary.value) router.reload({ only: ['clubs', 'directors'] })
+}
+
+const errorMessage = (error) => {
+    const errors = error.response?.data?.errors
+    return errors ? Object.values(errors).flat()[0] : (error.response?.data?.message || tr('No se pudo completar la operación.', 'The operation could not be completed.'))
+}
+
+const archiveFilename = (headers) => {
+    const disposition = headers?.['content-disposition'] || ''
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+    const plain = disposition.match(/filename="?([^";]+)"?/i)
+    return decodeURIComponent(encoded?.[1] || plain?.[1] || `club-${deletionClub.value.id}-financial-archive.zip`)
+}
+
+const downloadFinancialArchive = async () => {
+    deletionBusy.value = true
+    deletionError.value = ''
+    try {
+        const response = await axios.get(route('superadmin.clubs.financial-archive', deletionClub.value.id), { responseType: 'blob' })
+        const url = URL.createObjectURL(response.data)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = archiveFilename(response.headers)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
+        deletionStage.value = 1
+    } catch (error) {
+        deletionError.value = error.response?.data instanceof Blob
+            ? tr('No se pudo generar el archivo financiero.', 'The financial archive could not be generated.')
+            : errorMessage(error)
+    } finally {
+        deletionBusy.value = false
+    }
+}
+
+const cleanClubData = async () => {
+    deletionBusy.value = true
+    deletionError.value = ''
+    try {
+        const { data } = await axios.delete(route('superadmin.clubs.data.clean', deletionClub.value.id), { data: cleanForm.value })
+        deletionSummary.value = data.summary
+        cleanForm.value = { current_password: '', confirmation: '' }
+        deletionStage.value = 2
+    } catch (error) {
+        deletionError.value = errorMessage(error)
+    } finally {
+        deletionBusy.value = false
+    }
+}
+
+const permanentlyDeleteClub = async () => {
+    deletionBusy.value = true
+    deletionError.value = ''
+    try {
+        const { data } = await axios.delete(route('superadmin.clubs.delete', deletionClub.value.id), { data: deleteForm.value })
+        window.location.assign(data.redirect_url)
+    } catch (error) {
+        deletionError.value = errorMessage(error)
+    } finally {
+        deletionBusy.value = false
+    }
 }
 </script>
 
@@ -297,7 +377,7 @@ const deleteClub = (club) => {
                         <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                             <button type="button" class="rounded border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700" @click="editClub(club)">{{ tr('Editar', 'Edit') }}</button>
                             <button type="button" class="rounded border border-amber-200 px-3 py-2 text-sm font-medium text-amber-700" @click="deactivateClub(club)">{{ tr('Desactivar', 'Deactivate') }}</button>
-                            <button type="button" class="rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-700" @click="deleteClub(club)">{{ tr('Eliminar', 'Delete') }}</button>
+                            <button type="button" class="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm font-bold text-red-800" @click="openClubDeletion(club)">{{ tr('Limpieza total', 'Full cleanup') }}</button>
                         </div>
                     </article>
                 </div>
@@ -326,12 +406,87 @@ const deleteClub = (club) => {
                                 <td class="px-3 py-2 text-right space-x-2">
                                     <button type="button" class="text-blue-600 hover:underline" @click="editClub(club)">{{ tr('Editar', 'Edit') }}</button>
                                     <button type="button" class="text-amber-600 hover:underline" @click="deactivateClub(club)">{{ tr('Desactivar', 'Deactivate') }}</button>
-                                    <button type="button" class="text-red-600 hover:underline" @click="deleteClub(club)">{{ tr('Eliminar', 'Delete') }}</button>
+                                    <button type="button" class="font-semibold text-red-700 hover:underline" @click="openClubDeletion(club)">{{ tr('Limpieza total', 'Full cleanup') }}</button>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <div v-if="deletionClub" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true">
+            <div class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+                <div class="border-b border-red-200 bg-red-50 px-6 py-4">
+                    <h2 class="text-xl font-bold text-red-950">{{ tr('Eliminación irreversible del club', 'Irreversible club deletion') }}</h2>
+                    <p class="mt-1 text-sm font-medium text-red-800">{{ deletionClub.club_name }} · {{ deletionClub.club_type }}</p>
+                </div>
+
+                <div v-if="deletionStage === 0" class="space-y-5 p-6">
+                    <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+                        <p class="font-bold">{{ tr('Paso obligatorio 1 de 3: conservar las finanzas', 'Required step 1 of 3: preserve finances') }}</p>
+                        <p class="mt-2">{{ tr('Antes de permitir cualquier eliminación, el sistema generará un ZIP descargable con el libro contable normalizado y todos los registros financieros originales.', 'Before any deletion is allowed, the system will generate a downloadable ZIP containing the normalized ledger and every original financial record.') }}</p>
+                    </div>
+                    <p class="text-sm text-gray-700">{{ tr('Guarda el archivo en un lugar seguro. La autorización para continuar dura 30 minutos.', 'Store the archive securely. Authorization to continue lasts 30 minutes.') }}</p>
+                    <p v-if="deletionError" class="rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-800">{{ deletionError }}</p>
+                    <div class="flex justify-end gap-3">
+                        <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold" @click="closeClubDeletion">{{ tr('Cancelar', 'Cancel') }}</button>
+                        <button type="button" :disabled="deletionBusy" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50" @click="downloadFinancialArchive">
+                            {{ deletionBusy ? tr('Generando archivo...', 'Generating archive...') : tr('Generar y descargar archivo financiero', 'Generate and download financial archive') }}
+                        </button>
+                    </div>
+                </div>
+
+                <form v-else-if="deletionStage === 1" class="space-y-5 p-6" @submit.prevent="cleanClubData">
+                    <div class="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+                        <p class="font-bold">{{ tr('Paso 2 de 3: borrar todos los datos del club', 'Step 2 of 3: erase all club data') }}</p>
+                        <p class="mt-2">{{ tr('Esto borrará permanentemente contabilidad, pagos, recibos, gastos, campañas, miembros, expedientes, notas, firmas, archivos, personal, usuarios exclusivos, eventos, planes, reportes y datos de inscripción.', 'This permanently erases accounting, payments, receipts, expenses, fundraisers, members, records, notes, signatures, files, staff, exclusive users, events, plans, reports, and registration data.') }}</p>
+                        <p class="mt-2 font-semibold">{{ tr('Las cuentas que todavía tienen relaciones con otros clubes se conservarán, pero se eliminará su relación con este club.', 'Accounts that still have relationships with other clubs are preserved, but their relationship with this club is removed.') }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-800">{{ tr('Contraseña actual de superadmin', 'Current superadmin password') }}</label>
+                        <PasswordInput v-model="cleanForm.current_password" autocomplete="current-password" required input-class="rounded-lg" />
+                    </div>
+                    <div>
+                        <label for="clean-club-confirmation" class="block text-sm font-medium text-gray-800">
+                            {{ tr(`Escribe DELETE CLUB DATA ${deletionClub.club_name}`, `Type DELETE CLUB DATA ${deletionClub.club_name}`) }}
+                        </label>
+                        <input id="clean-club-confirmation" v-model="cleanForm.confirmation" type="text" autocomplete="off" required class="mt-1 block w-full rounded-lg border-gray-300 font-mono shadow-sm focus:border-red-600 focus:ring-red-600" />
+                    </div>
+                    <p v-if="deletionError" class="rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-800">{{ deletionError }}</p>
+                    <div class="flex justify-end gap-3">
+                        <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold" @click="closeClubDeletion">{{ tr('Cancelar', 'Cancel') }}</button>
+                        <button type="submit" :disabled="deletionBusy || cleanForm.confirmation !== `DELETE CLUB DATA ${deletionClub.club_name}`" class="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40">
+                            {{ deletionBusy ? tr('Borrando datos...', 'Erasing data...') : tr('Borrar todos los datos para siempre', 'Erase all data forever') }}
+                        </button>
+                    </div>
+                </form>
+
+                <form v-else class="space-y-5 p-6" @submit.prevent="permanentlyDeleteClub">
+                    <div class="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950">
+                        <p class="font-bold">{{ tr('Los datos del club fueron eliminados.', 'The club data was erased.') }}</p>
+                        <p class="mt-2">{{ tr(`Miembros: ${deletionSummary?.members_deleted || 0}; personal: ${deletionSummary?.staff_deleted || 0}; usuarios exclusivos: ${deletionSummary?.users_deleted || 0}; usuarios conservados por tener otros clubes: ${deletionSummary?.cross_club_users_preserved || 0}.`, `Members: ${deletionSummary?.members_deleted || 0}; staff: ${deletionSummary?.staff_deleted || 0}; exclusive users: ${deletionSummary?.users_deleted || 0}; users preserved because they have other clubs: ${deletionSummary?.cross_club_users_preserved || 0}.`) }}</p>
+                    </div>
+                    <div class="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+                        <p class="font-bold">{{ tr('Paso final 3 de 3: eliminar el registro vacío del club', 'Final step 3 of 3: delete the empty club record') }}</p>
+                        <p class="mt-2">{{ tr('Puedes cerrar esta ventana y conservar el club vacío e inactivo, o eliminarlo ahora. La eliminación no se puede revertir.', 'You may close this window and retain the empty inactive club, or delete it now. Deletion cannot be reversed.') }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-800">{{ tr('Contraseña actual de superadmin', 'Current superadmin password') }}</label>
+                        <PasswordInput v-model="deleteForm.current_password" autocomplete="current-password" required input-class="rounded-lg" />
+                    </div>
+                    <div>
+                        <label for="delete-club-confirmation" class="block text-sm font-medium text-gray-800">{{ tr(`Escribe DELETE CLUB ${deletionClub.club_name}`, `Type DELETE CLUB ${deletionClub.club_name}`) }}</label>
+                        <input id="delete-club-confirmation" v-model="deleteForm.confirmation" type="text" autocomplete="off" required class="mt-1 block w-full rounded-lg border-gray-300 font-mono shadow-sm focus:border-red-700 focus:ring-red-700" />
+                    </div>
+                    <p v-if="deletionError" class="rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-800">{{ deletionError }}</p>
+                    <div class="flex flex-col-reverse justify-end gap-3 sm:flex-row">
+                        <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold" @click="closeClubDeletion">{{ tr('Conservar club vacío', 'Keep empty club') }}</button>
+                        <button type="submit" :disabled="deletionBusy || deleteForm.confirmation !== `DELETE CLUB ${deletionClub.club_name}`" class="rounded-lg bg-red-950 px-4 py-2 text-sm font-bold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-40">
+                            {{ deletionBusy ? tr('Eliminando club...', 'Deleting club...') : tr('Eliminar club definitivamente', 'Permanently delete club') }}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </PathfinderLayout>

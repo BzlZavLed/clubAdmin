@@ -13,6 +13,7 @@ use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\User;
 
 class NewPasswordController extends Controller
 {
@@ -39,11 +40,17 @@ class NewPasswordController extends Controller
             'email' => 'required|email',
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
+        $request->merge(['email' => mb_strtolower($request->string('email')->toString())]);
 
-        // Here we will attempt to reset the user's password. If it is successful we
-        // will update the password on an actual user model and persist it to the
-        // database. Otherwise we will parse the error and return the response.
-        $status = Password::reset(
+        $user = User::query()->where('email', $request->string('email')->lower()->toString())->first();
+        if ($user?->profile_type === 'parent' && ! $user->canSelfServiceCredentials()) {
+            throw ValidationException::withMessages([
+                'email' => ['This parent account cannot reset its password by email. Ask the club director for assistance.'],
+            ]);
+        }
+
+        $broker = $user?->profile_type === 'parent' ? Password::broker('parents') : Password::broker();
+        $status = $broker->reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user) use ($request) {
                 $user->forceFill([

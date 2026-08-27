@@ -10,7 +10,11 @@ use App\Models\MemberAdventurer;
 use App\Models\MemberPathfinder;
 use App\Models\User;
 use App\Services\DocumentExportService;
+use App\Mail\ParentEmailVerificationMail;
+use App\Mail\ParentPasswordResetMail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -19,9 +23,10 @@ class SecureParentEnrollmentTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_secure_link_allows_immediate_parent_access_and_queues_parent_and_member_confirmation(): void
+    public function test_secure_link_holds_parent_for_email_confirmation_then_opens_the_portal(): void
     {
         Storage::fake('public');
+        Mail::fake();
         [$director, $club] = $this->directorAndClub();
 
         $response = $this->actingAs($director)->postJson(route('club.settings.enrollment.secure-link.regenerate'), [
@@ -61,19 +66,41 @@ class SecureParentEnrollmentTest extends TestCase
             'email' => 'secure-parent@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
-        ])->assertRedirect(route('parent.dashboard'));
+        ])->assertRedirect(route('verification.notice'));
 
         $parent = User::query()->where('email', 'secure-parent@example.com')->firstOrFail();
         $this->assertAuthenticatedAs($parent);
         $this->assertSame('active', $parent->status);
         $this->assertSame($link->id, $parent->secure_enrollment_link_id);
         $this->assertNull($parent->enrollment_confirmed_at);
+        $this->assertNull($parent->email_verified_at);
+
+        $verificationUrl = null;
+        Mail::assertSent(ParentEmailVerificationMail::class, function (ParentEmailVerificationMail $mail) use (&$verificationUrl, $parent) {
+            $verificationUrl = $mail->actionUrl;
+
+            return $mail->hasTo($parent->email);
+        });
+        $this->assertNotNull($verificationUrl);
+
+        $this->get(route('parent.dashboard'))
+            ->assertRedirect(route('verification.notice'));
+
+        $this->get($verificationUrl)
+            ->assertRedirect(route('parent.dashboard'));
+        $parent->refresh();
+        $this->assertNotNull($parent->email_verified_at);
+        $this->assertSame('email', $parent->parent_activation_method);
+        $this->assertNotNull($parent->enrollment_confirmed_at);
+        $this->assertNull($parent->enrollment_confirmed_by);
 
         $this->get(route('parent.dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Parent/Dashboard')
-                ->where('registration_success', true));
+                ->where('registration_success', true)
+                ->where('auth.user.account_church_id', $club->church_id)
+                ->where('auth.user.account_church_name', $club->church->church_name));
 
         $this->get(route('parent.apply'))
             ->assertOk()
@@ -110,23 +137,19 @@ class SecureParentEnrollmentTest extends TestCase
         $this->assertSame($link->id, $member->secure_enrollment_link_id);
         $this->assertNull($member->enrollment_confirmed_at);
 
+        $this->get(route('parent-links.index.parent'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Parent/Children')
+                ->where('children.0.club_name', $club->club_name)
+                ->where('children.0.church_name', $club->church->church_name));
+
         $this->actingAs($director)
             ->get(route('club.dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('enrollment_confirmation_requests.total', 2)
-                ->where('enrollment_confirmation_requests.parents.0.id', $parent->id)
-                ->where('enrollment_confirmation_requests.members.0.id', $member->id));
-
-        $this->postJson(route('club.enrollment-confirmations.parents.confirm', $parent))->assertOk();
-        $this->postJson(route('club.enrollment-confirmations.members.confirm', $member))
-            ->assertOk()
-            ->assertJsonPath('data.total', 0);
-
-        $this->assertNotNull($parent->fresh()->enrollment_confirmed_at);
-        $this->assertSame($director->id, $parent->fresh()->enrollment_confirmed_by);
-        $this->assertNotNull($member->fresh()->enrollment_confirmed_at);
-        $this->assertSame($director->id, $member->fresh()->enrollment_confirmed_by);
+                ->where('enrollment_confirmation_requests.total', 0)
+                ->has('enrollment_confirmation_requests.parents', 0));
     }
 
     public function test_revoked_secure_link_cannot_be_used_and_other_directors_cannot_confirm_requests(): void
@@ -158,6 +181,182 @@ class SecureParentEnrollmentTest extends TestCase
         $this->actingAs($director)
             ->get(route('club.settings.enrollment.secure-link.qr', $link))
             ->assertNotFound();
+    }
+
+    public function test_director_activation_is_a_portal_only_fallback_without_password_self_service(): void
+    {
+        [$director, $club] = $this->directorAndClub('Fallback');
+        $link = ClubParentEnrollmentLink::create([
+            'club_id' => $club->id,
+            'token' => str_repeat('f', 64),
+            'created_by' => $director->id,
+        ]);
+        $parent = User::factory()->unverified()->create([
+            'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'club_id' => $club->id,
+            'church_id' => $club->church_id,
+            'status' => 'active',
+            'secure_enrollment_link_id' => $link->id,
+            'parent_activation_method' => null,
+            'enrollment_confirmed_at' => null,
+        ]);
+        $parent->clubs()->attach($club->id, ['status' => 'active']);
+
+        $this->actingAs($parent)->get(route('parent.dashboard'))->assertRedirect(route('verification.notice'));
+
+        $this->actingAs($director)
+            ->get(route('club.dashboard'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('enrollment_confirmation_requests.total', 1)
+                ->where('enrollment_confirmation_requests.parents.0.email_status', 'waiting'));
+
+        $this->postJson(route('club.enrollment-confirmations.parents.confirm', $parent))
+            ->assertOk()
+            ->assertJsonPath('data.total', 0)
+            ->assertJsonPath('data.director_activated_parents.0.id', $parent->id);
+
+        $parent->refresh();
+        $this->assertSame('director', $parent->parent_activation_method);
+        $this->assertNull($parent->email_verified_at);
+        $this->assertSame($director->id, $parent->enrollment_confirmed_by);
+        $this->assertTrue($parent->canAccessParentPortal());
+        $this->assertFalse($parent->canSelfServiceCredentials());
+
+        $this->actingAs($director)
+            ->get(route('club.staff'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ClubDirector/Staff')
+                ->has('parent_accounts', 1)
+                ->where('parent_accounts.0.id', $parent->id)
+                ->where('parent_accounts.0.parent_activation_method', 'director'));
+
+        $this->putJson(route('club.enrollment-confirmations.parents.password', $parent), [
+            'password' => 'director-password123',
+            'password_confirmation' => 'director-password123',
+        ])->assertOk();
+        $this->assertTrue(Hash::check('director-password123', $parent->fresh()->password));
+
+        $this->actingAs($parent)->get(route('parent.dashboard'))->assertOk();
+        $this->get(route('profile.edit'))->assertForbidden();
+        $this->put(route('password.update'), [
+            'current_password' => 'director-password123',
+            'password' => 'new-password123',
+            'password_confirmation' => 'new-password123',
+        ])->assertForbidden();
+
+        auth()->logout();
+        $this->post(route('password.email'), ['email' => $parent->email])
+            ->assertSessionHasErrors('email');
+    }
+
+    public function test_verified_parent_receives_a_single_use_password_link_valid_for_24_hours(): void
+    {
+        Mail::fake();
+        [, $club] = $this->directorAndClub('Recovery');
+        $link = ClubParentEnrollmentLink::create([
+            'club_id' => $club->id,
+            'token' => str_repeat('r', 64),
+        ]);
+        $parent = User::factory()->create([
+            'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'club_id' => $club->id,
+            'status' => 'active',
+            'secure_enrollment_link_id' => $link->id,
+            'parent_activation_method' => 'email',
+        ]);
+
+        $this->assertSame(1440, config('auth.passwords.parents.expire'));
+        $this->post(route('password.email'), ['email' => $parent->email])
+            ->assertSessionHasNoErrors();
+
+        $resetUrl = null;
+        Mail::assertSent(ParentPasswordResetMail::class, function (ParentPasswordResetMail $mail) use (&$resetUrl, $parent) {
+            $resetUrl = $mail->actionUrl;
+
+            return $mail->hasTo($parent->email);
+        });
+        $this->assertNotNull($resetUrl);
+        $parts = parse_url($resetUrl);
+        parse_str($parts['query'] ?? '', $query);
+        $token = basename($parts['path']);
+
+        $payload = [
+            'token' => $token,
+            'email' => $query['email'] ?? $parent->email,
+            'password' => 'new-password123',
+            'password_confirmation' => 'new-password123',
+        ];
+        $this->post(route('password.store'), $payload)
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('login'));
+        $this->assertTrue(Hash::check('new-password123', $parent->fresh()->password));
+
+        $this->post(route('password.store'), $payload)->assertSessionHasErrors('email');
+    }
+
+    public function test_traditional_parent_can_use_the_dashboard_but_must_verify_email_for_password_features(): void
+    {
+        Mail::fake();
+        [, $club] = $this->directorAndClub('Traditional');
+        $parent = User::factory()->unverified()->create([
+            'profile_type' => 'parent',
+            'role_key' => 'parent',
+            'club_id' => $club->id,
+            'church_id' => $club->church_id,
+            'status' => 'active',
+            'secure_enrollment_link_id' => null,
+            'parent_activation_method' => null,
+            'enrollment_confirmed_at' => null,
+        ]);
+        $parent->clubs()->attach($club->id, ['status' => 'active']);
+
+        $this->assertTrue($parent->canAccessParentPortal());
+        $this->assertFalse($parent->canSelfServiceCredentials());
+
+        $this->actingAs($parent)
+            ->get(route('parent.dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Parent/Dashboard')
+                ->where('auth_user.email_verified_at', null)
+                ->where('auth.user.password_self_service_enabled', false));
+
+        auth()->logout();
+        $this->post(route('password.email'), ['email' => $parent->email])
+            ->assertSessionHasErrors('email');
+
+        $verificationUrl = null;
+        $this->actingAs($parent)
+            ->post(route('verification.send'))
+            ->assertSessionHas('status', 'verification-link-sent');
+        Mail::assertSent(ParentEmailVerificationMail::class, function (ParentEmailVerificationMail $mail) use (&$verificationUrl, $parent) {
+            $verificationUrl = $mail->actionUrl;
+
+            return $mail->hasTo($parent->email);
+        });
+
+        $this->get($verificationUrl)->assertRedirect(route('parent.dashboard'));
+        $parent->refresh();
+        $this->assertNotNull($parent->email_verified_at);
+        $this->assertSame('email', $parent->parent_activation_method);
+        $this->assertNull($parent->enrollment_confirmed_at, 'Email verification must not replace traditional director approval.');
+        $this->assertTrue($parent->canSelfServiceCredentials());
+        $this->actingAs($parent)
+            ->get(route('profile.edit'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Parent/Profile')
+                ->where('auth_user.id', $parent->id)
+                ->where('account_church_name', $club->church->church_name));
+
+        Mail::fake();
+        auth()->logout();
+        $this->post(route('password.email'), ['email' => $parent->email])
+            ->assertSessionHasNoErrors();
+        Mail::assertSent(ParentPasswordResetMail::class);
     }
 
     public function test_pathfinder_and_tlt_parent_enrollment_stores_and_exports_a_drawn_signature(): void

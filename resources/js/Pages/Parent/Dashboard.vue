@@ -27,11 +27,11 @@ const props = defineProps({
 const { showToast } = useGeneral()
 const { tr } = useLocale()
 
-const clubs = ref([])
+const workplanChildren = ref([])
+const selectedMemberId = ref(null)
 const selectedClubId = ref(null)
 const workplan = ref(null)
 const events = ref([])
-const memberships = ref([])
 const selectedEvent = ref(null)
 const eventModalOpen = ref(false)
 const showPasswordModal = ref(false)
@@ -41,9 +41,26 @@ const creatingParentAccount = ref(false)
 const parentAccountResult = ref(null)
 const parentAccountError = ref('')
 const showRegistrationSuccess = ref(props.registration_success)
+const sendingVerification = ref(false)
+const verificationSent = ref(false)
+const verificationError = ref('')
 const needsParentAccountSetup = computed(() => Boolean(parentSetup.value?.needs_account))
-const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value }) : '#')
-const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value }) : '#')
+const passwordSelfServiceEnabled = computed(() => {
+    if (props.auth_user?.password_self_service_enabled !== undefined) {
+        return Boolean(props.auth_user.password_self_service_enabled)
+    }
+
+    return Boolean(props.auth_user?.email_verified_at) && props.auth_user?.parent_activation_method !== 'director'
+})
+const isDirectorActivated = computed(() => props.auth_user?.parent_activation_method === 'director')
+const needsEmailVerification = computed(() => (
+    !props.is_superadmin_parent_preview
+    && !isDirectorActivated.value
+    && !props.auth_user?.email_verified_at
+))
+const selectedWorkplanChild = computed(() => workplanChildren.value.find(child => Number(child.member_id) === Number(selectedMemberId.value)) || null)
+const workplanPdfHref = computed(() => selectedClubId.value ? route('parent.workplan.pdf', { club_id: selectedClubId.value, member_id: selectedMemberId.value }) : '#')
+const workplanIcsHref = computed(() => selectedClubId.value ? route('parent.workplan.ics', { club_id: selectedClubId.value, member_id: selectedMemberId.value }) : '#')
 const receipts = ref([])
 
 const cleanDate = (val) => {
@@ -61,10 +78,11 @@ const cleanTime = (val) => {
     return str
 }
 
-const load = async (clubId = null) => {
+const load = async (memberId = null) => {
     try {
-        const { clubs: c, selected_club_id, workplan: wp, memberships: m } = await fetchParentWorkplan(clubId)
-        clubs.value = c || []
+        const { children, selected_member_id, selected_club_id, workplan: wp } = await fetchParentWorkplan(memberId)
+        workplanChildren.value = children || []
+        selectedMemberId.value = selected_member_id || null
         selectedClubId.value = selected_club_id || null
         workplan.value = wp
         events.value = (wp?.events || []).map(ev => {
@@ -77,7 +95,6 @@ const load = async (clubId = null) => {
                 _source_level: sourceType.includes('District') ? 'district' : (sourceType.includes('Association') ? 'association' : null),
             }
         })
-        memberships.value = m || []
     } catch (e) {
         console.error(e)
         showToast(tr('No se pudo cargar el plan de trabajo', 'Could not load the workplan'), 'error')
@@ -94,9 +111,9 @@ const loadReceipts = async () => {
     }
 }
 
-const changeClub = async () => {
-    if (!selectedClubId.value) return
-    await load(selectedClubId.value)
+const changeWorkplanChild = async () => {
+    if (!selectedMemberId.value) return
+    await load(selectedMemberId.value)
 }
 
 const openEvent = (ev) => {
@@ -110,9 +127,30 @@ const closeEvent = () => {
 }
 
 const openPasswordModal = () => {
+    if (!passwordSelfServiceEnabled.value) {
+        showToast(tr('Solicita al director del club una nueva contraseña.', 'Ask the club director for a new password.'), 'warning')
+        return
+    }
     if (!props.auth_user?.id) return
     changePasswordUserId.value = props.auth_user.id
     showPasswordModal.value = true
+}
+
+const sendVerificationEmail = async () => {
+    sendingVerification.value = true
+    verificationError.value = ''
+
+    try {
+        await axios.post(route('verification.send'))
+        verificationSent.value = true
+        showToast(tr('Correo de confirmación enviado.', 'Confirmation email sent.'), 'success')
+    } catch (error) {
+        console.error(error)
+        verificationError.value = error?.response?.data?.errors?.email?.[0]
+            || tr('No se pudo enviar el correo de confirmación. Inténtalo nuevamente.', 'The confirmation email could not be sent. Please try again.')
+    } finally {
+        sendingVerification.value = false
+    }
 }
 
 const createParentAccount = async () => {
@@ -142,7 +180,7 @@ onMounted(() => {
 
     load()
     loadReceipts()
-    if (props.auth_user?.must_change_password && !props.is_superadmin_parent_preview) {
+    if (props.auth_user?.must_change_password && !props.is_superadmin_parent_preview && passwordSelfServiceEnabled.value) {
         openPasswordModal()
     }
 })
@@ -155,7 +193,7 @@ onMounted(() => {
         <div v-if="showRegistrationSuccess" role="status" class="mb-4 flex items-start justify-between gap-4 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-emerald-900 shadow-sm">
             <div>
                 <p class="font-semibold">{{ tr('¡Registro completado!', 'Registration complete!') }}</p>
-                <p class="mt-1 text-sm">{{ tr('Tu cuenta fue creada y ya puedes registrar a tus hijos. El director confirmará posteriormente la cuenta y los miembros registrados.', 'Your account was created and you can now register your children. The director will confirm the account and registered members afterward.') }}</p>
+                <p class="mt-1 text-sm">{{ tr('Tu correo fue confirmado y tu cuenta está activa. Ya puedes registrar a tus hijos.', 'Your email was confirmed and your account is active. You can now register your children.') }}</p>
             </div>
             <button type="button" class="shrink-0 text-xl leading-none text-emerald-700 hover:text-emerald-950" :aria-label="tr('Cerrar mensaje', 'Dismiss message')" @click="showRegistrationSuccess = false">×</button>
         </div>
@@ -245,6 +283,7 @@ onMounted(() => {
                             {{ tr('Registrar un miembro', 'Register a member') }}
                         </a>
                         <button
+                            v-if="passwordSelfServiceEnabled"
                             class="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
                             @click="openPasswordModal"
                         >
@@ -254,20 +293,68 @@ onMounted(() => {
                 </div>
             </div>
 
+            <div class="rounded border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 shadow-sm" role="status">
+                <p class="font-semibold">{{ tr('Tu correo conecta a toda tu familia', 'Your email connects your whole family') }}</p>
+                <p class="mt-1">
+                    {{ tr(
+                        'Usa siempre el mismo correo electrónico: es la clave para reunir en esta cuenta a todos tus hijos, incluso si pertenecen a clubes de iglesias diferentes. Para vincular hijos existentes dentro de tu iglesia, el sistema compara apellido, nombre del padre/madre y correo verificado. Tres coincidencias vinculan de inmediato; dos requieren confirmación del director.',
+                        'Always use the same email address: it is the key to bringing all your children into this account, even when they belong to clubs at different churches. To link existing children within your church, the system compares last name, registered parent/guardian name, and verified email. Three matches link immediately; two require director confirmation.'
+                    ) }}
+                </p>
+            </div>
+
+            <div v-if="isDirectorActivated" class="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+                <p class="font-semibold">{{ tr('Cuenta activada por el director', 'Account activated by the director') }}</p>
+                <p class="mt-1">{{ tr('El correo de esta cuenta no fue confirmado. Para cambiar datos de acceso o solicitar una nueva contraseña, comunícate con el director del club.', 'This account email was not confirmed. Contact the club director to change login details or request a new password.') }}</p>
+            </div>
+
+            <div v-else-if="needsEmailVerification" class="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p class="font-semibold">{{ tr('Confirma tu correo electrónico', 'Confirm your email address') }}</p>
+                        <p class="mt-1">
+                            {{ tr('Confirma tu correo para activar la recuperación de contraseña, la actualización de perfil y el cambio de contraseña.', 'Confirm your email to activate password recovery, profile updates, and password changes.') }}
+                        </p>
+                        <p v-if="verificationSent" class="mt-2 font-medium text-emerald-700">
+                            {{ tr('Enviamos el enlace de confirmación. Revisa tu bandeja de entrada y correo no deseado.', 'We sent the confirmation link. Check your inbox and spam folder.') }}
+                        </p>
+                        <p v-if="verificationError" class="mt-2 font-medium text-red-700">{{ verificationError }}</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="shrink-0 rounded bg-amber-700 px-4 py-2 font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="sendingVerification"
+                        @click="sendVerificationEmail"
+                    >
+                        {{ sendingVerification
+                            ? tr('Enviando...', 'Sending...')
+                            : verificationSent
+                                ? tr('Reenviar correo', 'Resend email')
+                                : tr('Confirmar correo', 'Confirm email') }}
+                    </button>
+                </div>
+            </div>
+
             <div class="bg-white border rounded shadow-sm p-4 space-y-3">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div class="space-y-1">
                         <h3 class="text-lg font-semibold text-gray-800">{{ tr('Plan de trabajo del club', 'Club workplan') }}</h3>
-                        <p class="text-sm text-gray-600">{{ tr('Selecciona un club para ver su calendario.', 'Select a club to view its calendar.') }}</p>
+                        <p class="text-sm text-gray-600">{{ tr('Selecciona un hijo para ver el calendario de su club.', 'Select a child to view that child’s club calendar.') }}</p>
                     </div>
                     <div class="flex items-center gap-2">
-                        <label class="text-sm text-gray-700">{{ tr('Club', 'Club') }}</label>
-                        <select v-model="selectedClubId" class="border rounded px-3 py-1 text-sm" @change="changeClub">
-                            <option value="">{{ tr('Selecciona un club', 'Select a club') }}</option>
-                            <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.club_name }}</option>
+                        <label class="text-sm text-gray-700">{{ tr('Hijo', 'Child') }}</label>
+                        <select v-model="selectedMemberId" class="max-w-full rounded border px-3 py-1 text-sm" @change="changeWorkplanChild">
+                            <option value="">{{ tr('Selecciona un hijo', 'Select a child') }}</option>
+                            <option v-for="child in workplanChildren" :key="child.member_id" :value="child.member_id">
+                                {{ child.name }} — {{ child.church_name || '—' }} — {{ child.club_name || '—' }}
+                            </option>
                         </select>
                     </div>
                 </div>
+
+                <p v-if="selectedWorkplanChild" class="text-xs text-gray-600">
+                    {{ tr('Iglesia', 'Church') }}: {{ selectedWorkplanChild.church_name || '—' }} · {{ tr('Club', 'Club') }}: {{ selectedWorkplanChild.club_name || '—' }}
+                </p>
 
                 <div v-if="workplan">
                     <WorkplanCalendar
@@ -350,6 +437,7 @@ onMounted(() => {
             :show="showPasswordModal"
             :user-id="changePasswordUserId"
             :force="Boolean(props.auth_user?.must_change_password && !props.is_superadmin_parent_preview)"
+            :self-service="true"
             @close="showPasswordModal = false"
             @updated="showToast(tr('Contrasena actualizada correctamente', 'Password updated successfully'))"
         />

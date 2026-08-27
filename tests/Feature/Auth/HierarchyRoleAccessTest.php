@@ -416,7 +416,7 @@ class HierarchyRoleAccessTest extends TestCase
         $this->assertFalse($account['create_staff']);
     }
 
-    public function test_club_director_can_promote_existing_parent_account_to_treasurer(): void
+    public function test_club_director_cannot_promote_parent_account_to_treasurer(): void
     {
         $church = Church::query()->create([
             'church_name' => 'Parent Treasurer Church',
@@ -474,21 +474,15 @@ class HierarchyRoleAccessTest extends TestCase
             ->postJson(route('staff.makeTreasurer', $parent), [
                 'club_id' => $club->id,
             ])
-            ->assertOk()
-            ->assertJsonPath('profile_type', 'treasurer');
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Only staff accounts can be converted to treasurer.');
 
         $parent->refresh();
 
-        $this->assertSame('treasurer', $parent->profile_type);
-        $this->assertSame('treasurer', $parent->role_key);
-        $this->assertSame('club', $parent->scope_type);
-        $this->assertSame($club->id, $parent->scope_id);
-        $this->assertSame($club->id, $parent->club_id);
-
-        $this->assertDatabaseHas('club_user', [
-            'club_id' => $club->id,
-            'user_id' => $parent->id,
-            'status' => 'active',
-        ]);
+        $this->assertSame('parent', $parent->profile_type);
+        $this->assertSame('parent', $parent->role_key);
+        $this->assertNull($parent->scope_type);
+        $this->assertNull($parent->scope_id);
+        $this->assertNull($parent->club_id);
     }
 }

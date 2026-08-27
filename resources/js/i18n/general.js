@@ -259,6 +259,10 @@ export const generalTranslations = {
         es: 'Usuarios en línea',
         en: 'Online users',
     },
+    profile: {
+        es: 'Perfil',
+        en: 'Profile',
+    },
     primary_director: {
         es: 'Director principal',
         en: 'Primary director',

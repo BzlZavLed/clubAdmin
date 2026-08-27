@@ -16,6 +16,9 @@ const summaryOpen = ref(false)
 const expandedRequirements = ref({})
 const fileInputs = ref({})
 const drafts = ref({})
+const selectedMemberId = ref(props.children[0]?.member_id ? String(props.children[0].member_id) : '')
+const displayedChildren = computed(() => props.children.filter(child => String(child.member_id) === selectedMemberId.value))
+const selectedChild = computed(() => displayedChildren.value[0] || null)
 
 const form = useForm({
     member_id: '',
@@ -118,6 +121,9 @@ const requirementActionLabel = (child, requirement) => {
 watch(
     () => props.children,
     (children) => {
+        if (!children.some(child => String(child.member_id) === selectedMemberId.value)) {
+            selectedMemberId.value = children[0]?.member_id ? String(children[0].member_id) : ''
+        }
         expandedChildren.value = new Set(children.map(childKey))
         expandedRequirements.value = {}
     },
@@ -137,7 +143,7 @@ const getDraft = (child, requirement) => {
 }
 
 const evidenceSummary = computed(() =>
-    props.children
+    displayedChildren.value
         .filter(child => child.all_completed)
         .map(child => ({
             ...child,
@@ -185,13 +191,27 @@ const submitEvidence = (child, requirement) => {
         <template #title>{{ tr('Carpeta de investidura', 'Investiture folder') }}</template>
 
         <div class="space-y-4">
+            <div class="rounded-lg border border-blue-200 bg-white p-4 shadow-sm sm:p-5">
+                <label for="carpeta-child" class="block text-sm font-semibold text-gray-800">
+                    {{ tr('Selecciona un hijo', 'Select a child') }}
+                </label>
+                <select id="carpeta-child" v-model="selectedMemberId" class="mt-2 w-full rounded-lg border-gray-300 text-sm md:max-w-xl">
+                    <option v-for="child in children" :key="child.member_id" :value="String(child.member_id)">
+                        {{ child.name }} — {{ child.church_name || '—' }} — {{ child.club_name || '—' }}
+                    </option>
+                </select>
+                <p v-if="selectedChild" class="mt-2 text-xs text-gray-600">
+                    {{ tr('Iglesia', 'Church') }}: {{ selectedChild.church_name || '—' }} · {{ tr('Club', 'Club') }}: {{ selectedChild.club_name || '—' }}
+                </p>
+            </div>
+
             <div class="rounded-lg border bg-white p-4 shadow-sm sm:p-5">
                 <h1 class="text-lg font-semibold text-gray-900 sm:text-xl">{{ tr('Carpeta de investidura', 'Investiture folder') }}</h1>
                 <p class="mt-1 text-sm text-gray-600">
                     {{ tr('Revisa las carpetas de tus hijos. En aventureros puedes cargar evidencias; en conquistadores la carpeta es solo de consulta porque ellos cargan sus propios requisitos.', 'Review your children folders. For Adventurers you can upload evidence; Pathfinder folders are read-only because they upload their own requirements.') }}
                 </p>
                 <p class="mt-3 rounded bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                    {{ tr('Cada hijo aparece abierto. Toca un requisito para expandirlo, ver su estado y revisar la evidencia disponible.', 'Each child appears open. Tap a requirement to expand it, view status, and review available evidence.') }}
+                    {{ tr('El hijo seleccionado aparece abierto. Toca un requisito para expandirlo, ver su estado y revisar la evidencia disponible.', 'The selected child appears open. Tap a requirement to expand it, view status, and review available evidence.') }}
                 </p>
             </div>
 
@@ -199,7 +219,7 @@ const submitEvidence = (child, requirement) => {
                 {{ tr('No tienes hijos en clubes con sistema de carpetas o aun no tienen una clase asignada.', 'You do not have children in carpeta clubs or they do not have an assigned class yet.') }}
             </div>
 
-            <div v-for="child in children" :key="child.member_id" class="overflow-hidden rounded-lg border bg-white shadow-sm">
+            <div v-for="child in displayedChildren" :key="child.member_id" class="overflow-hidden rounded-lg border bg-white shadow-sm">
                 <button type="button" class="flex w-full flex-col gap-3 p-4 text-left sm:flex-row sm:items-center sm:justify-between sm:p-5" @click="toggleSet(expandedChildren, childKey(child))">
                     <div class="min-w-0">
                         <h2 class="break-words text-base font-semibold text-gray-900 sm:text-lg">{{ child.name }}</h2>

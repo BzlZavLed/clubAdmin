@@ -1,5 +1,5 @@
 <script setup>
-import { Link } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import { useLocale } from '@/Composables/useLocale'
 import { computed } from 'vue'
 import {
@@ -8,6 +8,7 @@ import {
     ClipboardDocumentListIcon,
     FolderOpenIcon,
     CreditCardIcon,
+    UserCircleIcon,
 } from '@heroicons/vue/24/outline'
 
 defineProps({
@@ -15,14 +16,23 @@ defineProps({
 })
 
 const { t } = useLocale()
+const page = usePage()
 
-const menuItems = computed(() => [
-    { name: t('dashboard'), href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
-    { name: t('application'), href: '/parent-enrollment', route: 'parent.enrollment', icon: ClipboardDocumentListIcon },
-    { name: t('children'), href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
-    { name: t('investiture_folder'), href: '/parent/carpeta-investidura', route: 'parent.carpeta-investidura', icon: FolderOpenIcon },
-    { name: t('payments'), href: '/parent/payments', route: 'parent.payments.index', icon: CreditCardIcon },
-])
+const menuItems = computed(() => {
+    const items = [
+        { name: t('dashboard'), href: '/parent/dashboard', route: 'parent.dashboard', icon: HomeIcon },
+        { name: t('application'), href: '/parent-enrollment', route: 'parent.enrollment', icon: ClipboardDocumentListIcon },
+        { name: t('children'), href: '/parent/children', route: 'parent-links.index.parent', icon: UserGroupIcon },
+        { name: t('investiture_folder'), href: '/parent/carpeta-investidura', route: 'parent.carpeta-investidura', icon: FolderOpenIcon },
+        { name: t('payments'), href: '/parent/payments', route: 'parent.payments.index', icon: CreditCardIcon },
+    ]
+
+    if (page.props.auth?.user?.password_self_service_enabled) {
+        items.push({ name: t('profile'), href: '/profile', route: 'profile.edit', icon: UserCircleIcon })
+    }
+
+    return items
+})
 </script>
 
 <template>

@@ -43,6 +43,8 @@ const churchId = computed(() => user.value?.church_id || null)
 const userId = computed(() => user.value?.id || null)
 const isSuperadmin = computed(() => user.value?.profile_type === 'superadmin')
 const changePasswordUserId = ref(null)
+const passwordUpdateUrl = ref('')
+const passwordRequiresConfirmation = ref(false)
 const club_name = computed(() => user.value?.clubs[0]?.club_name || '')
 const { toast, showToast } = useGeneral()
 const { tr } = useLocale()
@@ -398,7 +400,7 @@ const updateStaffUserAccount = async (user, status_code) => {
 
 const canMakeTreasurer = (account) => {
     if (!selectedClub.value?.id || accountStatus(account) !== 'active') return false
-    if (['treasurer', 'club_director', 'superadmin'].includes(account.profile_type)) return false
+    if (account.profile_type !== 'club_personal') return false
     return Number(account.club_id) === Number(selectedClub.value.id)
         || clubUserIds.value.has(account.id)
         || account.children?.some(child => Number(child.club_id) === Number(selectedClub.value.id))
@@ -587,9 +589,19 @@ const toggleExpanded = (id) => {
     expandedRows.value.has(id) ? expandedRows.value.delete(id) : expandedRows.value.add(id)
 }
 
-const changePassword = (user) => {
+const changePassword = (user, directorManagedParent = false) => {
     showPasswordModal.value = true
     changePasswordUserId.value = user.id
+    passwordUpdateUrl.value = directorManagedParent
+        ? route('club.enrollment-confirmations.parents.password', { user: user.id })
+        : ''
+    passwordRequiresConfirmation.value = directorManagedParent
+}
+const closePasswordModal = () => {
+    showPasswordModal.value = false
+    changePasswordUserId.value = null
+    passwordUpdateUrl.value = ''
+    passwordRequiresConfirmation.value = false
 }
 const closeModal = () => {
     createStaffModalVisible.value = false
@@ -1182,10 +1194,10 @@ watch(
                                     <p v-else class="mt-2 text-xs text-gray-500">{{ tr('No hay hijos vinculados.', 'No linked children.') }}</p>
                                 </div>
                                 <div class="mt-3">
-                                    <button v-if="canMakeTreasurer(parent)"
-                                        class="w-full rounded bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
-                                        @click="makeTreasurer(parent)">
-                                        {{ tr('Hacer tesorero', 'Make treasurer') }}
+                                    <button v-if="parent.parent_activation_method === 'director'"
+                                        class="w-full rounded bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800"
+                                        @click="changePassword(parent, true)">
+                                        {{ tr('Asignar nueva contraseña', 'Issue new password') }}
                                     </button>
                                     <span v-else class="text-xs italic text-gray-400">{{ tr('Sin acciones', 'No actions') }}</span>
                                 </div>
@@ -1226,10 +1238,10 @@ watch(
                                             <div v-else class="text-gray-500 text-xs">{{ tr('No hay hijos vinculados.', 'No linked children.') }}</div>
                                         </td>
                                         <td class="p-2 align-top text-xs">
-                                            <button v-if="canMakeTreasurer(parent)"
-                                                class="px-2 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700"
-                                                @click="makeTreasurer(parent)">
-                                                {{ tr('Hacer tesorero', 'Make treasurer') }}
+                                            <button v-if="parent.parent_activation_method === 'director'"
+                                                class="rounded bg-blue-700 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-800"
+                                                @click="changePassword(parent, true)">
+                                                {{ tr('Asignar nueva contraseña', 'Issue new password') }}
                                             </button>
                                             <span v-else class="text-gray-400 italic">{{ tr('Sin acciones', 'No actions') }}</span>
                                         </td>
@@ -1436,7 +1448,9 @@ watch(
             v-if="showPasswordModal && changePasswordUserId"
             :show="showPasswordModal"
             :user-id="changePasswordUserId"
-            @close="showPasswordModal = false"
+            :update-url="passwordUpdateUrl"
+            :require-confirmation="passwordRequiresConfirmation"
+            @close="closePasswordModal"
             @updated="showToast(tr('Contrasena actualizada correctamente', 'Password updated successfully'))"
         />
 

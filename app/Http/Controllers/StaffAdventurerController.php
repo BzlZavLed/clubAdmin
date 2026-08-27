@@ -944,6 +944,13 @@ class StaffAdventurerController extends Controller
             ], 403);
         }
 
+        if ($user->profile_type !== 'club_personal') {
+            return response()->json([
+                'message' => 'Only staff accounts can be converted to treasurer.',
+                'success' => false,
+            ], 422);
+        }
+
         $belongsToClub = (int) ($user->club_id ?? 0) === (int) $club->id
             || (int) ($club->user_id ?? 0) === (int) $user->id
             || DB::table('club_user')

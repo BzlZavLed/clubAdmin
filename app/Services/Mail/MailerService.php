@@ -8,6 +8,8 @@ use App\Mail\AdventurerYearlyApplicationSignatureRequestMail;
 use App\Mail\ConferenceMemberExportMail;
 use App\Mail\FinanceLedgerReportMail;
 use App\Mail\ParentPaymentSubmissionMail;
+use App\Mail\ParentEmailVerificationMail;
+use App\Mail\ParentPasswordResetMail;
 use App\Mail\PathfinderAnnualApplicationMail;
 use App\Mail\PathfinderAnnualApplicationSignatureRequestMail;
 use App\Mail\PathfinderMonthlyReportMail;
@@ -22,6 +24,7 @@ use App\Models\PathfinderAnnualApplication;
 use App\Models\PathfinderAnnualApplicationSignature;
 use App\Models\PathfinderMonthlyReport;
 use App\Models\PaymentReceipt;
+use App\Models\User;
 use App\Services\PaymentReceiptPdfService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Mail;
@@ -33,6 +36,81 @@ use Throwable;
 class MailerService
 {
     public function __construct(private readonly PaymentReceiptPdfService $receiptPdfService) {}
+
+    public function sendParentEmailVerification(User $parent): void
+    {
+        $actionUrl = URL::temporarySignedRoute(
+            'parent.email.verify',
+            now()->addHours(24),
+            ['user' => $parent->id, 'hash' => sha1(mb_strtolower($parent->email))],
+        );
+
+        $this->sendParentAccountMail(
+            parent: $parent,
+            mailKey: 'parent_email_verification',
+            mailable: ParentEmailVerificationMail::class,
+            subject: 'Confirma tu correo | Confirm your email',
+            actionUrl: $actionUrl,
+            view: 'emails.parent_email_verification',
+        );
+    }
+
+    public function sendParentPasswordReset(User $parent, string $token): void
+    {
+        $actionUrl = route('password.reset', [
+            'token' => $token,
+            'email' => $parent->email,
+        ]);
+
+        $this->sendParentAccountMail(
+            parent: $parent,
+            mailKey: 'parent_password_reset',
+            mailable: ParentPasswordResetMail::class,
+            subject: 'Restablece tu contraseña | Reset your password',
+            actionUrl: $actionUrl,
+            view: 'emails.parent_password_reset',
+        );
+    }
+
+    private function sendParentAccountMail(
+        User $parent,
+        string $mailKey,
+        string $mailable,
+        string $subject,
+        string $actionUrl,
+        string $view,
+    ): void {
+        $mailLog = $this->startLog(
+            mailKey: $mailKey,
+            mailable: $mailable,
+            recipientEmail: $parent->email,
+            subject: $subject,
+            loggable: $parent,
+            clubId: $parent->club_id,
+            userId: $parent->id,
+            sourceLabel: 'Portal de Padres',
+            destinationLabel: $parent->name,
+            metadata: ['action_url_expires_hours' => 24],
+        );
+        $trackingPixelUrl = $this->trackingPixelUrl($mailLog);
+        $bodyHtml = view($view, compact('parent', 'actionUrl', 'trackingPixelUrl'))->render();
+        $mailLog->forceFill([
+            'body_html' => $bodyHtml,
+            'body_text' => $this->bodyText($bodyHtml),
+            'metadata' => array_merge($mailLog->metadata ?: [], ['tracking_pixel_url' => $trackingPixelUrl]),
+        ])->save();
+
+        try {
+            $message = $mailable === ParentEmailVerificationMail::class
+                ? new ParentEmailVerificationMail($parent, $actionUrl, $trackingPixelUrl, $mailLog->email_uid)
+                : new ParentPasswordResetMail($parent, $actionUrl, $trackingPixelUrl, $mailLog->email_uid);
+            Mail::to($parent->email)->send($message);
+            $this->markSent($mailLog);
+        } catch (Throwable $exception) {
+            $this->markFailed($mailLog, $exception);
+            throw $exception;
+        }
+    }
 
     public function queuePaymentReceipt(PaymentReceipt $receipt): MailDeliveryLog
     {

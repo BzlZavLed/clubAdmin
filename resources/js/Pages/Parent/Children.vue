@@ -11,9 +11,12 @@ const props = defineProps({
     children: {
         type: Array,
         default: () => []
-    }
+    },
+    link_requests: {
+        type: Array,
+        default: () => []
+    },
 })
-console.log(props.children);
 const { showToast } = useGeneral()
 
 const editModalOpen = ref(false)
@@ -47,6 +50,7 @@ const labels = {
         home: 'Home Address',
         email: 'Parent Email',
         signature: 'Signature',
+        linkRequests: 'Child linking requests',
     },
     es: {
         title: 'Mis hijos',
@@ -68,6 +72,7 @@ const labels = {
         home: 'Dirección residencial',
         email: 'Correo del padre/madre',
         signature: 'Firma',
+        linkRequests: 'Solicitudes para vincular hijos',
     },
 }
 const t = (key) => labels[locale.value]?.[key] || key
@@ -178,14 +183,16 @@ const searchLinkable = async () => {
 const linkMember = async (candidate) => {
     linking.value = true
     try {
-        await axios.post('/parent/children/link', {
+        const { data } = await axios.post('/parent/children/link', {
             member_type: candidate.member_type,
             id_data: candidate.id_data,
         })
-        showToast('Member linked to your account', 'success')
+        showToast(data.status === 'pending'
+            ? (locale.value === 'es' ? 'Solicitud enviada al director' : 'Request sent to the director')
+            : (locale.value === 'es' ? 'Hijo vinculado a tu cuenta' : 'Child linked to your account'), 'success')
         window.location.reload()
     } catch (e) {
-        showToast('Failed to link member', 'error')
+        showToast(e.response?.data?.message || 'Failed to link member', 'error')
     } finally {
         linking.value = false
     }
@@ -211,6 +218,25 @@ const linkMember = async (candidate) => {
                 </div>
             </div>
 
+            <div v-if="link_requests.length" class="rounded border border-blue-200 bg-blue-50 p-4 shadow-sm">
+                <h3 class="font-semibold text-blue-950">{{ t('linkRequests') }}</h3>
+                <div class="mt-3 space-y-2">
+                    <div v-for="request in link_requests" :key="request.id" class="rounded bg-white p-3 text-sm shadow-sm">
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p class="font-semibold text-gray-900">{{ request.child_name }}</p>
+                                <p class="text-xs text-gray-600">{{ request.club_name }}</p>
+                                <p v-if="request.decision_note" class="mt-1 text-xs text-gray-700">{{ request.decision_note }}</p>
+                            </div>
+                            <span class="inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold"
+                                :class="request.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : request.status === 'rejected' ? 'bg-red-100 text-red-800' : request.status === 'expired' ? 'bg-gray-200 text-gray-700' : 'bg-amber-100 text-amber-800'">
+                                {{ request.status === 'approved' ? (locale === 'es' ? 'Aprobada' : 'Approved') : request.status === 'rejected' ? (locale === 'es' ? 'Rechazada' : 'Rejected') : request.status === 'expired' ? (locale === 'es' ? 'Vencida' : 'Expired') : (locale === 'es' ? 'Esperando al director' : 'Waiting for director') }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="bg-white border rounded shadow-sm p-4">
                 <div class="overflow-x-auto">
                     <div class="hidden sm:block">
@@ -228,7 +254,12 @@ const linkMember = async (candidate) => {
                                 <template v-for="child in children" :key="child.id">
                                     <tr class="border-t">
                                         <td class="py-2 pr-4">{{ child.applicant_name }}</td>
-                                        <td class="py-2 pr-4">{{ child.club_name || '—' }}</td>
+                                        <td class="py-2 pr-4">
+                                            <div>{{ child.club_name || '—' }}</div>
+                                            <div class="mt-0.5 text-xs text-gray-500">
+                                                {{ locale === 'es' ? 'Iglesia' : 'Church' }}: {{ child.church_name || '—' }}
+                                            </div>
+                                        </td>
                                         <td class="py-2 pr-4">{{ child.grade || '—' }}</td>
                                         <td class="py-2 pr-4">{{ child.birthdate ? String(child.birthdate).slice(0, 10) : '—' }}</td>
                                         <td class="py-2 pr-4 flex items-center gap-2">
@@ -273,6 +304,9 @@ const linkMember = async (candidate) => {
                                 <div>
                                     <div class="font-semibold text-gray-900">{{ child.applicant_name }}</div>
                                     <div class="text-xs text-gray-600">{{ child.club_name || '—' }}</div>
+                                    <div class="text-[11px] text-gray-500">
+                                        {{ locale === 'es' ? 'Iglesia' : 'Church' }}: {{ child.church_name || '—' }}
+                                    </div>
                                 </div>
                                 <div class="flex gap-2">
                                     <button class="text-blue-600 text-sm inline-flex items-center gap-1" @click="toggleExpand(child.id)" :title="expanded.has(child.id) ? 'Hide details' : 'View details'">
@@ -472,9 +506,13 @@ const linkMember = async (candidate) => {
                                 <div>
                                     <div class="font-semibold text-gray-900">{{ cand.display_name }}</div>
                                     <div class="text-xs text-gray-600">{{ cand.detail }} • {{ cand.club_name || 'No club' }}</div>
+                                    <div class="mt-2 flex flex-wrap gap-1 text-[11px] font-semibold">
+                                        <span class="rounded bg-emerald-50 px-2 py-1 text-emerald-800">{{ cand.matched_count }}/3 {{ locale === 'es' ? 'coincidencias' : 'matches' }}</span>
+                                        <span v-if="cand.requires_director_approval" class="rounded bg-amber-50 px-2 py-1 text-amber-800">{{ locale === 'es' ? 'Requiere confirmación' : 'Requires confirmation' }}</span>
+                                    </div>
                                 </div>
                                 <button @click="linkMember(cand)" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
-                                    Link to my account
+                                    {{ cand.requires_director_approval ? (locale === 'es' ? 'Solicitar vínculo' : 'Request link') : (locale === 'es' ? 'Vincular a mi cuenta' : 'Link to my account') }}
                                 </button>
                             </div>
                         </div>
